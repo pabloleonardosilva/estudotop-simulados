@@ -463,3 +463,31 @@ Escopo previsto:
 - [x] `performance-indexes.sql` removido da raiz, sem cópia paralela.
 - [ ] **A migration NÃO foi executada.** Sua execução no Supabase depende de autorização explícita (MIG-012). O banco não foi alterado.
 
+---
+
+## Sprint Segurança do Banco — correções preparadas — 🔄 Migrations criadas em 2026-07-10, aguardando autorização para execução
+
+### Bloqueadores críticos auditados no banco operacional (somente leitura)
+
+1. **`public.admin_update_auth_user_email(uuid, text)`** — SECURITY DEFINER, altera `auth.users`/`auth.identities`, com EXECUTE para PUBLIC, `anon` e `authenticated` (ACL confirmada em `pg_proc`). Permite troca de e-mail de qualquer conta com a anon key (account takeover). Sem consumidores no código atual (alteração de e-mail usa `auth.admin.updateUserById`).
+2. **`public.exam_contests`** — policy "Admin full access to exam_contests" (`ALL`, `USING true`, `WITH CHECK true`) + grants completos para `anon`/`authenticated`.
+3. **`public.exam_positions`** — policy "Admin full access to exam_positions" idêntica + mesmos grants.
+4. **`public.question_alternatives.is_correct`** — policy "Students can read question alternatives" (`SELECT`, `USING true`) + grants completos expõem o gabarito via PostgREST. Nenhum cliente browser consulta a tabela; todo acesso real é server-side (service role).
+
+### Migrations criadas (em `supabase/migrations/`)
+
+- [x] `20260710124000_restrict_admin_update_auth_user_email.sql` — revoga EXECUTE de PUBLIC/`anon`/`authenticated` na RPC e mantém somente `service_role`; não altera a lógica da função.
+- [x] `20260710124100_protect_exam_contests_and_positions.sql` — remove as duas policies abertas e revoga todos os grants de `anon`/`authenticated`; RLS permanece habilitado sem policy (mesmo padrão de `20260702140000_protect_simulado_data_tables.sql`); APIs admin seguem via service role.
+- [x] `20260710124200_protect_question_alternatives_answer_key.sql` — remove a policy pública de SELECT e revoga todos os grants de `anon`/`authenticated`; preserva a policy administrativa `is_admin()`; alternativas continuam chegando ao aluno pelas APIs `/api/student/**`.
+
+### Impacto esperado
+
+- Nenhum fluxo funcional muda: todas as rotas afetadas usam `createSupabaseAdminClient()` (service role, que bypassa RLS e grants) com `requireAdmin`/`getStudentFromRequest`.
+- O que deixa de funcionar é apenas o acesso direto indevido via PostgREST com anon key.
+
+### Estado
+
+- [ ] **Nenhuma migration foi executada. O banco NÃO foi alterado.**
+- [ ] Execução depende de autorização explícita (MIG-012), na ordem 124000 → 124100 → 124200.
+- [ ] **Produção permanece bloqueada** até execução e revalidação dos quatro itens (DEP-009).
+

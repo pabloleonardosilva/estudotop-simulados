@@ -68,6 +68,18 @@ Regra prática:
 
 - O SQL avulso `performance-indexes.sql` (raiz do projeto) foi convertido na migration oficial `supabase/migrations/20260710120000_add_question_performance_indexes.sql` (índices de performance do módulo de questões: listagem administrativa, classify-difficulty e detecção de duplicatas por fingerprint) e removido da raiz. Dois índices de `question_subjects` do arquivo original foram omitidos por redundância com `question_subjects_question_id_idx` e `question_subjects_subject_id_idx`, já existentes no banco operacional. **A migration ainda NÃO foi executada; sua execução depende de autorização explícita (MIG-012).**
 
+### Sprint Segurança do Banco — migrations preparadas (2026-07-10)
+
+Correções dos quatro bloqueadores críticos de segurança identificados na auditoria de produção, preparadas como migrations oficiais em `supabase/migrations/`:
+
+| Migration | Bloqueador corrigido |
+|---|---|
+| `20260710124000_restrict_admin_update_auth_user_email.sql` | RPC `admin_update_auth_user_email` executável por PUBLIC/anon/authenticated (account takeover); passa a ser exclusiva de `service_role`. A RPC não possui consumidores no código atual — a alteração de e-mail usa `auth.admin.updateUserById`. |
+| `20260710124100_protect_exam_contests_and_positions.sql` | Policies `USING true` e grants de anon/authenticated em `exam_contests` e `exam_positions`; tabelas passam a ser acessíveis apenas via service role (APIs `/api/admin/exam-contests` e `/api/admin/exam-positions`, protegidas por `requireAdmin`). |
+| `20260710124200_protect_question_alternatives_answer_key.sql` | Exposição pública de `question_alternatives.is_correct` (gabarito); remove a policy pública de SELECT e os grants de anon/authenticated. Nenhum cliente browser consulta a tabela — alternativas chegam ao aluno somente por `/api/student/**`. |
+
+**Nenhuma dessas migrations foi executada; o banco não foi alterado. Produção permanece bloqueada até a execução autorizada e a revalidação dos quatro itens (DEP-009).**
+
 ---
 
 ## 1. ARQUIVOS GLOBAIS DO SISTEMA
