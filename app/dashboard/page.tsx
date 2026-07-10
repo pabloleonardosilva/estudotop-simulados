@@ -2,6 +2,7 @@ import PageBackground from "../components/ui/PageBackground";
 import PageHeader from "../components/ui/PageHeader";
 import PremiumCard from "../components/ui/PremiumCard";
 import MetricCard from "../components/ui/MetricCard";
+import { requireAdminPage } from "@/lib/server/authGuard";
 
 const desempenho = [
   { nome: "SES-MG Informática", media: "81%", alunos: 76 },
@@ -9,7 +10,8 @@ const desempenho = [
   { nome: "GCM São Paulo", media: "74%", alunos: 31 },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireAdminPage();
   return (
     <PageBackground>
       <PageHeader

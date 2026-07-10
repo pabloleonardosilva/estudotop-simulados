@@ -1,0 +1,21 @@
+# Checklist de teste de restore
+
+- [ ] Backup e data/hora selecionados
+- [ ] Responsável e janela do teste registrados
+- [ ] Ambiente isolado criado
+- [ ] Cron desativado ou protegido
+- [ ] E-mails reais bloqueados
+- [ ] Banco restaurado
+- [ ] Migrations e constraints conferidas
+- [ ] Contagens aproximadas comparadas
+- [ ] Storage restaurado e validado separadamente
+- [ ] Login admin testado
+- [ ] Login aluno testado
+- [ ] Jornada e simulado abertos
+- [ ] Tentativa iniciada e resposta salva
+- [ ] Tentativa enviada e resultado carregado
+- [ ] Nenhum e-mail real disparado
+- [ ] Tempo de restauração registrado
+- [ ] Problemas e ações corretivas registrados
+- [ ] Evidências armazenadas em local seguro
+- [ ] Ambiente temporário descartado com segurança

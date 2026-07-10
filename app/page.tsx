@@ -1,10 +1,13 @@
+import { BookOpen, TrendingUp, UsersRound } from "lucide-react";
 import PageBackground from "./components/ui/PageBackground";
 import PageHeader from "./components/ui/PageHeader";
 import PremiumCard from "./components/ui/PremiumCard";
 import PremiumButton from "./components/ui/PremiumButton";
 import MetricCard from "./components/ui/MetricCard";
+import { requireAdminPage } from "@/lib/server/authGuard";
 
-export default function HomePage() {
+export default async function HomePage() {
+  await requireAdminPage();
   return (
     <PageBackground>
       <PageHeader
@@ -15,9 +18,9 @@ export default function HomePage() {
       />
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Simulados" value="12" detail="Cadastrados no painel" />
-        <MetricCard label="Alunos" value="248" detail="Usuários com acesso" />
-        <MetricCard label="Aproveitamento" value="73%" detail="Média geral simulada" />
+        <MetricCard label="Simulados" value="12" detail="Cadastrados no painel" icon={<BookOpen size={16} />} />
+        <MetricCard label="Alunos" value="248" detail="Usuários com acesso" icon={<UsersRound size={16} />} />
+        <MetricCard label="Aproveitamento" value="73%" detail="Média geral simulada" icon={<TrendingUp size={16} />} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
