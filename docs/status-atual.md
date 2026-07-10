@@ -487,7 +487,15 @@ Escopo previsto:
 
 ### Estado
 
-- [ ] **Nenhuma migration foi executada. O banco NÃO foi alterado.**
-- [ ] Execução depende de autorização explícita (MIG-012), na ordem 124000 → 124100 → 124200.
-- [ ] **Produção permanece bloqueada** até execução e revalidação dos quatro itens (DEP-009).
+- [x] **Migrations executadas manualmente no SQL Editor do Supabase em 2026-07-10**, na ordem 124000 → 124100 → 124200, com autorização do responsável.
+- [x] **Validação pós-execução realizada em 2026-07-10** (somente SELECT em catálogos):
+  - `admin_update_auth_user_email(uuid, text)` — ACL final `{postgres=X, service_role=X}`: EXECUTE revogado de PUBLIC, `anon` e `authenticated`; exclusivo de `service_role`.
+  - `exam_contests` e `exam_positions` — RLS habilitado, **zero policies**, ACL final `{postgres, service_role}` (grants de `anon`/`authenticated` removidos).
+  - `question_alternatives` — policy pública "Students can read question alternatives" removida; policy administrativa "Admins can manage question alternatives" (`is_admin()`) preservada; ACL final `{postgres, service_role}`.
+  - Fluxos reconfirmados no código: nenhum consumo client-side; tudo via service role (`requireAdmin`/`getStudentFromRequest`); e-mail via `auth.admin.updateUserById`.
+- [x] **Os quatro bloqueadores críticos de segurança estão ENCERRADOS.**
+- [x] **Banco pronto para preview** (DEP-009 sem pendência crítica conhecida).
+- [ ] **Produção ainda não homologada** — dependem: criação de `student_help_messages`, bucket `profile-avatars` + `profiles.avatar_url`, e homologação completa em preview (DEP-003/DEP-012).
+- [!] **Ledger:** as versões `20260710124000/124100/124200` **não constam** em `supabase_migrations.schema_migrations` (última entrada: `20260707200751`), pois a execução manual via SQL Editor não registra no ledger da CLI. O ledger já não espelha os arquivos locais (histórico não reproduzível — MIG-008/MIG-009); a estrutura real do banco operacional prevalece como fonte da verdade. Não usar `migration repair` sem decisão explícita.
+- Observação de hardening futuro (não bloqueante): `is_admin()` é SECURITY DEFINER sem `search_path` fixado — corrigir em migration própria.
 

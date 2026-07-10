@@ -78,7 +78,7 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 | `20260710124100_protect_exam_contests_and_positions.sql` | Policies `USING true` e grants de anon/authenticated em `exam_contests` e `exam_positions`; tabelas passam a ser acessíveis apenas via service role (APIs `/api/admin/exam-contests` e `/api/admin/exam-positions`, protegidas por `requireAdmin`). |
 | `20260710124200_protect_question_alternatives_answer_key.sql` | Exposição pública de `question_alternatives.is_correct` (gabarito); remove a policy pública de SELECT e os grants de anon/authenticated. Nenhum cliente browser consulta a tabela — alternativas chegam ao aluno somente por `/api/student/**`. |
 
-**Nenhuma dessas migrations foi executada; o banco não foi alterado. Produção permanece bloqueada até a execução autorizada e a revalidação dos quatro itens (DEP-009).**
+**Atualização 2026-07-10:** as três migrations foram **executadas manualmente no SQL Editor do Supabase** (ordem 124000 → 124100 → 124200) e **revalidadas por SELECT em catálogos**: ACLs finais `{postgres, service_role}` na função e nas três tabelas, policies abertas removidas, policy administrativa `is_admin()` preservada em `question_alternatives`. **Os quatro bloqueadores críticos estão encerrados; banco pronto para preview.** Produção segue pendente de homologação (DEP-003/DEP-012) e dos objetos funcionais ausentes (`student_help_messages`, `profile-avatars`). As versões não constam no ledger `supabase_migrations.schema_migrations` (execução manual não registra; ver `docs/status-atual.md`).
 
 ---
 
