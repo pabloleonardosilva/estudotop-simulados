@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { verifyCronSecret } from "@/app/lib/server/cronAuth";
 import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 type ScheduleRow = {
   id: string;
@@ -13,10 +14,6 @@ type ScheduleRow = {
   status: string;
   simulados: { title: string } | null;
 };
-
-function getAppUrl(request: Request): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
 
 export async function GET(request: Request) {
   const cronError = verifyCronSecret(request);
@@ -28,7 +25,7 @@ export async function GET(request: Request) {
   try {
     const supabase = createSupabaseAdminClient();
     const today = new Date().toISOString().slice(0, 10);
-    const appUrl = getAppUrl(request);
+    const appUrl = getPublicAppUrl();
     const resendApiKey = process.env.RESEND_API_KEY;
 
     const { data: candidates, error } = await supabase

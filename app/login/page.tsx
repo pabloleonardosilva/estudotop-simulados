@@ -1,9 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { LockKeyhole, Trophy } from "lucide-react";
+import { LockKeyhole, Target } from "lucide-react";
 import { supabase } from "../lib/supabase/client";
 
 export default function LoginPage() {
@@ -145,21 +146,31 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#080b12] px-4 py-10 text-white">
       <div className="grid w-full max-w-6xl overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl lg:grid-cols-2">
-        <section className="relative hidden min-h-[620px] bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-300 p-10 text-slate-950 lg:block">
+        <section className="relative bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-300 p-8 text-slate-950 sm:p-10 lg:min-h-[620px]">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.5),transparent_35%)]" />
-          <div className="relative z-10 flex h-full flex-col justify-between">
+          <div className="relative z-10 flex h-full flex-col justify-between gap-10 lg:gap-12">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.32em]">EstudoTOP</p>
-              <h1 className="mt-4 text-5xl font-semibold tracking-tight">Simulados com cara de aprovação.</h1>
-              <p className="mt-5 max-w-md text-base leading-7 text-slate-800">
-                Plataforma própria para aplicar simulados, corrigir desempenho e entregar uma experiência premium para o aluno.
-              </p>
+              <Image
+                src="/images/Logo 04 -transp.png"
+                alt="EstudoTOP"
+                width={1053}
+                height={430}
+                priority
+                className="h-16 w-auto object-contain sm:h-20"
+              />
+              <h1 className="mt-8 max-w-md text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+                Simulados com cara de aprovação.
+              </h1>
             </div>
-            <div className="rounded-3xl bg-slate-950/90 p-6 text-white shadow-2xl">
-              <Trophy className="text-amber-300" />
-              <p className="mt-4 text-2xl font-semibold">Correção + resultado + IA futura</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                O aluno erra, entende o erro e volta mais forte para a prova.
+            <div className="rounded-3xl border border-white/10 bg-slate-950/85 p-6 text-white shadow-xl backdrop-blur-sm sm:p-7">
+              <span className="inline-flex rounded-xl bg-white/10 p-2.5 text-amber-300">
+                <Target size={20} />
+              </span>
+              <p className="mt-4 text-xl font-semibold leading-snug sm:text-2xl">
+                Correção + Resultado + Diagnóstico = Aprovação
+              </p>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                O aluno resolve o simulado, recebe as correções, tem um diagnóstico personalizado e obtém sucesso na prova.
               </p>
             </div>
           </div>
@@ -180,6 +191,7 @@ export default function LoginPage() {
               <input
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
                 placeholder="E-mail"
+                aria-label="E-mail"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -188,6 +200,7 @@ export default function LoginPage() {
               <input
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
                 placeholder="Senha"
+                aria-label="Senha"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}

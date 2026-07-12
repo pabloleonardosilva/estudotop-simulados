@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { jornadaWelcomeTemplate } from "@/lib/email/jornadaEmailTemplates";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -61,10 +62,6 @@ function calcReleaseSchedule(
     const ms = startedAt.getTime() + Math.floor(i * intervalDays) * 24 * 60 * 60 * 1000;
     return new Date(ms);
   });
-}
-
-function getAppUrl(request: Request): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 }
 
 function getLinkedSimuladoTitle(value: unknown): string | null {
@@ -313,7 +310,7 @@ export async function POST(
 
     const resendApiKey = process.env.RESEND_API_KEY;
     if (resendApiKey) {
-      const appUrl = getAppUrl(request);
+      const appUrl = getPublicAppUrl();
       const schedule = orderedSimulados.map((js, i) => {
         const shouldReleaseNow = releaseAll || i === 0;
         return {

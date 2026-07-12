@@ -19,6 +19,9 @@ export type StudentDetail = {
   updated_at: string;
   welcome_email_status: string | null;
   welcome_email_sent_at: string | null;
+  welcome_email_attempted_at: string | null;
+  welcome_email_error: string | null;
+  approved_at: string | null;
 };
 
 export type ActivityLog = {
@@ -120,7 +123,7 @@ async function getData(id: string) {
   const [studentRes, logsRes, jornadasRes, availableJornadasRes, sessionsRes, systemActivitiesRes] = await Promise.all([
     supabase
       .from("students")
-      .select("id, name, email, phone, cpf, avatar_url, status, notes, desired_contests, origin, last_login_at, created_at, updated_at, welcome_email_status, welcome_email_sent_at")
+      .select("id, name, email, phone, cpf, avatar_url, status, notes, desired_contests, origin, last_login_at, created_at, updated_at, welcome_email_status, welcome_email_sent_at, welcome_email_attempted_at, welcome_email_error, approved_at")
       .eq("id", id)
       .maybeSingle(),
     supabase

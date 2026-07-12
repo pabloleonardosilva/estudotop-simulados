@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { generateTemporaryPassword } from "@/lib/utils/password";
 import { hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { authUserExists, findAuthUserByEmail, reconcileIncompleteStudentAccount } from "@/lib/server/studentAccountRepair";
 
 type ConfirmPayload = {
   email: string;
@@ -59,11 +60,70 @@ export async function POST(request: Request) {
         .update({ used_at: new Date().toISOString() })
         .eq("id", confirmation.id);
 
+      // Cenário E — students existe sem conta Auth correspondente: inconsistência
+      // operacional; o Auth Admin API não permite recriar usuário com o mesmo UUID.
+      if (!(await authUserExists(supabase, existingStudent.id))) {
+        void logSystemError({
+          source: "api.auth.confirm_registration.inconsistent_account",
+          error: new Error(`students sem auth.users: ${existingStudent.id}`),
+          request,
+        });
+        return NextResponse.json(
+          { ok: false, code: "ACCOUNT_INCONSISTENT", message: "Este cadastro apresenta uma inconsistência e precisa de correção administrativa. Entre em contato com o suporte." },
+          { status: 409 }
+        );
+      }
+
       const cpfDuplicado = confirmation.cpf && existingStudent.cpf === confirmation.cpf;
       return NextResponse.json({ ok: false, message: cpfDuplicado ? "Este CPF já está vinculado a outro cadastro." : "Este e-mail já foi confirmado anteriormente." }, { status: 409 });
     }
 
     const temporaryPassword = generateTemporaryPassword();
+
+    // Cenário C — conta incompleta (Auth e/ou profile sem students): reconcilia
+    // reutilizando o mesmo UUID, sem criar um segundo usuário.
+    const orphanAuthUser = await findAuthUserByEmail(supabase, email);
+    if (orphanAuthUser) {
+      const repair = await reconcileIncompleteStudentAccount({
+        supabase,
+        authUser: orphanAuthUser,
+        fullName: confirmation.full_name,
+        email,
+        cpf: confirmation.cpf || null,
+        phone: confirmation.phone || null,
+        desiredContests: confirmation.desired_contests || null,
+        extraStudentFields: { email_confirmed_at: new Date().toISOString() },
+        temporaryPassword,
+        studentStatus: "pending",
+      });
+
+      if (!repair.ok) {
+        void logSystemError({
+          source: "api.auth.confirm_registration.reconcile",
+          error: new Error(`${repair.code}: ${repair.message} (user ${orphanAuthUser.id})`),
+          request,
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            message: repair.code === "NOT_STUDENT_ACCOUNT"
+              ? "Este e-mail não pode ser usado para cadastro de aluno."
+              : "Não foi possível concluir o cadastro.",
+          },
+          { status: repair.code === "NOT_STUDENT_ACCOUNT" ? 409 : 400 }
+        );
+      }
+
+      await supabase
+        .from("student_registration_confirmations")
+        .update({ used_at: new Date().toISOString(), user_id: repair.userId })
+        .eq("id", confirmation.id);
+
+      return NextResponse.json({
+        ok: true,
+        message: "E-mail confirmado. Seu cadastro foi efetivado e ficará em análise para liberação.",
+      });
+    }
 
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,

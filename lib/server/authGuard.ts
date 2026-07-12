@@ -76,7 +76,7 @@ export async function requireStudentPage(): Promise<AuthenticatedStudentPage> {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!studentRow || studentRow.status === "blocked") {
+  if (!studentRow || studentRow.status === "blocked" || studentRow.status === "inactive") {
     void logSecurityEvent({
       event: studentRow?.status === "blocked" ? "student.blocked_access" : "student.forbidden",
       actorType: "student",

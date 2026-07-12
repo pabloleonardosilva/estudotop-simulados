@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 type StudentJornadaSimuladoRow = {
   id: string;
@@ -26,10 +27,6 @@ type ScheduleRow = {
   status: string;
   simulados: { title: string } | null;
 };
-
-function getAppUrl(request: NextRequest): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
 
 export async function POST(
   request: NextRequest,
@@ -132,7 +129,7 @@ export async function POST(
       position: typedRow.order_number || 1,
       total,
       expiresAt: enrollment.expires_at,
-      simuladoUrl: `${getAppUrl(request)}/meus-simulados/${typedRow.simulado_id}`,
+      simuladoUrl: `${getPublicAppUrl()}/meus-simulados/${typedRow.simulado_id}`,
       schedule,
     };
 

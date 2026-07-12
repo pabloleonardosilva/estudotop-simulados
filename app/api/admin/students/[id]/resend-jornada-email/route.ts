@@ -4,10 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { jornadaEnrollmentTemplate, jornadaEnrollmentPlainText } from "@/app/lib/email/jornadaEmailTemplates";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
-
-function getAppUrl(request: Request): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 export async function POST(
   request: NextRequest,
@@ -56,7 +53,7 @@ export async function POST(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const jornadaTitle = (enrollment.jornadas as any)?.title || "Jornada";
-    const appUrl = getAppUrl(request);
+    const appUrl = getPublicAppUrl();
 
     const resend = new Resend(resendApiKey);
     await resend.emails.send({

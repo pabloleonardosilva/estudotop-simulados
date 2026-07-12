@@ -4,10 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
-
-function getAppUrl(request: NextRequest): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 function todayDateOnly() {
   const d = new Date();
@@ -202,7 +199,7 @@ export async function PATCH(
       const student = enrollment?.students;
       const jornada = enrollment?.jornadas;
       const resendApiKey = process.env.RESEND_API_KEY;
-      const appUrl = getAppUrl(request);
+      const appUrl = getPublicAppUrl();
 
       if (resendApiKey && student?.email && jornada?.title && !row.release_email_sent_at) {
         const { data: simulado } = await supabase

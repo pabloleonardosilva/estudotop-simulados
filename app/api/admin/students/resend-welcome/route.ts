@@ -1,99 +1,71 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
-import { generateTemporaryPassword } from "@/lib/utils/password";
-import { studentWelcomeTemplate, studentWelcomePlainText } from "@/app/lib/email/studentWelcomeTemplate";
+import { sendStudentWelcomeEmail } from "@/app/lib/server/sendStudentWelcomeEmail";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
-const WELCOME_EMAIL_SUBJECT = "🦉 Bem-vindo(a) ao EstudoTOP Simulados!";
-
-function getAppUrl(request: Request): string {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ResendPayload = {
   studentId: string;
 };
 
-async function sendInstitutionalWelcomeEmail(student: { name: string | null; email: string; temporaryPassword: string; loginUrl: string }) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (!resendApiKey) throw new Error("RESEND_API_KEY não foi configurada no .env.local.");
-
-  const resend = new Resend(resendApiKey);
-  await resend.emails.send({
-    from: FROM_EMAIL,
-    to: student.email,
-    subject: WELCOME_EMAIL_SUBJECT,
-    html: studentWelcomeTemplate({
-      studentName: student.name,
-      studentEmail: student.email,
-      temporaryPassword: student.temporaryPassword,
-      loginUrl: student.loginUrl,
-    }),
-    text: studentWelcomePlainText(student.name, student.email, student.temporaryPassword, student.loginUrl),
-  });
-}
-
+// Reenvio manual do e-mail de boas-vindas. Ação administrativa consciente:
+// pode ocorrer mesmo com welcome_email_sent_at preenchido. Não altera status
+// nem aprovação — usa a mesma função central da aprovação inicial.
 export async function POST(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
 
   let studentId: string | null = null;
-  const supabase = createSupabaseAdminClient();
 
   try {
     const payload = (await request.json()) as ResendPayload;
     studentId = payload.studentId;
 
-    if (!studentId) {
-      return NextResponse.json({ ok: false, message: "studentId é obrigatório." }, { status: 400 });
+    if (!studentId || !UUID_PATTERN.test(studentId)) {
+      return NextResponse.json({ ok: false, message: "studentId inválido." }, { status: 400 });
     }
 
-    await supabase
+    const supabase = createSupabaseAdminClient();
+    const { data: student } = await supabase
       .from("students")
-      .update({ welcome_email_status: "sending", welcome_email_error: null })
-      .eq("id", studentId);
-
-    const { data: student, error: studentError } = await supabase
-      .from("students")
-      .select("name, email")
+      .select("id")
       .eq("id", studentId)
-      .single();
+      .maybeSingle();
 
-    if (studentError || !student?.email) {
-      throw new Error("Aluno não encontrado para envio do e-mail de boas-vindas.");
+    if (!student) {
+      return NextResponse.json({ ok: false, message: "Aluno não encontrado." }, { status: 404 });
     }
 
-    const temporaryPassword = generateTemporaryPassword();
-
-    const { error: authError } = await supabase.auth.admin.updateUserById(studentId, {
-      password: temporaryPassword,
-      email_confirm: true,
-    });
-
-    if (authError) {
-      throw new Error(authError.message || "Erro ao redefinir senha temporária.");
+    let loginUrl: string;
+    try {
+      loginUrl = `${getPublicAppUrl()}/login`;
+    } catch (configError) {
+      const message = configError instanceof Error ? configError.message : "URL pública não configurada.";
+      return NextResponse.json({ ok: false, message }, { status: 500 });
     }
 
-    await supabase.from("profiles").update({ must_change_password: true }).eq("id", studentId);
-
-    await sendInstitutionalWelcomeEmail({
-      name: student.name,
-      email: student.email,
-      temporaryPassword,
-      loginUrl: `${getAppUrl(request)}/login`,
+    const result = await sendStudentWelcomeEmail({
+      studentId,
+      source: "manual_resend",
+      loginUrl,
+      performedByName: admin.full_name || "Admin",
     });
 
-    await supabase
-      .from("students")
-      .update({
-        welcome_email_status: "sent",
-        welcome_email_sent_at: new Date().toISOString(),
-        welcome_email_error: null,
-      })
-      .eq("id", studentId);
+    if (!result.sent) {
+      void logSystemError({
+        source: "api.admin.students.resend_welcome",
+        error: new Error(result.error),
+        request,
+        metadata: { student_id: studentId },
+      });
+      return NextResponse.json(
+        { ok: false, message: "Não foi possível reenviar o e-mail de boas-vindas. Tente novamente." },
+        { status: 500 }
+      );
+    }
 
     void logAdminAction({ adminUserId: admin.id, action: "admin.student.welcome_resent", entityType: "student", entityId: studentId, request });
 
@@ -102,17 +74,7 @@ export async function POST(request: Request) {
       message: "E-mail de boas-vindas reenviado com sucesso.",
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro inesperado ao reenviar e-mail de boas-vindas.";
-
-    if (studentId) {
-      await supabase
-        .from("students")
-        .update({ welcome_email_status: "failed", welcome_email_error: message })
-        .eq("id", studentId);
-    }
-
     void logSystemError({ source: "api.admin.students.resend_welcome", error, request, metadata: { student_id: studentId } });
-
-    return NextResponse.json({ ok: false, message }, { status: 500 });
+    return NextResponse.json({ ok: false, message: "Erro inesperado ao reenviar e-mail de boas-vindas." }, { status: 500 });
   }
 }

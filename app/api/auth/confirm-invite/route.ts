@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     let firstAccessUrl: string | null = null;
     if (desiredStatus === "active") {
       try {
-        const sent = await sendFirstAccessEmail(confirmation.user_id, request);
+        const sent = await sendFirstAccessEmail(confirmation.user_id);
         firstAccessUrl = sent.firstAccessUrl;
       } catch {
         firstAccessUrl = null;

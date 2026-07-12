@@ -26,7 +26,7 @@ export async function getStudentFromRequest(request: Request): Promise<Authentic
     .maybeSingle();
 
   if (!student) return null;
-  if (student.status === "blocked") return null;
+  if (student.status === "blocked" || student.status === "inactive") return null;
 
   return {
     id: student.id,

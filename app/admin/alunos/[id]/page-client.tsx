@@ -36,9 +36,11 @@ import {
   ShieldCheck,
   ShieldOff,
   Timer,
+  Trash2,
   TrendingUp,
   Trophy,
   UserRound,
+  UserX,
   X,
 } from "lucide-react";
 import PremiumButton from "@/app/components/ui/PremiumButton";
@@ -102,6 +104,17 @@ function statusClass(status: string): string {
 }
 
 // ── Status config ─────────────────────────────────────────────────────────────
+
+const DELETE_DEPENDENCY_LABELS: Record<string, string> = {
+  jornadas: "Jornadas",
+  tentativas: "Tentativas de simulado",
+  resultados: "Resultados de simulado",
+  avaliacoes: "Avaliações de simulado",
+  anotacoes: "Anotações do aluno",
+  topcoins: "TopCoins",
+  tentativas_legado: "Tentativas (histórico antigo)",
+  simulados_legado: "Simulados (histórico antigo)",
+};
 
 const STUDENT_STATUS_CFG: Record<string, { label: string; cls: string; icon: ReactNode }> = {
   pending: {
@@ -1381,6 +1394,17 @@ export default function AlunoAdminDetalheClient({
   const [selectedResendOption, setSelectedResendOption] = useState("");
   const [sendingResendEmail, setSendingResendEmail] = useState(false);
   const [localJornadas, setLocalJornadas] = useState<StudentJornada[]>(jornadas);
+  const [deactivateModal, setDeactivateModal] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteDependencies, setDeleteDependencies] = useState<Array<{ type: string; count: number }> | null>(null);
+  const [approveModal, setApproveModal] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [reactivateModal, setReactivateModal] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
 
   useEffect(() => {
     setLocalJornadas(jornadas);
@@ -1450,22 +1474,128 @@ export default function AlunoAdminDetalheClient({
     router.refresh();
   }
 
-  async function handleSaveStatus() {
-    if (selectedStatus === student.status) return;
-    setSavingStatus(true);
-    setFeedback(null);
+  async function performStatusChange(status: StudentDetail["status"]): Promise<boolean> {
     const res = await adminFetch(`/api/admin/students/${student.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: selectedStatus }),
+      body: JSON.stringify({ status }),
     });
     const data = (await res.json()) as { ok: boolean; message: string };
-    setSavingStatus(false);
     setFeedback(data.ok
       ? { type: "success", message: data.message }
       : { type: "error", message: data.message }
     );
     if (data.ok) router.refresh();
+    return data.ok;
+  }
+
+  async function handleSaveStatus() {
+    if (selectedStatus === student.status) return;
+    if (selectedStatus === "inactive") {
+      setDeactivateModal(true);
+      return;
+    }
+    // Aprovação inicial nunca acontece pelo controle genérico: intercepta e
+    // abre o modal de aprovação (que usa a API específica /approve).
+    if (selectedStatus === "active" && student.status === "pending" && !student.approved_at) {
+      setApproveModal(true);
+      return;
+    }
+    // Reativação explícita (sem e-mail de boas-vindas).
+    if (selectedStatus === "active" && student.status === "inactive") {
+      setReactivateModal(true);
+      return;
+    }
+    setSavingStatus(true);
+    setFeedback(null);
+    await performStatusChange(selectedStatus);
+    setSavingStatus(false);
+  }
+
+  async function handleConfirmApprove() {
+    if (approving) return;
+    setApproving(true);
+    setFeedback(null);
+    try {
+      const res = await adminFetch(`/api/admin/students/${student.id}/approve`, { method: "POST" });
+      const data = (await res.json()) as { ok: boolean; message: string; code?: string; email_sent?: boolean };
+      if (!data.ok && data.code !== "STUDENT_ALREADY_APPROVED") {
+        setFeedback({ type: "error", message: data.message || "Não foi possível aprovar o cadastro." });
+        return;
+      }
+      setFeedback(
+        data.code === "STUDENT_ALREADY_APPROVED"
+          ? { type: "success", message: data.message }
+          : data.email_sent
+            ? { type: "success", message: data.message }
+            : { type: "error", message: data.message }
+      );
+      setSelectedStatus("active");
+      setApproveModal(false);
+      router.refresh();
+    } catch {
+      setFeedback({ type: "error", message: "Erro inesperado ao aprovar o cadastro." });
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleConfirmReactivate() {
+    if (reactivating) return;
+    setReactivating(true);
+    setFeedback(null);
+    const ok = await performStatusChange("active");
+    setReactivating(false);
+    if (ok) {
+      setSelectedStatus("active");
+      setReactivateModal(false);
+    }
+  }
+
+  async function handleConfirmDeactivate() {
+    setDeactivating(true);
+    setFeedback(null);
+    const ok = await performStatusChange("inactive");
+    setDeactivating(false);
+    if (ok) {
+      setSelectedStatus("inactive");
+      setDeactivateModal(false);
+      setDeleteModal(false);
+      setDeleteConfirmText("");
+      setDeleteError(null);
+      setDeleteDependencies(null);
+    }
+  }
+
+  async function handleDeleteStudent() {
+    if (deleteConfirmText.trim() !== "EXCLUIR" || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    setDeleteDependencies(null);
+    try {
+      const res = await adminFetch(`/api/admin/students/${student.id}`, { method: "DELETE" });
+      const data = (await res.json()) as {
+        ok: boolean;
+        message: string;
+        code?: string;
+        dependencies?: Array<{ type: string; count: number }>;
+      };
+      if (!data.ok) {
+        if (data.code === "STUDENT_HAS_HISTORY") {
+          setDeleteDependencies(data.dependencies || []);
+        } else {
+          setDeleteError(data.message || "Não foi possível excluir o aluno.");
+        }
+        return;
+      }
+      setDeleteModal(false);
+      router.push("/admin/alunos");
+      router.refresh();
+    } catch {
+      setDeleteError("Erro inesperado ao excluir o aluno. Tente novamente.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
 
@@ -1726,6 +1856,31 @@ export default function AlunoAdminDetalheClient({
           {/* ── Coluna principal ──────────────────────────────────────── */}
           <div className="space-y-5">
 
+            {/* Faixa — cadastro aguardando aprovação */}
+            {student.status === "pending" && !student.approved_at && (
+              <div className="relative isolate overflow-hidden rounded-[1.7rem] border border-amber-400/25 bg-[linear-gradient(135deg,rgba(255,138,0,0.10),rgba(255,179,0,0.05))] p-5 shadow-[0_10px_36px_rgba(0,0,0,0.30)]">
+                <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[1.7rem] bg-gradient-to-b from-amber-400/[0.08] to-transparent blur-[16px]" />
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-400/30 bg-amber-500/[0.12] text-amber-300">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white">Este cadastro está aguardando aprovação.</p>
+                      <p className="mt-0.5 text-xs text-white/40">Aprove para ativar o acesso e enviar o e-mail de boas-vindas.</p>
+                    </div>
+                  </div>
+                  <PremiumButton
+                    icon={<CheckCircle2 size={15} />}
+                    onClick={() => setApproveModal(true)}
+                    className="!h-[44px] !rounded-[13px] !border-amber-300/60 !bg-[linear-gradient(135deg,#F45B00_0%,#FF8A00_52%,#FFB300_100%)] !px-5 !text-[13px] !font-bold !text-[#07111F] !shadow-[0_8px_24px_rgba(255,105,0,0.34),inset_0_1px_0_rgba(255,255,255,0.36)] hover:!-translate-y-0.5 hover:!brightness-105"
+                  >
+                    Aprovar cadastro
+                  </PremiumButton>
+                </div>
+              </div>
+            )}
+
             {/* Dados cadastrais */}
             <DarkCard
               title="Dados cadastrais"
@@ -1839,10 +1994,10 @@ export default function AlunoAdminDetalheClient({
                 </PremiumButton>
 
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-xs text-white/35 leading-5 space-y-1">
-                  <p><span className="font-semibold text-white/60">Em análise</span> — aguardando aprovação.</p>
+                  <p><span className="font-semibold text-white/60">Em análise</span> — aguardando aprovação. Use a ação <span className="font-semibold text-amber-300">Aprovar cadastro</span> para ativar este aluno.</p>
                   <p><span className="font-semibold text-white/60">Ativo</span> — acesso liberado.</p>
-                  <p><span className="font-semibold text-white/60">Bloqueado</span> — acesso suspenso.</p>
-                  <p><span className="font-semibold text-white/60">Inativo</span> — pode acessar, sem conteúdo.</p>
+                  <p><span className="font-semibold text-white/60">Bloqueado</span> — acesso suspenso (administrativo).</p>
+                  <p><span className="font-semibold text-white/60">Inativo</span> — conta desativada; login bloqueado, histórico preservado.</p>
                 </div>
               </div>
             </DarkCard>
@@ -1865,14 +2020,61 @@ export default function AlunoAdminDetalheClient({
                 <SysRow icon={<Clock3 size={13} />} label="Último acesso" value={fmtDateTime(student.last_login_at)} />
                 <SysRow icon={<CalendarDays size={13} />} label="Cadastrado em" value={fmtDateTime(student.created_at)} />
                 <SysRow icon={<CalendarDays size={13} />} label="Atualizado em" value={fmtDateTime(student.updated_at)} />
-                <SysRow icon={<Mail size={13} />} label="E-mail boas-vindas" value={
-                  student.welcome_email_status === "sent" ? `Enviado em ${fmtDate(student.welcome_email_sent_at)}`
-                  : student.welcome_email_status === "sending" ? "Enviando…"
-                  : student.welcome_email_status === "failed" ? "Falha no envio"
-                  : "Pendente"
+                <SysRow icon={<ShieldCheck size={13} />} label="Cadastro aprovado" value={
+                  student.approved_at ? fmtDateTime(student.approved_at) : "Aguardando aprovação"
                 } />
+                <SysRow icon={<Mail size={13} />} label="E-mail boas-vindas" value={
+                  student.welcome_email_status === "sent" ? `Enviado em ${fmtDateTime(student.welcome_email_sent_at)}`
+                  : student.welcome_email_status === "sending" ? "Enviando…"
+                  : student.welcome_email_status === "failed" ? `Falha no envio${student.welcome_email_attempted_at ? ` (${fmtDateTime(student.welcome_email_attempted_at)})` : ""}`
+                  : "Não enviado"
+                } />
+                {student.welcome_email_status === "failed" && (
+                  <button
+                    type="button"
+                    onClick={() => setResendEmailModal(true)}
+                    className="w-full rounded-xl border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2 text-xs font-semibold text-amber-300 transition hover:border-amber-500/45 hover:bg-amber-500/[0.14]"
+                  >
+                    Reenviar e-mail de boas-vindas
+                  </button>
+                )}
               </div>
             </DarkCard>
+
+            {/* Zona de perigo */}
+            <div className="relative isolate overflow-hidden rounded-[1.7rem] border border-red-500/[0.16] bg-[#0B1929]/80 p-5 shadow-[0_10px_36px_rgba(0,0,0,0.34)]">
+              <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[1.7rem] bg-gradient-to-b from-red-500/[0.05] to-transparent" />
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300/80">Zona de perigo</p>
+              <p className="mt-2 text-xs leading-5 text-white/35">
+                Ações sensíveis sobre a conta do aluno. Desativar é reversível e preserva o histórico; a exclusão definitiva é irreversível.
+              </p>
+              <div className="mt-4 space-y-2.5">
+                <PremiumButton
+                  variant="secondary"
+                  full
+                  icon={<UserX size={15} />}
+                  onClick={() => setDeactivateModal(true)}
+                  disabled={student.status === "inactive"}
+                  className="!border-amber-400/25 !text-amber-200/90 hover:!border-amber-400/45 hover:!bg-amber-500/[0.08]"
+                >
+                  {student.status === "inactive" ? "Aluno já desativado" : "Desativar aluno"}
+                </PremiumButton>
+                <PremiumButton
+                  variant="secondary"
+                  full
+                  icon={<Trash2 size={15} />}
+                  onClick={() => {
+                    setDeleteConfirmText("");
+                    setDeleteError(null);
+                    setDeleteDependencies(null);
+                    setDeleteModal(true);
+                  }}
+                  className="!border-red-500/25 !text-red-300/90 hover:!border-red-500/45 hover:!bg-red-500/[0.08]"
+                >
+                  Excluir definitivamente
+                </PremiumButton>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2046,6 +2248,278 @@ export default function AlunoAdminDetalheClient({
               </PremiumButton>
               <PremiumButton variant="danger" full icon={<Ban size={15} />} onClick={handleCancelJornadaEnrollment} disabled={cancellingJornada}>
                 {cancellingJornada ? "Removendo…" : "Remover da Jornada"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Excluir definitivamente */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/25 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.12] to-transparent blur-[20px]" />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
+                  <Trash2 size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">Ação irreversível</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Excluir aluno definitivamente?</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!deleting) setDeleteModal(false); }}
+                disabled={deleting}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              Esta ação removerá permanentemente a conta de <span className="font-semibold text-white/80">{student.name}</span> do EstudoTOP e do sistema de autenticação.
+            </p>
+
+            <ul className="mt-4 space-y-1.5 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-xs leading-5 text-white/45">
+              <li>• A exclusão é <span className="font-semibold text-red-300">irreversível</span>.</li>
+              <li>• O e-mail será liberado para um novo cadastro.</li>
+              <li>• O usuário será removido do Supabase Auth (sessões invalidadas).</li>
+              <li>• A ação só continuará se não existir histórico vinculado ao aluno.</li>
+              <li>• Com histórico, a opção recomendada é <span className="font-semibold text-amber-300">Desativar aluno</span>.</li>
+            </ul>
+
+            {deleteDependencies && (
+              <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3.5">
+                <p className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+                  <AlertTriangle size={15} />
+                  Este aluno possui histórico e não pode ser excluído
+                </p>
+                <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-200/80">
+                  {deleteDependencies.map((dep) => (
+                    <li key={dep.type}>
+                      • {DELETE_DEPENDENCY_LABELS[dep.type] || dep.type}: <span className="font-semibold">{dep.count}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs leading-5 text-amber-200/60">
+                  Nenhum dado foi alterado. Desative a conta para suspender o acesso preservando todo o histórico.
+                </p>
+                <PremiumButton
+                  variant="secondary"
+                  full
+                  icon={<UserX size={15} />}
+                  onClick={() => setDeactivateModal(true)}
+                  disabled={deleting || student.status === "inactive"}
+                  className="mt-3 !border-amber-400/30 !text-amber-200 hover:!border-amber-400/50 hover:!bg-amber-500/[0.10]"
+                >
+                  {student.status === "inactive" ? "Aluno já desativado" : "Desativar em vez disso"}
+                </PremiumButton>
+              </div>
+            )}
+
+            {deleteError && (
+              <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {deleteError}
+              </div>
+            )}
+
+            {!deleteDependencies && (
+              <div className="mt-5">
+                <label htmlFor="delete-confirm-input" className="text-xs font-semibold uppercase tracking-widest text-white/35">
+                  Digite <span className="text-red-300">EXCLUIR</span> para confirmar
+                </label>
+                <input
+                  id="delete-confirm-input"
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(event) => setDeleteConfirmText(event.target.value)}
+                  disabled={deleting}
+                  placeholder="EXCLUIR"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-red-400/60 disabled:opacity-50"
+                />
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setDeleteModal(false)} disabled={deleting}>
+                Cancelar
+              </PremiumButton>
+              {!deleteDependencies && (
+                <PremiumButton
+                  variant="danger"
+                  full
+                  icon={<Trash2 size={15} />}
+                  onClick={handleDeleteStudent}
+                  disabled={deleting || deleteConfirmText.trim() !== "EXCLUIR"}
+                >
+                  {deleting ? "Excluindo…" : "Excluir definitivamente"}
+                </PremiumButton>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Desativar aluno */}
+      {deactivateModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-amber-500/25 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-amber-500/[0.10] to-transparent blur-[20px]" />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-500/25 bg-amber-500/[0.10] text-amber-300">
+                  <UserX size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">Ação reversível</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Desativar aluno?</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!deactivating) setDeactivateModal(false); }}
+                disabled={deactivating}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              O acesso de <span className="font-semibold text-white/80">{student.name}</span> será suspenso, mas todo o histórico, Jornadas, tentativas e resultados serão preservados.
+            </p>
+
+            <ul className="mt-4 space-y-1.5 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-xs leading-5 text-white/45">
+              <li>• Ação <span className="font-semibold text-emerald-300">reversível</span> — a conta pode ser reativada depois.</li>
+              <li>• O login será bloqueado imediatamente.</li>
+              <li>• Todo o histórico será mantido.</li>
+              <li>• O e-mail continuará vinculado a esta conta.</li>
+            </ul>
+
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setDeactivateModal(false)} disabled={deactivating}>
+                Cancelar
+              </PremiumButton>
+              <PremiumButton
+                variant="secondary"
+                full
+                icon={<UserX size={15} />}
+                onClick={handleConfirmDeactivate}
+                disabled={deactivating}
+                className="!border-amber-400/50 !bg-amber-500/[0.14] !text-amber-200 hover:!border-amber-400/70 hover:!bg-amber-500/[0.20]"
+              >
+                {deactivating ? "Desativando…" : "Desativar aluno"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Aprovar cadastro */}
+      {approveModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-amber-400/30 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-amber-400/[0.12] to-transparent blur-[20px]" />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-400/30 bg-amber-500/[0.12] text-amber-300">
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">Aprovação inicial</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Aprovar cadastro?</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!approving) setApproveModal(false); }}
+                disabled={approving}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              Ao aprovar o cadastro de <span className="font-semibold text-white/80">{student.name}</span>, o acesso será ativado e o e-mail de boas-vindas será enviado para <span className="font-semibold text-white/80">{student.email}</span>.
+            </p>
+
+            <ul className="mt-4 space-y-1.5 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-xs leading-5 text-white/45">
+              <li>• O status passará de <span className="font-semibold text-white/70">Em análise</span> para <span className="font-semibold text-emerald-300">Ativo</span>.</li>
+              <li>• O acesso do aluno será liberado.</li>
+              <li>• O e-mail de boas-vindas será enviado.</li>
+              <li>• Esta é a <span className="font-semibold text-amber-300">aprovação inicial</span> do cadastro.</li>
+              <li>• Reativações futuras não reenviarão automaticamente esse e-mail.</li>
+            </ul>
+
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setApproveModal(false)} disabled={approving}>
+                Cancelar
+              </PremiumButton>
+              <PremiumButton
+                full
+                icon={<CheckCircle2 size={15} />}
+                onClick={handleConfirmApprove}
+                disabled={approving}
+                className="!border-amber-300/60 !bg-[linear-gradient(135deg,#F45B00_0%,#FF8A00_52%,#FFB300_100%)] !text-[13px] !font-bold !text-[#07111F] !shadow-[0_8px_24px_rgba(255,105,0,0.34),inset_0_1px_0_rgba(255,255,255,0.36)] hover:!brightness-105"
+              >
+                {approving ? "Aprovando…" : "Aprovar e enviar e-mail"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Reativar aluno */}
+      {reactivateModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-emerald-500/25 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-emerald-500/[0.10] to-transparent blur-[20px]" />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.10] text-emerald-300">
+                  <Unlock size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Reativação</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Reativar aluno?</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!reactivating) setReactivateModal(false); }}
+                disabled={reactivating}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              O acesso de <span className="font-semibold text-white/80">{student.name}</span> será restabelecido. O e-mail inicial de boas-vindas não será enviado novamente.
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setReactivateModal(false)} disabled={reactivating}>
+                Cancelar
+              </PremiumButton>
+              <PremiumButton
+                variant="secondary"
+                full
+                icon={<Unlock size={15} />}
+                onClick={handleConfirmReactivate}
+                disabled={reactivating}
+                className="!border-emerald-400/50 !bg-emerald-500/[0.14] !text-emerald-200 hover:!border-emerald-400/70 hover:!bg-emerald-500/[0.20]"
+              >
+                {reactivating ? "Reativando…" : "Reativar aluno"}
               </PremiumButton>
             </div>
           </div>

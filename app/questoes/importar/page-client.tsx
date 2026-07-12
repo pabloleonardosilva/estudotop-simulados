@@ -1098,7 +1098,7 @@ export default function ImportarQuestoesClient({
       return;
     }
 
-    const response = await fetch(
+    const response = await adminFetch(
       `/api/admin/exam-boards/search?q=${encodeURIComponent(value)}`,
     );
 
@@ -1346,7 +1346,7 @@ export default function ImportarQuestoesClient({
         const batchText = batchBlocks.join("\n\n");
         const defaultYear = parseValidYear(year);
 
-        const response = await fetch(
+        const response = await adminFetch(
           "/api/admin/questions/import/analyze-batch",
           {
             method: "POST",

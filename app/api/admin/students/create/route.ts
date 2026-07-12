@@ -7,6 +7,8 @@ import { studentWelcomePlainText, studentWelcomeTemplate } from "@/app/lib/email
 import { isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
+import { authUserExists, findAuthUserByEmail, reconcileIncompleteStudentAccount } from "@/lib/server/studentAccountRepair";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
 
@@ -20,10 +22,6 @@ type CreateStudentPayload = {
   desiredContests?: string;
   isActive?: boolean;
 };
-
-function getAppUrl(request: Request) {
-  return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-}
 
 export async function POST(request: Request) {
   const admin = await requireAdmin(request);
@@ -71,6 +69,28 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existing) {
+      // Cenário E — students existe sem conta Auth: inconsistência operacional
+      // que exige correção administrativa (o Auth não recria o mesmo UUID).
+      if (!(await authUserExists(supabase, existing.id))) {
+        await logSystemError({
+          request,
+          source: "student_create_api",
+          actorType: "admin",
+          errorMessage: `Cadastro inconsistente: students sem auth.users (${existing.id}).`,
+          safeDetails: { studentId: existing.id },
+          severity: "error",
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "ACCOUNT_INCONSISTENT",
+            message: "Este cadastro existe sem conta de autenticação vinculada. Exclua definitivamente o registro do aluno e cadastre novamente.",
+            existingStudent: { id: existing.id, fullName: existing.name || existing.email },
+          },
+          { status: 409 }
+        );
+      }
+
       const isCpfDuplicate = cpf && existing.cpf === cpf;
       return NextResponse.json(
         {
@@ -86,66 +106,112 @@ export async function POST(request: Request) {
     }
 
     const temporaryPassword = generateTemporaryPassword();
+    let userId: string;
 
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password: temporaryPassword,
-      email_confirm: true,
-      user_metadata: { full_name: fullName },
-    });
-
-    if (authError || !authData.user) {
-      const message = authError?.message || "Falha ao criar usuário no Supabase Auth.";
-      return NextResponse.json(
-        {
-          ok: false,
-          message: message.includes("already been registered")
-            ? "Este e-mail já está cadastrado no sistema."
-            : message,
+    // Cenário C — conta incompleta (Auth e/ou profile sem students): reconcilia
+    // reutilizando o mesmo UUID, sem criar um segundo usuário.
+    const orphanAuthUser = await findAuthUserByEmail(supabase, email);
+    if (orphanAuthUser) {
+      const repair = await reconcileIncompleteStudentAccount({
+        supabase,
+        authUser: orphanAuthUser,
+        fullName,
+        email,
+        cpf: cpf || null,
+        phone,
+        desiredContests,
+        extraStudentFields: {
+          origin,
+          notes,
+          welcome_email_status: "sending",
+          welcome_email_error: null,
         },
-        { status: 400 }
-      );
+        temporaryPassword,
+        studentStatus: "pending",
+      });
+
+      if (!repair.ok) {
+        await logSystemError({
+          request,
+          source: "student_create_api",
+          actorType: "admin",
+          errorMessage: `Reconciliação de conta incompleta falhou (${repair.code}): ${repair.message}`,
+          safeDetails: { authUserId: orphanAuthUser.id },
+          severity: "error",
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            message: repair.code === "NOT_STUDENT_ACCOUNT"
+              ? "Este e-mail já pertence a uma conta que não é de aluno e não pode ser reutilizado."
+              : repair.message,
+          },
+          { status: repair.code === "NOT_STUDENT_ACCOUNT" ? 409 : 400 }
+        );
+      }
+
+      userId = repair.userId;
+    } else {
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        password: temporaryPassword,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+      });
+
+      if (authError || !authData.user) {
+        const message = authError?.message || "Falha ao criar usuário no Supabase Auth.";
+        return NextResponse.json(
+          {
+            ok: false,
+            message: message.includes("already been registered")
+              ? "Este e-mail já está cadastrado no sistema."
+              : message,
+          },
+          { status: 400 }
+        );
+      }
+
+      userId = authData.user.id;
+
+      const { error: profileError } = await supabase.from("profiles").insert({
+        id: userId,
+        full_name: fullName,
+        role: "student",
+        is_active: false,
+        must_change_password: true,
+      });
+
+      if (profileError) {
+        await supabase.auth.admin.deleteUser(userId);
+        return NextResponse.json({ ok: false, message: profileError.message }, { status: 400 });
+      }
+
+      const { error: studentError } = await supabase.from("students").insert({
+        id: userId,
+        name: fullName,
+        email,
+        cpf: cpf || null,
+        phone,
+        status: "pending",
+        desired_contests: desiredContests,
+        origin,
+        notes,
+        welcome_email_status: "sending",
+        welcome_email_error: null,
+      });
+
+      if (studentError) {
+        await supabase.from("profiles").delete().eq("id", userId);
+        await supabase.auth.admin.deleteUser(userId);
+        return NextResponse.json(
+          { ok: false, message: studentError.message || "Falha ao criar registro do aluno." },
+          { status: 400 }
+        );
+      }
     }
 
-    const userId = authData.user.id;
-
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: userId,
-      full_name: fullName,
-      role: "student",
-      is_active: false,
-      must_change_password: true,
-    });
-
-    if (profileError) {
-      await supabase.auth.admin.deleteUser(userId);
-      return NextResponse.json({ ok: false, message: profileError.message }, { status: 400 });
-    }
-
-    const { error: studentError } = await supabase.from("students").insert({
-      id: userId,
-      name: fullName,
-      email,
-      cpf: cpf || null,
-      phone,
-      status: "pending",
-      desired_contests: desiredContests,
-      origin,
-      notes,
-      welcome_email_status: "sending",
-      welcome_email_error: null,
-    });
-
-    if (studentError) {
-      await supabase.from("profiles").delete().eq("id", userId);
-      await supabase.auth.admin.deleteUser(userId);
-      return NextResponse.json(
-        { ok: false, message: studentError.message || "Falha ao criar registro do aluno." },
-        { status: 400 }
-      );
-    }
-
-    const loginUrl = `${getAppUrl(request)}/login`;
+    const loginUrl = `${getPublicAppUrl()}/login`;
 
     try {
       const resend = new Resend(resendApiKey);

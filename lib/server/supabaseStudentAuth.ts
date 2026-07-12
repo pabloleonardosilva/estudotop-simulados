@@ -47,7 +47,7 @@ export async function getStudentFromRequest(request: Request): Promise<Authentic
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!studentRow || studentRow.status === "blocked" || studentRow.status === "pending") {
+  if (!studentRow || studentRow.status === "blocked" || studentRow.status === "pending" || studentRow.status === "inactive") {
     void logSecurityEvent({
       event: studentRow?.status === "blocked" ? "student.blocked_access" : "student.forbidden",
       actorType: "student",

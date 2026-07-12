@@ -48,7 +48,7 @@ export async function POST(
     let emailSent = true;
     let emailMessage = "E-mail enviado ao aluno.";
     try {
-      await sendFirstAccessEmail(id, request, newPassword);
+      await sendFirstAccessEmail(id, newPassword);
     } catch (emailError) {
       emailSent = false;
       emailMessage = emailError instanceof Error ? emailError.message : "Falha ao enviar e-mail.";

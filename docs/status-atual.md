@@ -499,3 +499,26 @@ Escopo previsto:
 - [!] **Ledger:** as versões `20260710124000/124100/124200` **não constam** em `supabase_migrations.schema_migrations` (última entrada: `20260707200751`), pois a execução manual via SQL Editor não registra no ledger da CLI. O ledger já não espelha os arquivos locais (histórico não reproduzível — MIG-008/MIG-009); a estrutura real do banco operacional prevalece como fonte da verdade. Não usar `migration repair` sem decisão explícita.
 - Observação de hardening futuro (não bloqueante): `is_admin()` é SECURITY DEFINER sem `search_path` fixado — corrigir em migration própria.
 
+---
+
+## Sprint Login + Sprint Cadastro — ✅ Implementadas e testadas em localhost (2026-07-11/12)
+
+### Sprint Login (visual)
+- [x] Página `/login` com logo oficial (`public/images/Logo 04 -transp.png` via `next/image`), frase mantida, card escuro atualizado ("Correção + Resultado + Diagnóstico = Aprovação") e coluna institucional visível no mobile. Autenticação intocada. Ver índice seção 2.0.
+
+### Sprint Cadastro (gestão de alunos)
+- [x] **Desativar aluno** (reversível) e **Excluir definitivamente** (irreversível, só sem histórico; 409 `STUDENT_HAS_HISTORY` com dependências) — modais premium + Zona de perigo. Ver índice seção 10.–1.
+- [x] `isActiveProfile` corrigido: somente `active` → `profiles.is_active = true`; guards de aluno rejeitam `inactive`.
+- [x] Reconciliação de contas incompletas (Auth/profile sem `students`) reutilizando o mesmo UUID — `lib/server/studentAccountRepair.ts`.
+- [x] **Aprovação explícita do cadastro** (`POST /api/admin/students/[id]/approve`, idempotente) dispara o e-mail de boas-vindas pela função central `app/lib/server/sendStudentWelcomeEmail.ts`; mudança genérica de status nunca envia e-mail; reativação preservada sem Resend. Ver índice seção 10.–2.
+- [x] **Links canônicos de e-mail**: `lib/server/publicAppUrl.ts` (fonte única `NEXT_PUBLIC_APP_URL`, sem fallback para a origem da request). Ver índice seção 11.0.
+- [x] Importador com IA corrigido: chamadas a `analyze-batch` e `exam-boards/search` passaram a usar `adminFetch` (401 silencioso eliminado).
+
+### Migration desta atualização
+- [x] `supabase/migrations/20260711130000_students_approval_fields.sql` — `students.approved_at`, `approved_by` (FK profiles), `welcome_email_attempted_at`. **Já aplicada manualmente no Supabase em 2026-07-11** (colunas confirmadas por SELECT em catálogo). Como as demais execuções manuais, não consta no ledger da CLI.
+
+### Pendências conhecidas
+- [ ] `fetch` sem Bearer em: `app/admin/logs/page-client.tsx:403`, `app/questoes/nova/page-client.tsx:1232` (upload-image), `app/questoes/[id]/variacoes/page-client.tsx:298` — mesma classe do bug do importador; corrigir com autorização.
+- [ ] `NEXT_PUBLIC_APP_URL` duplicada no `.env.local` (limpar) e definir o domínio público oficial quando existir.
+- [ ] Dívidas já registradas: lint pré-existente (`any`, setState-in-effect), duplicação `lib/` × `app/lib/`.
+

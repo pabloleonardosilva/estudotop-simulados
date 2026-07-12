@@ -5,6 +5,7 @@ import { isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
 import { addMinutes, generateNumericCode, hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { authUserExists } from "@/lib/server/studentAccountRepair";
 
 const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
@@ -62,6 +63,20 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existingStudent) {
+      // Cenário E — students existe sem conta Auth correspondente: inconsistência
+      // operacional registrada para correção administrativa.
+      if (!(await authUserExists(supabase, existingStudent.id))) {
+        void logSystemError({
+          source: "api.auth.register.inconsistent_account",
+          error: new Error(`students sem auth.users: ${existingStudent.id}`),
+          request,
+        });
+        return NextResponse.json(
+          { ok: false, code: "ACCOUNT_INCONSISTENT", message: "Este cadastro apresenta uma inconsistência e precisa de correção administrativa. Entre em contato com o suporte." },
+          { status: 409 }
+        );
+      }
+
       const cpfDuplicado = cpf && existingStudent.cpf === cpf;
       return NextResponse.json(
         {

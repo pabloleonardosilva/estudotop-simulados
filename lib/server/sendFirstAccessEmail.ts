@@ -2,15 +2,12 @@ import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { studentWelcomeTemplate } from "@/lib/email/studentWelcomeTemplate";
 import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
 const FIRST_ACCESS_EXPIRATION_HOURS = 24;
 
-function getAppUrl(request?: Request) {
-  return process.env.NEXT_PUBLIC_APP_URL || (request ? new URL(request.url).origin : "http://localhost:3001");
-}
-
-export async function sendFirstAccessEmail(studentId: string, request?: Request) {
+export async function sendFirstAccessEmail(studentId: string) {
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) {
     throw new Error("RESEND_API_KEY não foi configurada.");
@@ -29,7 +26,7 @@ export async function sendFirstAccessEmail(studentId: string, request?: Request)
   }
 
   const rawToken = generateSecureToken();
-  const firstAccessUrl = `${getAppUrl(request)}/primeiro-acesso?token=${rawToken}`;
+  const firstAccessUrl = `${getPublicAppUrl()}/primeiro-acesso?token=${rawToken}`;
 
   await supabase
     .from("student_registration_confirmations")
