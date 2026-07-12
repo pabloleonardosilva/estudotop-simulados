@@ -517,6 +517,10 @@ Escopo previsto:
 ### Migration desta atualização
 - [x] `supabase/migrations/20260711130000_students_approval_fields.sql` — `students.approved_at`, `approved_by` (FK profiles), `welcome_email_attempted_at`. **Já aplicada manualmente no Supabase em 2026-07-11** (colunas confirmadas por SELECT em catálogo). Como as demais execuções manuais, não consta no ledger da CLI.
 
+### Correção — crash ao abrir o menu abaixo de `lg` (2026-07-12)
+- [x] Causa: `app/components/Sidebar.tsx` usava nomes fixos de canal realtime (`sidebar-question-queue-counts`, `sidebar-help-messages-count`). Abaixo de `lg`, o `Sidebar` desktop (oculto por `display:none`, mas montado) e o `SidebarContent` do drawer coexistem; o segundo colidia com o canal já inscrito e o Supabase lançava `cannot add postgres_changes callbacks after subscribe()`, derrubando a página ("This page couldn't load") ao clicar no menu.
+- [x] Correção: nomes de canal únicos por instância via `useId()`. Os breakpoints de navegação já eram complementares (`lg`) — nenhum ajuste de responsividade foi necessário; o botão/menu sempre esteve presente em 800px.
+
 ### Pendências conhecidas
 - [ ] `fetch` sem Bearer em: `app/admin/logs/page-client.tsx:403`, `app/questoes/nova/page-client.tsx:1232` (upload-image), `app/questoes/[id]/variacoes/page-client.tsx:298` — mesma classe do bug do importador; corrigir com autorização.
 - [ ] `NEXT_PUBLIC_APP_URL` duplicada no `.env.local` (limpar) e definir o domínio público oficial quando existir.

@@ -24,7 +24,7 @@ import {
   Tags,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { supabase } from "../lib/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
@@ -42,6 +42,11 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const searchParams = useSearchParams();
   const { profile, user, refreshProfile } = useAuth();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  // Nomes de canal realtime únicos por instância: abaixo de lg, o Sidebar
+  // desktop (oculto por display:none) e o SidebarContent do drawer coexistem;
+  // com nome fixo, o segundo colidia com o canal já inscrito e o Supabase
+  // lançava "cannot add postgres_changes callbacks after subscribe()".
+  const instanceId = useId();
 
   const isAdmin = profile?.role === "admin";
   const activeAdminGroup = useMemo<AdminMenuGroup>(() => {
@@ -121,7 +126,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     loadQuestionQueueCounts();
 
     const channel = supabase
-      .channel("sidebar-question-queue-counts")
+      .channel(`sidebar-question-queue-counts-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "questions" },
@@ -136,7 +141,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       window.removeEventListener("estudotop:publication-queue-updated", loadQuestionQueueCounts);
       supabase.removeChannel(channel);
     };
-  }, [isAdmin]);
+  }, [isAdmin, instanceId]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -156,7 +161,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     loadOpenHelpMessagesCount();
 
     const channel = supabase
-      .channel("sidebar-help-messages-count")
+      .channel(`sidebar-help-messages-count-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "student_help_messages" },
@@ -168,7 +173,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [isAdmin]);
+  }, [isAdmin, instanceId]);
 
   function toggleAdminGroup(group: AdminMenuGroup) {
     setOpenAdminGroup((current) => {
