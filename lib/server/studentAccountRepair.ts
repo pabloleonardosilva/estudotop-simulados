@@ -4,6 +4,7 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 const LIST_USERS_PER_PAGE = 200;
 const LIST_USERS_MAX_PAGES = 25;
+const LIST_USERS_SINGLE_ITEM_PAGE_SIZE = 1;
 
 /**
  * Localiza um usuário no Supabase Auth pelo e-mail (case-insensitive).
@@ -17,10 +18,35 @@ export async function findAuthUserByEmail(
   const target = email.trim().toLowerCase();
   if (!target) return null;
 
+  const { data: firstUserPage, error: firstUserError } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: LIST_USERS_SINGLE_ITEM_PAGE_SIZE,
+  });
+  if (firstUserError) {
+    throw new Error(`Falha ao consultar usuários do Supabase Auth: ${firstUserError.message}`);
+  }
+  if ((firstUserPage.users[0]?.email || "").toLowerCase() === target) return firstUserPage.users[0];
+
+  const totalUsers = Math.min(firstUserPage.total, LIST_USERS_PER_PAGE * LIST_USERS_MAX_PAGES);
   for (let page = 1; page <= LIST_USERS_MAX_PAGES; page++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: LIST_USERS_PER_PAGE });
     if (error) {
-      throw new Error(`Falha ao consultar usuários do Supabase Auth: ${error.message}`);
+      const firstPosition = (page - 1) * LIST_USERS_PER_PAGE + 1;
+      const lastPosition = Math.min(page * LIST_USERS_PER_PAGE, totalUsers);
+
+      for (let position = firstPosition; position <= lastPosition; position++) {
+        if (position === 1) continue;
+        const { data: singleUserPage, error: singleUserError } = await supabase.auth.admin.listUsers({
+          page: position,
+          perPage: LIST_USERS_SINGLE_ITEM_PAGE_SIZE,
+        });
+        if (singleUserError) continue;
+        const user = singleUserPage.users[0];
+        if ((user?.email || "").toLowerCase() === target) return user;
+      }
+
+      if (lastPosition >= totalUsers) return null;
+      continue;
     }
     const match = data.users.find((user) => (user.email || "").toLowerCase() === target);
     if (match) return match;

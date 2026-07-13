@@ -535,3 +535,10 @@ Escopo previsto:
 - Pendência crítica: a criação histórica de `student_registration_confirmations` não está no histórico SQL local; o baseline remoto deve ser auditado antes de aplicar a migration.
 - Nenhuma limpeza de dados, migration, alteração remota ou Auth foi executada nesta implementação.
 
+### Correção do cadastro público em produção — 2026-07-13
+
+- Reproduzido em `simulados.estudotop.com.br`: solicitação do código retornava 200, mas a confirmação retornava 409 `INTERNAL_ERROR` antes da criação da conta.
+- Causa confirmada: `auth.admin.listUsers({ perPage: 200 })` retornava 500 quando o lote incluía uma posição defeituosa do Supabase Auth; leituras isoladas confirmaram que as demais posições permaneciam acessíveis.
+- `findAuthUserByEmail` agora degrada a consulta do lote com erro para leituras unitárias, ignora apenas posições que o próprio Auth não consegue serializar e continua procurando o e-mail nas demais contas.
+- A proteção contra duplicidade permanece no Supabase Auth: se a posição ilegível for justamente a conta procurada, `createUser` rejeita o e-mail existente e o rollback/erro sanitizado continuam preservados.
+- Nenhuma migration foi criada, alterada ou executada nesta correção.

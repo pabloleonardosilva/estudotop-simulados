@@ -42,3 +42,10 @@ test("creation routes use the central account service", () => {
   expect(read("app/api/admin/students/[id]/route.ts")).toContain("updateStudentAccountEmail");
   expect(read("app/api/admin/students/[id]/approve/route.ts")).toContain("validateStudentAccountIntegrity");
 });
+
+test("auth lookup isolates unreadable users when a batch fails", () => {
+  const source = read("lib/server/studentAccountRepair.ts");
+  expect(source).toContain("LIST_USERS_SINGLE_ITEM_PAGE_SIZE");
+  expect(source).toContain("singleUserError) continue");
+  expect(source).toContain("page: position");
+});
