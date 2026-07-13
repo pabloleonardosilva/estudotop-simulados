@@ -49,3 +49,13 @@ test("auth lookup isolates unreadable users when a batch fails", () => {
   expect(source).toContain("singleUserError) continue");
   expect(source).toContain("page: position");
 });
+
+test("invalid public signup code is cleared and replaced automatically", () => {
+  const route = read("app/api/auth/confirm-registration/route.ts");
+  const page = read("app/cadastro/page.tsx");
+  expect(route).toContain("INVALID_CODE_NEW_CODE_SENT");
+  expect(route).toContain("INVALID_CODE_RESEND_COOLDOWN");
+  expect(route).toContain('metadata: { source: "invalid_code_resend" }');
+  expect(page).toContain('if (data.clear_code) setCode("")');
+  expect(page).toContain("data.resend_message");
+});

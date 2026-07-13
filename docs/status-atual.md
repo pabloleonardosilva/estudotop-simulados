@@ -542,3 +542,12 @@ Escopo previsto:
 - `findAuthUserByEmail` agora degrada a consulta do lote com erro para leituras unitárias, ignora apenas posições que o próprio Auth não consegue serializar e continua procurando o e-mail nas demais contas.
 - A proteção contra duplicidade permanece no Supabase Auth: se a posição ilegível for justamente a conta procurada, `createUser` rejeita o e-mail existente e o rollback/erro sanitizado continuam preservados.
 - Nenhuma migration foi criada, alterada ou executada nesta correção.
+
+### Ajuste do código incorreto no cadastro público — 2026-07-13
+
+- Código de confirmação incorreto agora é informado explicitamente ao usuário.
+- O campo é limpo e volta a exibir o placeholder `000000`.
+- Um novo código de 6 dígitos é criado e enviado automaticamente; o código anterior só é invalidado depois do envio bem-sucedido.
+- Reenvios automáticos repetidos possuem intervalo mínimo de 60 segundos para reduzir abuso do endpoint de e-mail.
+- O erro local `Erro inesperado ao iniciar cadastro` foi identificado como ausência de `REGISTRATION_TOKEN_SECRET`; o segredo dedicado foi configurado somente no `.env.local` da estação, sem fallback para service role e sem versionar ou documentar seu valor.
+- Nenhuma migration foi criada, alterada ou executada neste ajuste.

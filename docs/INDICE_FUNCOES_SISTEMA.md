@@ -1416,6 +1416,8 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Contrato de erro:** `{ ok:false, code, message, field? }`. O cadastro público usa mensagem antienumeração para e-mail já vinculado; o admin recebe motivo direto e sanitizado. Erros brutos do Supabase/SQL não devem ser enviados ao frontend.
 
+**Código incorreto no cadastro público:** `POST /api/auth/confirm-registration` responde explicitamente que o código está incorreto, cria e envia automaticamente um novo código de 6 dígitos, invalida o anterior somente após o envio e orienta a interface a limpar o campo (`000000` volta a ser apenas o placeholder). Reenvios automáticos repetidos respeitam intervalo mínimo de 60 segundos para evitar abuso de e-mail; durante o intervalo, o usuário deve usar o código mais recente recebido.
+
 **Rollback:** criações novas removem, de forma compensatória, confirmação criada pela operação, `students`, `profiles` e Auth quando profile/student ou a validação final falham. Contas preexistentes nunca entram nesse rollback de criação. Alteração de e-mail preserva o UUID, atualiza Auth e `students`, remove confirmações do e-mail anterior e reverte Auth se a persistência em `students` falhar.
 
 **Banco:** `supabase/migrations/20260713090000_student_account_integrity.sql` adiciona unicidade normalizada de e-mail/CPF e views administrativas de diagnóstico. `scripts/sql/student-account-integrity-audit.sql` é somente leitura. `scripts/sql/student-account-integrity-cleanup.sql` é controlado, exclui admins, bloqueia histórico, não remove Auth diretamente e termina em `ROLLBACK` por padrão.

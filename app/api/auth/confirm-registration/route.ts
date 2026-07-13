@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { generateTemporaryPassword } from "@/lib/utils/password";
-import { hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addMinutes, generateNumericCode, hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
+import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
+
+const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
+const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
+const INVALID_CODE_RESEND_COOLDOWN_SECONDS = 60;
 
 type ConfirmPayload = {
   email: string;
@@ -45,7 +51,103 @@ export async function POST(request: Request) {
     }
 
     if (confirmation.code_hash !== hashRegistrationValue(code)) {
-      return NextResponse.json({ ok: false, message: "Código inválido." }, { status: 400 });
+      const lastAutomaticResendAt = confirmation.metadata?.source === "invalid_code_resend"
+        ? new Date(confirmation.created_at).getTime()
+        : 0;
+      const resendCooldownActive = Date.now() - lastAutomaticResendAt < INVALID_CODE_RESEND_COOLDOWN_SECONDS * 1000;
+
+      if (resendCooldownActive) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "INVALID_CODE_RESEND_COOLDOWN",
+            message: "Código incorreto. Um novo código já foi enviado recentemente. Use o código mais recente recebido no e-mail.",
+            clear_code: true,
+          },
+          { status: 429 }
+        );
+      }
+
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (!resendApiKey) {
+        void logSystemError({
+          source: "api.auth.confirm_registration.resend",
+          error: new Error("RESEND_API_KEY não configurada."),
+          request,
+        });
+        return NextResponse.json(
+          { ok: false, code: "INVALID_CODE_RESEND_FAILED", message: "Código incorreto. Não foi possível enviar um novo código agora." },
+          { status: 500 }
+        );
+      }
+
+      const newCode = generateNumericCode(6);
+      const { data: replacement, error: replacementError } = await supabase
+        .from("student_registration_confirmations")
+        .insert({
+          purpose: "public_signup",
+          full_name: confirmation.full_name,
+          email,
+          phone: confirmation.phone,
+          cpf: confirmation.cpf,
+          desired_contests: confirmation.desired_contests,
+          code_hash: hashRegistrationValue(newCode),
+          expires_at: addMinutes(PUBLIC_CODE_EXPIRATION_MINUTES),
+          metadata: { source: "invalid_code_resend" },
+        })
+        .select("id")
+        .single();
+
+      if (replacementError || !replacement) {
+        void logSystemError({ source: "api.auth.confirm_registration.resend", error: replacementError, request });
+        return NextResponse.json(
+          { ok: false, code: "INVALID_CODE_RESEND_FAILED", message: "Código incorreto. Não foi possível gerar um novo código agora." },
+          { status: 500 }
+        );
+      }
+
+      const resend = new Resend(resendApiKey);
+      let emailError: unknown = null;
+      try {
+        const result = await resend.emails.send({
+          from: FROM_EMAIL,
+          to: email,
+          subject: "Novo código de confirmação — EstudoTOP Simulados",
+          html: publicRegistrationCodeTemplate({
+            studentName: confirmation.full_name,
+            code: newCode,
+            expiresInMinutes: PUBLIC_CODE_EXPIRATION_MINUTES,
+          }),
+        });
+        emailError = result.error;
+      } catch (error) {
+        emailError = error;
+      }
+
+      if (emailError) {
+        await supabase.from("student_registration_confirmations").delete().eq("id", replacement.id);
+        void logSystemError({ source: "api.auth.confirm_registration.resend_email", error: emailError, request });
+        return NextResponse.json(
+          { ok: false, code: "INVALID_CODE_RESEND_FAILED", message: "Código incorreto. Não foi possível enviar um novo código agora." },
+          { status: 500 }
+        );
+      }
+
+      await supabase
+        .from("student_registration_confirmations")
+        .update({ used_at: new Date().toISOString() })
+        .eq("id", confirmation.id);
+
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "INVALID_CODE_NEW_CODE_SENT",
+          message: "O código informado está incorreto.",
+          resend_message: "Enviamos automaticamente um novo código para o seu e-mail. Digite o código mais recente recebido.",
+          clear_code: true,
+        },
+        { status: 400 }
+      );
     }
 
     const { data: existingStudent } = await supabase

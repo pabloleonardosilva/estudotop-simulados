@@ -75,10 +75,18 @@ export default function CadastroPage() {
       body: JSON.stringify({ email, code }),
     });
 
-    const data = (await response.json()) as { ok: boolean; message: string };
+    const data = (await response.json()) as {
+      ok: boolean;
+      code?: string;
+      message: string;
+      resend_message?: string;
+      clear_code?: boolean;
+    };
     setLoading(false);
 
     if (!data.ok) {
+      if (data.clear_code) setCode("");
+      if (data.resend_message) setSuccessMessage(data.resend_message);
       setErrorMessage(data.message);
       return;
     }
