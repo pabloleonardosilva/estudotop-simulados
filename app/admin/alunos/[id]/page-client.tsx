@@ -2029,6 +2029,33 @@ export default function AlunoAdminDetalheClient({
                   : student.welcome_email_status === "failed" ? `Falha no envio${student.welcome_email_attempted_at ? ` (${fmtDateTime(student.welcome_email_attempted_at)})` : ""}`
                   : "Não enviado"
                 } />
+                {localJornadas.map((sj) => (
+                  <div key={`email-history-${sj.id}`} className="space-y-2">
+                    <SysRow
+                      icon={<Mail size={13} />}
+                      label={`Jornada — ${sj.jornadas?.title || "Jornada"}`}
+                      value={sj.welcome_email_sent_at
+                        ? `Enviado em ${fmtDateTime(sj.welcome_email_sent_at)}`
+                        : sj.welcome_email_error
+                          ? "Falha no envio"
+                          : "Não enviado"}
+                    />
+                    {sj.schedule
+                      .filter((item) => Boolean(item.released_at) || Boolean(item.release_email_sent_at) || Boolean(item.release_email_error))
+                      .map((item) => (
+                        <SysRow
+                          key={`release-email-${item.id}`}
+                          icon={<Mail size={13} />}
+                          label={`Simulado — ${item.title}`}
+                          value={item.release_email_sent_at
+                            ? `Enviado em ${fmtDateTime(item.release_email_sent_at)}`
+                            : item.release_email_error
+                              ? "Falha no envio"
+                              : "Não enviado"}
+                        />
+                      ))}
+                  </div>
+                ))}
                 {student.welcome_email_status === "failed" && (
                   <button
                     type="button"

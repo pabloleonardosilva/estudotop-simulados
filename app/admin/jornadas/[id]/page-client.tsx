@@ -792,7 +792,9 @@ function StudentRow({ sj, index, onAddDays, onPauseResume, onCancel }: { sj: Stu
       <div className="flex min-w-0 items-center gap-3">
         <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.11] bg-gradient-to-br ${tone} to-black text-sm font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,.08)]`}>{initials}</div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-black text-white">{sj.students?.name || "—"}</p>
+          <Link href={`/admin/alunos/${sj.student_id}`} className="block truncate text-sm font-black text-white transition hover:text-orange-300 hover:underline">
+            {sj.students?.name || "—"}
+          </Link>
           <p className="truncate text-xs text-slate-400">Iniciado em {formatDate(sj.started_at)}</p>
           <p className="truncate text-[11px] text-slate-500">{sj.students?.email || "—"}</p>
         </div>

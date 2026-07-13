@@ -3,9 +3,12 @@ import { Resend } from "resend";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { jornadaWelcomeTemplate } from "@/lib/email/jornadaEmailTemplates";
+import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+
+const JORNADA_EMAIL_INTERVAL_MS = 10_000;
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -291,8 +294,20 @@ export async function POST(
       };
     });
 
+    let insertedScheduleRows: Array<{
+      id: string;
+      simulado_id: string;
+      order_number: number;
+      scheduled_release_at: string;
+      released_at: string | null;
+      status: string;
+    }> = [];
+
     if (sjsRecords.length > 0) {
-      const { error: sjsErr } = await supabase.from("student_jornada_simulados").insert(sjsRecords);
+      const { data: insertedRows, error: sjsErr } = await supabase
+        .from("student_jornada_simulados")
+        .insert(sjsRecords)
+        .select("id, simulado_id, order_number, scheduled_release_at, released_at, status");
 
       if (sjsErr) {
         if (existingEnroll?.status === "cancelled") {
@@ -302,6 +317,8 @@ export async function POST(
         }
         return NextResponse.json({ ok: false, message: sjsErr.message }, { status: 400 });
       }
+
+      insertedScheduleRows = insertedRows || [];
     }
 
     if (["pending", "inactive"].includes(student.status)) {
@@ -309,6 +326,9 @@ export async function POST(
     }
 
     const resendApiKey = process.env.RESEND_API_KEY;
+    let jornadaEmailSent = false;
+    let releaseEmailsSent = 0;
+    let emailFailures = 0;
     if (resendApiKey) {
       const appUrl = getPublicAppUrl();
       const schedule = orderedSimulados.map((js, i) => {
@@ -323,10 +343,9 @@ export async function POST(
         };
       });
 
-      void (async () => {
-        try {
-          const resend = new Resend(resendApiKey);
-          await resend.emails.send({
+      const resend = new Resend(resendApiKey);
+      try {
+        const { error: welcomeEmailError } = await resend.emails.send({
             from: "EstudoTOP <noreply@estudotop.com.br>",
             to: student.email,
             subject: `Bem-vindo à ${jornada.title} — EstudoTOP`,
@@ -342,22 +361,83 @@ export async function POST(
               schedule,
               jornadaUrl: `${appUrl}/minhas-jornadas`,
             }),
+        });
+        if (welcomeEmailError) throw welcomeEmailError;
+        const sentAt = new Date().toISOString();
+        await supabase.from("student_jornadas").update({ welcome_email_sent_at: sentAt, welcome_email_error: null }).eq("id", sj.id);
+        await supabase.from("student_activity_log").insert({
+          student_id: studentId,
+          event_type: "jornada_welcome_email_sent",
+          description: `E-mail de entrada na jornada "${jornada.title}" enviado`,
+          details: { jornada_id: jornadaId, student_jornada_id: sj.id },
+          performed_by_name: "Sistema",
+        });
+        jornadaEmailSent = true;
+      } catch (err) {
+        emailFailures++;
+        const message = err instanceof Error ? err.message : "Erro desconhecido";
+        await supabase.from("student_jornadas").update({ welcome_email_error: message }).eq("id", sj.id);
+        await logSystemError({
+          request,
+          source: "jornada_welcome_email",
+          actorType: "admin",
+          errorMessage: message,
+          safeDetails: { studentId, jornadaId, studentJornadaId: sj.id },
+          severity: "warning",
+        });
+      }
+
+      if (insertedScheduleRows.some((row) => row.status === "available")) {
+        await new Promise((resolve) => setTimeout(resolve, JORNADA_EMAIL_INTERVAL_MS));
+      }
+
+      for (const releasedRow of insertedScheduleRows.filter((row) => row.status === "available")) {
+        const linked = orderedSimulados.find((item) => item.simulado_id === releasedRow.simulado_id);
+        const simuladoTitle = getLinkedSimuladoTitle(linked?.simulados) || `Simulado ${releasedRow.order_number}`;
+        const payload = {
+          studentName: student.name,
+          simuladoTitle,
+          jornadaTitle: jornada.title,
+          position: releasedRow.order_number,
+          total: jornada.planned_simulados_count || orderedSimulados.length,
+          expiresAt: toDateString(expiresAt),
+          simuladoUrl: `${appUrl}/meus-simulados/${releasedRow.simulado_id}`,
+          schedule: schedule.map((item) => ({ ...item, highlight: item.order === releasedRow.order_number })),
+        };
+
+        try {
+          const { error: releaseEmailError } = await resend.emails.send({
+            from: "EstudoTOP <noreply@estudotop.com.br>",
+            to: student.email,
+            subject: `🎯 Novo simulado liberado — ${jornada.title}`,
+            html: simuladoReleasedTemplate(payload),
+            text: simuladoReleasedPlainText(payload),
           });
-          await supabase.from("student_jornadas").update({ welcome_email_sent_at: new Date().toISOString(), welcome_email_error: null }).eq("id", sj.id);
+          if (releaseEmailError) throw releaseEmailError;
+          const sentAt = new Date().toISOString();
+          await supabase.from("student_jornada_simulados").update({ release_email_sent_at: sentAt, release_email_error: null }).eq("id", releasedRow.id);
+          await supabase.from("student_activity_log").insert({
+            student_id: studentId,
+            event_type: "simulado_release_email_sent",
+            description: `E-mail de liberação do simulado "${simuladoTitle}" enviado`,
+            details: { jornada_id: jornadaId, student_jornada_id: sj.id, student_jornada_simulado_id: releasedRow.id, simulado_id: releasedRow.simulado_id },
+            performed_by_name: "Sistema",
+          });
+          releaseEmailsSent++;
         } catch (err) {
+          emailFailures++;
           const message = err instanceof Error ? err.message : "Erro desconhecido";
-          console.error("Falha ao enviar email de boas-vindas da jornada.");
-          await supabase.from("student_jornadas").update({ welcome_email_error: message }).eq("id", sj.id);
+          await supabase.from("student_jornada_simulados").update({ release_email_error: message }).eq("id", releasedRow.id);
           await logSystemError({
             request,
-            source: "jornada_welcome_email",
+            source: "jornada_simulado_release_email",
             actorType: "admin",
             errorMessage: message,
-            safeDetails: { studentId, jornadaId, studentJornadaId: sj.id },
+            safeDetails: { studentId, jornadaId, studentJornadaId: sj.id, studentJornadaSimuladoId: releasedRow.id },
             severity: "warning",
           });
         }
-      })();
+      }
     }
 
     await supabase.from("student_activity_log").insert({
@@ -397,13 +477,14 @@ export async function POST(
       {
         ok: true,
         student_jornada_id: sj.id,
-        message: orderedSimulados.length > 0
-          ? existingEnroll?.status === "cancelled"
-            ? "Aluno reinserido com sucesso. Email de boas-vindas enviado com o primeiro simulado liberado."
-            : "Aluno atribuído com sucesso. Email de boas-vindas enviado com o primeiro simulado liberado."
-          : existingEnroll?.status === "cancelled"
-            ? "Aluno reinserido com sucesso. Email de boas-vindas enviado informando que os simulados serão liberados depois."
-            : "Aluno atribuído com sucesso. Email de boas-vindas enviado informando que os simulados serão liberados depois.",
+        email_summary: {
+          jornada_email_sent: jornadaEmailSent,
+          release_emails_sent: releaseEmailsSent,
+          failures: emailFailures,
+        },
+        message: emailFailures > 0 || !resendApiKey
+          ? "Aluno inserido na Jornada, mas um ou mais e-mails não puderam ser enviados. Consulte o cadastro do aluno para reenviar."
+          : `Aluno ${existingEnroll?.status === "cancelled" ? "reinserido" : "inserido"} com sucesso. E-mail da Jornada enviado${releaseEmailsSent > 0 ? ` e ${releaseEmailsSent} e-mail(s) de liberação enviado(s)` : ""}.`,
       },
       { status: 201 },
     );

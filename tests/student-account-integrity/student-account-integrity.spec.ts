@@ -59,3 +59,30 @@ test("invalid public signup code is cleared and replaced automatically", () => {
   expect(page).toContain('if (data.clear_code) setCode("")');
   expect(page).toContain("data.resend_message");
 });
+
+test("journey enrollment sends and tracks the journey and released-simulado emails", () => {
+  const assignmentRoute = read("app/api/admin/jornadas/[id]/students/route.ts");
+  const studentPage = read("app/admin/alunos/[id]/page.tsx");
+  const studentClient = read("app/admin/alunos/[id]/page-client.tsx");
+  const journeyClient = read("app/admin/jornadas/[id]/page-client.tsx");
+
+  expect(assignmentRoute).toContain("simuladoReleasedTemplate");
+  expect(assignmentRoute).toContain("simulado_release_email_sent");
+  expect(assignmentRoute).toContain("release_email_sent_at");
+  expect(assignmentRoute).toContain("if (releaseEmailError) throw releaseEmailError");
+  expect(assignmentRoute).toContain("JORNADA_EMAIL_INTERVAL_MS = 10_000");
+  expect(assignmentRoute).toContain("setTimeout(resolve, JORNADA_EMAIL_INTERVAL_MS)");
+  expect(studentPage).toContain("welcome_email_sent_at");
+  expect(studentPage).toContain("release_email_sent_at");
+  expect(studentClient).toContain("Simulado —");
+  expect(journeyClient).toContain("`/admin/alunos/${sj.student_id}`");
+});
+
+test("public registration identifies every duplicated field without exposing account data", () => {
+  const route = read("app/api/auth/register/route.ts");
+  expect(route).toContain('duplicate_fields: duplicateFields');
+  expect(route).toContain("O e-mail e o CPF informados já estão vinculados a uma conta.");
+  expect(route).toContain("O e-mail informado já está vinculado a uma conta.");
+  expect(route).toContain("O CPF informado já está vinculado a uma conta.");
+  expect(route).not.toContain("duplicate_values");
+});

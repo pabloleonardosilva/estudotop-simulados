@@ -200,6 +200,7 @@ export async function PATCH(
       const jornada = enrollment?.jornadas;
       const resendApiKey = process.env.RESEND_API_KEY;
       const appUrl = getPublicAppUrl();
+      let releaseEmailSent = false;
 
       if (resendApiKey && student?.email && jornada?.title && !row.release_email_sent_at) {
         const { data: simulado } = await supabase
@@ -243,31 +244,36 @@ export async function PATCH(
           schedule,
         };
 
-        void (async () => {
-          try {
-            const resend = new Resend(resendApiKey);
-            await resend.emails.send({
-              from: "EstudoTOP <noreply@estudotop.com.br>",
-              to: student.email,
-              subject: `🎯 Novo simulado liberado — ${jornada.title}`,
-              html: simuladoReleasedTemplate(releaseEmailPayload),
-              text: simuladoReleasedPlainText(releaseEmailPayload),
-            });
-            await supabase
-              .from("student_jornada_simulados")
-              .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })
-              .eq("id", row.id);
-          } catch (err) {
-            console.error(`Falha ao enviar email de liberação manual para SJS ${row.id}`);
-            await supabase
-              .from("student_jornada_simulados")
-              .update({ release_email_error: err instanceof Error ? err.message : "Erro desconhecido" })
-              .eq("id", row.id);
-          }
-        })();
+        try {
+          const resend = new Resend(resendApiKey);
+          const { error: emailError } = await resend.emails.send({
+            from: "EstudoTOP <noreply@estudotop.com.br>",
+            to: student.email,
+            subject: `🎯 Novo simulado liberado — ${jornada.title}`,
+            html: simuladoReleasedTemplate(releaseEmailPayload),
+            text: simuladoReleasedPlainText(releaseEmailPayload),
+          });
+          if (emailError) throw emailError;
+          await supabase
+            .from("student_jornada_simulados")
+            .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })
+            .eq("id", row.id);
+          releaseEmailSent = true;
+        } catch (err) {
+          console.error(`Falha ao enviar email de liberação manual para SJS ${row.id}`);
+          await supabase
+            .from("student_jornada_simulados")
+            .update({ release_email_error: err instanceof Error ? err.message : "Erro desconhecido" })
+            .eq("id", row.id);
+        }
       }
 
-      return NextResponse.json({ ok: true, message: resendApiKey ? "Simulado liberado manualmente para este aluno. Email de liberação enviado." : "Simulado liberado manualmente para este aluno." });
+      return NextResponse.json({
+        ok: true,
+        message: releaseEmailSent
+          ? "Simulado liberado manualmente para este aluno. E-mail de liberação enviado."
+          : "Simulado liberado manualmente para este aluno, mas o e-mail de liberação não foi enviado.",
+      });
     }
 
     if (action === "unrelease") {

@@ -56,7 +56,7 @@ export async function POST(
     const appUrl = getPublicAppUrl();
 
     const resend = new Resend(resendApiKey);
-    await resend.emails.send({
+    const { error: emailError } = await resend.emails.send({
       from: "EstudoTOP <noreply@estudotop.com.br>",
       to: student.email,
       subject: `🦉 Você foi inserido(a) na Jornada ${jornadaTitle}!`,
@@ -67,6 +67,18 @@ export async function POST(
       }),
       text: jornadaEnrollmentPlainText(student.name, jornadaTitle),
     });
+    if (emailError) {
+      await supabase
+        .from("student_jornadas")
+        .update({ welcome_email_error: emailError.message })
+        .eq("id", enrollment.id);
+      throw emailError;
+    }
+
+    await supabase
+      .from("student_jornadas")
+      .update({ welcome_email_sent_at: new Date().toISOString(), welcome_email_error: null })
+      .eq("id", enrollment.id);
 
     void logAdminAction({ adminUserId: admin.id, action: "admin.student.jornada_email_resent", entityType: "student", entityId: id, request, metadata: { jornada_id: jornadaId } });
 

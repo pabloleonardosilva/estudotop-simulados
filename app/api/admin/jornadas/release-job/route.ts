@@ -155,7 +155,7 @@ export async function GET(request: Request) {
       if (resendApiKey && sj.students && simulado && !candidate.release_email_sent_at) {
         try {
           const resend = new Resend(resendApiKey);
-          await resend.emails.send({
+          const { error: emailError } = await resend.emails.send({
               from: "EstudoTOP <noreply@estudotop.com.br>",
               to: sj.students.email,
               subject: `🎯 Novo simulado liberado — ${sj.jornadas.title}`,
@@ -180,6 +180,7 @@ export async function GET(request: Request) {
                 schedule,
               }),
           });
+          if (emailError) throw emailError;
           await supabase
             .from("student_jornada_simulados")
             .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })

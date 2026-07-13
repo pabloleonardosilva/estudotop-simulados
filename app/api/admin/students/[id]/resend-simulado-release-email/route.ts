@@ -134,13 +134,20 @@ export async function POST(
     };
 
     const resend = new Resend(resendApiKey);
-    await resend.emails.send({
+    const { error: emailError } = await resend.emails.send({
       from: "EstudoTOP <noreply@estudotop.com.br>",
       to: student.email,
       subject: `🎯 Novo simulado liberado — ${payload.jornadaTitle}`,
       html: simuladoReleasedTemplate(payload),
       text: simuladoReleasedPlainText(payload),
     });
+    if (emailError) {
+      await supabase
+        .from("student_jornada_simulados")
+        .update({ release_email_error: emailError.message })
+        .eq("id", typedRow.id);
+      throw emailError;
+    }
 
     await supabase
       .from("student_jornada_simulados")

@@ -1744,6 +1744,13 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 - `app/api/admin/jornadas/[id]/students/[studentId]/route.ts`
 - `app/api/admin/jornadas/release-job/route.ts`
 
+**E-mails e rastreabilidade (2026-07-13):**
+
+- Ao inserir um aluno em uma Jornada, o sistema envia o e-mail de entrada na Jornada, aguarda 10 segundos e então envia um e-mail separado para cada simulado liberado imediatamente, inclusive o primeiro.
+- Toda liberação posterior, automática ou manual, tenta enviar o e-mail próprio do simulado e só registra `release_email_sent_at` quando o provedor confirma o envio.
+- O card **Sistema** do cadastro do aluno apresenta o envio da Jornada e dos simulados, com data de sucesso ou indicação de falha/não envio, usando `student_jornadas.welcome_email_*` e `student_jornada_simulados.release_email_*`.
+- Na tela de detalhe da Jornada, o nome de cada aluno é um link para `/admin/alunos/[id]`.
+
 ---
 
 ## 13. COMPONENTES COMPARTILHADOS

@@ -55,20 +55,26 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    const { data: existingStudent } = await supabase
-      .from("students")
-      .select("id, email, cpf")
-      .or(cpf ? `email.eq.${email},cpf.eq.${cpf}` : `email.eq.${email}`)
-      .limit(1)
-      .maybeSingle();
+    const [{ data: emailMatches }, { data: cpfMatches }] = await Promise.all([
+      supabase.from("students").select("id, email, cpf").eq("email", email),
+      supabase.from("students").select("id, email, cpf").eq("cpf", cpf),
+    ]);
+    const existingStudents = Array.from(
+      new Map([...(emailMatches || []), ...(cpfMatches || [])].map((student) => [student.id, student])).values(),
+    );
 
-    if (existingStudent) {
+    if (existingStudents && existingStudents.length > 0) {
       // Cenário E — students existe sem conta Auth correspondente: inconsistência
       // operacional registrada para correção administrativa.
-      if (!(await authUserExists(supabase, existingStudent.id))) {
+      const inconsistentStudent = (await Promise.all(existingStudents.map(async (student) => ({
+        id: student.id,
+        hasAuthUser: await authUserExists(supabase, student.id),
+      })))).find((student) => !student.hasAuthUser);
+
+      if (inconsistentStudent) {
         void logSystemError({
           source: "api.auth.register.inconsistent_account",
-          error: new Error(`students sem auth.users: ${existingStudent.id}`),
+          error: new Error(`students sem auth.users: ${inconsistentStudent.id}`),
           request,
         });
         return NextResponse.json(
@@ -77,13 +83,22 @@ export async function POST(request: Request) {
         );
       }
 
-      const cpfDuplicado = cpf && existingStudent.cpf === cpf;
+      const emailDuplicado = existingStudents.some((student) => student.email?.trim().toLowerCase() === email);
+      const cpfDuplicado = existingStudents.some((student) => student.cpf === cpf);
+      const duplicateFields = [emailDuplicado ? "email" : null, cpfDuplicado ? "cpf" : null].filter((field): field is "email" | "cpf" => Boolean(field));
+      const message = emailDuplicado && cpfDuplicado
+        ? "O e-mail e o CPF informados já estão vinculados a uma conta. Tente entrar ou recuperar o acesso."
+        : emailDuplicado
+          ? "O e-mail informado já está vinculado a uma conta. Tente entrar ou recuperar o acesso."
+          : "O CPF informado já está vinculado a uma conta. Tente entrar ou recuperar o acesso.";
+
       return NextResponse.json(
         {
           ok: false,
-          code: cpfDuplicado ? "STUDENT_CPF_ALREADY_EXISTS" : "STUDENT_EMAIL_ALREADY_EXISTS",
-          message: cpfDuplicado ? "Os dados informados já estão vinculados a uma conta." : "Este e-mail já está vinculado a uma conta. Tente entrar ou recuperar o acesso.",
-          field: cpfDuplicado ? "cpf" : "email",
+          code: emailDuplicado ? "STUDENT_EMAIL_ALREADY_EXISTS" : "STUDENT_CPF_ALREADY_EXISTS",
+          message,
+          field: duplicateFields.length === 1 ? duplicateFields[0] : undefined,
+          duplicate_fields: duplicateFields,
         },
         { status: 409 }
       );

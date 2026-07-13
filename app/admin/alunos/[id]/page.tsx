@@ -70,6 +70,8 @@ export type StudentJornadaScheduleItem = {
   order_number: number;
   scheduled_release_at: string;
   released_at: string | null;
+  release_email_sent_at: string | null;
+  release_email_error: string | null;
   completed_at: string | null;
   status: string;
   title: string;
@@ -100,6 +102,8 @@ export type StudentJornada = {
   expires_at: string;
   status: string;
   created_at: string;
+  welcome_email_sent_at: string | null;
+  welcome_email_error: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   jornadas: any;
   progress: { completed: number; total: number };
@@ -141,6 +145,8 @@ async function getData(id: string) {
         expires_at,
         status,
         created_at,
+        welcome_email_sent_at,
+        welcome_email_error,
         jornadas:jornada_id(id, title, status),
         student_jornada_simulados(
           id,
@@ -148,6 +154,8 @@ async function getData(id: string) {
           order_number,
           scheduled_release_at,
           released_at,
+          release_email_sent_at,
+          release_email_error,
           completed_at,
           status,
           simulados:simulado_id(id, title, max_attempts)
@@ -251,6 +259,8 @@ async function getData(id: string) {
           order_number: Number(item.order_number || 0),
           scheduled_release_at: item.scheduled_release_at,
           released_at: item.released_at,
+          release_email_sent_at: item.release_email_sent_at,
+          release_email_error: item.release_email_error,
           completed_at: item.completed_at,
           status: item.status,
           title: item.simulados?.title || `Simulado ${item.order_number || ""}`.trim(),

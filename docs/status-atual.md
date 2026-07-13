@@ -551,3 +551,18 @@ Escopo previsto:
 - Reenvios automáticos repetidos possuem intervalo mínimo de 60 segundos para reduzir abuso do endpoint de e-mail.
 - O erro local `Erro inesperado ao iniciar cadastro` foi identificado como ausência de `REGISTRATION_TOKEN_SECRET`; o segredo dedicado foi configurado somente no `.env.local` da estação, sem fallback para service role e sem versionar ou documentar seu valor.
 - Nenhuma migration foi criada, alterada ou executada neste ajuste.
+
+### Rastreabilidade de e-mails das Jornadas — 2026-07-13
+
+- O cadastro do aluno passou a listar no card **Sistema** os e-mails de entrada em Jornadas e de liberação de simulados, além do e-mail de boas-vindas da conta.
+- A inserção na Jornada agora envia duas comunicações distintas quando o primeiro simulado é liberado: entrada na Jornada e liberação do simulado.
+- Liberações automáticas, manuais e reenvios validam também erros retornados pelo Resend antes de registrar o envio como concluído.
+- Os nomes dos alunos no detalhe da Jornada agora apontam diretamente para o cadastro administrativo correspondente.
+- Nenhuma migration foi criada, alterada ou executada neste ajuste.
+
+### Intervalo de e-mails e aviso de duplicidade no cadastro — 2026-07-13
+
+- A entrada em uma Jornada agora aguarda 10 segundos entre o e-mail da Jornada e o primeiro e-mail de liberação de simulado.
+- O cadastro público informa explicitamente se o bloqueio ocorreu por e-mail, CPF ou pelos dois campos duplicados.
+- A resposta pública informa somente os nomes dos campos conflitantes e não expõe valores nem dados da conta já existente.
+- Nenhuma migration foi criada, alterada ou executada neste ajuste.
