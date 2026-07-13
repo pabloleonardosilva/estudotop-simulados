@@ -69,7 +69,6 @@ export async function POST(
       ok: true,
       emailSent,
       message: emailSent ? "Senha temporária gerada e enviada por e-mail." : `Senha temporária gerada, mas o e-mail não foi enviado: ${emailMessage}`,
-      password: newPassword,
     });
   } catch (error) {
     void logSystemError({ source: "api.admin.students.reset_password", error, request, metadata: { student_id: id } });

@@ -68,6 +68,30 @@ export default function LoginPage() {
       return;
     }
 
+    if (profile.role === "student") {
+      const { data: blockedStudent } = await supabase
+        .from("students")
+        .select("status")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (blockedStudent?.status === "blocked") {
+        logClientSecurityEvent({
+          eventType: "login_denied_blocked",
+          actorType: "student",
+          actorId: data.user.id,
+          actorEmail: data.user.email,
+          riskLevel: "medium",
+          blocked: true,
+          reason: "blocked",
+        });
+        await supabase.auth.signOut();
+        setLoading(false);
+        setErrorMessage("Seu cadastro está bloqueado em nosso sistema. Por isso, seu acesso não é possível.");
+        return;
+      }
+    }
+
     if (profile.role === "student" && profile.must_change_password) {
       logClientSecurityEvent({
         eventType: "login_first_access_required",
@@ -108,7 +132,7 @@ export default function LoginPage() {
         if (student?.status === "pending") {
           setErrorMessage("Seu cadastro ainda está em análise. Aguarde a aprovação do administrador.");
         } else if (student?.status === "blocked") {
-          setErrorMessage("Seu acesso está bloqueado. Entre em contato com o suporte.");
+          setErrorMessage("Seu cadastro está bloqueado em nosso sistema. Por isso, seu acesso não é possível.");
         } else {
           setErrorMessage("Este usuário está inativo. Entre em contato com o suporte.");
         }

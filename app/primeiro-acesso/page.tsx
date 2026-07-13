@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
+import { PasswordRequirements } from "@/app/components/auth/PasswordRequirements";
+import { validatePassword } from "@/lib/auth/passwordPolicy";
 
 export default function PrimeiroAcessoPage() {
   const token = useMemo(() => {
@@ -18,6 +20,9 @@ export default function PrimeiroAcessoPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [done, setDone] = useState(false);
+  const [serverViolations, setServerViolations] = useState<string[]>([]);
+  const passwordValidation = validatePassword(password);
+  const canSubmit = Boolean(token) && passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,13 +34,8 @@ export default function PrimeiroAcessoPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMessage("A senha precisa ter pelo menos 6 caracteres.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage("As senhas não conferem.");
+    if (!passwordValidation.valid || password !== confirmPassword) {
+      setErrorMessage(password !== confirmPassword ? "A confirmação da senha está diferente da nova senha." : "A senha não atende aos requisitos de segurança.");
       return;
     }
 
@@ -43,13 +43,14 @@ export default function PrimeiroAcessoPage() {
     const response = await fetch("/api/auth/first-access", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, confirmPassword }),
     });
 
-    const result = (await response.json()) as { ok: boolean; message: string };
+    const result = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
     setLoading(false);
 
     if (!result.ok) {
+      setServerViolations(result.violations || []);
       setErrorMessage(result.message || "Não foi possível definir sua senha.");
       return;
     }
@@ -91,7 +92,7 @@ export default function PrimeiroAcessoPage() {
                 placeholder="Nova senha"
                 type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => { setPassword(event.target.value); setServerViolations([]); }}
                 required
               />
               <button
@@ -103,6 +104,7 @@ export default function PrimeiroAcessoPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            <PasswordRequirements password={password} serverViolations={serverViolations} dark />
             <div className="relative">
               <input
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 pr-12 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
@@ -121,9 +123,10 @@ export default function PrimeiroAcessoPage() {
                 {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {confirmPassword.length > 0 && password !== confirmPassword && <p className="text-xs font-semibold text-red-300">A confirmação da senha está diferente da nova senha.</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={!canSubmit}
               className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Salvando..." : "Salvar senha e liberar acesso"}

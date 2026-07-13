@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { supabase } from "../lib/supabase/client";
+import { PasswordRequirements } from "@/app/components/auth/PasswordRequirements";
+import { validatePassword } from "@/lib/auth/passwordPolicy";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -15,6 +17,9 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [serverViolations, setServerViolations] = useState<string[]>([]);
+  const passwordValidation = validatePassword(password);
+  const canSubmit = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
 
   async function handleUpdatePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,24 +27,32 @@ export default function ResetPasswordPage() {
     setMessage("");
     setErrorMessage("");
 
-    if (password.length < 6) {
+    if (!passwordValidation.valid || password !== confirmPassword) {
       setLoading(false);
-      setErrorMessage("A senha precisa ter pelo menos 6 caracteres.");
+      setErrorMessage(password !== confirmPassword ? "A confirmação da senha está diferente da nova senha." : "A senha não atende aos requisitos de segurança.");
       return;
     }
 
-    if (password !== confirmPassword) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
       setLoading(false);
-      setErrorMessage("As senhas não conferem.");
+      setErrorMessage("Sua sessão de alteração de senha expirou. Solicite um novo acesso.");
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const response = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ password, confirmPassword }),
+    });
+    const result = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
 
     setLoading(false);
 
-    if (error) {
-      setErrorMessage("Não foi possível alterar a senha. Abra novamente o link recebido por e-mail ou solicite outro link.");
+    if (!result.ok) {
+      setServerViolations(result.violations || []);
+      setErrorMessage(result.message || "Não foi possível alterar a senha. Abra novamente o link recebido por e-mail ou solicite outro link.");
       return;
     }
 
@@ -70,7 +83,7 @@ export default function ResetPasswordPage() {
               placeholder="Nova senha"
               type={showPassword ? "text" : "password"}
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => { setPassword(event.target.value); setServerViolations([]); }}
               required
             />
             <button
@@ -82,6 +95,7 @@ export default function ResetPasswordPage() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <PasswordRequirements password={password} serverViolations={serverViolations} dark />
           <div className="relative">
             <input
               className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 pr-12 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
@@ -100,13 +114,14 @@ export default function ResetPasswordPage() {
               {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          {confirmPassword.length > 0 && password !== confirmPassword && <p className="text-xs font-semibold text-red-300">A confirmação da senha está diferente da nova senha.</p>}
 
           {message && <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</div>}
           {errorMessage && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</div>}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={!canSubmit}
             className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Salvando..." : "Salvar nova senha"}

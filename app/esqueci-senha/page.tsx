@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { MailCheck } from "lucide-react";
-import { supabase } from "../lib/supabase/client";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -17,20 +16,21 @@ export default function ForgotPasswordPage() {
     setMessage("");
     setErrorMessage("");
 
-    const redirectTo = `${window.location.origin}/redefinir-senha`;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
+    const response = await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
     });
+    const result = (await response.json()) as { ok: boolean; message: string };
 
     setLoading(false);
 
-    if (error) {
-      setErrorMessage("Não foi possível enviar o e-mail de recuperação. Confira o e-mail e tente novamente.");
+    if (!result.ok) {
+      setErrorMessage(result.message || "Não foi possível processar a solicitação agora. Tente novamente.");
       return;
     }
 
-    setMessage("Se este e-mail estiver cadastrado, você receberá um link para redefinir sua senha.");
+    setMessage(result.message);
   }
 
   return (
@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-orange-400">Recuperação de acesso</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">Esqueci minha senha</h1>
         <p className="mt-3 text-sm leading-6 text-slate-400">
-          Informe seu e-mail. O Supabase enviará um link seguro para você criar uma nova senha.
+          Informe seu e-mail. Se a conta já estiver aprovada, enviaremos um link seguro para você criar uma nova senha.
         </p>
 
         <form className="mt-8 space-y-4" onSubmit={handleResetPassword}>

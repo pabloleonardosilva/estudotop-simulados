@@ -566,3 +566,35 @@ Escopo previsto:
 - O cadastro público informa explicitamente se o bloqueio ocorreu por e-mail, CPF ou pelos dois campos duplicados.
 - A resposta pública informa somente os nomes dos campos conflitantes e não expõe valores nem dados da conta já existente.
 - Nenhuma migration foi criada, alterada ou executada neste ajuste.
+
+### Campos obrigatórios no cadastro público — 2026-07-13
+
+- O envio do formulário identifica de uma só vez todos os campos obrigatórios não preenchidos.
+- A mensagem informa nominalmente os campos ausentes e todos recebem destaque visual vermelho e `aria-invalid` para acessibilidade.
+- O destaque de cada campo é removido individualmente assim que o aluno começa a corrigi-lo; a API preserva a validação no servidor e retorna a lista em `fields`.
+- Nenhuma migration foi criada, alterada ou executada neste ajuste.
+
+### Política única e segura de senhas — 2026-07-13
+
+- Criada a política compartilhada `lib/auth/passwordPolicy.ts`: mínimo 8, máximo 64, maiúscula, minúscula, número, símbolo, sem sequência numérica crescente/decrescente de três dígitos, sem repetição tripla e sem dados pessoais normalizados.
+- Criado `PasswordRequirements` e aplicado em `/alterar-senha`, `/primeiro-acesso` e `/redefinir-senha`, com retorno visual dinâmico, acessível e bloqueio do botão até senha e confirmação válidas.
+- `complete-password-change`, `first-access` e o novo endpoint `reset-password` validam a mesma política no servidor com dados pessoais obtidos pelo usuário/token real.
+- Redefinição e troca obrigatória deixaram de atualizar senha diretamente no navegador; flags auxiliares são alteradas somente depois do sucesso no Supabase Auth, com erro explícito para estado parcial.
+- Gerador temporário centralizado, criptograficamente seguro, com mínimo de 12 caracteres e validação pela política. O reset administrativo não retorna mais a senha temporária no JSON.
+- Não foram implementadas blacklist de senhas comuns nem expiração periódica. Reutilização não é comparada porque o Supabase não fornece verificação segura da senha anterior sem autenticação; nenhuma senha/hash paralelo é armazenado.
+- Não existe atualmente alteração voluntária de senha no perfil; fluxo futuro deverá reutilizar a política central.
+
+### Recuperação de senha somente para alunos aprovados — 2026-07-13
+
+- [x] `/esqueci-senha` passou a usar `POST /api/auth/forgot-password`, sem chamada direta ao Supabase Auth no navegador.
+- [x] O envio só ocorre para aluno `active`, com `approved_at`, perfil `student` e perfil ativo; pendentes e contas incompatíveis não recebem link.
+- [x] A resposta pública é genérica para não revelar se uma conta existe ou está pendente.
+- [x] O link usa a URL pública canônica de `NEXT_PUBLIC_APP_URL` e aponta para `/redefinir-senha`, sem origem local da janela.
+- [x] `POST /api/auth/reset-password` revalida a aprovação antes de alterar a senha e não modifica status, ativação ou `must_change_password`.
+- [x] Cobertura específica adicionada em `tests/password-recovery/password-recovery.spec.ts`.
+
+### Mensagem de login para aluno bloqueado — 2026-07-13
+
+- [x] O login verifica `students.status = blocked` antes do redirecionamento de primeiro acesso, encerra a sessão autenticada e apresenta uma mensagem explícita de que o cadastro está bloqueado e o acesso não é possível.
+- [x] A mensagem também permanece no ramo de perfil inativo, protegendo estados eventualmente dessincronizados entre `students` e `profiles`.
+- Nenhuma migration foi criada, alterada ou executada nesta implementação.

@@ -3,12 +3,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
-import { supabase } from "../lib/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
+import { PasswordRequirements } from "@/app/components/auth/PasswordRequirements";
+import { validatePassword } from "@/lib/auth/passwordPolicy";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
-  const { session, refreshProfile, signOut } = useAuth();
+  const { session, user, profile, refreshProfile, signOut } = useAuth();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +18,10 @@ export default function ChangePasswordPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const [serverViolations, setServerViolations] = useState<string[]>([]);
+  const passwordContext = { fullName: profile?.full_name, email: user?.email };
+  const passwordValidation = validatePassword(password, passwordContext);
+  const canSubmit = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
 
   useEffect(() => {
     if (!passwordChanged) return;
@@ -42,23 +47,9 @@ export default function ChangePasswordPage() {
     setLoading(true);
     setErrorMessage("");
 
-    if (password.length < 6) {
+    if (!passwordValidation.valid || password !== confirmPassword) {
       setLoading(false);
-      setErrorMessage("A senha precisa ter pelo menos 6 caracteres.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setLoading(false);
-      setErrorMessage("As senhas nao conferem.");
-      return;
-    }
-
-    const { error: passwordError } = await supabase.auth.updateUser({ password });
-
-    if (passwordError) {
-      setLoading(false);
-      setErrorMessage("Nao foi possivel alterar a senha. Tente novamente.");
+      setErrorMessage(password !== confirmPassword ? "A confirmação da senha está diferente da nova senha." : "A senha não atende aos requisitos de segurança.");
       return;
     }
 
@@ -70,14 +61,16 @@ export default function ChangePasswordPage() {
 
     const response = await fetch("/api/auth/complete-password-change", {
       method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ password, confirmPassword }),
     });
 
-    const result = (await response.json()) as { ok: boolean; message: string };
+    const result = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
 
     if (!result.ok) {
       setLoading(false);
-      setErrorMessage("Senha alterada, mas nao foi possivel liberar seu perfil. Entre em contato com o suporte.");
+      setServerViolations(result.violations || []);
+      setErrorMessage(result.message || "Não foi possível alterar a senha.");
       return;
     }
 
@@ -179,7 +172,7 @@ export default function ChangePasswordPage() {
               placeholder="Nova senha"
               type={showPassword ? "text" : "password"}
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => { setPassword(event.target.value); setServerViolations([]); }}
               required
             />
             <button
@@ -191,6 +184,7 @@ export default function ChangePasswordPage() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <PasswordRequirements password={password} context={passwordContext} serverViolations={serverViolations} />
 
           <div className="relative">
             <input
@@ -210,6 +204,7 @@ export default function ChangePasswordPage() {
               {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          {confirmPassword.length > 0 && password !== confirmPassword && <p className="text-xs font-semibold text-red-600">A confirmação da senha está diferente da nova senha.</p>}
 
           {errorMessage && (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -219,7 +214,7 @@ export default function ChangePasswordPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={!canSubmit}
             className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Salvando..." : "Salvar nova senha"}

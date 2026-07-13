@@ -86,3 +86,24 @@ test("public registration identifies every duplicated field without exposing acc
   expect(route).toContain("O CPF informado já está vinculado a uma conta.");
   expect(route).not.toContain("duplicate_values");
 });
+
+test("public registration reports and highlights every missing required field", () => {
+  const route = read("app/api/auth/register/route.ts");
+  const page = read("app/cadastro/page.tsx");
+  expect(route).toContain("fields: missingFields");
+  expect(page).toContain("Preencha os campos obrigatórios:");
+  expect(page).toContain('setInvalidFields(missingFields)');
+  expect(page).toContain('aria-invalid={invalidFields.includes("fullName")}');
+  expect(page).toContain('aria-invalid={invalidFields.includes("whatsapp")}');
+  expect(page).toContain('aria-invalid={invalidFields.includes("email") || emailInvalid}');
+  expect(page).toContain('aria-invalid={invalidFields.includes("cpf") || cpfInvalid}');
+  expect(page).toContain('aria-invalid={invalidFields.includes("desiredContests")}');
+});
+
+test("empty public registration highlights all required inputs in the interface", async ({ page }) => {
+  await page.goto("/cadastro");
+  await page.getByRole("button", { name: "Enviar código de confirmação" }).click();
+
+  await expect(page.getByText("Preencha os campos obrigatórios: nome completo, WhatsApp, melhor e-mail, CPF e concursos desejados.")).toBeVisible();
+  await expect(page.locator('form input[aria-invalid="true"], form textarea[aria-invalid="true"]')).toHaveCount(5);
+});

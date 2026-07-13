@@ -170,6 +170,8 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 
 **Função:** tela pública de acesso, com autenticação via `supabase.auth.signInWithPassword`, redirecionamento por role (`/dashboard` admin, `/aluno` estudante), tratamento de `must_change_password` (→ `/alterar-senha`) e de perfis inativos/bloqueados, e log de eventos via `/api/system/security-event`.
 
+**Bloqueio explícito (2026-07-13):** para perfis de aluno, o login consulta `students.status` antes de encaminhar ao fluxo de primeiro acesso. Quando o status é `blocked`, encerra imediatamente a sessão recém-criada e informa: “Seu cadastro está bloqueado em nosso sistema. Por isso, seu acesso não é possível.” A verificação também permanece no tratamento de perfil inativo, cobrindo inconsistências entre `students.status` e `profiles.is_active`.
+
 **Arquivo único:** `app/login/page.tsx` (client component autossuficiente; sem AppShell/Sidebar/Header).
 
 **Estrutura visual (Sprint Login 2026-07-11):** duas colunas — esquerda institucional (gradiente laranja) com a logo oficial `public/images/Logo 04 -transp.png` renderizada via `next/image` (o nome com espaços funciona; o otimizador `/_next/image` foi validado), frase "Simulados com cara de aprovação." e card escuro "Correção + Resultado + Diagnóstico = Aprovação"; direita com o formulário ("Entrar no sistema", e-mail, senha, Entrar, links `/esqueci-senha` e `/cadastro`). No mobile as colunas empilham (institucional primeiro) — a coluna esquerda deixou de ser `hidden` em telas pequenas. Lógica de autenticação, redirecionamentos e links inalterados.
@@ -1414,9 +1416,30 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Serviço central:** `lib/server/studentAccountService.ts` concentra criação/reconciliação, rollback compensatório, validação final de integridade, sincronização de e-mail e contrato sanitizado de erros. É usado por `POST /api/admin/students/create`, `POST /api/auth/confirm-registration`, `PATCH /api/admin/students/[id]` e pela validação anterior a `POST /api/admin/students/[id]/approve`.
 
-**Contrato de erro:** `{ ok:false, code, message, field? }`. O cadastro público usa mensagem antienumeração para e-mail já vinculado; o admin recebe motivo direto e sanitizado. Erros brutos do Supabase/SQL não devem ser enviados ao frontend.
+**Contrato de erro:** `{ ok:false, code, message, field?, fields? }`. No cadastro público, a ausência de um ou vários campos obrigatórios é retornada em `fields`; a interface lista todos os campos ausentes, destaca-os simultaneamente e remove o destaque individual quando o aluno começa a corrigi-lo. Duplicidades informam explicitamente se o conflito envolve e-mail, CPF ou ambos, sem expor valores ou dados da conta existente. Erros brutos do Supabase/SQL não devem ser enviados ao frontend.
 
 **Código incorreto no cadastro público:** `POST /api/auth/confirm-registration` responde explicitamente que o código está incorreto, cria e envia automaticamente um novo código de 6 dígitos, invalida o anterior somente após o envio e orienta a interface a limpar o campo (`000000` volta a ser apenas o placeholder). Reenvios automáticos repetidos respeitam intervalo mínimo de 60 segundos para evitar abuso de e-mail; durante o intervalo, o usuário deve usar o código mais recente recebido.
+
+### Política central de senhas definitivas (2026-07-13)
+
+- Fonte única: `lib/auth/passwordPolicy.ts`, módulo puro compartilhado por frontend e backend. Regras: 8–64 caracteres, maiúscula, minúscula, número, símbolo Unicode, ausência de três dígitos adjacentes crescentes/decrescentes, ausência de três caracteres idênticos consecutivos e ausência de nome, identificador do e-mail, CPF ou telefone normalizados.
+- Componente visual: `app/components/auth/PasswordRequirements.tsx`. Exibe desde o início todas as regras com ícones e texto acessível; estados atendido, pendente e não permitido não dependem apenas de cor. Violações retornadas pelo servidor prevalecem sobre a avaliação local.
+- Telas integradas: `/alterar-senha`, `/primeiro-acesso` e `/redefinir-senha`. O botão permanece desabilitado enquanto a política ou a confirmação não forem válidas. Mostrar/ocultar senha continua disponível para senha e confirmação.
+- APIs com validação definitiva: `POST /api/auth/complete-password-change`, `POST /api/auth/first-access` e `POST /api/auth/reset-password`. O contexto pessoal é carregado pelo servidor por `lib/server/passwordPolicyContext.ts`, usando o UUID autenticado ou associado ao token; dados pessoais enviados pelo navegador não são usados como fonte de autorização/validação.
+- `/redefinir-senha` não chama mais `supabase.auth.updateUser({ password })` diretamente; envia a sessão de recuperação ao endpoint próprio, que valida e atualiza o usuário no Auth Admin.
+- Senhas temporárias: `lib/utils/password.ts` é o gerador oficial. Usa `crypto.randomInt`, garante no mínimo 12 caracteres, inclui obrigatoriamente todas as classes e valida o resultado na política central. `app/lib/utils/password.ts` apenas reexporta a implementação oficial.
+- Segurança: senha e confirmação não são gravadas em logs, atividades, banco próprio, URL ou resposta JSON. O reset administrativo deixou de retornar a senha temporária no JSON; o envio existente por e-mail foi preservado.
+- Reutilização: o Supabase Auth não oferece comparação segura com a senha anterior sem nova autenticação; não foi criado hash paralelo nem histórico em texto puro. As demais regras são obrigatórias. Não existe blacklist de senhas comuns nem expiração periódica.
+- Fluxo de perfil: não há atualmente tela/modal de alteração voluntária de senha dentro do perfil. Qualquer fluxo futuro em que o usuário escolha senha deve usar o mesmo módulo e componente.
+- Testes: `tests/password-policy/password-policy.spec.ts` cobre composição, limites, sequências, repetição Unicode, dados pessoais, exemplos de aceitação, gerador temporário, integração estática dos três backends/frontends e ausência de senha em respostas/logs.
+
+### Recuperação de senha restrita a alunos aprovados (2026-07-13)
+
+- `/esqueci-senha` não chama o Supabase Auth diretamente. A solicitação passa por `POST /api/auth/forgot-password`, que só envia o link quando `students.status = active`, `students.approved_at` está preenchido, `profiles.role = student` e `profiles.is_active = true`.
+- Contas pendentes, inativas, inexistentes ou com perfil incompatível recebem a mesma resposta pública genérica e não recebem e-mail, evitando enumeração de contas e impedindo que a recuperação contorne a aprovação administrativa.
+- O endpoint `POST /api/auth/reset-password` repete a verificação de aprovação antes de alterar a senha no Supabase Auth. Esse fluxo não ativa conta, não altera `students.status` e não modifica `profiles.must_change_password`.
+- O redirecionamento do e-mail é sempre `${getPublicAppUrl()}/redefinir-senha`; nunca usa `window.location.origin`, origem da requisição ou fallback para localhost.
+- Testes: `tests/password-recovery/password-recovery.spec.ts` cobre elegibilidade, mediação pelo servidor, resposta anti-enumeração, URL pública canônica e a segunda barreira antes da troca da senha.
 
 **Rollback:** criações novas removem, de forma compensatória, confirmação criada pela operação, `students`, `profiles` e Auth quando profile/student ou a validação final falham. Contas preexistentes nunca entram nesse rollback de criação. Alteração de e-mail preserva o UUID, atualiza Auth e `students`, remove confirmações do e-mail anterior e reverte Auth se a persistência em `students` falhar.
 

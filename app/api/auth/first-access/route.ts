@@ -2,22 +2,22 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { passwordPolicyError } from "@/lib/auth/passwordPolicy";
+import { getPasswordPolicyContext } from "@/lib/server/passwordPolicyContext";
+import { logPasswordActivity } from "@/app/lib/server/studentActivityLog";
 
 type FirstAccessPayload = {
   token: string;
-  password: string;
+  password?: string;
+  confirmPassword?: string;
 };
 
 export async function POST(request: Request) {
   try {
-    const { token, password } = (await request.json()) as FirstAccessPayload;
+    const { token, password, confirmPassword } = (await request.json()) as FirstAccessPayload;
 
-    if (!token || !password) {
-      return NextResponse.json({ ok: false, message: "Token e senha são obrigatórios." }, { status: 400 });
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json({ ok: false, message: "A senha precisa ter pelo menos 6 caracteres." }, { status: 400 });
+    if (!token) {
+      return NextResponse.json({ ok: false, code: "PASSWORD_TOKEN_INVALID", message: "O link de criação ou redefinição de senha é inválido ou expirou." }, { status: 400 });
     }
 
     const supabase = createSupabaseAdminClient();
@@ -34,9 +34,15 @@ export async function POST(request: Request) {
 
     if (error || !confirmation?.user_id) {
       return NextResponse.json(
-        { ok: false, message: "Link inválido ou expirado. Solicite um novo link à equipe EstudoTOP." },
+        { ok: false, code: "PASSWORD_TOKEN_INVALID", message: "O link de criação ou redefinição de senha é inválido ou expirou." },
         { status: 400 }
       );
+    }
+
+    const context = await getPasswordPolicyContext(supabase, confirmation.user_id, confirmation.email);
+    const policyError = passwordPolicyError(password || "", confirmPassword, context);
+    if (policyError) {
+      return NextResponse.json({ ok: false, ...policyError, field: "password" }, { status: 400 });
     }
 
     const { error: updateUserError } = await supabase.auth.admin.updateUserById(confirmation.user_id, {
@@ -46,7 +52,7 @@ export async function POST(request: Request) {
 
     if (updateUserError) {
       void logSystemError({ source: "api.auth.first_access", error: updateUserError, request });
-      return NextResponse.json({ ok: false, message: "Não foi possível definir a senha. Tente novamente ou solicite um novo link." }, { status: 400 });
+      return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_FAILED", message: "Não foi possível atualizar sua senha. Tente novamente." }, { status: 400 });
     }
 
     const { error: profileError } = await supabase
@@ -56,7 +62,7 @@ export async function POST(request: Request) {
 
     if (profileError) {
       void logSystemError({ source: "api.auth.first_access", error: profileError, request });
-      return NextResponse.json({ ok: false, message: "Não foi possível concluir o primeiro acesso." }, { status: 400 });
+      return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas não foi possível concluir a liberação do perfil. Entre em contato com o suporte." }, { status: 500 });
     }
 
     const { error: studentError } = await supabase
@@ -66,13 +72,19 @@ export async function POST(request: Request) {
 
     if (studentError) {
       void logSystemError({ source: "api.auth.first_access", error: studentError, request });
-      return NextResponse.json({ ok: false, message: "Não foi possível concluir o primeiro acesso." }, { status: 400 });
+      return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas não foi possível concluir a ativação da conta. Entre em contato com o suporte." }, { status: 500 });
     }
 
-    await supabase
+    const { error: tokenUpdateError } = await supabase
       .from("student_registration_confirmations")
       .update({ used_at: new Date().toISOString() })
       .eq("id", confirmation.id);
+    if (tokenUpdateError) {
+      void logSystemError({ source: "api.auth.first_access.token", error: tokenUpdateError, request });
+      return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas o link não pôde ser finalizado. Entre em contato com o suporte." }, { status: 500 });
+    }
+
+    await logPasswordActivity({ supabase, studentId: confirmation.user_id, eventType: "password_changed", description: "Senha definitiva criada pelo aluno", performedByName: "Aluno", details: { source: "first_access_token", changed_by: "student" } });
 
     return NextResponse.json({ ok: true, message: "Senha definida com sucesso. Você já pode acessar a plataforma." });
   } catch (error) {

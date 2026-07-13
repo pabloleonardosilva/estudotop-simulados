@@ -6,6 +6,21 @@ import { BookOpen, GraduationCap, MailCheck, ShieldCheck, Trophy } from "lucide-
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 
 type Step = "form" | "code" | "done";
+type RegistrationField = "fullName" | "whatsapp" | "email" | "cpf" | "desiredContests";
+
+const FIELD_LABELS: Record<RegistrationField, string> = {
+  fullName: "nome completo",
+  whatsapp: "WhatsApp",
+  email: "melhor e-mail",
+  cpf: "CPF",
+  desiredContests: "concursos desejados",
+};
+
+function formatRequiredFields(fields: RegistrationField[]) {
+  const labels = fields.map((field) => FIELD_LABELS[field]);
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(", ")} e ${labels.at(-1)}`;
+}
 
 export default function CadastroPage() {
   const [step, setStep] = useState<Step>("form");
@@ -18,9 +33,11 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [invalidFields, setInvalidFields] = useState<RegistrationField[]>([]);
 
   const cpfDigits = onlyDigits(cpf);
   const cpfInvalid = cpfDigits.length > 0 && !isValidCpf(cpfDigits);
+  const emailInvalid = email.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   async function handleRequestCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,15 +45,32 @@ export default function CadastroPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!cpfDigits) {
+    const missingFields = [
+      !fullName.trim() ? "fullName" : null,
+      !whatsapp.trim() ? "whatsapp" : null,
+      !email.trim() ? "email" : null,
+      !cpfDigits ? "cpf" : null,
+      !desiredContests.trim() ? "desiredContests" : null,
+    ].filter((field): field is RegistrationField => field !== null);
+
+    if (missingFields.length > 0) {
       setLoading(false);
-      setErrorMessage("CPF é obrigatório para evitar cadastros duplicados.");
+      setInvalidFields(missingFields);
+      setErrorMessage(`Preencha os campos obrigatórios: ${formatRequiredFields(missingFields)}.`);
       return;
     }
 
     if (cpfInvalid) {
       setLoading(false);
+      setInvalidFields(["cpf"]);
       setErrorMessage("CPF inválido. Verifique os dígitos informados.");
+      return;
+    }
+
+    if (emailInvalid) {
+      setLoading(false);
+      setInvalidFields(["email"]);
+      setErrorMessage("O e-mail informado não é válido.");
       return;
     }
 
@@ -52,16 +86,28 @@ export default function CadastroPage() {
       }),
     });
 
-    const data = (await response.json()) as { ok: boolean; message: string };
+    const data = (await response.json()) as { ok: boolean; message: string; fields?: RegistrationField[] };
     setLoading(false);
 
     if (!data.ok) {
+      setInvalidFields(data.fields || []);
       setErrorMessage(data.message);
       return;
     }
 
+    setInvalidFields([]);
     setSuccessMessage(data.message);
     setStep("code");
+  }
+
+  function clearFieldError(field: RegistrationField) {
+    setInvalidFields((current) => current.filter((item) => item !== field));
+  }
+
+  function fieldClass(field: RegistrationField, extraInvalid = false) {
+    return invalidFields.includes(field) || extraInvalid
+      ? "w-full rounded-2xl border border-red-400 bg-red-500/10 px-4 py-3.5 text-sm outline-none placeholder:text-red-200/60 focus:border-red-300"
+      : "w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400";
   }
 
   async function handleConfirmCode(event: FormEvent<HTMLFormElement>) {
@@ -137,15 +183,15 @@ export default function CadastroPage() {
             )}
 
             {step === "form" && (
-              <form className="mt-6 space-y-4" onSubmit={handleRequestCode}>
-                <input className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400" placeholder="Nome completo" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+              <form className="mt-6 space-y-4" onSubmit={handleRequestCode} noValidate>
+                <input className={fieldClass("fullName")} aria-invalid={invalidFields.includes("fullName")} placeholder="Nome completo" type="text" value={fullName} onChange={(e) => { setFullName(e.target.value); clearFieldError("fullName"); }} />
                 <div className="grid gap-4 md:grid-cols-2">
-                  <input className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400" placeholder="WhatsApp" type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} required />
-                  <input className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400" placeholder="Melhor e-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <input className={fieldClass("whatsapp")} aria-invalid={invalidFields.includes("whatsapp")} placeholder="WhatsApp" type="tel" value={whatsapp} onChange={(e) => { setWhatsapp(e.target.value); clearFieldError("whatsapp"); }} />
+                  <input className={fieldClass("email", emailInvalid)} aria-invalid={invalidFields.includes("email") || emailInvalid} placeholder="Melhor e-mail" type="email" value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }} />
                 </div>
-                <input className={cpfInvalid ? "w-full rounded-2xl border border-red-400 bg-red-500/10 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-red-300" : "w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"} placeholder="CPF obrigatório" type="text" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} required />
+                <input className={fieldClass("cpf", cpfInvalid)} aria-invalid={invalidFields.includes("cpf") || cpfInvalid} placeholder="CPF obrigatório" type="text" value={cpf} onChange={(e) => { setCpf(formatCpf(e.target.value)); clearFieldError("cpf"); }} />
                 {cpfInvalid && <p className="text-xs font-semibold text-red-300">CPF inválido. Verifique os dígitos.</p>}
-                <textarea className="min-h-24 w-full resize-y rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400" placeholder="Concursos desejados. Ex.: TJSP, Polícia Federal, GCM SP..." value={desiredContests} onChange={(e) => setDesiredContests(e.target.value)} required />
+                <textarea className={`${fieldClass("desiredContests")} min-h-24 resize-y`} aria-invalid={invalidFields.includes("desiredContests")} placeholder="Concursos desejados. Ex.: TJSP, Polícia Federal, GCM SP..." value={desiredContests} onChange={(e) => { setDesiredContests(e.target.value); clearFieldError("desiredContests"); }} />
                 <button type="submit" disabled={loading} className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
                   {loading ? "Enviando código..." : "Enviar código de confirmação"}
                 </button>

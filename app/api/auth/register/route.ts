@@ -31,14 +31,39 @@ export async function POST(request: Request) {
     const cpf = body.cpf ? onlyDigits(body.cpf) : null;
     const desiredContests = (body.desiredContests || body.concursosDesejados || "").trim();
 
-    if (!name || !email || !phone || !cpf || !desiredContests) {
+    const missingFields = [
+      !name ? "fullName" : null,
+      !phone ? "whatsapp" : null,
+      !email ? "email" : null,
+      !cpf ? "cpf" : null,
+      !desiredContests ? "desiredContests" : null,
+    ].filter((field): field is "fullName" | "whatsapp" | "email" | "cpf" | "desiredContests" => field !== null);
+
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { ok: false, code: !name ? "STUDENT_NAME_REQUIRED" : !email ? "STUDENT_EMAIL_REQUIRED" : "STUDENT_REGISTRATION_FAILED", message: !name ? "Informe o nome completo do aluno." : !email ? "Informe o e-mail do aluno." : "Preencha todos os campos obrigatórios para concluir o cadastro.", field: !name ? "name" : !email ? "email" : undefined },
+        {
+          ok: false,
+          code: missingFields.length === 1 && missingFields[0] === "fullName"
+            ? "STUDENT_NAME_REQUIRED"
+            : missingFields.length === 1 && missingFields[0] === "email"
+              ? "STUDENT_EMAIL_REQUIRED"
+              : "STUDENT_REGISTRATION_FAILED",
+          message: "Preencha todos os campos obrigatórios destacados para concluir o cadastro.",
+          field: missingFields.length === 1 ? missingFields[0] : undefined,
+          fields: missingFields,
+        },
         { status: 400 }
       );
     }
 
-    if (!isValidCpf(cpf)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json(
+        { ok: false, code: "STUDENT_EMAIL_INVALID", message: "O e-mail informado não é válido.", field: "email", fields: ["email"] },
+        { status: 400 },
+      );
+    }
+
+    if (!cpf || !isValidCpf(cpf)) {
       return NextResponse.json(
         { ok: false, code: "STUDENT_CPF_INVALID", message: "O CPF informado não é válido.", field: "cpf" },
         { status: 400 }

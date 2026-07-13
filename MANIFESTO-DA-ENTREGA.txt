@@ -1,73 +1,117 @@
-MANIFESTO DA ENTREGA — INTEGRIDADE TOTAL DAS CONTAS DE ALUNOS
+ESTUDOTOP SIMULADOS — MANIFESTO DA ENTREGA
 
-Objetivo
-Consolidar as atualizações aprovadas de interface e centralizar a proteção da coerência entre auth.users, profiles, students e confirmações cadastrais, preservando o UUID e o histórico acadêmico.
+1. OBJETIVO
+Consolidar as correções de integridade do cadastro e acesso do aluno: destacar campos obrigatórios, centralizar a política de senhas definitivas, restringir a recuperação de senha a alunos aprovados, usar a URL pública canônica nos links de recuperação e informar explicitamente o bloqueio no login.
 
-Diagnóstico encontrado
-- Criação de conta duplicada entre confirmação pública e cadastro administrativo.
-- Atualização de e-mail parcialmente centralizada e logs com valores cadastrais antigos/novos.
-- student_registration_confirmations é usada pelo código, mas sua criação não está no histórico SQL local.
-- Já existia reparação parcial em lib/server/studentAccountRepair.ts, agora reutilizada pelo serviço central.
+2. DIAGNÓSTICO ANTERIOR
+As três telas aceitavam apenas seis caracteres e repetiam validações. Alterar senha e redefinir senha atualizavam o Supabase Auth diretamente no navegador. Havia dois geradores temporários divergentes e sem garantia uniforme de composição.
 
-Arquivos criados
-- lib/server/studentAccountService.ts
-- supabase/migrations/20260713090000_student_account_integrity.sql
-- scripts/sql/student-account-integrity-audit.sql
-- scripts/sql/student-account-integrity-cleanup.sql
-- tests/student-account-integrity/student-account-integrity.spec.ts
+3. POLÍTICA IMPLEMENTADA
+- 8 a 64 caracteres.
+- Pelo menos uma maiúscula, uma minúscula, um número e um símbolo.
+- Proibidas sequências numéricas adjacentes crescentes ou decrescentes com três ou mais dígitos.
+- Proibidos três caracteres idênticos consecutivos.
+- Proibidos nome, parte relevante do nome, identificador do e-mail, CPF e telefone normalizados.
+- Confirmação obrigatória e idêntica.
+- Espaços internos são preservados; nenhuma senha é alterada silenciosamente.
+- Sem blacklist de senhas comuns e sem expiração periódica.
 
-Arquivos modificados
-- app/api/admin/students/create/route.ts
-- app/api/admin/students/[id]/route.ts
-- app/api/admin/students/[id]/approve/route.ts
+4. ARQUIVOS CRIADOS
+- app/api/auth/forgot-password/route.ts
+- app/api/auth/reset-password/route.ts
+- app/components/auth/PasswordRequirements.tsx
+- lib/auth/passwordPolicy.ts
+- lib/auth/passwordRecoveryPolicy.ts
+- lib/server/passwordPolicyContext.ts
+- lib/server/passwordRecoveryEligibility.ts
+- tests/password-policy/password-policy.spec.ts
+- tests/password-recovery/password-recovery.spec.ts
+
+5. ARQUIVOS MODIFICADOS
+- app/alterar-senha/page.tsx
+- app/api/admin/students/[id]/reset-password/route.ts
+- app/api/auth/complete-password-change/route.ts
+- app/api/auth/first-access/route.ts
 - app/api/auth/register/route.ts
-- app/api/auth/confirm-registration/route.ts
-- app/components/AppShell.tsx
-- app/questoes/nova/page-client.tsx
+- app/cadastro/page.tsx
+- app/esqueci-senha/page.tsx
+- app/lib/utils/password.ts
+- app/login/page.tsx
+- app/primeiro-acesso/page.tsx
+- app/redefinir-senha/page.tsx
 - docs/INDICE_FUNCOES_SISTEMA.md
 - docs/status-atual.md
-- MANIFESTO-DA-ENTREGA.txt
+- lib/utils/password.ts
+- tests/student-account-integrity/student-account-integrity.spec.ts
 
-Migration criada
-- 20260713090000_student_account_integrity.sql: índices normalizados e diagnóstico administrativo. NÃO EXECUTADA.
+Os arquivos app/api/auth/register/route.ts, app/cadastro/page.tsx e parte dos dois documentos/teste já continham alterações autorizadas da tarefa imediatamente anterior e foram preservados no pacote.
 
-Scripts SQL
-- student-account-integrity-audit.sql: somente SELECT; deve ser executado primeiro.
-- student-account-integrity-cleanup.sql: limpeza controlada, exclui admins, bloqueia histórico, não remove Auth e termina em ROLLBACK.
+6. ARQUIVOS REMOVIDOS
+Nenhum.
 
-Rotas alteradas
-- POST /api/admin/students/create
-- PATCH /api/admin/students/[id]
-- POST /api/admin/students/[id]/approve
+7. COMPONENTES COMPARTILHADOS
+- PasswordRequirements: lista dinâmica e acessível dos requisitos.
+- passwordPolicy: validação pura compartilhada.
+- passwordPolicyContext: carregamento server-side de dados pessoais pelo UUID real.
+
+8. APIS ALTERADAS/CRIADAS
+- POST /api/auth/complete-password-change
+- POST /api/auth/first-access
+- POST /api/auth/forgot-password (nova)
 - POST /api/auth/register
-- POST /api/auth/confirm-registration
+- POST /api/auth/reset-password (nova)
+- POST /api/admin/students/[id]/reset-password
 
-Rollback implementado
-- Criação nova: remove camadas criadas pela própria operação se profile, student ou validação final falhar.
-- E-mail: restaura o e-mail anterior no Auth se students falhar; sucesso só após validação final.
+9. TELAS ALTERADAS
+- /alterar-senha
+- /cadastro
+- /esqueci-senha
+- /login
+- /primeiro-acesso
+- /redefinir-senha
 
-Mensagens de erro
-Contrato seguro com ok, code, message e field opcional. Cadastro público usa mensagem antienumeração.
+O cadastro destaca todos os campos obrigatórios ausentes. A recuperação só envia link a alunos aprovados/ativos e usa NEXT_PUBLIC_APP_URL. O login encerra a sessão e informa explicitamente quando students.status = blocked, antes do fluxo de primeiro acesso.
 
-Ordem de aplicação
-1. Auditar o schema remoto e confirmar a estrutura de student_registration_confirmations.
-2. Revisar a migration em ambiente de homologação.
-3. Aplicar a migration somente com autorização explícita.
-4. Executar o script de auditoria (SELECT).
-5. Reparar manualmente contas com histórico.
-6. Revisar candidatos de limpeza um a um.
-7. Somente então adaptar/autorizar a limpeza e remoção Auth via serviço administrativo.
+10. GERADOR DE SENHA TEMPORÁRIA
+O gerador oficial usa crypto.randomInt, mínimo de 12 caracteres (padrão 16), composição obrigatória, embaralhamento criptográfico e validação pela política central. Não usa Math.random.
 
-Riscos e pendências
-- Nenhum dado remoto foi auditado ou saneado nesta entrega.
-- A migration depende da tabela operacional student_registration_confirmations existente no remoto.
-- O script de limpeza não remove auth.users por desenho; isso exige Auth Admin API controlada.
-- Testes de integração real requerem um projeto Supabase isolado de homologação.
+11. MENSAGENS DE ERRO
+Erros padronizados para ausência, limites, composição, sequência numérica, repetição, dados pessoais, confirmação, sessão/token e falha/estado parcial da atualização.
 
-Validações
-- npx tsc --noEmit: aprovado.
-- npm run build: aprovado.
-- Testes student-account-integrity: 5 aprovados.
-- Lint dos arquivos funcionais: aprovado após remoção de variável sem uso.
-- Migration e scripts: validação estática aprovada; não executados contra banco.
-- Inspeção de diff, segredos, .env e Sidebar: executada antes da entrega.
+12. TESTES EXECUTADOS
+- ESLint nos arquivos da política e fluxos alterados.
+- Testes da política e regressão de integridade de contas.
+- Teste real da interface de requisitos contra build de produção local isolado.
+- npx tsc --noEmit.
+- npm run build.
+- Busca por validação antiga de seis caracteres, atualização direta no cliente, senha em console/storage/logs e alterações em arquivos protegidos/migrations.
+- Testes específicos da recuperação de senha e verificação estática da precedência do bloqueio no login.
+
+13. RESULTADOS
+Política: aprovada nos testes unitários.
+Interface: atualização dinâmica e bloqueio do botão aprovados.
+Regressão relacionada: aprovada.
+
+14. BUILD
+Aprovado com Next.js 16.2.4.
+
+15. LINT
+Aprovado nos arquivos diretamente relacionados à política.
+
+16. TYPECHECK
+Aprovado.
+
+17. MIGRATION
+Nenhuma migration foi criada ou alterada. Nenhuma migration foi executada.
+
+18. INSTRUÇÕES DE APLICAÇÃO
+O conjunto deve ser publicado pelo fluxo Git/Vercel após commit e push aprovados. Não há dependência nova nem comando de migration.
+
+19. PENDÊNCIAS
+- Não existe atualmente alteração voluntária de senha dentro do perfil.
+- Testes destrutivos com contas reais, tokens reais e alteração efetiva no Supabase Auth não foram executados nesta entrega local.
+- O Supabase não fornece comparação segura com senha anterior sem reautenticação; não foi criado histórico/hash paralelo.
+- Confirmar que a lista de URLs permitidas do Supabase Auth contém https://simulados.estudotop.com.br/redefinir-senha. Nenhuma configuração externa foi alterada nesta entrega.
+
+20. RISCOS CONHECIDOS
+Se o Auth aceitar a nova senha e uma atualização auxiliar falhar, a API retorna PASSWORD_UPDATE_PARTIAL e orienta contato com suporte; a senha pode já ter sido alterada. Nenhuma senha é incluída no log desse erro.
