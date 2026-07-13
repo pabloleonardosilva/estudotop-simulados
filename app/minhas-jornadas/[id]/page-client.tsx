@@ -212,7 +212,7 @@ export default function JornadaAlunoClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLateModal, setShowLateModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dados" | "simulados" | "resultados" | "info">("simulados");
+  const [activeTab, setActiveTab] = useState<"dados" | "simulados" | "resultados" | "info">("dados");
   const [attemptsHelpSimulado, setAttemptsHelpSimulado] = useState<Simulado | null>(null);
   const [realResultHelpSimulado, setRealResultHelpSimulado] = useState<Simulado | null>(null);
 

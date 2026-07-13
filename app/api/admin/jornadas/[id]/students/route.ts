@@ -7,6 +7,7 @@ import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/e
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornadas/utils";
 
 const JORNADA_EMAIL_INTERVAL_MS = 10_000;
 
@@ -18,53 +19,6 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
-}
-
-function isWithinFinalExamWindow(startedAt: Date, examDate: Date | null): boolean {
-  if (!examDate) return false;
-  const effectiveEnd = new Date(examDate);
-  effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-  effectiveEnd.setHours(0, 0, 0, 0);
-  const start = new Date(startedAt);
-  start.setHours(0, 0, 0, 0);
-  return start >= effectiveEnd;
-}
-
-function calcReleaseSchedule(
-  startedAt: Date,
-  linkedSimuladoCount: number,
-  durationDays: number,
-  examDate: Date | null,
-  plannedSimuladosCount = linkedSimuladoCount,
-): Date[] {
-  if (linkedSimuladoCount === 0) return [];
-
-  const calculationBase = Math.max(1, plannedSimuladosCount || linkedSimuladoCount);
-
-  if (isWithinFinalExamWindow(startedAt, examDate)) {
-    return Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
-  }
-
-  let intervalDays: number;
-
-  if (examDate) {
-    const effectiveEnd = new Date(examDate);
-    effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-    const availableDays = Math.round(
-      (effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    if (availableDays <= 0) {
-      return Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
-    }
-    intervalDays = availableDays / calculationBase;
-  } else {
-    intervalDays = durationDays / calculationBase;
-  }
-
-  return Array.from({ length: linkedSimuladoCount }, (_, i) => {
-    const ms = startedAt.getTime() + Math.floor(i * intervalDays) * 24 * 60 * 60 * 1000;
-    return new Date(ms);
-  });
 }
 
 function getLinkedSimuladoTitle(value: unknown): string | null {
@@ -141,7 +95,7 @@ export async function POST(
 
     const { data: jornada, error: jErr } = await supabase
       .from("jornadas")
-      .select("id, title, status, planned_simulados_count, duration_days, duration_months, exam_date, effective_end_date")
+      .select("id, title, status, planned_simulados_count, duration_days, duration_months, release_duration_days, exam_date, effective_end_date")
       .eq("id", jornadaId)
       .single();
 
@@ -195,8 +149,11 @@ export async function POST(
 
     const orderedSimulados = jornadaSimulados || [];
     const startedAt = new Date(startedAtRaw + "T00:00:00");
+    // duration_days = validade da matrícula (expiração).
     const durationDays = Number(jornada.duration_days || jornada.duration_months * 30);
     const expiresAt = addDays(startedAt, durationDays);
+    // release_duration_days = janela de liberação dos simulados (independente da duração).
+    const releaseDurationDays = Number(jornada.release_duration_days || durationDays);
     const examDate = jornada.exam_date ? new Date(jornada.exam_date + "T00:00:00") : null;
 
     let releaseDates: Date[] = [];
@@ -204,7 +161,7 @@ export async function POST(
       releaseDates = calcReleaseSchedule(
         startedAt,
         orderedSimulados.length,
-        durationDays,
+        releaseDurationDays,
         examDate,
         jornada.planned_simulados_count || orderedSimulados.length,
       );

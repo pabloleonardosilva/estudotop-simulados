@@ -23,6 +23,7 @@ export type Jornada = {
   planned_simulados_count: number;
   duration_days: number | null;
   duration_months: number;
+  release_duration_days: number;
   exam_date: string | null;
   effective_end_date: string | null;
   created_by: string | null;

@@ -76,6 +76,7 @@ export async function GET(request: Request) {
         planned_simulados_count,
         duration_days,
         duration_months,
+        release_duration_days,
         exam_date,
         effective_end_date,
         created_at,
@@ -106,6 +107,7 @@ export async function GET(request: Request) {
       planned_simulados_count: j.planned_simulados_count || 0,
       duration_days: j.duration_days ?? null,
       duration_months: j.duration_months,
+      release_duration_days: j.release_duration_days,
       exam_date: j.exam_date,
       effective_end_date: j.effective_end_date,
       created_at: j.created_at,
@@ -135,6 +137,7 @@ export async function POST(request: Request) {
     const description = String(body.description || "").trim() || null;
     const durationDays = Number(body.duration_days ?? (Number(body.duration_months) * 30));
     const durationMonths = Math.max(1, Math.ceil(durationDays / 30));
+    const releaseDurationDays = Number(body.release_duration_days);
     const plannedSimuladosCount = Number(body.planned_simulados_count);
     const examDateRaw = body.exam_date ? String(body.exam_date).trim() : null;
     let scope: { scope_type: "general" | "contest"; contest_name: string | null };
@@ -164,6 +167,22 @@ export async function POST(request: Request) {
     if (!Number.isInteger(plannedSimuladosCount) || plannedSimuladosCount <= 0) {
       return NextResponse.json(
         { ok: false, message: "Informe a quantidade de simulados planejada para a Jornada." },
+        { status: 400 },
+      );
+    }
+
+    if (!Number.isInteger(releaseDurationDays) || releaseDurationDays <= 0) {
+      return NextResponse.json(
+        { ok: false, message: "Informe em quantos dias todos os simulados serão liberados." },
+        { status: 400 },
+      );
+    }
+
+    // A janela de liberação só é validada contra a duração quando NÃO há data da
+    // prova (com data da prova ela é ignorada no cálculo — exam_date é soberana).
+    if (!examDateRaw && releaseDurationDays > durationDays - 7) {
+      return NextResponse.json(
+        { ok: false, message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." },
         { status: 400 },
       );
     }
@@ -210,6 +229,7 @@ export async function POST(request: Request) {
         planned_simulados_count: plannedSimuladosCount,
         duration_days: durationDays,
         duration_months: durationMonths,
+        release_duration_days: releaseDurationDays,
         exam_date: examDate,
         effective_end_date: effectiveEndDate,
       })

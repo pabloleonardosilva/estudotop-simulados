@@ -44,6 +44,7 @@ const defaultForm = {
   journey_highlights: ["cronograma_progressivo", "relatorios_desempenho", "correcao_comentada"] as string[],
   category: "policial" as "saude" | "policial" | "tribunais" | "administrativo",
   duration_days: 90,
+  release_duration_days: 83,
   planned_simulados_count: 10,
   exam_date: "",
 };
@@ -92,6 +93,14 @@ export default function NovaJornadaClient() {
       setFeedback({ tone: "error", title: "Quantidade inválida", message: "Informe quantos simulados esta Jornada terá." });
       return;
     }
+    if (!form.release_duration_days || form.release_duration_days <= 0) {
+      setFeedback({ tone: "error", title: "Liberação inválida", message: "Informe em quantos dias todos os simulados serão liberados." });
+      return;
+    }
+    if (!form.exam_date && Number(form.release_duration_days) > Number(form.duration_days) - 7) {
+      setFeedback({ tone: "error", title: "Janela de liberação inválida", message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -113,6 +122,7 @@ export default function NovaJornadaClient() {
           journey_highlights: form.journey_highlights,
           category: form.category,
           duration_days: Number(form.duration_days),
+          release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
           exam_date: form.exam_date || null,
         }),
@@ -467,6 +477,23 @@ function JornadaFormCard({
             />
           </DarkField>
         </div>
+
+        <div className="mt-5">
+          <DarkField
+            label="Todos os simulados serão liberados em"
+            icon={<Clock3 size={16} />}
+            helper={form.exam_date
+              ? "A distribuição será calculada automaticamente utilizando a data da prova."
+              : "Janela de liberação dos simulados — independente da duração da Jornada. Deve terminar ao menos 7 dias antes do fim."}
+          >
+            <DarkNumberInput
+              value={form.release_duration_days}
+              onChange={(value) => update("release_duration_days", value)}
+              suffix="dias"
+              disabled={Boolean(form.exam_date)}
+            />
+          </DarkField>
+        </div>
       </div>
     </section>
   );
@@ -709,14 +736,15 @@ function DarkInput({
   );
 }
 
-function DarkNumberInput({ value, onChange, suffix }: { value: number; onChange: (value: number) => void; suffix?: string }) {
+function DarkNumberInput({ value, onChange, suffix, disabled = false }: { value: number; onChange: (value: number) => void; suffix?: string; disabled?: boolean }) {
   return (
     <div className="relative">
       <input
         type="number"
         value={String(value)}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className={`h-12 w-full rounded-xl border border-white/[0.16] bg-[#06111F]/70 px-4 ${suffix ? "pr-20" : "pr-4"} text-base font-medium text-white/85 outline-none transition placeholder:text-slate-500 hover:border-white/[0.24] focus:border-orange-400/70 focus:ring-4 focus:ring-orange-500/10 [color-scheme:dark]`}
+        className={`h-12 w-full rounded-xl border border-white/[0.16] bg-[#06111F]/70 px-4 ${suffix ? "pr-20" : "pr-4"} text-base font-medium text-white/85 outline-none transition placeholder:text-slate-500 hover:border-white/[0.24] focus:border-orange-400/70 focus:ring-4 focus:ring-orange-500/10 disabled:cursor-not-allowed disabled:opacity-50 [color-scheme:dark]`}
       />
       {suffix ? (
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-lg bg-white/[0.06] px-2 py-1 text-xs font-bold text-slate-300">

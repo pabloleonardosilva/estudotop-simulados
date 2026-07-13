@@ -61,6 +61,7 @@ export async function POST(request: Request) {
         planned_simulados_count,
         duration_days,
         duration_months,
+        release_duration_days,
         exam_date,
         effective_end_date
       `)
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
         planned_simulados_count: source.planned_simulados_count,
         duration_days: source.duration_days,
         duration_months: source.duration_months,
+        release_duration_days: source.release_duration_days,
         exam_date: source.exam_date,
         effective_end_date: source.effective_end_date,
       })

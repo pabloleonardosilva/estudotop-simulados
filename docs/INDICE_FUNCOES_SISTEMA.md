@@ -1347,6 +1347,22 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 ---
 
+### 9.2.1 Duração × Janela de liberação (Sprint 2026-07-13)
+
+**Regra central:** dois conceitos independentes.
+- `jornadas.duration_days` → **validade da matrícula** (expiração / até quando o aluno acessa). NÃO participa mais da distribuição dos simulados.
+- `jornadas.release_duration_days` (**novo**, migration `20260713150000_add_jornada_release_duration.sql`) → **janela de liberação** dos simulados, quando NÃO há data da prova. Sempre preenchido (backfill = `coalesce(duration_days, duration_months*30)`), NOT NULL, `> 0`.
+
+**Cálculo (fonte única):** `calcReleaseSchedule` em `app/admin/jornadas/utils.ts` (usada pela atribuição `students/route.ts` e pelo recálculo em `[id]/route.ts` — a cópia local da atribuição foi removida). Intervalo = janela / (total_simulados − 1): 1º simulado no dia 0, último no último dia permitido; 1 simulado (ou janela ≤ 0) libera tudo na entrada.
+
+**Data da prova é soberana:** com `exam_date`, a distribuição usa `exam_date − 7` (D-7) e ignora `release_duration_days` (campo desabilitado nos forms, com aviso). Entrada faltando < 7 dias → libera todos imediatamente.
+
+**Validação:** sem data da prova, `release_duration_days <= duration_days − 7` (POST e PATCH; e no cliente nos dois forms). Com data da prova, a validação é ignorada.
+
+**Recálculo:** ao alterar `exam_date` ou `release_duration_days` de jornada com alunos, o PATCH recalcula (síncrono) o `scheduled_release_at` **apenas** dos `student_jornada_simulados` com status `locked` de matrículas ativas; concluídos/iniciados/liberados são preservados (`recalcFutureSchedules`).
+
+**Manutenção:** todo cálculo de cronograma deve usar `calcReleaseSchedule`; nunca derivar distribuição de `duration_days`/`duration_months`. Cron (`release-job`) e e-mails usam o `scheduled_release_at` já gravado — não recalculam.
+
 ### 9.3 Criar / Editar Jornada
 
 **Arquivos:**

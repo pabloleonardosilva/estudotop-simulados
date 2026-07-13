@@ -122,36 +122,49 @@ export function isWithinFinalExamWindow(startedAt: Date, examDate: Date | null):
   return start >= effectiveEnd;
 }
 
+// Cronograma de liberação dos simulados (fonte única — usada na atribuição e no
+// recálculo). A "duração da matrícula" (duration_days) NÃO participa: a janela de
+// liberação vem de release_duration_days (sem data da prova) ou de exam_date - 7
+// (com data da prova, que é soberana). Intervalo = janela / (total - 1): o 1º
+// simulado cai no dia 0 e o último no último dia permitido; com 1 simulado (ou
+// janela nula), tudo é liberado no dia da entrada.
 export function calcReleaseSchedule(
   startedAt: Date,
   linkedSimuladoCount: number,
-  durationMonths: number,
+  releaseDurationDays: number,
   examDate: Date | null,
   plannedSimuladosCount = linkedSimuladoCount,
 ): Date[] {
   if (linkedSimuladoCount === 0) return [];
 
   const calculationBase = Math.max(1, plannedSimuladosCount || linkedSimuladoCount);
+  const allAtStart = () => Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
 
+  // Data da prova soberana: entrada dentro dos 7 dias finais → libera tudo agora.
   if (isWithinFinalExamWindow(startedAt, examDate)) {
-    return Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
+    return allAtStart();
   }
 
-  let intervalDays: number;
+  // Um único simulado planejado → nada a distribuir.
+  if (calculationBase <= 1) {
+    return allAtStart();
+  }
+
+  let windowDays: number;
 
   if (examDate) {
     const effectiveEnd = new Date(examDate);
     effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-    const availableDays = Math.round(
-      (effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    if (availableDays <= 0) {
-      return Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
-    }
-    intervalDays = availableDays / calculationBase;
+    windowDays = Math.round((effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24));
   } else {
-    intervalDays = (durationMonths * 30) / calculationBase;
+    windowDays = releaseDurationDays;
   }
+
+  if (windowDays <= 0) {
+    return allAtStart();
+  }
+
+  const intervalDays = windowDays / (calculationBase - 1);
 
   return Array.from({ length: linkedSimuladoCount }, (_, i) => {
     const ms = startedAt.getTime() + Math.floor(i * intervalDays) * 24 * 60 * 60 * 1000;

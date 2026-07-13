@@ -1,7 +1,58 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
+import { calcReleaseSchedule } from "@/app/admin/jornadas/utils";
+
+function toDateString(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+// Recalcula scheduled_release_at APENAS dos simulados ainda bloqueados (status
+// "locked") de todas as matrículas ativas. Simulados liberados, iniciados ou
+// concluídos permanecem intocados. Usado quando exam_date ou release_duration_days
+// muda depois de a jornada já ter alunos.
+async function recalcFutureSchedules(
+  supabase: SupabaseClient,
+  jornadaId: string,
+  releaseDurationDays: number,
+  examDate: Date | null,
+  plannedSimuladosCount: number,
+): Promise<void> {
+  const { data: enrollments } = await supabase
+    .from("student_jornadas")
+    .select("id, started_at, status, student_jornada_simulados(id, order_number, status)")
+    .eq("jornada_id", jornadaId)
+    .eq("status", "active");
+
+  for (const sj of enrollments || []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sjsList = ((sj as any).student_jornada_simulados || []) as Array<{ id: string; order_number: number; status: string }>;
+    if (sjsList.length === 0) continue;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const startedAt = new Date(String((sj as any).started_at).slice(0, 10) + "T00:00:00");
+    const releaseDates = calcReleaseSchedule(
+      startedAt,
+      sjsList.length,
+      releaseDurationDays,
+      examDate,
+      plannedSimuladosCount || sjsList.length,
+    );
+
+    for (const item of sjsList) {
+      if (item.status !== "locked") continue;
+      const newDate = releaseDates[item.order_number - 1];
+      if (!newDate) continue;
+      await supabase
+        .from("student_jornada_simulados")
+        .update({ scheduled_release_at: toDateString(newDate) })
+        .eq("id", item.id)
+        .eq("status", "locked");
+    }
+  }
+}
 
 const JORNADA_CATEGORIES = ["saude", "policial", "tribunais", "administrativo"] as const;
 
@@ -132,7 +183,7 @@ export async function PATCH(
 
     const { data: existing, error: fetchError } = await supabase
       .from("jornadas")
-      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, effective_end_date")
+      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, release_duration_days, exam_date, effective_end_date")
       .eq("id", id)
       .single();
 
@@ -240,6 +291,14 @@ export async function PATCH(
         updates.duration_months = Math.max(1, Math.ceil(durationDays / 30));
       }
 
+      if (body.release_duration_days !== undefined) {
+        const releaseDurationDays = Number(body.release_duration_days);
+        if (!Number.isInteger(releaseDurationDays) || releaseDurationDays <= 0) {
+          return NextResponse.json({ ok: false, message: "Informe em quantos dias todos os simulados serão liberados." }, { status: 400 });
+        }
+        updates.release_duration_days = releaseDurationDays;
+      }
+
       if (body.planned_simulados_count !== undefined) {
         const planned = Number(body.planned_simulados_count);
         if (!Number.isInteger(planned) || planned <= 0) {
@@ -289,10 +348,39 @@ export async function PATCH(
       }
     }
 
+    // Estado final após aplicar os updates (para validação cruzada e recálculo).
+    const finalDurationDays = (updates.duration_days as number | undefined) ?? existing.duration_days ?? existing.duration_months * 30;
+    const finalExamDateStr = body.exam_date !== undefined ? ((updates.exam_date as string | null) ?? null) : (existing.exam_date ?? null);
+    const finalReleaseDuration = Number((updates.release_duration_days as number | undefined) ?? existing.release_duration_days);
+    const finalPlannedCount = Number((updates.planned_simulados_count as number | undefined) ?? existing.planned_simulados_count);
+    const scheduleAffecting = updates.release_duration_days !== undefined || updates.duration_days !== undefined || body.exam_date !== undefined;
+
+    // A janela de liberação só é validada contra a duração sem data da prova
+    // (com data da prova, exam_date é soberana e o campo é ignorado).
+    if (scheduleAffecting && !finalExamDateStr && finalReleaseDuration > Number(finalDurationDays) - 7) {
+      return NextResponse.json(
+        { ok: false, message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." },
+        { status: 400 },
+      );
+    }
+
     const { error: updateError } = await supabase.from("jornadas").update(updates).eq("id", id);
 
     if (updateError) {
       return NextResponse.json({ ok: false, message: updateError.message }, { status: 400 });
+    }
+
+    // Recálculo dos cronogramas futuros quando a distribuição muda (exam_date ou
+    // release_duration_days). Preserva concluídos/iniciados/liberados; só mexe nos locked.
+    const examChanged = body.exam_date !== undefined && ((updates.exam_date as string | null) ?? null) !== (existing.exam_date ?? null);
+    const releaseChanged = updates.release_duration_days !== undefined && updates.release_duration_days !== existing.release_duration_days;
+    if (examChanged || releaseChanged) {
+      try {
+        const examDate = finalExamDateStr ? new Date(finalExamDateStr + "T00:00:00") : null;
+        await recalcFutureSchedules(supabase, id, finalReleaseDuration, examDate, finalPlannedCount);
+      } catch (err) {
+        void logSystemError({ source: "api.admin.jornadas.recalc_schedules", error: err, request, metadata: { jornadaId: id } });
+      }
     }
 
     void logAdminAction({ adminUserId: admin.id, action: updates.status === "archived" ? "admin.jornada.archived" : "admin.jornada.updated", entityType: "jornada", entityId: id, request, metadata: { fields: Object.keys(updates) } });

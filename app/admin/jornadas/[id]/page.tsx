@@ -55,6 +55,7 @@ async function getData(id: string) {
     planned_simulados_count: j.planned_simulados_count || 0,
     duration_days: j.duration_days ?? null,
     duration_months: j.duration_months,
+    release_duration_days: j.release_duration_days,
     exam_date: j.exam_date,
     effective_end_date: j.effective_end_date,
     created_by: j.created_by,
