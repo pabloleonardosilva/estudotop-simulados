@@ -57,6 +57,18 @@ const STATUS_CFG: Record<StudentRow["status"], { label: string; cls: string }> =
 
 // ── helpers ────────────────────────────────────────────────
 
+// Normalização única para busca: usada no termo digitado E em cada campo
+// comparado, garantindo comparação simétrica. Remove acentos, caixa e todo
+// caractere que não seja letra/número (pontos, hífens, barras, parênteses,
+// espaços, @, etc.). Não altera os dados nem o texto exibido.
+function normalizeSearchValue(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function getInitials(name: string | null): string {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
@@ -115,13 +127,14 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
   const filtered = useMemo(() => {
     let result = students;
     if (activeTab !== "all") result = result.filter((s) => s.status === activeTab);
-    const q = search.trim().toLowerCase().replace(/[.\-/\s]/g, "");
+    const q = normalizeSearchValue(search);
     if (q) {
       result = result.filter(
         (s) =>
-          (s.name ?? "").toLowerCase().includes(q) ||
-          (s.email ?? "").toLowerCase().includes(q) ||
-          (s.cpf ?? "").replace(/\D/g, "").includes(q),
+          normalizeSearchValue(s.name).includes(q) ||
+          normalizeSearchValue(s.email).includes(q) ||
+          normalizeSearchValue(s.cpf).includes(q) ||
+          normalizeSearchValue(s.phone).includes(q),
       );
     }
 

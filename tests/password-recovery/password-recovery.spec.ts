@@ -46,3 +46,14 @@ test("password update endpoint rechecks approval before changing Auth", () => {
   expect(route).not.toContain("must_change_password:");
   expect(route).not.toContain('status: "active"');
 });
+
+test("reset page processes every supported recovery callback before submitting", () => {
+  const page = read("app/redefinir-senha/page.tsx");
+  expect(page).toContain("PASSWORD_RECOVERY");
+  expect(page).toContain("verifyOtp({ token_hash: tokenHash, type: \"recovery\" })");
+  expect(page).toContain("exchangeCodeForSession(code)");
+  expect(page).toContain("new URLSearchParams(url.hash");
+  expect(page).toContain("recoveryAccessToken");
+  expect(page).toContain('window.history.replaceState({}, "", "/redefinir-senha")');
+  expect(page.indexOf("useEffect(")).toBeLessThan(page.indexOf("handleUpdatePassword"));
+});

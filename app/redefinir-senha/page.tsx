@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { supabase } from "../lib/supabase/client";
 import { PasswordRequirements } from "@/app/components/auth/PasswordRequirements";
@@ -18,8 +19,66 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [serverViolations, setServerViolations] = useState<string[]>([]);
+  const [recoveryAccessToken, setRecoveryAccessToken] = useState("");
+  const [checkingRecovery, setCheckingRecovery] = useState(true);
   const passwordValidation = validatePassword(password);
-  const canSubmit = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
+  const canSubmit = Boolean(recoveryAccessToken) && passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading && !checkingRecovery;
+
+  useEffect(() => {
+    let mounted = true;
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+    const code = url.searchParams.get("code");
+    const tokenHash = url.searchParams.get("token_hash");
+    const recoveryType = url.searchParams.get("type") || hashParams.get("type");
+
+    function acceptRecoverySession(session: Session | null) {
+      if (!mounted || !session?.access_token) return false;
+      setRecoveryAccessToken(session.access_token);
+      setErrorMessage("");
+      setCheckingRecovery(false);
+      window.history.replaceState({}, "", "/redefinir-senha");
+      return true;
+    }
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") acceptRecoverySession(session);
+    });
+
+    void (async () => {
+      const callbackError = url.searchParams.get("error_description") || hashParams.get("error_description");
+      if (callbackError) {
+        if (mounted) {
+          setErrorMessage("O link de redefinição é inválido ou expirou. Solicite um novo link.");
+          setCheckingRecovery(false);
+        }
+        return;
+      }
+
+      if (tokenHash && recoveryType === "recovery") {
+        const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+        if (!error && acceptRecoverySession(data.session)) return;
+      } else if (code) {
+        const { data: current } = await supabase.auth.getSession();
+        if (acceptRecoverySession(current.session)) return;
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error && acceptRecoverySession(data.session)) return;
+      } else {
+        const { data } = await supabase.auth.getSession();
+        if (acceptRecoverySession(data.session)) return;
+      }
+
+      if (mounted) {
+        setErrorMessage("Sua sessão de alteração de senha expirou. Solicite um novo acesso.");
+        setCheckingRecovery(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   async function handleUpdatePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,8 +92,7 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
+    const accessToken = recoveryAccessToken;
     if (!accessToken) {
       setLoading(false);
       setErrorMessage("Sua sessão de alteração de senha expirou. Solicite um novo acesso.");
@@ -75,6 +133,8 @@ export default function ResetPasswordPage() {
         <p className="mt-3 text-sm leading-6 text-slate-400">
           Digite uma nova senha para sua conta. Esta tela funciona quando aberta pelo link enviado por e-mail.
         </p>
+
+        {checkingRecovery && <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">Validando seu link de redefinição...</div>}
 
         <form className="mt-8 space-y-4" onSubmit={handleUpdatePassword}>
           <div className="relative">

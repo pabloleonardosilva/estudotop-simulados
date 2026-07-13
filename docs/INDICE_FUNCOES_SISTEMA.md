@@ -1427,6 +1427,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Telas integradas: `/alterar-senha`, `/primeiro-acesso` e `/redefinir-senha`. O botão permanece desabilitado enquanto a política ou a confirmação não forem válidas. Mostrar/ocultar senha continua disponível para senha e confirmação.
 - APIs com validação definitiva: `POST /api/auth/complete-password-change`, `POST /api/auth/first-access` e `POST /api/auth/reset-password`. O contexto pessoal é carregado pelo servidor por `lib/server/passwordPolicyContext.ts`, usando o UUID autenticado ou associado ao token; dados pessoais enviados pelo navegador não são usados como fonte de autorização/validação.
 - `/redefinir-senha` não chama mais `supabase.auth.updateUser({ password })` diretamente; envia a sessão de recuperação ao endpoint próprio, que valida e atualiza o usuário no Auth Admin.
+- `/redefinir-senha` inicializa a sessão antes de liberar o formulário: processa callback PKCE (`code`), `token_hash` de tipo `recovery`, retorno implícito no hash e o evento `PASSWORD_RECOVERY`; também recupera a sessão já persistida caso o cliente Supabase tenha consumido o callback antes do efeito da página. Após aceitar a sessão, remove os parâmetros sensíveis da URL.
 - Senhas temporárias: `lib/utils/password.ts` é o gerador oficial. Usa `crypto.randomInt`, garante no mínimo 12 caracteres, inclui obrigatoriamente todas as classes e valida o resultado na política central. `app/lib/utils/password.ts` apenas reexporta a implementação oficial.
 - Segurança: senha e confirmação não são gravadas em logs, atividades, banco próprio, URL ou resposta JSON. O reset administrativo deixou de retornar a senha temporária no JSON; o envio existente por e-mail foi preservado.
 - Reutilização: o Supabase Auth não oferece comparação segura com a senha anterior sem nova autenticação; não foi criado hash paralelo nem histórico em texto puro. As demais regras são obrigatórias. Não existe blacklist de senhas comuns nem expiração periódica.
@@ -1505,6 +1506,16 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 ---
 
 ## 10. ALUNOS
+
+### 10.–3 Busca de alunos na listagem administrativa (correção 2026-07-13)
+
+**Arquivo:** `app/admin/alunos/page-client.tsx` (busca 100% client-side sobre `students: StudentRow[]` recebido do server component `page.tsx`; não há endpoint de busca).
+
+**Função:** `normalizeSearchValue(value)` — pura, no escopo do módulo. Remove acentos (`NFD` + faixa combinante `̀–ͯ`), aplica minúsculas e remove todo caractere que não seja `[a-z0-9]` (pontos, hífens, barras, parênteses, espaços, `@`, `_`, etc.). Aceita `null`/`undefined`. Não altera dados nem texto exibido.
+
+**Regra de manutenção:** a MESMA normalização é aplicada ao termo digitado E a cada campo comparado — **nome, e-mail, CPF e telefone** — via `includes()` entre valores normalizados. Nunca comparar termo normalizado com campo cru (era a causa do bug). Campos pesquisáveis novos devem passar por `normalizeSearchValue`.
+
+**Preservado:** filtro por status (abas), ordenação (usa valores originais, não a normalização), paginação, contadores, reset de página ao mudar termo.
 
 ### 10.–1 Desativação e Exclusão Definitiva de Alunos (Sprint Cadastro 2026-07-11)
 

@@ -2077,17 +2077,16 @@ export default function AlunoAdminDetalheClient({
               </p>
               <div className="mt-4 space-y-2.5">
                 <PremiumButton
-                  variant="secondary"
+                  variant="dark-warning"
                   full
                   icon={<UserX size={15} />}
                   onClick={() => setDeactivateModal(true)}
                   disabled={student.status === "inactive"}
-                  className="!border-amber-400/25 !text-amber-200/90 hover:!border-amber-400/45 hover:!bg-amber-500/[0.08]"
                 >
                   {student.status === "inactive" ? "Aluno já desativado" : "Desativar aluno"}
                 </PremiumButton>
                 <PremiumButton
-                  variant="secondary"
+                  variant="dark-danger"
                   full
                   icon={<Trash2 size={15} />}
                   onClick={() => {
@@ -2096,7 +2095,6 @@ export default function AlunoAdminDetalheClient({
                     setDeleteDependencies(null);
                     setDeleteModal(true);
                   }}
-                  className="!border-red-500/25 !text-red-300/90 hover:!border-red-500/45 hover:!bg-red-500/[0.08]"
                 >
                   Excluir definitivamente
                 </PremiumButton>

@@ -592,9 +592,27 @@ Escopo previsto:
 - [x] O link usa a URL pública canônica de `NEXT_PUBLIC_APP_URL` e aponta para `/redefinir-senha`, sem origem local da janela.
 - [x] `POST /api/auth/reset-password` revalida a aprovação antes de alterar a senha e não modifica status, ativação ou `must_change_password`.
 - [x] Cobertura específica adicionada em `tests/password-recovery/password-recovery.spec.ts`.
+- [x] A tela de redefinição processa e aguarda os formatos de callback do Supabase (`code` PKCE, `token_hash`, hash implícito e evento `PASSWORD_RECOVERY`) antes de enviar a nova senha, evitando a falsa mensagem de sessão expirada após abrir um link válido.
 
 ### Mensagem de login para aluno bloqueado — 2026-07-13
 
 - [x] O login verifica `students.status = blocked` antes do redirecionamento de primeiro acesso, encerra a sessão autenticada e apresenta uma mensagem explícita de que o cadastro está bloqueado e o acesso não é possível.
 - [x] A mensagem também permanece no ramo de perfil inativo, protegendo estados eventualmente dessincronizados entre `students` e `profiles`.
 - Nenhuma migration foi criada, alterada ou executada nesta implementação.
+
+### Correção — Busca de alunos por nome/e-mail/CPF/telefone — 2026-07-13
+
+- **Bug:** na listagem `/admin/alunos`, buscar por termos com pontuação não encontrava o aluno. Ex.: `aluno.teste` não localizava `aluno.teste.redteam@estudotop.com.br`.
+- **Causa raiz:** normalização assimétrica em `app/admin/alunos/page-client.tsx`. O termo removia `.`, `-`, `/` e espaços (`search.trim().toLowerCase().replace(/[.\-/\s]/g, "")`), mas nome e e-mail eram comparados apenas com `toLowerCase()` (sem remover pontuação). Além disso, telefone não era pesquisado e acentos não eram tratados.
+- **Comportamento anterior:** `aluno.` encontrava, `aluno.teste`/`alunoteste` não; acentos e telefone não funcionavam.
+- **Comportamento novo:** função pura `normalizeSearchValue()` (remove acentos, minúsculas, mantém apenas `[a-z0-9]`) aplicada ao termo E aos quatro campos (nome, e-mail, CPF, telefone). Busca parcial, sem acento, com/sem formatação de CPF/telefone, case-insensitive, ignorando pontuação. Busca só com pontuação (`...`) é tratada como vazia.
+- **Arquivos alterados:** `app/admin/alunos/page-client.tsx` (+ este documento e o índice funcional).
+- **Testes:** unitário da função (10/10 casos) + UI real em localhost contra o banco operacional com o aluno `Aluno Teste RedTeam` — `aluno.`, `aluno.teste`, `alunoteste`, `redteam`, `estudotop`, `72266707558`, `722.667`, `ALUNO.TESTE`, `  aluno.teste  `, e-mail completo → todos encontram; termo inexistente → "Nenhum aluno"; combinação com aba de status coerente (aluno `pending` não aparece em Ativos). tsc e build aprovados.
+- **Preservado:** ordenação (valores originais), paginação, contadores, filtros de status, layout. Nenhuma alteração de banco/API.
+- Nenhuma migration foi criada ou alterada nesta correção.
+
+### Correção — Zona de perigo (visual) + performance da atribuição a Jornada — 2026-07-13
+
+- **Botões da Zona de perigo** (`app/admin/alunos/[id]/page-client.tsx`): "Desativar aluno" e "Excluir definitivamente" usavam `variant="secondary"` (base `bg-white text-slate-800`, tema claro) e ficavam brancos/pálidos sobre o fundo escuro. Trocados para os variants dark do design system: `dark-warning` (âmbar) e `dark-danger` (vermelho), com fundo translúcido e texto legível. Nenhuma mudança de comportamento.
+- **Lentidão ao inserir aluno em Jornada** (`POST /api/admin/jornadas/[id]/students`): a resposta HTTP aguardava, de forma síncrona, o envio do e-mail de boas-vindas, um `setTimeout` artificial de 10s e o loop de e-mails de liberação — ~12s+ de espera. Correção: os inserts (matrícula + agenda + status) e os logs de auditoria continuam antes da resposta; todo o envio de e-mails foi movido para `after()` do Next (segundo plano, pós-resposta). A atribuição agora responde assim que persiste; os e-mails seguem sendo enviados e seu status é rastreado em `student_jornadas`/`student_jornada_simulados` (visível em "Reenvio de E-mails" no cadastro). Resposta deixou de conter `email_summary`.
+- Nenhuma migration criada ou alterada. Validado com tsc e build.
