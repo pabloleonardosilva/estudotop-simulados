@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -21,10 +21,9 @@ import { useSearchParams } from "next/navigation";
 import PageBackground from "../../components/ui/PageBackground";
 import PageHeader from "../../components/ui/PageHeader";
 import PremiumButton from "../../components/ui/PremiumButton";
-import PremiumCard from "../../components/ui/PremiumCard";
-import PremiumInput from "../../components/ui/PremiumInput";
 import PremiumSelect from "../../components/ui/PremiumSelect";
 import PremiumLoadingOverlay from "../../components/ui/PremiumLoadingOverlay";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import SubjectMultiSelect from "../../components/questions/SubjectMultiSelect";
 import EvaluatedTopicsInput from "../../components/questions/EvaluatedTopicsInput";
 import DraftRestoreModal from "../../components/ui/DraftRestoreModal";
@@ -93,6 +92,7 @@ const trueFalseAlternatives: Alternative[] = [
 ];
 
 const OWL_MARK = "\u{1F989}\uFE0F";
+const CURRENT_YEAR = new Date().getFullYear();
 
 function isWrongTrueFalseAlternative(questionType: "multiple_choice" | "true_false", alternative: Alternative) {
   return questionType === "true_false" && alternative.is_correct && (alternative.label === "E" || alternative.text.trim().toLowerCase() === "errado");
@@ -169,7 +169,7 @@ export default function NovaQuestaoClient({
   const [questionType, setQuestionType] = useState<"multiple_choice" | "true_false">("multiple_choice");
   const [disciplineId, setDisciplineId] = useState(disciplines[0]?.id || "");
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
-  const [boardId, setBoardId] = useState(boards[0]?.id || "");
+  const [boardId, setBoardId] = useState(findEstudoTopBoard(boards)?.id || "");
   const [boardOptions, setBoardOptions] = useState<Board[]>(boards || []);
 
   const [statement, setStatement] = useState("");
@@ -177,7 +177,7 @@ export default function NovaQuestaoClient({
   const [showStatementImage, setShowStatementImage] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const [explanation, setExplanation] = useState("");
-  const [year, setYear] = useState("");
+  const [year, setYear] = useState(String(CURRENT_YEAR));
   const [difficulty, setDifficulty] = useState<number | null>(null);
   const [status, setStatus] = useState<"pending_review" | "published" | "archived">("pending_review");
   const [alternatives, setAlternatives] = useState<Alternative[]>(defaultAlternatives);
@@ -629,7 +629,7 @@ export default function NovaQuestaoClient({
   }
 
   return (
-    <PageBackground>
+    <PageBackground variant="jornada">
       <DraftRestoreModal
         open={Boolean(pendingDraft)}
         savedAt={pendingDraft?.savedAt}
@@ -727,15 +727,16 @@ export default function NovaQuestaoClient({
       )}
 
       <PageHeader
+        variant="jornada"
         title="Nova questão"
         description="Mesa de montagem de questão."
         action={
           <div className="flex flex-wrap gap-3">
-            <PremiumButton variant="secondary" icon={<CopyCheck size={18} />} onClick={() => setShowTemplatePicker(true)}>
+            <PremiumButton variant="dark" icon={<CopyCheck size={18} />} onClick={() => setShowTemplatePicker(true)}>
               Usar como modelo
             </PremiumButton>
             <Link href="/questoes">
-              <PremiumButton variant="secondary" icon={<ArrowLeft size={18} />}>
+              <PremiumButton variant="dark" icon={<ArrowLeft size={18} />}>
                 Voltar
               </PremiumButton>
             </Link>
@@ -773,118 +774,62 @@ export default function NovaQuestaoClient({
         </div>
       )}
 
-      <PremiumCard title="Classificação" description="Selecione disciplina, assunto, banca e tipo." icon={<Info size={18} />}>
-        <div className="grid gap-5 md:grid-cols-6">
-          <PremiumSelect
-            label="Tipo"
-            value={questionType}
-            onChange={(event: any) => {
-              markTemplateEdited();
-              setQuestionType(event.target.value);
-            }}
-          >
-            <option value="multiple_choice">Alternativas</option>
-            <option value="true_false">Assertivas</option>
-          </PremiumSelect>
-
-          <PremiumSelect
-            label="Disciplina"
-            value={disciplineId}
-            onChange={(event: any) => {
-              if (event.target.value === "__new") {
-                window.location.href = "/disciplinas";
-                return;
-              }
-              markTemplateEdited();
-              setDisciplineId(event.target.value);
-              setSubjectIds([]);
-            }}
-          >
-            {disciplines.map((discipline) => (
-              <option key={discipline.id} value={discipline.id}>
-                {discipline.name}
-              </option>
-            ))}
-            <option value="__new">+ Cadastrar nova disciplina</option>
-          </PremiumSelect>
-
-          <SubjectMultiSelect
-            subjects={filteredSubjects}
-            selectedIds={subjectIds}
-            onChange={(ids) => {
-              markTemplateEdited();
-              setSubjectIds(ids);
-            }}
-            emptyLabel="Selecione"
-            disciplineId={disciplineId}
-          />
-
-          <PremiumSelect
-            label="Banca"
-            value={boardId}
-            onChange={(event: any) => {
-              if (event.target.value === "__new") {
-                setShowBoardModal(true);
-                return;
-              }
-              markTemplateEdited();
-              setBoardId(event.target.value);
-            }}
-          >
-            <option value="">Selecione</option>
-            {boardOptions.map((board) => (
-              <option key={board.id} value={board.id}>
-                {board.name}
-              </option>
-            ))}
-            <option value="__new">+ Cadastrar nova banca</option>
-          </PremiumSelect>
-
-          <PremiumInput
-            label="Ano"
-            value={year}
-            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-              {
-                markTemplateEdited();
-                setYear(event.target.value.replace(/\D/g, "").slice(0, 4));
-              }
-            }
-            placeholder="Ex.: 2025"
-            inputMode="numeric"
-          />
-        </div>
-      </PremiumCard>
-
-      <PremiumCard
-        title="Tópicos avaliados"
-        description="Informe os tópicos específicos cobrados pela questão."
-        icon={<Info size={18} />}
-        className="border-blue-300 ring-blue-100 shadow-[0_0_0_3px_rgba(59,130,246,0.08)]"
-      >
-        <EvaluatedTopicsInput
-          value={evaluatedTopics}
-          onChange={(topics) => {
+      <article className="overflow-visible rounded-[2rem] border border-white/[0.08] bg-[#081321]/95 shadow-2xl shadow-black/30 ring-1 ring-white/[0.03]">
+        <div className="grid gap-3 border-b border-white/[0.06] bg-white/[0.02] px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
+          <SearchableSelect label="Tipo" value={questionType} onChange={(value) => {
             markTemplateEdited();
-            setEvaluatedTopics(topics);
-          }}
-          subjectId={subjectIds[0] || null}
-          required
-          variant="light"
-          placeholder="Ex.: Memória RAM, Placa-mãe"
-        />
-      </PremiumCard>
+            setQuestionType(value as "multiple_choice" | "true_false");
+          }} options={[{ value: "multiple_choice", label: "Alternativas" }, { value: "true_false", label: "Assertivas" }]} dark />
+
+          <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
+            markTemplateEdited();
+            setDisciplineId(value);
+            setSubjectIds([]);
+          }} options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))} dark />
+
+          <SubjectMultiSelect subjects={filteredSubjects} selectedIds={subjectIds} onChange={(ids) => {
+            markTemplateEdited();
+            setSubjectIds(ids);
+          }} emptyLabel="Adicionar assunto" disciplineId={disciplineId} dark />
+
+          <SearchableSelect label="Banca" value={boardId} onChange={(value) => {
+            markTemplateEdited();
+            setBoardId(value);
+          }} options={[{ value: "", label: "Selecione" }, ...boardOptions.map((board) => ({ value: board.id, label: board.name }))]} dark />
+
+          <div>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Ano</label>
+            <input value={year} inputMode="numeric" onChange={(event) => {
+              markTemplateEdited();
+              setYear(event.target.value.replace(/\D/g, "").slice(0, 4));
+            }} placeholder={`Ex.: ${CURRENT_YEAR}`} className="h-12 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-sm font-semibold text-white/90 outline-none transition placeholder:text-white/25 hover:border-white/[0.14] focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]" />
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-b border-white/[0.06] px-6 py-4 md:grid-cols-[1fr_240px]">
+          <StarRatingField value={difficulty} onChange={(value) => {
+            markTemplateEdited();
+            setDifficulty(value);
+          }} />
+          <PremiumSelect label="Status" variant="jornada" value={status} onChange={(event: any) => {
+            markTemplateEdited();
+            setStatus(event.target.value);
+          }}>
+            <option value="pending_review">Pendente revisão</option>
+            <option value="published">Publicada</option>
+            <option value="archived">Arquivada</option>
+          </PremiumSelect>
+        </div>
 
       <div
         className={
           possibleDuplicate
-            ? "mt-6 rounded-[2rem] border-2 border-red-300 bg-red-50 p-4 shadow-sm shadow-red-100 md:p-6"
-            : "mt-6 rounded-[2rem] border border-slate-200 bg-slate-100/70 p-4 shadow-sm md:p-6"
+            ? "border-2 border-red-500/40 bg-red-500/[0.05] p-4 md:p-6"
+            : "p-4 md:p-6"
         }
       >
-        <div className="mb-5 flex flex-wrap items-center gap-4">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white" />
-          <span className="text-xl font-semibold text-slate-950">1.</span>
-
+        <div className="mb-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Enunciado</p>
           <RichTextarea
             value={statement}
             onChange={(value) => {
@@ -896,15 +841,8 @@ export default function NovaQuestaoClient({
                 ? "Quer fazer uma pergunta de escolha múltipla?"
                 : "Digite a assertiva para o aluno julgar como certo ou errado..."
             }
-            className="min-h-12 flex-1 rounded-xl border border-white bg-white px-4 py-3 text-base text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+            className="min-h-32 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-base leading-7 text-white/80 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
           />
-
-          <input
-            className="h-12 w-28 rounded-xl border border-white bg-white px-4 text-center text-slate-700 outline-none"
-            value="1"
-            readOnly
-          />
-          <span className="text-sm text-slate-400">ponto</span>
         </div>
 
         <div className="mb-4 flex justify-end">
@@ -914,7 +852,7 @@ export default function NovaQuestaoClient({
               markTemplateEdited();
               setShowStatementImage(!showStatementImage);
             }}
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 shadow-sm hover:text-orange-600"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/50 hover:border-orange-400/30 hover:text-orange-300"
           >
             <ImageIcon size={16} />
             Imagem do enunciado
@@ -932,23 +870,44 @@ export default function NovaQuestaoClient({
           />
         )}
 
+        <div className="relative mt-5 isolate">
+          <div className="pointer-events-none absolute -inset-[3px] -z-10 rounded-2xl bg-gradient-to-b from-blue-400/25 via-blue-400/[0.06] to-transparent blur-[10px]" />
+          <div className="rounded-2xl border border-blue-400/30 bg-blue-500/[0.05] p-4 shadow-inner shadow-blue-950/20">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-200">Tópicos avaliados</p>
+            <span className="text-[10px] font-semibold text-blue-200/60">Obrigatório para salvar/publicar</span>
+          </div>
+          <EvaluatedTopicsInput
+            value={evaluatedTopics}
+            onChange={(topics) => {
+              markTemplateEdited();
+              setEvaluatedTopics(topics);
+            }}
+            subjectId={subjectIds[0] || null}
+            required
+            variant="dark"
+            placeholder="Ex.: Memória RAM, Placa-mãe"
+          />
+          </div>
+        </div>
+
         {questionType === "true_false" ? (
           <InlineTrueFalseEditor alternatives={alternatives} onMarkCorrect={markCorrect} />
         ) : (
           <div className="mt-5 space-y-3">
             {alternatives.map((alt, index) => (
               <div key={alt.label}>
-                <div className={possibleDuplicate ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-100/70 p-2" : alt.is_correct ? "flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-2" : "flex items-start gap-3 rounded-2xl p-2"}>
+                <div className={possibleDuplicate ? "flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/[0.08] p-3" : alt.is_correct ? "flex items-start gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.08] p-3" : "flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3"}>
                   <button
                     type="button"
                     onClick={() => removeAlternative(index)}
                     disabled={alternatives.length <= 2}
-                    className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                    className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/25 hover:bg-red-500/[0.10] hover:text-red-400 disabled:opacity-30"
                   >
                     <X size={18} />
                   </button>
 
-                  <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-700">
+                  <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.05] text-sm font-bold text-white/60">
                     {alt.label}
                   </span>
 
@@ -956,7 +915,7 @@ export default function NovaQuestaoClient({
                     type="button"
                     onClick={() => markCorrect(index)}
                     title="Marcar como correta"
-                    className={alt.is_correct ? "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-emerald-400 bg-emerald-100 text-xl shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" : "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 bg-white text-slate-300 hover:border-emerald-300 hover:bg-emerald-50"}
+                    className={alt.is_correct ? "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-xl" : "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-white/15 bg-white/[0.03] text-white/20 hover:border-emerald-400/60 hover:bg-emerald-500/[0.08]"}
                   >
                     {alt.is_correct ? <span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span> : null}
                   </button>
@@ -965,7 +924,7 @@ export default function NovaQuestaoClient({
                     value={alt.text}
                     onChange={(value) => updateAlternative(index, "text", value)}
                     placeholder={`Resposta ${alt.label}`}
-                    className="w-full rounded-xl border border-white bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-orange-100 disabled:text-slate-500"
+                    className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white/75 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
                     minRows={1}
                     compact
                   />
@@ -973,7 +932,7 @@ export default function NovaQuestaoClient({
                   <button
                     type="button"
                     onClick={() => updateAlternative(index, "showImage", !alt.showImage)}
-                    className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white hover:text-orange-600"
+                    className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/30 hover:bg-white/[0.05] hover:text-orange-300"
                   >
                     <ImageIcon size={20} />
                   </button>
@@ -993,12 +952,12 @@ export default function NovaQuestaoClient({
           </div>
         )}
 
-                {questionType === "multiple_choice" && alternatives.length < 5 && (
+        {questionType === "multiple_choice" && alternatives.length < 5 && (
           <div className="mt-4">
             <button
               type="button"
               onClick={addAlternative}
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-orange-700 shadow-sm hover:bg-orange-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-dashed border-white/[0.10] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40 hover:border-orange-400/30 hover:bg-orange-400/[0.06] hover:text-orange-300"
             >
               <Plus size={16} />
               Adicionar alternativa
@@ -1006,8 +965,8 @@ export default function NovaQuestaoClient({
           </div>
         )}
 
-        <div className="mt-8 flex items-start gap-3">
-          <span className="mt-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
+        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <span className="mt-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.05] text-white/40">
             <Info size={16} />
           </span>
 
@@ -1018,10 +977,10 @@ export default function NovaQuestaoClient({
               setExplanation(value);
             }}
             placeholder="Pode incluir uma explicação."
-            className="min-h-11 flex-1 rounded-xl border border-white bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:ring-4 focus:ring-orange-100"
+            className="min-h-20 flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white/70 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
           />
 
-          <div className="mt-1 flex items-center gap-2 rounded-2xl bg-white p-2 shadow-sm">
+          <div className="mt-1 flex items-center gap-2 rounded-2xl bg-white/[0.04] p-2">
             <EditorToggle icon={<Bold size={15} />} />
             <EditorToggle icon={<Italic size={15} />} />
             <EditorToggle icon={<Highlighter size={15} />} />
@@ -1031,7 +990,7 @@ export default function NovaQuestaoClient({
             type="button"
             onClick={generateExplanation}
             disabled={generatingAI}
-            className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-sm font-bold text-orange-600 shadow-sm hover:bg-orange-50 disabled:opacity-60"
+            className="inline-flex h-11 items-center gap-2 rounded-2xl border border-violet-500/30 bg-violet-500/[0.10] px-4 text-sm font-bold text-violet-300 hover:bg-violet-500/[0.18] disabled:opacity-60"
           >
             {generatingAI ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1042,43 +1001,12 @@ export default function NovaQuestaoClient({
           </button>
         </div>
       </div>
-
-      <PremiumCard
-        className="mt-6"
-        title="Configurações finais"
-        description="Defina dificuldade e status."
-        icon={<Star size={18} />}
-      >
-        <div className="grid gap-5 md:grid-cols-2">
-          <StarRatingField value={difficulty} onChange={(value) => {
-            markTemplateEdited();
-            setDifficulty(value);
-          }} />
-
-          <PremiumSelect
-            label="Status"
-            value={status}
-            onChange={(event: any) => {
-              markTemplateEdited();
-              setStatus(event.target.value);
-            }}
-          >
-            <option value="pending_review">Pendente revisão</option>
-            <option value="published">Publicada</option>
-            <option value="archived">Arquivada</option>
-          </PremiumSelect>
+        <div className="sticky bottom-0 z-10 flex justify-end rounded-b-[2rem] border-t border-white/[0.06] bg-black/20 px-6 py-4 backdrop-blur-sm">
+          <button type="button" onClick={handleSubmit} disabled={saving || !!possibleDuplicate} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-6 py-2.5 text-sm font-bold text-slate-950 shadow-md shadow-orange-900/40 transition hover:from-orange-600 hover:to-amber-500 disabled:opacity-50">
+            <CheckCircle2 size={16} /> {possibleDuplicate ? "Questão duplicada" : "Salvar questão"}
+          </button>
         </div>
-
-        <div className="mt-8 flex justify-end">
-          <PremiumButton
-            onClick={handleSubmit}
-            disabled={saving || !!possibleDuplicate}
-            icon={<CheckCircle2 size={18} />}
-          >
-            {possibleDuplicate ? "Questão duplicada" : "Salvar questão"}
-          </PremiumButton>
-        </div>
-      </PremiumCard>
+      </article>
     </PageBackground>
   );
 }
@@ -1114,14 +1042,14 @@ function StarRatingField({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-slate-700">Dificuldade</label>
-      <div className="flex h-12 items-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 shadow-sm">
+      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Dificuldade</label>
+      <div className="flex h-12 items-center gap-1 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4">
         {[1, 2, 3, 4, 5].map((star) => (
           <button
             key={star}
             type="button"
             onClick={() => onChange(value === star ? null : star)}
-            className={value && star <= value ? "text-amber-500" : "text-slate-300 hover:text-amber-400"}
+            className={value && star <= value ? "text-amber-400" : "text-white/20 hover:text-amber-400/60"}
             aria-label={`Dificuldade ${star}`}
           >
             <Star size={18} fill={value && star <= value ? "currentColor" : "none"} />
@@ -1140,7 +1068,7 @@ function EditorToggle({
   return (
     <button
       type="button"
-      className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-50 hover:text-orange-600"
+      className="flex h-9 w-9 items-center justify-center rounded-xl text-white/40 hover:bg-white/[0.06] hover:text-orange-300"
     >
       {icon}
     </button>
@@ -1169,12 +1097,12 @@ function InlineTrueFalseEditor({
             onClick={() => onMarkCorrect(index)}
             className={
               isSelected && isWrong
-                ? "rounded-2xl border border-red-200 bg-red-100 px-5 py-4 text-left text-sm font-bold text-red-800 shadow-[0_0_0_3px_rgba(239,68,68,0.10)]"
+                ? "rounded-2xl border border-red-500/50 bg-red-500/[0.12] px-5 py-4 text-left text-sm font-bold text-red-300"
               : isSelected
-                ? "rounded-2xl border border-emerald-200 bg-emerald-100 px-5 py-4 text-left text-sm font-bold text-emerald-800 shadow-[0_0_0_3px_rgba(16,185,129,0.10)]"
+                ? "rounded-2xl border border-emerald-500/50 bg-emerald-500/[0.12] px-5 py-4 text-left text-sm font-bold text-emerald-300"
               : isWrong
-                ? "rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-                : "rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-600 hover:border-emerald-200 hover:bg-emerald-50"
+                ? "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/45 hover:border-red-500/30 hover:bg-red-500/[0.06] hover:text-red-300"
+                : "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/45 hover:border-emerald-500/30 hover:bg-emerald-500/[0.06] hover:text-emerald-300"
             }
           >
             <span className="flex items-center justify-between gap-3">

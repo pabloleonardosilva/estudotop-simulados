@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
+import { StudentAccountError, studentAccountErrorResponse, updateStudentAccountEmail } from "@/lib/server/studentAccountService";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Em análise",
@@ -192,31 +193,20 @@ export async function PATCH(
       : null;
 
     if (updates.email) {
-      const { error: authError } = await supabase.auth.admin.updateUserById(id, {
-        email: updates.email,
-        email_confirm: true,
-      });
-      if (authError) {
-        return NextResponse.json(
-          { ok: false, message: `Falha ao atualizar e-mail: ${authError.message}` },
-          { status: 400 }
-        );
+      try {
+        await updateStudentAccountEmail(supabase, id, oldEmail || "", updates.email);
+        delete updates.email;
+      } catch (error) {
+        return NextResponse.json(studentAccountErrorResponse(error), { status: error instanceof StudentAccountError ? 409 : 500 });
       }
     }
 
-    const { error: updateError } = await supabase
-      .from("students")
-      .update(updates)
-      .eq("id", id);
-
-    if (updateError) {
-      if (updates.email && oldEmail) {
-        await supabase.auth.admin.updateUserById(id, {
-          email: oldEmail,
-          email_confirm: true,
-        });
-      }
-      return NextResponse.json({ ok: false, message: updateError.message }, { status: 400 });
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await supabase
+        .from("students")
+        .update(updates)
+        .eq("id", id);
+      if (updateError) return NextResponse.json({ ok: false, code: "STUDENT_REGISTRATION_FAILED", message: "Não foi possível concluir a atualização cadastral." }, { status: 400 });
     }
 
     if (updates.name) {
@@ -227,7 +217,7 @@ export async function PATCH(
       student_id: id,
       event_type: "field_update",
       description: `Campo "${FIELD_LABELS[c.field] || c.field}" atualizado`,
-      details: { field: c.field, from: c.from, to: c.to },
+      details: { field: c.field },
       performed_by_name: "Admin",
     }));
 
@@ -240,7 +230,7 @@ export async function PATCH(
       action: "student_fields_updated",
       entityType: "student",
       entityId: id,
-      metadata: { changes },
+      metadata: { fields: changes.map((change) => change.field) },
     });
 
     return NextResponse.json({ ok: true, message: "Dados atualizados com sucesso." });

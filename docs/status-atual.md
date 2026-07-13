@@ -525,4 +525,13 @@ Escopo previsto:
 - [ ] `fetch` sem Bearer em: `app/admin/logs/page-client.tsx:403`, `app/questoes/nova/page-client.tsx:1232` (upload-image), `app/questoes/[id]/variacoes/page-client.tsx:298` — mesma classe do bug do importador; corrigir com autorização.
 - [ ] `NEXT_PUBLIC_APP_URL` duplicada no `.env.local` (limpar) e definir o domínio público oficial quando existir.
 - [ ] Dívidas já registradas: lint pré-existente (`any`, setState-in-effect), duplicação `lib/` × `app/lib/`.
+## Integridade de contas de alunos — implementação local em 2026-07-13
+
+- Criado `lib/server/studentAccountService.ts` para criação/reconciliação, rollback compensatório, validação de `auth.users + profiles + students`, sincronização de e-mail e erros sanitizados.
+- Integrados os fluxos reais de criação administrativa, confirmação do cadastro público, alteração de e-mail e bloqueio de aprovação de conta incompleta.
+- Criada a migration não executada `supabase/migrations/20260713090000_student_account_integrity.sql`.
+- Criados os scripts `scripts/sql/student-account-integrity-audit.sql` (SELECT) e `scripts/sql/student-account-integrity-cleanup.sql` (controlado, sem Auth e com `ROLLBACK`).
+- Criados testes em `tests/student-account-integrity/student-account-integrity.spec.ts`.
+- Pendência crítica: a criação histórica de `student_registration_confirmations` não está no histórico SQL local; o baseline remoto deve ser auditado antes de aplicar a migration.
+- Nenhuma limpeza de dados, migration, alteração remota ou Auth foi executada nesta implementação.
 

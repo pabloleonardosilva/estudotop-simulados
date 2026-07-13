@@ -33,14 +33,14 @@ export async function POST(request: Request) {
 
     if (!name || !email || !phone || !cpf || !desiredContests) {
       return NextResponse.json(
-        { ok: false, message: "Nome completo, WhatsApp, melhor e-mail, CPF e concursos desejados são obrigatórios." },
+        { ok: false, code: !name ? "STUDENT_NAME_REQUIRED" : !email ? "STUDENT_EMAIL_REQUIRED" : "STUDENT_REGISTRATION_FAILED", message: !name ? "Informe o nome completo do aluno." : !email ? "Informe o e-mail do aluno." : "Preencha todos os campos obrigatórios para concluir o cadastro.", field: !name ? "name" : !email ? "email" : undefined },
         { status: 400 }
       );
     }
 
     if (!isValidCpf(cpf)) {
       return NextResponse.json(
-        { ok: false, message: "CPF inválido. Verifique os dígitos informados." },
+        { ok: false, code: "STUDENT_CPF_INVALID", message: "O CPF informado não é válido.", field: "cpf" },
         { status: 400 }
       );
     }
@@ -81,8 +81,9 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           ok: false,
-          code: cpfDuplicado ? "CPF_ALREADY_EXISTS" : "EMAIL_ALREADY_EXISTS",
-          message: cpfDuplicado ? "Este CPF já está cadastrado." : "Este e-mail já está cadastrado.",
+          code: cpfDuplicado ? "STUDENT_CPF_ALREADY_EXISTS" : "STUDENT_EMAIL_ALREADY_EXISTS",
+          message: cpfDuplicado ? "Os dados informados já estão vinculados a uma conta." : "Este e-mail já está vinculado a uma conta. Tente entrar ou recuperar o acesso.",
+          field: cpfDuplicado ? "cpf" : "email",
         },
         { status: 409 }
       );

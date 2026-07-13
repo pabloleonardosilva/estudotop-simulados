@@ -56,6 +56,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/admin/ajuda") ||
     pathname.startsWith("/disciplinas") ||
     pathname.startsWith("/assuntos") ||
+    pathname.startsWith("/topicos") ||
     pathname.startsWith("/bancas");
 
   useEffect(() => {
@@ -300,6 +301,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <main className={isPainel ? "min-w-0 flex-1" : "student-content-frame min-w-0 flex-1"}>
             {children}
           </main>
+
+          <footer className="bg-[#faf8f5] px-4 pb-5 pt-6 md:px-6">
+            <div className="rounded-2xl border border-slate-200/80 bg-white/85 px-5 py-4 text-center text-xs text-slate-500 shadow-[0_12px_36px_rgba(15,23,42,0.07)] ring-1 ring-white/80 backdrop-blur">
+              <p className="font-bold tracking-[0.16em] text-orange-500/80">
+                ESTUDOTOP SIMULADOS v0.3
+              </p>
+              <p className="mt-1">
+                Desenvolvido por <span className="font-semibold text-slate-700">Pablo Leonardo</span> - EstudoTOP
+              </p>
+            </div>
+          </footer>
         </div>
       </div>
     );

@@ -5,6 +5,7 @@ import { sendStudentWelcomeEmail } from "@/app/lib/server/sendStudentWelcomeEmai
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { validateStudentAccountIntegrity } from "@/lib/server/studentAccountService";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -50,6 +51,13 @@ export async function POST(
       );
     }
 
+    if (!(await validateStudentAccountIntegrity(supabase, id))) {
+      return NextResponse.json(
+        { ok: false, code: "STUDENT_ACCOUNT_INCOMPLETE", message: "A conta do aluno está incompleta ou divergente e precisa ser regularizada antes da aprovação." },
+        { status: 409 }
+      );
+    }
+
     // Idempotência/concorrência: o update só afeta a linha se ela ainda estiver
     // pendente e sem aprovação. Duas requisições simultâneas: apenas uma
     // encontra a linha; a outra recebe STUDENT_ALREADY_APPROVED.
@@ -59,7 +67,7 @@ export async function POST(
       .eq("id", id)
       .eq("status", "pending")
       .is("approved_at", null)
-      .select("id, name, email");
+      .select("id");
 
     if (approveError) {
       await logSystemError({
@@ -94,8 +102,6 @@ export async function POST(
       );
     }
 
-    const student = approvedRows[0];
-
     const { error: profileUpdateError } = await supabase
       .from("profiles")
       .update({ is_active: true })
@@ -127,7 +133,7 @@ export async function POST(
       action: "student_registration_approved",
       entityType: "student",
       entityId: id,
-      metadata: { email: student.email },
+      metadata: { approved: true },
     });
 
     const emailResult = await sendStudentWelcomeEmail({

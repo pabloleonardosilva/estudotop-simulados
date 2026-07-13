@@ -1,0 +1,73 @@
+MANIFESTO DA ENTREGA — INTEGRIDADE TOTAL DAS CONTAS DE ALUNOS
+
+Objetivo
+Consolidar as atualizações aprovadas de interface e centralizar a proteção da coerência entre auth.users, profiles, students e confirmações cadastrais, preservando o UUID e o histórico acadêmico.
+
+Diagnóstico encontrado
+- Criação de conta duplicada entre confirmação pública e cadastro administrativo.
+- Atualização de e-mail parcialmente centralizada e logs com valores cadastrais antigos/novos.
+- student_registration_confirmations é usada pelo código, mas sua criação não está no histórico SQL local.
+- Já existia reparação parcial em lib/server/studentAccountRepair.ts, agora reutilizada pelo serviço central.
+
+Arquivos criados
+- lib/server/studentAccountService.ts
+- supabase/migrations/20260713090000_student_account_integrity.sql
+- scripts/sql/student-account-integrity-audit.sql
+- scripts/sql/student-account-integrity-cleanup.sql
+- tests/student-account-integrity/student-account-integrity.spec.ts
+
+Arquivos modificados
+- app/api/admin/students/create/route.ts
+- app/api/admin/students/[id]/route.ts
+- app/api/admin/students/[id]/approve/route.ts
+- app/api/auth/register/route.ts
+- app/api/auth/confirm-registration/route.ts
+- app/components/AppShell.tsx
+- app/questoes/nova/page-client.tsx
+- docs/INDICE_FUNCOES_SISTEMA.md
+- docs/status-atual.md
+- MANIFESTO-DA-ENTREGA.txt
+
+Migration criada
+- 20260713090000_student_account_integrity.sql: índices normalizados e diagnóstico administrativo. NÃO EXECUTADA.
+
+Scripts SQL
+- student-account-integrity-audit.sql: somente SELECT; deve ser executado primeiro.
+- student-account-integrity-cleanup.sql: limpeza controlada, exclui admins, bloqueia histórico, não remove Auth e termina em ROLLBACK.
+
+Rotas alteradas
+- POST /api/admin/students/create
+- PATCH /api/admin/students/[id]
+- POST /api/admin/students/[id]/approve
+- POST /api/auth/register
+- POST /api/auth/confirm-registration
+
+Rollback implementado
+- Criação nova: remove camadas criadas pela própria operação se profile, student ou validação final falhar.
+- E-mail: restaura o e-mail anterior no Auth se students falhar; sucesso só após validação final.
+
+Mensagens de erro
+Contrato seguro com ok, code, message e field opcional. Cadastro público usa mensagem antienumeração.
+
+Ordem de aplicação
+1. Auditar o schema remoto e confirmar a estrutura de student_registration_confirmations.
+2. Revisar a migration em ambiente de homologação.
+3. Aplicar a migration somente com autorização explícita.
+4. Executar o script de auditoria (SELECT).
+5. Reparar manualmente contas com histórico.
+6. Revisar candidatos de limpeza um a um.
+7. Somente então adaptar/autorizar a limpeza e remoção Auth via serviço administrativo.
+
+Riscos e pendências
+- Nenhum dado remoto foi auditado ou saneado nesta entrega.
+- A migration depende da tabela operacional student_registration_confirmations existente no remoto.
+- O script de limpeza não remove auth.users por desenho; isso exige Auth Admin API controlada.
+- Testes de integração real requerem um projeto Supabase isolado de homologação.
+
+Validações
+- npx tsc --noEmit: aprovado.
+- npm run build: aprovado.
+- Testes student-account-integrity: 5 aprovados.
+- Lint dos arquivos funcionais: aprovado após remoção de variável sem uso.
+- Migration e scripts: validação estática aprovada; não executados contra banco.
+- Inspeção de diff, segredos, .env e Sidebar: executada antes da entrega.

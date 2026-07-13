@@ -148,7 +148,8 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 - Se a barra de rolagem da sidebar ficar grosseira, verificar `Sidebar.tsx`, `AppShell.tsx` e `globals.css`.
 - Não alterar rotas do menu sem revisar `Sidebar.tsx` e `MobileSidebar.tsx`.
 - **`isActive` no Sidebar:** a função usa `pathname === path || pathname.startsWith(path + "/")`. Para rotas pai (ex: `/admin/alunos`) que têm subrotas filhas com item próprio no menu (ex: `/admin/alunos/novo`), usar `isActive("/admin/alunos") && pathname !== "/admin/alunos/novo"` para evitar que o item pai fique ativo na página filha. Padrão já aplicado em: Jornadas, Alunos.
-- **`isDarkPremiumRoute` (atualizado 2026-05-29):** flag usada para aplicar fundo `bg-[#03070D]` no shell e estilo dark no footer. Cobre: `/simulados/**`, `/admin/jornadas/**`, `/admin/raio-x-provas/**`, `/questoes/**`, `/admin/alunos/**`. Footer dark: `border border-white/[0.08] bg-[#0B111C]/90 backdrop-blur`. Páginas dentro dessas rotas que usam `PageBackground` (light) convivem com o shell dark — apenas o fundo externo e o footer ficam dark.
+- **`isDarkPremiumRoute` (atualizado 2026-07-12):** flag usada para aplicar fundo `bg-[#03070D]` no shell e estilo dark no footer. Cobre: `/simulados/**`, `/admin/jornadas/**`, `/admin/raio-x-provas/**`, `/questoes/**`, `/admin/alunos/**`, `/admin/logs/**`, `/admin/ajuda/**`, `/disciplinas/**`, `/assuntos/**`, `/topicos/**` e `/bancas/**`. Footer dark: `border border-white/[0.08] bg-[#0B111C]/90 backdrop-blur`. Páginas dentro dessas rotas que usam `PageBackground` (light) convivem com o shell dark — apenas o fundo externo e o footer ficam dark.
+- **Footer da área do aluno (adicionado 2026-07-12):** o ramo compartilhado de aluno no `AppShell.tsx` renderiza um rodapé claro após o conteúdo, com fundo `#faf8f5`, cartão branco translúcido, borda slate e identificação institucional em laranja. Ele aparece nas páginas comuns da área do aluno; rotas de execução e resultado que usam layout focado continuam sem o shell global.
 - **Regra:** se uma nova página usar fundo `bg-[#07111F]` customizado, adicionar seu prefixo em `isDarkPremiumRoute` no `AppShell.tsx`.
 
 
@@ -516,6 +517,10 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 ### 3.3 Criar / Editar Questão
 
 **Função:** criação e edição completa de questão, incluindo tipo, enunciado, alternativas, gabarito, comentário, banca, disciplina, assuntos, ano, dificuldade e status.
+
+**Padrão da criação manual (atualizado 2026-07-12):** ao abrir `/questoes/nova` sem restaurar rascunho ou carregar modelo, o formulário seleciona automaticamente a banca cadastrada equivalente a `ESTUDO TOP` e preenche o ano corrente do navegador. Ambos os campos permanecem editáveis; se a banca não estiver cadastrada entre as bancas ativas, nenhuma banca é selecionada automaticamente.
+
+**Composição visual da criação manual (atualizada 2026-07-12):** `/questoes/nova` usa integralmente o tema dark premium e replica a linguagem do editor inline (`QuestionEditor.tsx`): fundo `#03070D`, card `#081321`, filtros pesquisáveis dark na ordem Tipo → Disciplina → Assuntos → Banca → Ano, linha de Dificuldade e Status, editor rico escuro, alternativas com estados dark, `Tópicos avaliados` em bloco azul e ação de salvar em rodapé sticky laranja. A antiga linha visual de pontuação fixa foi removida. As regras de validação, rascunho, duplicidade, geração de explicação e salvamento permanecem inalteradas.
 
 **Arquivos principais:**
 
@@ -1402,6 +1407,20 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
   - simulados disponíveis, bloqueados, atrasados e pendentes.
 
 ---
+
+### 9.4.1 Integridade central das contas de alunos — 2026-07-13
+
+**Fonte de identidade:** o UUID compartilhado entre `auth.users`, `public.profiles` e `public.students`. E-mail, nome, CPF e telefone são atributos mutáveis; vínculos acadêmicos nunca são recriados por e-mail.
+
+**Serviço central:** `lib/server/studentAccountService.ts` concentra criação/reconciliação, rollback compensatório, validação final de integridade, sincronização de e-mail e contrato sanitizado de erros. É usado por `POST /api/admin/students/create`, `POST /api/auth/confirm-registration`, `PATCH /api/admin/students/[id]` e pela validação anterior a `POST /api/admin/students/[id]/approve`.
+
+**Contrato de erro:** `{ ok:false, code, message, field? }`. O cadastro público usa mensagem antienumeração para e-mail já vinculado; o admin recebe motivo direto e sanitizado. Erros brutos do Supabase/SQL não devem ser enviados ao frontend.
+
+**Rollback:** criações novas removem, de forma compensatória, confirmação criada pela operação, `students`, `profiles` e Auth quando profile/student ou a validação final falham. Contas preexistentes nunca entram nesse rollback de criação. Alteração de e-mail preserva o UUID, atualiza Auth e `students`, remove confirmações do e-mail anterior e reverte Auth se a persistência em `students` falhar.
+
+**Banco:** `supabase/migrations/20260713090000_student_account_integrity.sql` adiciona unicidade normalizada de e-mail/CPF e views administrativas de diagnóstico. `scripts/sql/student-account-integrity-audit.sql` é somente leitura. `scripts/sql/student-account-integrity-cleanup.sql` é controlado, exclui admins, bloqueia histórico, não remove Auth diretamente e termina em `ROLLBACK` por padrão.
+
+**Regra operacional:** migration e scripts não são executados automaticamente. Primeiro aplicar a migration em janela autorizada, executar a auditoria, revisar cada candidato, reparar UUIDs com histórico e somente então adaptar/autorizar a limpeza. A ausência histórica local da criação de `student_registration_confirmations` permanece uma divergência de baseline a resolver separadamente.
 
 ## 9.5 Rotas da área do aluno — pendentes de documentação completa
 
