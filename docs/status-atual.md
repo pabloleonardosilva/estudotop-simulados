@@ -650,7 +650,7 @@ Escopo previsto:
 ### TopCoins nos cards de simulados do aluno — 2026-07-14
 
 - [x] Todos os cards em `/meus-simulados` e `/minhas-jornadas/[id]` exibem o ícone e o valor calculado pela regra universal de TopCoins.
-- [x] A informação é clicável e abre um modal premium compartilhado, explicando a moeda, o cálculo e as futuras vantagens na plataforma.
+- [x] A informação é clicável e abre um modal premium compartilhado em popup global, montado fora do card por portal, explicando a moeda, o cálculo e as futuras vantagens na plataforma.
 - [x] O aviso de TopCoins antes de iniciar um simulado reutiliza o mesmo modal.
 - [x] O hero de `/extrato-topcoins` explica o que são TopCoins e quais fatores determinam o ganho.
 - [x] Nenhum saldo, tentativa, resultado, API ou regra de persistência foi alterado.

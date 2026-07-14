@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 import { formatTopCoinsLabel } from "@/app/lib/gamification/topcoins";
@@ -25,29 +26,36 @@ export function TopCoinValueInfo({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+        }}
         className={className}
         aria-label={`Entender ${formatTopCoinsLabel(amount)} deste simulado`}
       >
         <TopCoinStack size="md" />
         <span>{prefix} {formatTopCoinsLabel(amount)}</span>
       </button>
-      <PremiumModal
-        open={open}
-        theme={dark ? "dark" : "light"}
-        tone="info"
-        title="O que são TopCoins?"
-        message="TopCoin é a moeda universal do EstudoTOP Simulados. Cada simulado resolvido pode render uma quantidade de TopCoins, e essas moedas futuramente garantirão vantagens dentro da plataforma."
-        onClose={() => setOpen(false)}
-        closeLabel="Entendi"
-      >
-        <div className={`flex items-start gap-4 rounded-2xl border p-4 text-sm leading-6 ${dark ? "border-amber-400/25 bg-amber-400/10 text-amber-50" : "border-orange-200 bg-orange-50 text-slate-700"}`}>
-          <TopCoinStack size="lg" />
-          <p>
-            Este simulado vale até <strong>{formatTopCoinsLabel(amount)}</strong> nesta tentativa. O valor segue a regra universal de TopCoins: considera a quantidade de questões e o número da tentativa; cada erro reduz uma moeda, sem deixar o ganho negativo.
-          </p>
-        </div>
-      </PremiumModal>
+      {open && createPortal(
+        <PremiumModal
+          open
+          theme={dark ? "dark" : "light"}
+          tone="info"
+          title="O que são TopCoins?"
+          message="TopCoin é a moeda universal do EstudoTOP Simulados. Cada simulado resolvido pode render uma quantidade de TopCoins, e essas moedas futuramente garantirão vantagens dentro da plataforma."
+          onClose={() => setOpen(false)}
+          closeLabel="Entendi"
+        >
+          <div className={`flex items-start gap-4 rounded-2xl border p-4 text-sm leading-6 ${dark ? "border-amber-400/25 bg-amber-400/10 text-amber-50" : "border-orange-200 bg-orange-50 text-slate-700"}`}>
+            <TopCoinStack size="lg" />
+            <p>
+              Este simulado vale até <strong>{formatTopCoinsLabel(amount)}</strong> nesta tentativa. O valor segue a regra universal de TopCoins: considera a quantidade de questões e o número da tentativa; cada erro reduz uma moeda, sem deixar o ganho negativo.
+            </p>
+          </div>
+        </PremiumModal>,
+        document.body,
+      )}
     </>
   );
 }

@@ -3192,7 +3192,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 
 **Regra de cálculo:** `app/lib/gamification/topcoins.ts` é a fonte única. A primeira tentativa tem valor-base igual ao total de questões; a segunda usa `ceil(total/2)`; da terceira em diante usa `ceil(total/3)`. O ganho final desconta os erros e nunca fica negativo.
 
-**Componente informativo compartilhado:** `TopCoinValueInfo`, exportado por `app/components/gamification/TopCoinRewardModal.tsx`, exibe a pilha de moedas, o valor calculado e abre um `PremiumModal` explicando a moeda universal, a regra de ganho e as futuras vantagens na plataforma.
+**Componente informativo compartilhado:** `TopCoinValueInfo`, exportado por `app/components/gamification/TopCoinRewardModal.tsx`, exibe a pilha de moedas, o valor calculado e abre um `PremiumModal` explicando a moeda universal, a regra de ganho e as futuras vantagens na plataforma. O modal é montado por portal diretamente em `document.body`, fora da árvore e dos limites visuais do card de simulado; o clique no informativo não aciona a navegação do card.
 
 **Telas:**
 
