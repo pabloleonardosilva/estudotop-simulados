@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/admin/jornadas/release-job",
-      "schedule": "0 2,14 * * *"
+      "schedule": "0 7 * * *"
     }
   ]
 }

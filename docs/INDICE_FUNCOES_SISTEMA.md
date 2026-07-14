@@ -1365,7 +1365,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Manutenção:** todo cálculo de cronograma deve usar `calcReleaseSchedule`; nunca derivar distribuição de `duration_days`/`duration_months`. Cron (`release-job`) e e-mails usam o `scheduled_release_at` já gravado — não recalculam.
 
-**Agendamento em produção:** `vercel.json` chama `GET /api/admin/jornadas/release-job` todos os dias às `02:00 UTC` e `14:00 UTC`, equivalentes a `23h00` e `11h00` no horário de Brasília. O projeto usa plano Vercel Pro. A Vercel envia automaticamente `Authorization: Bearer <CRON_SECRET>` e o endpoint valida o segredo em tempo constante por `verifyCronSecret`; nunca remover essa proteção nem incluir o segredo no repositório.
+**Agendamento em produção:** `vercel.json` chama `GET /api/admin/jornadas/release-job` uma vez por dia às `07:00 UTC`, equivalente a `04h00` no horário de Brasília. A frequência diária é compatível com os limites aplicados atualmente pela Vercel ao projeto. A Vercel envia automaticamente `Authorization: Bearer <CRON_SECRET>` e o endpoint valida o segredo em tempo constante por `verifyCronSecret`; nunca remover essa proteção nem incluir o segredo no repositório.
 
 ### 9.3 Criar / Editar Jornada
 

@@ -91,7 +91,7 @@ test("student simulados exclude cancelled journeys and completion advances journ
   expect(releaseJob).toContain('.eq("counts_toward_limit", true)');
   expect(vercelConfig.crons).toContainEqual({
     path: "/api/admin/jornadas/release-job",
-    schedule: "0 2,14 * * *",
+    schedule: "0 7 * * *",
   });
 });
 

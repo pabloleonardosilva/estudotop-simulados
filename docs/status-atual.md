@@ -86,7 +86,7 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 - [ ] Recálculo de `scheduled_release_at` ao editar `exam_date` com alunos ativos — spec seção 2.4
 - [ ] Reenvio manual de e-mail de boas-vindas da Jornada pelo admin — spec seção 5
 - [ ] Migration aplicada no Supabase (production/staging)
-- [x] Cron declarado em `vercel.json` para chamar `/api/admin/jornadas/release-job` diariamente às 11h00 e 23h00 de Brasília (`14:00` e `02:00 UTC`), protegido por `CRON_SECRET`; torna-se ativo após o próximo deploy de produção.
+- [x] Cron declarado em `vercel.json` para chamar `/api/admin/jornadas/release-job` uma vez por dia às 04h00 de Brasília (`07:00 UTC`), protegido por `CRON_SECRET` e compatível com o limite diário atualmente aplicado pela Vercel ao projeto; torna-se ativo após o próximo deploy de produção aprovado.
 
 ### Páginas implementadas
 
