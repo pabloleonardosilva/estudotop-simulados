@@ -54,6 +54,29 @@ async function recalcFutureSchedules(
   }
 }
 
+// Recalcula expires_at (validade da matrícula) das matrículas ativas quando a
+// duração da Jornada muda. expires_at = started_at + duration_days. Sem isso, a
+// alteração da duração não propagava para quem já estava matriculado.
+async function recalcEnrollmentExpirations(
+  supabase: SupabaseClient,
+  jornadaId: string,
+  durationDays: number,
+): Promise<void> {
+  const { data: enrollments } = await supabase
+    .from("student_jornadas")
+    .select("id, started_at")
+    .eq("jornada_id", jornadaId)
+    .eq("status", "active");
+
+  const rows = (enrollments || []) as Array<{ id: string; started_at: string }>;
+  for (const sj of rows) {
+    const started = new Date(String(sj.started_at).slice(0, 10) + "T00:00:00");
+    const expires = new Date(started);
+    expires.setDate(expires.getDate() + durationDays);
+    await supabase.from("student_jornadas").update({ expires_at: toDateString(expires) }).eq("id", sj.id);
+  }
+}
+
 const JORNADA_CATEGORIES = ["saude", "policial", "tribunais", "administrativo"] as const;
 
 function normalizeCategory(value: unknown): typeof JORNADA_CATEGORIES[number] {
@@ -380,6 +403,17 @@ export async function PATCH(
         await recalcFutureSchedules(supabase, id, finalReleaseDuration, examDate, finalPlannedCount);
       } catch (err) {
         void logSystemError({ source: "api.admin.jornadas.recalc_schedules", error: err, request, metadata: { jornadaId: id } });
+      }
+    }
+
+    // Alterar a duração recalcula a validade (expires_at) das matrículas ativas:
+    // expires_at = started_at + nova duração.
+    const durationChanged = updates.duration_days !== undefined && updates.duration_days !== existing.duration_days;
+    if (durationChanged) {
+      try {
+        await recalcEnrollmentExpirations(supabase, id, Number(finalDurationDays));
+      } catch (err) {
+        void logSystemError({ source: "api.admin.jornadas.recalc_expirations", error: err, request, metadata: { jornadaId: id } });
       }
     }
 

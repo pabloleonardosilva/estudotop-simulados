@@ -627,3 +627,12 @@ Escopo previsto:
 - **UI:** novo campo "Todos os simulados serão liberados em [dias]" nos forms de criação e edição, abaixo da duração, desabilitado com aviso quando há data da prova.
 - **Testes:** algoritmo validado unitariamente nos cenários-chave (sem prova release=90/180, 1 simulado, com prova D-7, entrada < 7 dias, planned>linked). tsc e build aprovados. Testes de UI/integração completos (criar/editar/enrolar/cron/e-mails) pendentes — exigem ambiente com jornadas e alunos de teste.
 - Esta entrega inclui a migration `20260713150000_add_jornada_release_duration.sql` (não executada).
+
+### Correção — expires_at das matrículas não acompanhava a duração da Jornada — 2026-07-14
+
+- **Sintoma:** aluno matriculado numa jornada de 10 dias mostrava "acesso até" = entrada + 6 dias. Diagnóstico no banco: todas as matrículas tinham `expires_at = started_at + 6`, enquanto `duration_days = 10` (a jornada fora editada de 6 para 10 dias APÓS as matrículas, `editada_apos_ultima_matricula = true`).
+- **Causa raiz:** `expires_at` é gravado uma vez na matrícula (`started_at + duration_days`) e não era recalculado quando o admin alterava a duração da jornada depois.
+- **Correção:** `PATCH /api/admin/jornadas/[id]` passa a recalcular `expires_at = started_at + nova duração` das matrículas **ativas** ao alterar `duration_days` (`recalcEnrollmentExpirations`), no mesmo ponto do recálculo de cronograma.
+- **Arquivo:** `app/api/admin/jornadas/[id]/route.ts` (+ índice funcional). Nenhuma migration.
+- **Correção de dados aplicada (autorizada) em 2026-07-14:** UPDATE pontual nas 3 matrículas ATIVAS da "Jornada de Teste" (`3d618a08-...`) — `expires_at = started_at + duration_days` (10). Pablo (início 13/07) → acesso até 23/07; as de 09/07 → 19/07. Matrículas não ativas não foram tocadas.
+- **Pendência:** esta correção de código, como toda a Sprint de Jornadas, só passa a valer para EDIÇÕES FUTURAS de duração com a migration `20260713150000` aplicada + deploy.

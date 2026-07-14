@@ -1359,7 +1359,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Validação:** sem data da prova, `release_duration_days <= duration_days − 7` (POST e PATCH; e no cliente nos dois forms). Com data da prova, a validação é ignorada.
 
-**Recálculo:** ao alterar `exam_date` ou `release_duration_days` de jornada com alunos, o PATCH recalcula (síncrono) o `scheduled_release_at` **apenas** dos `student_jornada_simulados` com status `locked` de matrículas ativas; concluídos/iniciados/liberados são preservados (`recalcFutureSchedules`).
+**Recálculo:** ao alterar `exam_date` ou `release_duration_days` de jornada com alunos, o PATCH recalcula (síncrono) o `scheduled_release_at` **apenas** dos `student_jornada_simulados` com status `locked` de matrículas ativas; concluídos/iniciados/liberados são preservados (`recalcFutureSchedules`). Ao alterar `duration_days`, o PATCH recalcula o `expires_at` (validade da matrícula = `started_at + duration_days`) de todas as matrículas **ativas** (`recalcEnrollmentExpirations`) — sem isso, a mudança de duração não propagava para quem já estava matriculado (o `expires_at` fica congelado no valor da inserção).
 
 **Manutenção:** todo cálculo de cronograma deve usar `calcReleaseSchedule`; nunca derivar distribuição de `duration_days`/`duration_months`. Cron (`release-job`) e e-mails usam o `scheduled_release_at` já gravado — não recalculam.
 
