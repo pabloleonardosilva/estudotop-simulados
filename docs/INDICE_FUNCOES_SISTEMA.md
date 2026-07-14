@@ -1365,6 +1365,8 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Manutenção:** todo cálculo de cronograma deve usar `calcReleaseSchedule`; nunca derivar distribuição de `duration_days`/`duration_months`. Cron (`release-job`) e e-mails usam o `scheduled_release_at` já gravado — não recalculam.
 
+**Agendamento em produção:** `vercel.json` chama `GET /api/admin/jornadas/release-job` todos os dias às `02:00 UTC` e `14:00 UTC`, equivalentes a `23h00` e `11h00` no horário de Brasília. O projeto usa plano Vercel Pro. A Vercel envia automaticamente `Authorization: Bearer <CRON_SECRET>` e o endpoint valida o segredo em tempo constante por `verifyCronSecret`; nunca remover essa proteção nem incluir o segredo no repositório.
+
 ### 9.3 Criar / Editar Jornada
 
 **Arquivos:**
@@ -3197,6 +3199,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 **Telas:**
 
 - `/meus-simulados`: todos os cards exibem o valor de TopCoins; quando ainda há tentativa, usa a próxima tentativa, e quando o limite terminou mantém a última tentativa contabilizada como referência.
+- `/meus-simulados` considera apenas matrículas de Jornada ativas e ainda válidas; simulados ligados exclusivamente a matrículas canceladas ou expiradas não aparecem nem concedem acesso. Ao concluir uma tentativa válida, o vínculo correspondente em `student_jornada_simulados` é sincronizado para `completed`. O `release-job` também consulta `simulado_attempts` como fonte de verdade para reparar vínculos históricos desatualizados antes de avaliar a liberação seguinte.
 - `/minhas-jornadas/[id]`: todos os cards de simulados exibem o mesmo componente e a mesma regra.
 - `/meus-simulados/[id]`: o aviso anterior ao início é clicável e abre a explicação compartilhada.
 - `/extrato-topcoins`: o hero explica o conceito, os fatores do cálculo e o uso futuro dos TopCoins.

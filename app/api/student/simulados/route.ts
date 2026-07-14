@@ -75,7 +75,9 @@ export async function GET(request: Request) {
   const { data: studentJornadas, error: studentJornadasError } = await supabase
     .from("student_jornadas")
     .select("id, jornada_id, jornadas:jornada_id(id, title)")
-    .eq("student_id", student.id);
+    .eq("student_id", student.id)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString().slice(0, 10));
 
   if (studentJornadasError) {
     void logSystemError({ source: "api.student.simulados_list", error: studentJornadasError, request });

@@ -78,6 +78,23 @@ test("journey enrollment sends and tracks the journey and released-simulado emai
   expect(journeyClient).toContain("`/admin/alunos/${sj.student_id}`");
 });
 
+test("student simulados exclude cancelled journeys and completion advances journey progress", () => {
+  const listRoute = read("app/api/student/simulados/route.ts");
+  const submitRoute = read("app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts");
+  const releaseJob = read("app/api/admin/jornadas/release-job/route.ts");
+  const vercelConfig = JSON.parse(read("vercel.json")) as { crons: Array<{ path: string; schedule: string }> };
+
+  expect(listRoute).toContain('.eq("status", "active")');
+  expect(listRoute).toContain('.gt("expires_at"');
+  expect(submitRoute).toContain('.update({ status: "completed", completed_at: finishedAt })');
+  expect(releaseJob).toContain('.from("simulado_attempts")');
+  expect(releaseJob).toContain('.eq("counts_toward_limit", true)');
+  expect(vercelConfig.crons).toContainEqual({
+    path: "/api/admin/jornadas/release-job",
+    schedule: "0 2,14 * * *",
+  });
+});
+
 test("public registration identifies every duplicated field without exposing account data", () => {
   const route = read("app/api/auth/register/route.ts");
   expect(route).toContain('duplicate_fields: duplicateFields');

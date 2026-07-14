@@ -75,7 +75,7 @@ export async function GET(request: Request) {
       } else {
         const { data: prev } = await supabase
           .from("student_jornada_simulados")
-          .select("id, status")
+          .select("id, simulado_id, status")
           .eq("student_jornada_id", candidate.student_jornada_id)
           .eq("order_number", candidate.order_number - 1)
           .single();
@@ -83,15 +83,42 @@ export async function GET(request: Request) {
         if (prev?.status === "completed") {
           shouldRelease = true;
         } else {
-          const { data: next } = await supabase
-            .from("student_jornada_simulados")
-            .select("id, scheduled_release_at")
-            .eq("student_jornada_id", candidate.student_jornada_id)
-            .eq("order_number", candidate.order_number + 1)
-            .maybeSingle();
+          if (prev?.simulado_id) {
+            const { data: completedAttempt } = await supabase
+              .from("simulado_attempts")
+              .select("submitted_at")
+              .eq("student_id", sj.student_id)
+              .eq("simulado_id", prev.simulado_id)
+              .eq("status", "completed")
+              .eq("counts_toward_limit", true)
+              .order("submitted_at", { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle();
 
-          if (!next || next.scheduled_release_at <= today) {
-            shouldRelease = true;
+            if (completedAttempt) {
+              shouldRelease = true;
+              const { error: progressSyncError } = await supabase
+                .from("student_jornada_simulados")
+                .update({ status: "completed", completed_at: completedAttempt.submitted_at || new Date().toISOString() })
+                .eq("id", prev.id)
+                .neq("status", "completed");
+              if (progressSyncError) {
+                void logSystemError({ source: "api.admin.jornadas.release_job.progress_sync", error: progressSyncError, request, metadata: { student_jornada_simulado_id: prev.id } });
+              }
+            }
+          }
+
+          if (!shouldRelease) {
+            const { data: next } = await supabase
+              .from("student_jornada_simulados")
+              .select("id, scheduled_release_at")
+              .eq("student_jornada_id", candidate.student_jornada_id)
+              .eq("order_number", candidate.order_number + 1)
+              .maybeSingle();
+
+            if (!next || next.scheduled_release_at <= today) {
+              shouldRelease = true;
+            }
           }
         }
       }

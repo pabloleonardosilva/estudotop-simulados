@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logActivity } from "@/lib/logging/activity-log";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
+import { logSystemError } from "@/app/lib/server/auditLogger";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -287,6 +288,28 @@ export async function POST(
       { ok: false, message: updateError.message },
       { status: 500 },
     );
+  }
+
+  const { data: activeJornadas, error: activeJornadasError } = await supabase
+    .from("student_jornadas")
+    .select("id")
+    .eq("student_id", student.id)
+    .eq("status", "active")
+    .gt("expires_at", finishedAt.slice(0, 10));
+
+  if (activeJornadasError) {
+    void logSystemError({ source: "api.student.simulado_submit.jornada_lookup", error: activeJornadasError, request, metadata: { student_id: student.id, simulado_id: simuladoId } });
+  } else if (activeJornadas?.length) {
+    const { error: jornadaProgressError } = await supabase
+      .from("student_jornada_simulados")
+      .update({ status: "completed", completed_at: finishedAt })
+      .eq("simulado_id", simuladoId)
+      .in("student_jornada_id", activeJornadas.map((row) => row.id))
+      .in("status", ["available", "in_progress"]);
+
+    if (jornadaProgressError) {
+      void logSystemError({ source: "api.student.simulado_submit.jornada_progress", error: jornadaProgressError, request, metadata: { student_id: student.id, simulado_id: simuladoId } });
+    }
   }
 
   // TopCoins: recalcula do zero o extrato deste aluno neste simulado, a

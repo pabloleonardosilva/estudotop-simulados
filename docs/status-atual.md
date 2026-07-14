@@ -86,7 +86,7 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 - [ ] Recálculo de `scheduled_release_at` ao editar `exam_date` com alunos ativos — spec seção 2.4
 - [ ] Reenvio manual de e-mail de boas-vindas da Jornada pelo admin — spec seção 5
 - [ ] Migration aplicada no Supabase (production/staging)
-- [ ] Cron job configurado para chamar `/api/admin/jornadas/release-job` periodicamente (Supabase Edge Function + pg_cron)
+- [x] Cron declarado em `vercel.json` para chamar `/api/admin/jornadas/release-job` diariamente às 11h00 e 23h00 de Brasília (`14:00` e `02:00 UTC`), protegido por `CRON_SECRET`; torna-se ativo após o próximo deploy de produção.
 
 ### Páginas implementadas
 
@@ -654,6 +654,12 @@ Escopo previsto:
 - [x] O aviso de TopCoins antes de iniciar um simulado reutiliza o mesmo modal.
 - [x] O hero de `/extrato-topcoins` explica o que são TopCoins e quais fatores determinam o ganho.
 - [x] Nenhum saldo, tentativa, resultado, API ou regra de persistência foi alterado.
+
+### Coerência entre Jornadas e Meus Simulados — 2026-07-14
+
+- [x] `/meus-simulados` deixou de exibir simulados provenientes de matrículas de Jornada canceladas ou expiradas.
+- [x] A conclusão de uma tentativa sincroniza o item da Jornada para `completed` nas matrículas ativas e válidas.
+- [x] O job de liberação reconhece a tentativa concluída como fonte de verdade e corrige vínculos históricos desatualizados antes de liberar o próximo item elegível.
 
 ### Reset administrativo de senha no cadastro do aluno — 2026-07-14
 
