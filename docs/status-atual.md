@@ -636,3 +636,13 @@ Escopo previsto:
 - **Arquivo:** `app/api/admin/jornadas/[id]/route.ts` (+ índice funcional). Nenhuma migration.
 - **Correção de dados aplicada (autorizada) em 2026-07-14:** UPDATE pontual nas 3 matrículas ATIVAS da "Jornada de Teste" (`3d618a08-...`) — `expires_at = started_at + duration_days` (10). Pablo (início 13/07) → acesso até 23/07; as de 09/07 → 19/07. Matrículas não ativas não foram tocadas.
 - **Pendência:** esta correção de código, como toda a Sprint de Jornadas, só passa a valer para EDIÇÕES FUTURAS de duração com a migration `20260713150000` aplicada + deploy.
+### Desempenho do editor de simulado — 2026-07-14
+
+- [x] `/simulados/[id]/editar` deixou de carregar e serializar todo o banco de questões na abertura; o carregamento inicial ficou restrito ao simulado, às questões já vinculadas e às taxonomias.
+- [x] O banco completo, as métricas de acerto e o mapa de questões por Jornada são carregados sob demanda, em endpoint administrativo protegido, somente ao abrir **Selecionar questões** ou **Criar questão**.
+- [x] Filtros, contagens, uso como modelo e exclusão por Jornada foram preservados.
+
+### Cards de simulados clicáveis no detalhe da Jornada — 2026-07-14
+
+- [x] Em `/admin/jornadas/[id]`, clicar em qualquer área do card de um simulado vinculado abre `/simulados/[id]`.
+- [x] A navegação vale para simulados liberados e programados, com foco visível por teclado e sem links aninhados.

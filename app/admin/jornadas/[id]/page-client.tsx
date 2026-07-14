@@ -652,6 +652,8 @@ function SimuladosPanel({ jornadaId, jornadaSimulados, linkedCount, plannedCount
 }
 
 function SimuladoRow({ js, order, state, releaseDay, scheduleDate }: { js: JornadaSimulado; order: number; state: "released" | "scheduled"; releaseDay: number; scheduleDate: Date }) {
+  const simuladoId = js.simulados?.id || js.simulado_id;
+  const simuladoTitle = js.simulados?.title || "Simulado sem nome";
   const config = {
     released: {
       border: "border-sky-400/70 shadow-[0_0_38px_rgba(14,165,233,.15)]",
@@ -682,12 +684,16 @@ function SimuladoRow({ js, order, state, releaseDay, scheduleDate }: { js: Jorna
   return (
     <div className="relative">
       <div className={`absolute -left-[42px] top-8 z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 text-base font-black ${config.circle}`}>{order}</div>
-      <div className={`grid gap-4 rounded-[18px] border bg-[#030811]/94 p-3.5 transition hover:bg-[#060D17] md:grid-cols-[104px_1fr_210px] ${config.border}`}>
+      <Link
+        href={`/simulados/${simuladoId}`}
+        aria-label={`Abrir simulado ${simuladoTitle}`}
+        className={`group grid gap-4 rounded-[18px] border bg-[#030811]/94 p-3.5 transition hover:-translate-y-0.5 hover:bg-[#060D17] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 md:grid-cols-[104px_1fr_210px] ${config.border}`}
+      >
         <div className="h-24 overflow-hidden rounded-xl border border-white/[0.065] bg-black/55 shadow-[inset_0_0_18px_rgba(255,255,255,.03)]">
           <img src={config.image} alt="Miniatura do simulado" className="h-full w-full object-cover" />
         </div>
         <div className="min-w-0 py-1">
-          <h3 className="line-clamp-2 text-lg font-black tracking-[-0.03em] text-white">{js.simulados?.title || "Simulado sem nome"}</h3>
+          <h3 className="line-clamp-2 text-lg font-black tracking-[-0.03em] text-white transition group-hover:text-orange-200">{simuladoTitle}</h3>
           <div className="mt-3 flex flex-wrap gap-2">
             <MiniTag>{js.simulados?.question_count ?? 0} questões</MiniTag>
             <MiniTag>30 min</MiniTag>
@@ -706,15 +712,12 @@ function SimuladoRow({ js, order, state, releaseDay, scheduleDate }: { js: Jorna
           </div>
           <p className="mt-1 text-sm text-slate-400">{config.statusSub}</p>
           {config.action && (
-            <Link
-              href={`/simulados/${js.simulados?.id || js.simulado_id}`}
-              className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.022] px-4 text-sm font-bold text-white transition hover:bg-white/[0.06]"
-            >
+            <span className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.022] px-4 text-sm font-bold text-white transition group-hover:bg-white/[0.06]">
               {config.action} <ChevronRight size={17} />
-            </Link>
+            </span>
           )}
         </div>
-      </div>
+      </Link>
     </div>
   );
 }

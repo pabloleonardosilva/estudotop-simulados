@@ -28,6 +28,143 @@ type CandidateAlternative = AlternativeInput & {
   question_id: string;
 };
 
+const SIMULADO_EDITOR_QUESTION_SELECT = `
+  id, code, statement, explanation_text, status, difficulty_level,
+  evaluated_topics, year, question_type,
+  exam_boards:exam_board_id (id, name),
+  subjects:subject_id (id, name, discipline_id, disciplines:discipline_id (id, name)),
+  question_subjects (subjects (id, name, discipline_id, disciplines:discipline_id (id, name))),
+  question_alternatives (id, label, text, is_correct, order_number),
+  simulado_questions (id, simulados:simulado_id (id, title, status))
+`;
+
+async function fetchPublishedQuestions(supabase: SupabaseClient) {
+  const pageSize = 1000;
+  const questions: Record<string, unknown>[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("questions")
+      .select(SIMULADO_EDITOR_QUESTION_SELECT)
+      .eq("status", "published")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+    const rows = (data || []) as Record<string, unknown>[];
+    questions.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  return questions;
+}
+
+async function fetchJornadaQuestionIds(supabase: SupabaseClient) {
+  const { data: jornadaSimulados, error } = await supabase
+    .from("jornada_simulados")
+    .select("jornada_id, simulado_id");
+  if (error) throw new Error(error.message);
+
+  const simuladoIds = Array.from(new Set((jornadaSimulados || []).map((link) => link.simulado_id).filter(Boolean)));
+  const { data: simuladoQuestions, error: questionsError } = simuladoIds.length
+    ? await supabase.from("simulado_questions").select("simulado_id, question_id").in("simulado_id", simuladoIds)
+    : { data: [], error: null };
+  if (questionsError) throw new Error(questionsError.message);
+
+  const bySimulado = new Map<string, Set<string>>();
+  for (const link of simuladoQuestions || []) {
+    const ids = bySimulado.get(link.simulado_id) || new Set<string>();
+    ids.add(link.question_id);
+    bySimulado.set(link.simulado_id, ids);
+  }
+
+  const byJornada = new Map<string, Set<string>>();
+  for (const link of jornadaSimulados || []) {
+    const ids = byJornada.get(link.jornada_id) || new Set<string>();
+    bySimulado.get(link.simulado_id)?.forEach((questionId) => ids.add(questionId));
+    byJornada.set(link.jornada_id, ids);
+  }
+
+  return Object.fromEntries(Array.from(byJornada, ([jornadaId, ids]) => [jornadaId, Array.from(ids)]));
+}
+
+async function fetchAnswerAccuracy(supabase: SupabaseClient, questionIds: string[]) {
+  const pageSize = 1000;
+  const totals = new Map<string, { correct: number; total: number }>();
+
+  const batches: string[][] = [];
+  for (let index = 0; index < questionIds.length; index += 200) {
+    batches.push(questionIds.slice(index, index + 200));
+  }
+
+  const answerGroups = await Promise.all(batches.map(async (batch) => {
+    const answers: Array<{ question_id: string; is_correct: boolean }> = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("simulado_answers")
+        .select("question_id, is_correct")
+        .in("question_id", batch)
+        .not("is_correct", "is", null)
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      answers.push(...(data || []));
+      if ((data || []).length < pageSize) break;
+    }
+    return answers;
+  }));
+
+  for (const answer of answerGroups.flat()) {
+    const current = totals.get(answer.question_id) || { correct: 0, total: 0 };
+    current.total += 1;
+    if (answer.is_correct) current.correct += 1;
+    totals.set(answer.question_id, current);
+  }
+
+  return totals;
+}
+
+export async function GET(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof NextResponse) return admin;
+
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get("context") !== "simulado-editor") {
+    return NextResponse.json({ ok: false, message: "Contexto de consulta inválido." }, { status: 400 });
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [questions, jornadaQuestionIds] = await Promise.all([
+      fetchPublishedQuestions(supabase),
+      fetchJornadaQuestionIds(supabase),
+    ]);
+    const accuracy = await fetchAnswerAccuracy(supabase, questions.map((question) => String(question.id)));
+    const questionsWithAccuracy = questions.map((question) => {
+      const total = accuracy.get(String(question.id));
+      return {
+        ...question,
+        correct_count: total?.correct || 0,
+        wrong_count: total ? total.total - total.correct : 0,
+        total_answered_count: total?.total || 0,
+        accuracy_rate: total?.total ? Math.round((total.correct / total.total) * 100) : null,
+      };
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Banco de questões carregado com sucesso.",
+      questions: questionsWithAccuracy,
+      jornadaQuestionIds,
+    });
+  } catch (error) {
+    void logSystemError({ source: "api.admin.questions.simulado-editor", error, request });
+    return NextResponse.json(
+      { ok: false, message: "Não foi possível carregar o banco de questões." },
+      { status: 500 },
+    );
+  }
+}
+
 function clean(value?: string | null) {
   return String(value || "").trim();
 }

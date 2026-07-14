@@ -292,22 +292,18 @@ const defaultAlternatives: ManualAlternative[] = ["A", "B", "C", "D"].map((label
 export default function EditarSimuladoClient({
   simulado,
   initialRelations,
-  bankQuestions,
   disciplines,
   subjects,
   boards,
   jornadas,
-  jornadaQuestionIds,
   retorno,
 }: {
   simulado: Simulado;
   initialRelations: SimuladoQuestion[];
-  bankQuestions: BankQuestion[];
   disciplines: Discipline[];
   subjects: Subject[];
   boards: ExamBoard[];
   jornadas: { id: string; title: string }[];
-  jornadaQuestionIds: Record<string, string[]>;
   retorno?: string;
 }) {
   const router = useRouter();
@@ -362,6 +358,10 @@ export default function EditarSimuladoClient({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBankModal, setShowBankModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
+  const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
+  const [jornadaQuestionIds, setJornadaQuestionIds] = useState<Record<string, string[]>>({});
+  const [bankQuestionsLoaded, setBankQuestionsLoaded] = useState(false);
+  const [loadingBankQuestions, setLoadingBankQuestions] = useState(false);
   const [templateQuestionForManual, setTemplateQuestionForManual] = useState<TemplateQuestion | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -397,6 +397,46 @@ export default function EditarSimuladoClient({
   const [questionType, setQuestionType] = useState("");
   const [missingTopicsOnly, setMissingTopicsOnly] = useState(false);
   const [excludeJornadaId, setExcludeJornadaId] = useState("");
+
+  async function loadBankQuestions() {
+    if (bankQuestionsLoaded) return true;
+
+    setLoadingBankQuestions(true);
+    try {
+      const response = await adminFetch("/api/admin/questions?context=simulado-editor");
+      const result = await response.json() as {
+        ok?: boolean;
+        message?: string;
+        questions?: BankQuestion[];
+        jornadaQuestionIds?: Record<string, string[]>;
+      };
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.message || "Não foi possível carregar o banco de questões.");
+      }
+
+      setBankQuestions(result.questions || []);
+      setJornadaQuestionIds(result.jornadaQuestionIds || {});
+      setBankQuestionsLoaded(true);
+      return true;
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        title: "Não foi possível abrir o banco de questões",
+        message: error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+      return false;
+    } finally {
+      setLoadingBankQuestions(false);
+    }
+  }
+
+  async function openBankModal() {
+    if (await loadBankQuestions()) setShowBankModal(true);
+  }
+
+  async function openManualModal() {
+    if (await loadBankQuestions()) setShowManualModal(true);
+  }
 
   const excludedQuestionIds = useMemo(() => {
     if (!excludeJornadaId) return null;
@@ -809,7 +849,11 @@ export default function EditarSimuladoClient({
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#03070D] px-5 py-4 text-white sm:px-6 lg:px-8">
-      <PremiumLoadingOverlay show={saving} title="Salvando..." message="Sincronizando alterações do simulado." />
+      <PremiumLoadingOverlay
+        show={saving || loadingBankQuestions}
+        title={loadingBankQuestions ? "Carregando banco de questões..." : "Salvando..."}
+        message={loadingBankQuestions ? "Preparando filtros e questões publicadas." : "Sincronizando alterações do simulado."}
+      />
       <PremiumModal
         open={Boolean(feedback)}
         tone={feedback?.type === "success" ? "success" : feedback?.type === "warning" ? "warning" : "error"}
@@ -1069,8 +1113,8 @@ export default function EditarSimuladoClient({
               icon={<FileQuestion size={18} />}
               action={
                 <div className="flex flex-wrap gap-3">
-                  <PremiumButton icon={<Plus size={16} />} onClick={() => setShowBankModal(true)}>Selecionar questões</PremiumButton>
-                  <PremiumButton variant="secondary" icon={<Pencil size={16} />} onClick={() => setShowManualModal(true)} className="border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">Criar questão</PremiumButton>
+                  <PremiumButton icon={<Plus size={16} />} onClick={() => void openBankModal()} disabled={loadingBankQuestions}>Selecionar questões</PremiumButton>
+                  <PremiumButton variant="secondary" icon={<Pencil size={16} />} onClick={() => void openManualModal()} disabled={loadingBankQuestions} className="border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">Criar questão</PremiumButton>
                 </div>
               }
             >

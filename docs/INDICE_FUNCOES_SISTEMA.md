@@ -335,6 +335,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 - O componente `app/simulados/components/SimuladoShell.tsx` foi refinado para usar o novo fundo premium nas telas dark de Simulados. Essa alteração impacta as telas que já usam `variant="dark"`, especialmente detalhe do simulado.
 - O componente `app/simulados/components/SimuladoCard.tsx` recebeu ajuste de variante dark para aproximar cards administrativos do novo padrão visual.
 - A tela de **Editar Simulado** (`app/simulados/[id]/editar/page-client.tsx`) recebeu ajuste de fundo/hero para manter consistência com o novo padrão.
+- A abertura de `/simulados/[id]/editar` carrega somente o simulado, suas questões vinculadas e taxonomias. O banco completo de questões publicadas, as métricas e as exclusões por Jornada são buscados sob demanda por `GET /api/admin/questions?context=simulado-editor`, protegido por `requireAdmin`, ao abrir **Selecionar questões** ou **Criar questão**. Os filtros e a seleção existentes permanecem inalterados.
 
 **Regras:**
 
@@ -376,6 +377,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
   - progresso geral;
   - configurações.
 - Na lista administrativa de simulados da Jornada, os estados visuais devem representar apenas o cronograma geral: simulados com data já vencida aparecem como **Liberado**; todos os simulados futuros aparecem como **Programado**. Não usar **Bloqueado** nessa lista administrativa, porque bloqueio depende de matrícula/progressão individual do aluno e deve aparecer apenas em contextos do aluno/matrícula.
+- Na tela de detalhe `/admin/jornadas/[id]`, todo o card de cada simulado vinculado é clicável e abre o detalhe administrativo em `/simulados/[id]`, tanto para itens liberados quanto programados. O card usa um único link acessível; a indicação interna “Abrir simulado” não deve ser transformada em link aninhado.
 - Footer em Jornada deve usar o mesmo fundo externo da página.
 - A tela `/admin/jornadas/[id]/editar` deve permanecer no padrão dark premium de Jornadas, inclusive nas abas **Informações** e **Simulados**. O gerenciamento da ordem dos simulados não deve voltar para interface clean/clara.
 

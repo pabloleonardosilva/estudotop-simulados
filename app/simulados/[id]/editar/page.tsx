@@ -3,135 +3,16 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
 import EditarSimuladoClient from "./page-client";
 
-const QUESTION_SELECT = `
-  id,
-  code,
-  statement,
-  explanation_text,
-  status,
-  difficulty_level,
-  evaluated_topics,
-  year,
-  question_type,
-  exam_boards:exam_board_id (
-    id,
-    name
-  ),
-  subjects:subject_id (
-    id,
-    name,
-    discipline_id,
-    disciplines:discipline_id (
-      id,
-      name
-    )
-  ),
-  question_subjects (
-    subjects (
-      id,
-      name,
-      discipline_id,
-      disciplines:discipline_id (
-        id,
-        name
-      )
-    )
-  ),
-  question_alternatives (
-    id,
-    label,
-    text,
-    is_correct,
-    order_number
-  ),
-  simulado_questions (
-    id,
-    simulados:simulado_id (
-      id,
-      title,
-      status
-    )
-  )
-`;
-
-async function fetchAllPublishedQuestions(supabase: ReturnType<typeof createSupabaseAdminClient>) {
-  const PAGE_SIZE = 1000;
-  const all: Record<string, unknown>[] = [];
-  let from = 0;
-
-  for (;;) {
-    const { data, error } = await supabase
-      .from("questions")
-      .select(QUESTION_SELECT)
-      .eq("status", "published")
-      .order("created_at", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
-
-    if (error) return { data: null, error };
-
-    const rows = (data || []) as Record<string, unknown>[];
-    all.push(...rows);
-
-    if (rows.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
-
-  return { data: all, error: null };
-}
-
-async function getJornadaQuestionIds(supabase: ReturnType<typeof createSupabaseAdminClient>) {
-  const { data: jornadaSimulados, error: jornadaSimuladosError } = await supabase
-    .from("jornada_simulados")
-    .select("jornada_id, simulado_id");
-
-  if (jornadaSimuladosError) throw new Error(jornadaSimuladosError.message);
-
-  const linkedSimuladoIds = Array.from(new Set((jornadaSimulados || []).map((link) => link.simulado_id).filter(Boolean)));
-
-  const { data: simuladoQuestions, error: simuladoQuestionsError } = linkedSimuladoIds.length
-    ? await supabase
-        .from("simulado_questions")
-        .select("simulado_id, question_id")
-        .in("simulado_id", linkedSimuladoIds)
-    : { data: [], error: null };
-
-  if (simuladoQuestionsError) throw new Error(simuladoQuestionsError.message);
-
-  const questionIdsBySimulado = new Map<string, Set<string>>();
-  for (const link of simuladoQuestions || []) {
-    const set = questionIdsBySimulado.get(link.simulado_id) || new Set<string>();
-    set.add(link.question_id);
-    questionIdsBySimulado.set(link.simulado_id, set);
-  }
-
-  const questionIdsByJornada = new Map<string, Set<string>>();
-  for (const link of jornadaSimulados || []) {
-    const simuladoQuestionIds = questionIdsBySimulado.get(link.simulado_id);
-    if (!simuladoQuestionIds) continue;
-    const set = questionIdsByJornada.get(link.jornada_id) || new Set<string>();
-    simuladoQuestionIds.forEach((questionId) => set.add(questionId));
-    questionIdsByJornada.set(link.jornada_id, set);
-  }
-
-  const result: Record<string, string[]> = {};
-  for (const [jornadaId, set] of questionIdsByJornada.entries()) {
-    result[jornadaId] = Array.from(set);
-  }
-  return result;
-}
-
 async function getData(id: string) {
   const supabase = createSupabaseAdminClient();
 
   const [
     { data: simulado, error: simuladoError },
     { data: relations, error: relationsError },
-    { data: questions, error: questionsError },
     { data: disciplines, error: disciplinesError },
     { data: subjects, error: subjectsError },
     { data: boards, error: boardsError },
     { data: jornadas, error: jornadasError },
-    jornadaQuestionIds,
   ] = await Promise.all([
     supabase.from("simulados").select("*").eq("id", id).single(),
     supabase
@@ -196,17 +77,14 @@ async function getData(id: string) {
       `)
       .eq("simulado_id", id)
       .order("order_number", { ascending: true }),
-    fetchAllPublishedQuestions(supabase),
     supabase.from("disciplines").select("id, name").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("subjects").select("id, name, discipline_id").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("exam_boards").select("id, name").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("jornadas").select("id, title").order("title", { ascending: true }),
-    getJornadaQuestionIds(supabase),
   ]);
 
   if (simuladoError || !simulado) return null;
   if (relationsError) throw new Error(relationsError.message);
-  if (questionsError) throw new Error(questionsError.message);
   if (disciplinesError) throw new Error(disciplinesError.message);
   if (subjectsError) throw new Error(subjectsError.message);
   if (boardsError) throw new Error(boardsError.message);
@@ -214,7 +92,6 @@ async function getData(id: string) {
 
   const questionIds = Array.from(
     new Set([
-      ...(questions || []).map((question) => question.id).filter(Boolean),
       ...(relations || []).map((relation) => relation.question_id).filter(Boolean),
     ]),
   );
@@ -295,12 +172,10 @@ async function getData(id: string) {
   return {
     simulado,
     relations: relationsWithAccuracy,
-    questions: (questions || []).map((question) => withAccuracy(question as unknown as Record<string, unknown>)),
     disciplines: disciplines || [],
     subjects: subjects || [],
     boards: boards || [],
     jornadas: jornadas || [],
-    jornadaQuestionIds,
   };
 }
 
@@ -324,12 +199,10 @@ export default async function EditarSimuladoPage({
     <EditarSimuladoClient
       simulado={data.simulado}
       initialRelations={data.relations as unknown as Parameters<typeof EditarSimuladoClient>[0]["initialRelations"]}
-      bankQuestions={data.questions as unknown as Parameters<typeof EditarSimuladoClient>[0]["bankQuestions"]}
       disciplines={data.disciplines}
       subjects={data.subjects}
       boards={data.boards}
       jornadas={data.jornadas}
-      jornadaQuestionIds={data.jornadaQuestionIds}
       retorno={retorno}
     />
   );
