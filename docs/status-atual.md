@@ -660,5 +660,6 @@ Escopo previsto:
 - [x] A Zona de perigo de `/admin/alunos/[id]` ganhou o botão **Resetar senha** antes de desativar e excluir, com confirmação premium.
 - [x] A senha atual é invalidada, `must_change_password` é marcado e o aluno recebe um link de 24 horas para criar uma nova senha; nenhuma senha é exibida ou retornada ao administrador.
 - [x] O token do reset preserva o status da conta: concluir a nova senha não ativa, reativa ou desbloqueia o aluno.
+- [x] O reset administrativo invalida links anteriores antes de gerar o novo token e identifica o e-mail com a data e hora da solicitação, evitando o uso acidental de botões antigos agrupados pelo cliente de e-mail.
 - [x] Erros do Supabase Auth e do Resend são sanitizados; respostas de erro do Resend são verificadas antes de registrar o envio como concluído.
 - [x] Nenhuma migration foi criada ou executada.

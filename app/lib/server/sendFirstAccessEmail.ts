@@ -24,7 +24,18 @@ export async function sendFirstAccessEmail(
   if (error || !student?.email) throw new Error("Aluno não encontrado para envio do e-mail.");
 
   const rawToken = generateSecureToken();
-  const firstAccessUrl = `${getPublicAppUrl()}/primeiro-acesso?token=${rawToken}`;
+  const firstAccessUrl = `${getPublicAppUrl()}/primeiro-acesso?token=${encodeURIComponent(rawToken)}`;
+
+  const { error: invalidateError } = await supabase
+    .from("student_registration_confirmations")
+    .update({ used_at: new Date().toISOString() })
+    .eq("user_id", studentId)
+    .eq("purpose", "first_access")
+    .is("used_at", null);
+
+  if (invalidateError) {
+    throw new Error("Não foi possível invalidar os links anteriores de criação de senha.");
+  }
 
   const { error: tokenError } = await supabase.from("student_registration_confirmations").insert({
     purpose: "first_access",
@@ -49,10 +60,17 @@ export async function sendFirstAccessEmail(
     : "";
 
   const resend = new Resend(resendApiKey);
+  const resetRequestedAt = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date());
   const { error: emailError } = await resend.emails.send({
     from: FROM_EMAIL,
     to: student.email,
-    subject: "Acesso ao EstudoTOP Simulados — defina sua senha",
+    subject: options?.preserveAccountStatus
+      ? `Redefinição de senha solicitada em ${resetRequestedAt}`
+      : "Acesso ao EstudoTOP Simulados — defina sua senha",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:28px;color:#111827">
         <p style="font-size:12px;letter-spacing:3px;text-transform:uppercase;color:#f97316;font-weight:800">EstudoTOP Simulados</p>
