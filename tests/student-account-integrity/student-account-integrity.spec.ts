@@ -87,8 +87,14 @@ test("student simulados exclude cancelled journeys and completion advances journ
   expect(listRoute).toContain('.eq("status", "active")');
   expect(listRoute).toContain('.gt("expires_at"');
   expect(submitRoute).toContain('.update({ status: "completed", completed_at: finishedAt })');
+  expect(submitRoute).toContain('.eq("order_number", completedItem.order_number + 1)');
+  expect(submitRoute).toContain('.lte("scheduled_release_at", today)');
+  expect(submitRoute).toContain('.update({ status: "available", released_at: releaseTimestamp })');
+  expect(submitRoute).toContain("after(async () =>");
+  expect(submitRoute).toContain("simuladoReleasedTemplate(emailParams)");
   expect(releaseJob).toContain('.from("simulado_attempts")');
   expect(releaseJob).toContain('.eq("counts_toward_limit", true)');
+  expect(releaseJob).not.toContain('.eq("order_number", candidate.order_number + 1)');
   expect(vercelConfig.crons).toContainEqual({
     path: "/api/admin/jornadas/release-job",
     schedule: "0 7 * * *",

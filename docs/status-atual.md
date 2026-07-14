@@ -660,6 +660,10 @@ Escopo previsto:
 - [x] `/meus-simulados` deixou de exibir simulados provenientes de matrículas de Jornada canceladas ou expiradas.
 - [x] A conclusão de uma tentativa sincroniza o item da Jornada para `completed` nas matrículas ativas e válidas.
 - [x] O job de liberação reconhece a tentativa concluída como fonte de verdade e corrige vínculos históricos desatualizados antes de liberar o próximo item elegível.
+- [x] A progressão usa regra mista: a conclusão libera imediatamente o próximo item se a data prevista já chegou; o cron diário das 04h00 atua como contingência quando a conclusão ocorreu antes da data.
+- [x] Data vencida sem conclusão do simulado anterior não libera o item; foi removida a exceção que avançava pela data do item seguinte ou por ser o último da Jornada.
+- [x] A liberação imediata usa transição atômica e dispara o e-mail do novo simulado em segundo plano, preservando idempotência.
+- Nenhuma migration foi criada, alterada ou executada nesta implementação.
 
 ### Reset administrativo de senha no cadastro do aluno — 2026-07-14
 

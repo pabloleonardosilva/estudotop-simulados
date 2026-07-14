@@ -108,18 +108,6 @@ export async function GET(request: Request) {
             }
           }
 
-          if (!shouldRelease) {
-            const { data: next } = await supabase
-              .from("student_jornada_simulados")
-              .select("id, scheduled_release_at")
-              .eq("student_jornada_id", candidate.student_jornada_id)
-              .eq("order_number", candidate.order_number + 1)
-              .maybeSingle();
-
-            if (!next || next.scheduled_release_at <= today) {
-              shouldRelease = true;
-            }
-          }
         }
       }
 

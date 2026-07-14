@@ -1367,6 +1367,8 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Agendamento em produção:** `vercel.json` chama `GET /api/admin/jornadas/release-job` uma vez por dia às `07:00 UTC`, equivalente a `04h00` no horário de Brasília. A frequência diária é compatível com os limites aplicados atualmente pela Vercel ao projeto. A Vercel envia automaticamente `Authorization: Bearer <CRON_SECRET>` e o endpoint valida o segredo em tempo constante por `verifyCronSecret`; nunca remover essa proteção nem incluir o segredo no repositório.
 
+**Regra mista de progressão:** a data prevista e a conclusão do item anterior são requisitos cumulativos. Ao concluir um simulado, `submit/route.ts` marca o item atual como `completed` e libera imediatamente somente o item de ordem seguinte quando `scheduled_release_at` já chegou. A transição atômica `locked → available` evita liberação e e-mail duplicados; o e-mail é processado após a resposta. O `release-job` diário permanece como contingência para quem concluiu antes da data e para reparar progressos históricos a partir de `simulado_attempts`. Se a data chegar sem conclusão do anterior, o item permanece bloqueado; datas posteriores e o fato de ser o último item não dispensam o pré-requisito. Liberação manual pelo administrador permanece uma exceção explícita.
+
 ### 9.3 Criar / Editar Jornada
 
 **Arquivos:**

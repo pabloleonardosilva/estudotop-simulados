@@ -1,9 +1,15 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logActivity } from "@/lib/logging/activity-log";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import {
+  simuladoReleasedPlainText,
+  simuladoReleasedTemplate,
+} from "@/app/lib/email/jornadaEmailTemplates";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -31,6 +37,37 @@ type AnswerRow = {
   selected_alternative_id: string | null;
   selected_alternative_label: string | null;
   is_correct: boolean | null;
+};
+
+type ActiveJornadaRow = {
+  id: string;
+  expires_at: string;
+  jornadas: {
+    title: string;
+    planned_simulados_count: number | null;
+  } | null;
+};
+
+type CompletedJourneyItem = {
+  student_jornada_id: string;
+  order_number: number;
+};
+
+type ReleasedJourneyItem = {
+  id: string;
+  student_jornada_id: string;
+  simulado_id: string;
+  order_number: number;
+  released_at: string;
+};
+
+type JourneyScheduleRow = {
+  id: string;
+  order_number: number;
+  scheduled_release_at: string;
+  released_at: string | null;
+  status: string;
+  simulados: { title: string } | null;
 };
 
 export async function POST(
@@ -232,6 +269,12 @@ export async function POST(
   const displayPercentage = Math.max(0, Math.min(100, percentage));
 
   const finishedAt = new Date().toISOString();
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(finishedAt));
   const timeSpent = Math.max(0, Math.floor(body.time_spent_seconds || 0));
 
   const { data: resultRow, error: resultError } = await supabase
@@ -292,23 +335,127 @@ export async function POST(
 
   const { data: activeJornadas, error: activeJornadasError } = await supabase
     .from("student_jornadas")
-    .select("id")
+    .select("id, expires_at, jornadas:jornada_id(title, planned_simulados_count)")
     .eq("student_id", student.id)
     .eq("status", "active")
-    .gt("expires_at", finishedAt.slice(0, 10));
+    .gt("expires_at", today);
 
   if (activeJornadasError) {
     void logSystemError({ source: "api.student.simulado_submit.jornada_lookup", error: activeJornadasError, request, metadata: { student_id: student.id, simulado_id: simuladoId } });
   } else if (activeJornadas?.length) {
-    const { error: jornadaProgressError } = await supabase
+    const activeJourneyRows = activeJornadas as unknown as ActiveJornadaRow[];
+    const { data: completedJourneyItems, error: jornadaProgressError } = await supabase
       .from("student_jornada_simulados")
       .update({ status: "completed", completed_at: finishedAt })
       .eq("simulado_id", simuladoId)
-      .in("student_jornada_id", activeJornadas.map((row) => row.id))
-      .in("status", ["available", "in_progress"]);
+      .in("student_jornada_id", activeJourneyRows.map((row) => row.id))
+      .in("status", ["available", "in_progress"])
+      .select("student_jornada_id, order_number");
 
     if (jornadaProgressError) {
       void logSystemError({ source: "api.student.simulado_submit.jornada_progress", error: jornadaProgressError, request, metadata: { student_id: student.id, simulado_id: simuladoId } });
+    } else if (completedJourneyItems?.length) {
+      const releasedItems: ReleasedJourneyItem[] = [];
+
+      for (const completedItem of completedJourneyItems as CompletedJourneyItem[]) {
+        const { data: nextItem, error: nextItemError } = await supabase
+          .from("student_jornada_simulados")
+          .select("id")
+          .eq("student_jornada_id", completedItem.student_jornada_id)
+          .eq("order_number", completedItem.order_number + 1)
+          .eq("status", "locked")
+          .lte("scheduled_release_at", today)
+          .maybeSingle();
+
+        if (nextItemError) {
+          void logSystemError({ source: "api.student.simulado_submit.next_jornada_lookup", error: nextItemError, request, metadata: { student_id: student.id, student_jornada_id: completedItem.student_jornada_id } });
+          continue;
+        }
+        if (!nextItem) continue;
+
+        const releaseTimestamp = new Date().toISOString();
+        const { data: releasedItem, error: releaseError } = await supabase
+          .from("student_jornada_simulados")
+          .update({ status: "available", released_at: releaseTimestamp })
+          .eq("id", nextItem.id)
+          .eq("status", "locked")
+          .select("id, student_jornada_id, simulado_id, order_number, released_at")
+          .maybeSingle();
+
+        if (releaseError) {
+          void logSystemError({ source: "api.student.simulado_submit.next_jornada_release", error: releaseError, request, metadata: { student_id: student.id, student_jornada_simulado_id: nextItem.id } });
+          continue;
+        }
+        if (releasedItem) releasedItems.push(releasedItem as ReleasedJourneyItem);
+      }
+
+      if (releasedItems.length) {
+        after(async () => {
+          const resendApiKey = process.env.RESEND_API_KEY;
+          if (!resendApiKey || !student.email) return;
+
+          const resend = new Resend(resendApiKey);
+          const appUrl = getPublicAppUrl();
+          const journeyById = new Map(activeJourneyRows.map((row) => [row.id, row]));
+
+          for (const releasedItem of releasedItems) {
+            try {
+              const journey = journeyById.get(releasedItem.student_jornada_id);
+              if (!journey?.jornadas) continue;
+
+              const [{ data: releasedSimulado }, { data: scheduleRows }] = await Promise.all([
+                supabase.from("simulados").select("title").eq("id", releasedItem.simulado_id).single(),
+                supabase
+                  .from("student_jornada_simulados")
+                  .select("id, order_number, scheduled_release_at, released_at, status, simulados:simulado_id(title)")
+                  .eq("student_jornada_id", releasedItem.student_jornada_id)
+                  .order("order_number", { ascending: true }),
+              ]);
+              if (!releasedSimulado) continue;
+
+              const schedule = ((scheduleRows || []) as unknown as JourneyScheduleRow[]).map((row) => ({
+                order: row.order_number,
+                title: row.simulados?.title || `Simulado ${row.order_number}`,
+                scheduledReleaseAt: row.scheduled_release_at,
+                releasedAt: row.released_at,
+                status: row.status,
+                highlight: row.id === releasedItem.id,
+              }));
+              const emailParams = {
+                studentName: student.name || "Aluno",
+                simuladoTitle: releasedSimulado.title,
+                jornadaTitle: journey.jornadas.title,
+                position: releasedItem.order_number,
+                total: journey.jornadas.planned_simulados_count || schedule.length,
+                expiresAt: journey.expires_at,
+                simuladoUrl: `${appUrl}/meus-simulados/${releasedItem.simulado_id}`,
+                schedule,
+              };
+              const { error: emailError } = await resend.emails.send({
+                from: "EstudoTOP <noreply@estudotop.com.br>",
+                to: student.email,
+                subject: `Novo simulado liberado — ${journey.jornadas.title}`,
+                html: simuladoReleasedTemplate(emailParams),
+                text: simuladoReleasedPlainText(emailParams),
+              });
+              if (emailError) throw emailError;
+
+              await supabase
+                .from("student_jornada_simulados")
+                .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })
+                .eq("id", releasedItem.id)
+                .is("release_email_sent_at", null);
+            } catch (emailError) {
+              const message = emailError instanceof Error ? emailError.message : "Falha ao enviar e-mail de liberação.";
+              await supabase
+                .from("student_jornada_simulados")
+                .update({ release_email_error: message.slice(0, 500) })
+                .eq("id", releasedItem.id);
+              void logSystemError({ source: "api.student.simulado_submit.release_email", error: emailError, metadata: { student_id: student.id, student_jornada_simulado_id: releasedItem.id } });
+            }
+          }
+        });
+      }
     }
   }
 
