@@ -31,9 +31,8 @@ import {
 import { supabase } from "@/app/lib/supabase/client";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumModal from "../../components/ui/PremiumModal";
-import TopCoinStack from "@/app/components/gamification/TopCoinStack";
-import TopCoinRewardModal from "@/app/components/gamification/TopCoinRewardModal";
-import { formatTopCoinsLabel, getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
+import TopCoinRewardModal, { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
+import { getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -1658,17 +1657,12 @@ function RulesScreen({
           )}
 
           {!attemptsExhausted && (
-            <div className="mt-6 flex items-center gap-3 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-4">
-              <TopCoinStack size="lg" className="shrink-0" />
-              <div>
-                <p className="text-sm font-black text-amber-100">
-                  Essa tentativa vale {formatTopCoinsLabel(getTopCoinBaseValue(simulado.question_count, attemptInfo.used + 1))}.
-                </p>
-                <p className="text-xs text-amber-200/80">
-                  Complete o simulado e erre menos para acumular mais moedas.
-                </p>
-              </div>
-            </div>
+            <TopCoinValueInfo
+              amount={getTopCoinBaseValue(simulado.question_count, attemptInfo.used + 1)}
+              prefix="Essa tentativa vale"
+              dark
+              className="mt-6 flex w-full items-center gap-3 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-4 text-left text-sm font-black text-amber-100 transition hover:border-amber-300/50 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+            />
           )}
 
           <div className="mt-8 grid gap-3 md:grid-cols-2">

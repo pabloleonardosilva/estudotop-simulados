@@ -129,7 +129,7 @@ export default function PrimeiroAcessoPage() {
               disabled={!canSubmit}
               className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Salvando..." : "Salvar senha e liberar acesso"}
+              {loading ? "Salvando..." : "Salvar nova senha"}
             </button>
           </form>
         ) : (

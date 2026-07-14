@@ -39,16 +39,28 @@ export async function POST(
     });
 
     if (authError) {
-      return NextResponse.json({ ok: false, message: authError.message || "Erro ao redefinir senha." }, { status: 500 });
+      void logSystemError({ source: "api.admin.students.reset_password.auth", error: authError, request, metadata: { student_id: id } });
+      return NextResponse.json({ ok: false, message: "Não foi possível redefinir a senha do aluno." }, { status: 500 });
     }
 
-    await supabase.from("profiles").update({ must_change_password: true, is_active: true }).eq("id", id);
-    await supabase.from("students").update({ status: "active", welcome_email_status: "sending", welcome_email_error: null }).eq("id", id);
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({ must_change_password: true })
+      .eq("id", id);
+
+    if (profileError) {
+      return NextResponse.json(
+        { ok: false, message: "A senha foi redefinida, mas não foi possível exigir a criação de uma nova senha." },
+        { status: 500 },
+      );
+    }
+
+    await supabase.from("students").update({ welcome_email_status: "sending", welcome_email_error: null }).eq("id", id);
 
     let emailSent = true;
     let emailMessage = "E-mail enviado ao aluno.";
     try {
-      await sendFirstAccessEmail(id, newPassword);
+      await sendFirstAccessEmail(id, undefined, { preserveAccountStatus: true });
     } catch (emailError) {
       emailSent = false;
       emailMessage = emailError instanceof Error ? emailError.message : "Falha ao enviar e-mail.";
@@ -58,7 +70,7 @@ export async function POST(
     await supabase.from("student_activity_log").insert({
       student_id: id,
       event_type: "password_reset",
-      description: emailSent ? "Senha temporária gerada e enviada por e-mail" : "Senha temporária gerada, mas o e-mail falhou",
+      description: emailSent ? "Senha redefinida e link para criação de nova senha enviado por e-mail" : "Senha redefinida, mas o e-mail falhou",
       details: { email_sent: emailSent },
       performed_by_name: "Admin",
     });
@@ -68,7 +80,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       emailSent,
-      message: emailSent ? "Senha temporária gerada e enviada por e-mail." : `Senha temporária gerada, mas o e-mail não foi enviado: ${emailMessage}`,
+      message: emailSent ? "Senha redefinida. O aluno recebeu por e-mail o link para criar uma nova senha." : "Senha redefinida, mas o e-mail não pôde ser enviado. Tente novamente.",
     });
   } catch (error) {
     void logSystemError({ source: "api.admin.students.reset_password", error, request, metadata: { student_id: id } });

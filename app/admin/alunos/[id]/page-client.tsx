@@ -20,6 +20,7 @@ import {
   FilePen,
   Filter,
   Gauge,
+  KeyRound,
   Layers,
   ListChecks,
   Mail,
@@ -1396,6 +1397,8 @@ export default function AlunoAdminDetalheClient({
   const [localJornadas, setLocalJornadas] = useState<StudentJornada[]>(jornadas);
   const [deactivateModal, setDeactivateModal] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const [resetPasswordModal, setResetPasswordModal] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -1564,6 +1567,25 @@ export default function AlunoAdminDetalheClient({
       setDeleteConfirmText("");
       setDeleteError(null);
       setDeleteDependencies(null);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (resettingPassword) return;
+    setResettingPassword(true);
+    setFeedback(null);
+    try {
+      const res = await adminFetch(`/api/admin/students/${student.id}/reset-password`, { method: "POST" });
+      const data = (await res.json()) as { ok: boolean; message: string; emailSent?: boolean };
+      setFeedback({
+        type: data.ok && data.emailSent !== false ? "success" : "error",
+        message: data.message || "Não foi possível redefinir a senha do aluno.",
+      });
+      if (data.ok) setResetPasswordModal(false);
+    } catch {
+      setFeedback({ type: "error", message: "Erro inesperado ao redefinir a senha do aluno." });
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -2077,6 +2099,14 @@ export default function AlunoAdminDetalheClient({
               </p>
               <div className="mt-4 space-y-2.5">
                 <PremiumButton
+                  variant="dark-primary"
+                  full
+                  icon={<KeyRound size={15} />}
+                  onClick={() => setResetPasswordModal(true)}
+                >
+                  Resetar senha
+                </PremiumButton>
+                <PremiumButton
                   variant="dark-warning"
                   full
                   icon={<UserX size={15} />}
@@ -2273,6 +2303,48 @@ export default function AlunoAdminDetalheClient({
               </PremiumButton>
               <PremiumButton variant="danger" full icon={<Ban size={15} />} onClick={handleCancelJornadaEnrollment} disabled={cancellingJornada}>
                 {cancellingJornada ? "Removendo…" : "Remover da Jornada"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Resetar senha */}
+      {resetPasswordModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-orange-400/25 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-orange-400/[0.10] to-transparent blur-[20px]" />
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/[0.10] text-orange-300">
+                  <KeyRound size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">Ação de segurança</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Resetar senha do aluno?</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!resettingPassword) setResetPasswordModal(false); }}
+                disabled={resettingPassword}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              A senha atual de <span className="font-semibold text-white/80">{student.name}</span> deixará de funcionar. O aluno receberá um e-mail avisando sobre o reset e um link válido por 24 horas para criar uma nova senha.
+            </p>
+            <div className="mt-4 rounded-2xl border border-orange-400/15 bg-orange-500/[0.06] px-4 py-3 text-xs leading-5 text-orange-100/65">
+              O status da conta não será alterado. Alunos bloqueados ou inativos continuarão sem acesso até uma ação administrativa específica.
+            </div>
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setResetPasswordModal(false)} disabled={resettingPassword}>
+                Cancelar
+              </PremiumButton>
+              <PremiumButton variant="dark-primary" full icon={<KeyRound size={15} />} onClick={handleResetPassword} disabled={resettingPassword}>
+                {resettingPassword ? "Resetando…" : "Resetar e enviar e-mail"}
               </PremiumButton>
             </div>
           </div>

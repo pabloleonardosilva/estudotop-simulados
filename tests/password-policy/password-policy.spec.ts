@@ -92,9 +92,23 @@ test("password values are not returned or added to activity logs", () => {
   }
 });
 
+test("admin password reset sends a one-time creation link without changing account status", () => {
+  const resetRoute = read("app/api/admin/students/[id]/reset-password/route.ts");
+  const firstAccessRoute = read("app/api/auth/first-access/route.ts");
+  const emailService = read("app/lib/server/sendFirstAccessEmail.ts");
+
+  expect(resetRoute).toContain("preserveAccountStatus: true");
+  expect(resetRoute).not.toContain('update({ status: "active"');
+  expect(resetRoute).not.toContain("is_active: true");
+  expect(emailService).toContain("preserve_account_status");
+  expect(emailService).toContain("if (emailError)");
+  expect(firstAccessRoute).toContain("if (!preserveAccountStatus)");
+  expect(firstAccessRoute).toContain("O acesso continua sujeito ao status atual da sua conta");
+});
+
 test("first-access interface updates requirements and only enables a valid matching password", async ({ page }) => {
   await page.goto("/primeiro-acesso?token=test-token");
-  const submit = page.getByRole("button", { name: "Salvar senha e liberar acesso" });
+  const submit = page.getByRole("button", { name: "Salvar nova senha" });
   await expect(submit).toBeDisabled();
   await page.getByPlaceholder("Nova senha", { exact: true }).fill("Coruja@123Voa");
   await page.getByPlaceholder("Confirmar nova senha", { exact: true }).fill("Coruja@123Voa");

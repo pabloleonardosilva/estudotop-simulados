@@ -646,3 +646,19 @@ Escopo previsto:
 
 - [x] Em `/admin/jornadas/[id]`, clicar em qualquer área do card de um simulado vinculado abre `/simulados/[id]`.
 - [x] A navegação vale para simulados liberados e programados, com foco visível por teclado e sem links aninhados.
+
+### TopCoins nos cards de simulados do aluno — 2026-07-14
+
+- [x] Todos os cards em `/meus-simulados` e `/minhas-jornadas/[id]` exibem o ícone e o valor calculado pela regra universal de TopCoins.
+- [x] A informação é clicável e abre um modal premium compartilhado, explicando a moeda, o cálculo e as futuras vantagens na plataforma.
+- [x] O aviso de TopCoins antes de iniciar um simulado reutiliza o mesmo modal.
+- [x] O hero de `/extrato-topcoins` explica o que são TopCoins e quais fatores determinam o ganho.
+- [x] Nenhum saldo, tentativa, resultado, API ou regra de persistência foi alterado.
+
+### Reset administrativo de senha no cadastro do aluno — 2026-07-14
+
+- [x] A Zona de perigo de `/admin/alunos/[id]` ganhou o botão **Resetar senha** antes de desativar e excluir, com confirmação premium.
+- [x] A senha atual é invalidada, `must_change_password` é marcado e o aluno recebe um link de 24 horas para criar uma nova senha; nenhuma senha é exibida ou retornada ao administrador.
+- [x] O token do reset preserva o status da conta: concluir a nova senha não ativa, reativa ou desbloqueia o aluno.
+- [x] Erros do Supabase Auth e do Resend são sanitizados; respostas de erro do Resend são verificadas antes de registrar o envio como concluído.
+- [x] Nenhuma migration foi criada ou executada.

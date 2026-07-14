@@ -1448,6 +1448,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - `/redefinir-senha` inicializa a sessão antes de liberar o formulário: processa callback PKCE (`code`), `token_hash` de tipo `recovery`, retorno implícito no hash e o evento `PASSWORD_RECOVERY`; também recupera a sessão já persistida caso o cliente Supabase tenha consumido o callback antes do efeito da página. Após aceitar a sessão, remove os parâmetros sensíveis da URL.
 - Senhas temporárias: `lib/utils/password.ts` é o gerador oficial. Usa `crypto.randomInt`, garante no mínimo 12 caracteres, inclui obrigatoriamente todas as classes e valida o resultado na política central. `app/lib/utils/password.ts` apenas reexporta a implementação oficial.
 - Segurança: senha e confirmação não são gravadas em logs, atividades, banco próprio, URL ou resposta JSON. O reset administrativo deixou de retornar a senha temporária no JSON; o envio existente por e-mail foi preservado.
+- No cadastro administrativo `/admin/alunos/[id]`, a **Zona de perigo** oferece a ação confirmada **Resetar senha** antes de desativar e excluir. `POST /api/admin/students/[id]/reset-password` invalida a senha atual com valor temporário criptograficamente seguro, marca `must_change_password`, envia um link de 24 horas para `/primeiro-acesso` e nunca retorna a senha ao navegador. Tokens desse reset carregam `preserve_account_status = true`: ao definir a nova senha, `POST /api/auth/first-access` preserva `students.status` e `profiles.is_active`, impedindo que recuperação de senha reative aluno bloqueado, inativo ou pendente.
 - Reutilização: o Supabase Auth não oferece comparação segura com a senha anterior sem nova autenticação; não foi criado hash paralelo nem histórico em texto puro. As demais regras são obrigatórias. Não existe blacklist de senhas comuns nem expiração periódica.
 - Fluxo de perfil: não há atualmente tela/modal de alteração voluntária de senha dentro do perfil. Qualquer fluxo futuro em que o usuário escolha senha deve usar o mesmo módulo e componente.
 - Testes: `tests/password-policy/password-policy.spec.ts` cobre composição, limites, sequências, repetição Unicode, dados pessoais, exemplos de aceitação, gerador temporário, integração estática dos três backends/frontends e ausência de senha em respostas/logs.
@@ -3185,3 +3186,18 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - `app/api/auth/complete-password-change/route.ts` agora valida que o usuario autenticado e um perfil `student`, possui `must_change_password = true`, existe em `students` e nao esta `blocked` antes de ativar perfil/aluno. A rota nao deve ser usada para reativar conta fora do fluxo de troca obrigatoria.
 - `app/api/student/simulados/[id]/attempts/route.ts` agora usa `assertStudentCanStartSimulado` antes de criar ou retomar tentativa, garantindo que simulado vinculado a Jornada respeite matricula ativa, expiracao e status liberado mesmo quando o cliente omite `?jornada=...`.
 - `app/api/student/simulados/[id]/attempts/[attemptId]/behavior/route.ts` valida que `simulado_question_id` informado em evento `scissors_used` pertence ao `question_order` da propria tentativa antes de persistir o uso.
+
+## 20. TOPCOINS — EXIBIÇÃO E EXPLICAÇÃO AO ALUNO
+
+**Regra de cálculo:** `app/lib/gamification/topcoins.ts` é a fonte única. A primeira tentativa tem valor-base igual ao total de questões; a segunda usa `ceil(total/2)`; da terceira em diante usa `ceil(total/3)`. O ganho final desconta os erros e nunca fica negativo.
+
+**Componente informativo compartilhado:** `TopCoinValueInfo`, exportado por `app/components/gamification/TopCoinRewardModal.tsx`, exibe a pilha de moedas, o valor calculado e abre um `PremiumModal` explicando a moeda universal, a regra de ganho e as futuras vantagens na plataforma.
+
+**Telas:**
+
+- `/meus-simulados`: todos os cards exibem o valor de TopCoins; quando ainda há tentativa, usa a próxima tentativa, e quando o limite terminou mantém a última tentativa contabilizada como referência.
+- `/minhas-jornadas/[id]`: todos os cards de simulados exibem o mesmo componente e a mesma regra.
+- `/meus-simulados/[id]`: o aviso anterior ao início é clicável e abre a explicação compartilhada.
+- `/extrato-topcoins`: o hero explica o conceito, os fatores do cálculo e o uso futuro dos TopCoins.
+
+**Segurança:** a informação é calculada a partir dos dados já autorizados das APIs do aluno; clicar no componente não chama API nem altera saldo, tentativa ou resultado.

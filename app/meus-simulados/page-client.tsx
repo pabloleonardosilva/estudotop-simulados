@@ -20,8 +20,8 @@ import {
   Trophy,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
-import TopCoinStack from "@/app/components/gamification/TopCoinStack";
-import { formatTopCoinsLabel, getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
+import { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
+import { getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
 
 type StudentSimulado = {
   id: string;
@@ -329,12 +329,13 @@ export default function MeusSimuladosClient() {
                     <span className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black ${tone.mutedBadge}`}>
                       <span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} /> {simulado.student_status === "not_started" ? "Não iniciado" : info.label}
                     </span>
-                    {!simulado.locked && (simulado.attempts_remaining === null || simulado.attempts_remaining > 0) && (
-                      <span className="inline-flex h-10 items-center gap-2 overflow-visible rounded-full border border-orange-200 bg-orange-50 pl-3 pr-4 text-xs font-black text-orange-800">
-                        <TopCoinStack size="xl" className="shrink-0" />
-                        Valendo {formatTopCoinsLabel(getTopCoinBaseValue(simulado.question_count, simulado.attempts_used + 1))}
-                      </span>
-                    )}
+                    <TopCoinValueInfo
+                      amount={getTopCoinBaseValue(
+                        simulado.question_count,
+                        Math.max(1, simulado.attempts_remaining === 0 ? simulado.attempts_used : simulado.attempts_used + 1),
+                      )}
+                      className="inline-flex h-10 items-center gap-2 overflow-visible rounded-full border border-orange-200 bg-orange-50 pl-3 pr-4 text-xs font-black text-orange-800 transition hover:border-orange-300 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                    />
                   </div>
 
                   <div className="grid grid-cols-3 gap-3 text-center text-[11px] text-slate-500">
