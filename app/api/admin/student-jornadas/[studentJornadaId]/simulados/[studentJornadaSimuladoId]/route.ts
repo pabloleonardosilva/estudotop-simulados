@@ -48,21 +48,19 @@ async function getStudentJornadaSimulado(
   return data as any | null;
 }
 
-async function hasStartedOrCompletedAttempt(
+async function hasAnyAttempt(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   studentId: string,
   simuladoId: string,
 ) {
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from("simulado_attempts")
-    .select("id, status")
+    .select("id", { count: "exact", head: true })
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId)
-    .in("status", ["in_progress", "completed", "disqualified", "expired"])
-    .limit(1);
+    .eq("simulado_id", simuladoId);
 
   if (error) throw new Error(error.message);
-  return Boolean(data && data.length > 0);
+  return Number(count || 0) > 0;
 }
 
 async function setAttemptsCount(
@@ -308,15 +306,13 @@ export async function PATCH(
     }
 
     if (action === "unrelease") {
-      const scheduled = row.scheduled_release_at ? new Date(`${row.scheduled_release_at}T00:00:00`) : null;
-      const manuallyReleased = row.status === "available" && Boolean(row.released_at) && scheduled && scheduled.getTime() > todayDateOnly().getTime();
-      if (!manuallyReleased) {
-        return NextResponse.json({ ok: false, message: "Este simulado não parece ter sido liberado manualmente ou a data prevista já chegou." }, { status: 400 });
+      if (row.status !== "available" || !row.released_at) {
+        return NextResponse.json({ ok: false, message: "Apenas simulados atualmente liberados podem voltar ao estado bloqueado." }, { status: 400 });
       }
 
-      const blockedByAttempt = await hasStartedOrCompletedAttempt(supabase, studentId, row.simulado_id);
+      const blockedByAttempt = await hasAnyAttempt(supabase, studentId, row.simulado_id);
       if (blockedByAttempt) {
-        return NextResponse.json({ ok: false, message: "Não é possível desliberar: o aluno já iniciou ou concluiu este simulado." }, { status: 400 });
+        return NextResponse.json({ ok: false, message: "Não é possível desliberar enquanto o Total real de tentativas for maior que zero. Zere e confirme a limpeza do histórico primeiro." }, { status: 400 });
       }
 
       const { error } = await supabase
@@ -325,7 +321,19 @@ export async function PATCH(
         .eq("id", row.id);
 
       if (error) throw new Error(error.message);
-      return NextResponse.json({ ok: true, message: "Liberação manual revertida. O simulado voltou ao cronograma programado." });
+      void logAdminAction({
+        action: "admin.student_simulado.release_reverted",
+        entityType: "student_jornada_simulado",
+        entityId: row.id,
+        request,
+        metadata: {
+          student_id: studentId,
+          simulado_id: row.simulado_id,
+          student_jornada_id: studentJornadaId,
+          scheduled_release_at: row.scheduled_release_at,
+        },
+      });
+      return NextResponse.json({ ok: true, message: "Liberação revertida. O simulado voltou ao estado bloqueado e seguirá novamente a progressão da Jornada." });
     }
 
     if (action === "set_attempts") {

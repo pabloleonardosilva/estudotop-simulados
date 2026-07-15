@@ -268,8 +268,8 @@ async function getData(id: string) {
         const effectiveStatus = item.status === "completed" && !hasValidCompletion
           ? (item.released_at ? "available" : "locked")
           : item.status;
-        const hasStartedOrCompleted = visibleAttempts.some((attempt: any) => ["in_progress", "completed", "disqualified", "expired"].includes(String(attempt.status)));
         const manuallyReleased = item.status === "available" && Boolean(item.released_at) && scheduledDate !== null && scheduledDate.getTime() > today.getTime();
+        const canUnrelease = effectiveStatus === "available" && Boolean(item.released_at) && attemptsCounting === 0 && attemptsTotal === 0;
 
         return {
           id: item.id,
@@ -298,7 +298,7 @@ async function getData(id: string) {
           latest_result_score: latestResult ? Number(latestResult.display_score ?? latestResult.score ?? 0) : null,
           latest_result_finished_at: latestResult?.finished_at || null,
           latest_result_time_spent_seconds: latestResult?.time_spent_seconds ?? null,
-          can_unrelease: manuallyReleased && !hasStartedOrCompleted,
+          can_unrelease: canUnrelease,
           manually_released: manuallyReleased,
         };
       });

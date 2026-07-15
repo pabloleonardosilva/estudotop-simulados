@@ -690,6 +690,13 @@ Escopo previsto:
 - O zeramento administrativo atual continua removendo integralmente tentativas e dados derivados; anotações e auditoria permanecem preservadas.
 - Nenhuma migration foi criada ou alterada.
 
+### Reversão de liberação automática no cronograma individual — 2026-07-15
+
+- O botão **Desliberar** passa a atender liberações automáticas e manuais no cadastro administrativo do aluno.
+- A reversão somente é permitida para item `available`, com `released_at`, contador válido zerado e **Total real = 0**. Qualquer registro em `simulado_attempts`, inclusive legado desconsiderado, bloqueia a ação até a limpeza integral do histórico. A operação restaura `locked`, limpa `released_at`, preserva `scheduled_release_at` e registra a ação administrativa.
+- O recurso permite remontar com segurança o cenário de teste da regra mista: ao concluir o anterior com a data do próximo já atingida, o próximo deve ser liberado imediatamente, sem aguardar o job das 04h.
+- Nenhuma migration foi criada ou alterada.
+
 ### Performance #2 — verificação de auth por request paralelizada — 2026-07-15
 
 - **Motivo:** `getStudentFromRequest` (guard usado por 20 rotas `/api/student/**`) fazia 2 round-trips SEQUENCIAIS ao Supabase por request: `auth.getUser(token)` (valida o JWT no GoTrue) e depois a busca na tabela `students`. O segundo só começava após o primeiro terminar.

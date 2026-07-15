@@ -117,6 +117,10 @@ test("admin reset removes attempt history and completed journeys remain availabl
   expect(adminRoute).toContain("resyncTopCoinEarnings(supabase, studentId, simuladoId)");
   expect(adminRoute).toContain('.update({ status: resetStatus, completed_at: null })');
   expect(adminRoute).toContain("Tentativas zeradas. O histórico deste simulado foi removido para este aluno.");
+  expect(adminRoute).toContain('row.status !== "available" || !row.released_at');
+  expect(adminRoute).toContain('async function hasAnyAttempt');
+  expect(adminRoute).toContain('.select("id", { count: "exact", head: true })');
+  expect(adminRoute).toContain('action: "admin.student_simulado.release_reverted"');
   expect(assertions).toContain('const START_STATUSES = ["available", "in_progress", "completed"]');
   expect(assertions).toContain("allowedStatuses.includes(row.status) || Boolean(row.released_at)");
   expect(attemptsRoute).toContain('(!jornadaSimulado.released_at && !["available", "in_progress", "completed"].includes(jornadaSimulado.status))');
@@ -125,8 +129,20 @@ test("admin reset removes attempt history and completed journeys remain availabl
   expect(jornadasRoute).toContain('.eq("counts_toward_limit", true)');
   expect(dashboardRoute).toContain('attempt.status === "completed" && attempt.counts_toward_limit');
   expect(adminPage).toContain('item.status === "completed" && !hasValidCompletion');
+  expect(adminPage).toContain('attemptsCounting === 0 && attemptsTotal === 0');
   expect(adminClient).toContain("Sim, zerar tentativas");
+  expect(adminClient).toContain("{canUnrelease && (");
   expect(adminClient).toContain("As anotações do caderno serão preservadas.");
+});
+
+test("student notebook autosaves without a manual save button", () => {
+  const simuladoClient = read("app/meus-simulados/[id]/page-client.tsx");
+
+  expect(simuladoClient).toContain("notesSaveQueuedRef");
+  expect(simuladoClient).toContain("window.setTimeout(() => {");
+  expect(simuladoClient).toContain("Salvamento automático ativo");
+  expect(simuladoClient).toContain("Anotações salvas automaticamente.");
+  expect(simuladoClient).not.toContain('{saving ? "Salvando..." : "Salvar"}');
 });
 
 test("public registration identifies every duplicated field without exposing account data", () => {

@@ -284,6 +284,10 @@ export default function SimuladoExperience({
   const lastActivityRef = useRef<number>(Date.now());
   const legacyNotesHtmlRef = useRef("");
   const previousAttemptHtmlRef = useRef("");
+  const notesByQuestionRef = useRef<Record<string, string>>({});
+  const lastSavedNotesRef = useRef("{}");
+  const notesSavingRef = useRef(false);
+  const notesSaveQueuedRef = useRef(false);
   const idleEventOpenRef = useRef(false);
   const scissorsRecordedRef = useRef<Set<string>>(new Set());
 
@@ -768,6 +772,8 @@ export default function SimuladoExperience({
       legacyNotesHtmlRef.current = legacyHtml;
       previousAttemptHtmlRef.current = previousAttemptHtml;
       setLegacyNoteBlockCount(countNoteBlocks(legacyHtml) + countNoteBlocks(previousAttemptHtml));
+      notesByQuestionRef.current = currentTextByQid;
+      lastSavedNotesRef.current = JSON.stringify(currentTextByQid);
       setNotesByQuestion(currentTextByQid);
       setPreviousNotesByQuestion(previousTextByQid);
       setNotesLoaded(true);
@@ -776,18 +782,24 @@ export default function SimuladoExperience({
     }
   }, [notesLoaded, simuladoId, attempt]);
 
-  const saveNotesPanel = useCallback(async () => {
-    if (notesSaving) return;
+  const saveNotesPanel = useCallback(async function persistNotes() {
+    if (notesSavingRef.current) {
+      notesSaveQueuedRef.current = true;
+      return;
+    }
 
+    notesSavingRef.current = true;
     setNotesSaving(true);
-    setNotesFeedback(null);
+    setNotesFeedback("Salvando automaticamente...");
 
     const attemptNumber = attempt?.attempt_number ?? 1;
+    const notesSnapshot = notesByQuestionRef.current;
+    const serializedSnapshot = JSON.stringify(notesSnapshot);
     let blockNumber = legacyNoteBlockCount;
     const hasPrecedingContent = legacyNoteBlockCount > 0 || legacyNotesHtmlRef.current.trim().length > 0;
     const newBlocksHtml = questions
       .map((question) => {
-        const text = (notesByQuestion[question.simulado_question_id] || "").trim();
+        const text = (notesSnapshot[question.simulado_question_id] || "").trim();
         if (!text) return "";
         blockNumber += 1;
         const withDivider = blockNumber > 1 || hasPrecedingContent;
@@ -812,13 +824,30 @@ export default function SimuladoExperience({
       }
 
       setNotesLoaded(true);
-      setNotesFeedback("Anotações salvas.");
+      lastSavedNotesRef.current = serializedSnapshot;
+      setNotesFeedback("Anotações salvas automaticamente.");
     } catch {
       setNotesFeedback("Não foi possível salvar suas anotações.");
     } finally {
+      notesSavingRef.current = false;
       setNotesSaving(false);
+      if (notesSaveQueuedRef.current) {
+        notesSaveQueuedRef.current = false;
+        void persistNotes();
+      }
     }
-  }, [notesByQuestion, notesSaving, simuladoId, questions, legacyNoteBlockCount, attempt]);
+  }, [simuladoId, questions, legacyNoteBlockCount, attempt]);
+
+  useEffect(() => {
+    notesByQuestionRef.current = notesByQuestion;
+    if (!notesLoaded || JSON.stringify(notesByQuestion) === lastSavedNotesRef.current) return;
+
+    setNotesFeedback("Alterações pendentes...");
+    const timer = window.setTimeout(() => {
+      void saveNotesPanel();
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [notesByQuestion, notesLoaded, saveNotesPanel]);
 
   const answeredCount = useMemo(
     () => Object.keys(answers).filter((id) => answers[id]?.alternativeId).length,
@@ -995,7 +1024,6 @@ export default function SimuladoExperience({
                 saving={notesSaving}
                 feedback={notesFeedback}
                 onChange={(value) => setNotesByQuestion((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: value }))}
-                onSave={saveNotesPanel}
                 onClose={() => setNotesOpen(false)}
               />
             </div>
@@ -1050,7 +1078,6 @@ export default function SimuladoExperience({
               if (!currentQuestion) return;
               setNotesByQuestion((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: value }));
             }}
-            onSaveNotes={saveNotesPanel}
             onCloseNotes={() => setNotesOpen(false)}
           />
         )}
@@ -1114,7 +1141,6 @@ function NotebookControl({
   saving: boolean;
   feedback: string | null;
   onChange: (value: string) => void;
-  onSave: () => void;
   onClose: () => void;
 }) {
   return (
@@ -1153,7 +1179,6 @@ function NotesPanel({
   saving,
   feedback,
   onChange,
-  onSave,
   onClose,
 }: {
   open: boolean;
@@ -1164,7 +1189,6 @@ function NotesPanel({
   saving: boolean;
   feedback: string | null;
   onChange: (value: string) => void;
-  onSave: () => void;
   onClose: () => void;
 }) {
   if (!open) return null;
@@ -1205,12 +1229,10 @@ function NotesPanel({
           className="min-h-[200px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
         />
         {feedback && <p className="mt-3 text-xs font-bold text-slate-500">{feedback}</p>}
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-slate-400">{saving ? "Salvando automaticamente..." : "Salvamento automático ativo"}</p>
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50">
             Fechar anotações
-          </button>
-          <button type="button" onClick={onSave} disabled={saving} className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-2 text-sm font-black text-slate-950 shadow-lg shadow-orange-500/20 disabled:cursor-wait disabled:opacity-60">
-            {saving ? "Salvando..." : "Salvar"}
           </button>
         </div>
       </div>
@@ -1543,7 +1565,6 @@ function QuestionSidePanel({
   notesSaving,
   notesFeedback,
   onNotesChange,
-  onSaveNotes,
   onCloseNotes,
 }: {
   questions: OrderedQuestion[];
@@ -1563,7 +1584,6 @@ function QuestionSidePanel({
   notesSaving: boolean;
   notesFeedback: string | null;
   onNotesChange: (value: string) => void;
-  onSaveNotes: () => void;
   onCloseNotes: () => void;
 }) {
   const remaining = Math.max(0, totalQuestions - answeredCount);
@@ -1621,7 +1641,6 @@ function QuestionSidePanel({
         saving={notesSaving}
         feedback={notesFeedback}
         onChange={onNotesChange}
-        onSave={onSaveNotes}
         onClose={onCloseNotes}
       />
       </div>

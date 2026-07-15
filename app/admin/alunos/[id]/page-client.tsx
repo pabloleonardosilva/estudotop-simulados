@@ -2786,19 +2786,19 @@ export default function AlunoAdminDetalheClient({
                                 {isProcessingRelease ? "Liberando…" : "Liberar agora"}
                               </button>
                             )}
-                            {item.manually_released && (
+                            {canUnrelease && (
                               <button
                                 type="button"
                                 onClick={() => handleScheduleAction(scheduleModalJornada, item, "unrelease")}
                                 disabled={Boolean(scheduleProcessingId) || !canUnrelease}
                                 className="inline-flex h-[52px] min-w-[190px] items-center justify-center gap-2 rounded-[13px] border border-blue-300/34 bg-[linear-gradient(180deg,rgba(18,45,76,0.92),rgba(8,29,53,0.94))] px-5 text-xs font-bold text-slate-200 shadow-lg shadow-black/15 transition hover:-translate-y-0.5 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-45"
-                                title={!canUnrelease || isStartedOrCompleted ? "Não é possível desliberar após o aluno iniciar ou concluir o simulado." : undefined}
+                                title={!canUnrelease || isStartedOrCompleted ? "Para desliberar, as tentativas e o Total real precisam estar zerados." : undefined}
                               >
                                 <RotateCcw size={15} />
                                 {isProcessingUnrelease ? "Revertendo…" : "Desliberar"}
                               </button>
                             )}
-                            {!canReleaseNow && !item.manually_released && (
+                            {!canReleaseNow && !canUnrelease && (
                               <span className="inline-flex h-[52px] min-w-[190px] items-center justify-center rounded-[13px] border border-white/[0.08] bg-white/[0.025] px-4 text-xs font-semibold text-white/38">
                                 Sem ação manual
                               </span>
@@ -2806,9 +2806,9 @@ export default function AlunoAdminDetalheClient({
                           </div>
                         </div>
 
-                        {item.manually_released && !canUnrelease && (
+                        {isAvailable && Boolean(item.released_at) && !canUnrelease && (
                           <div className="mt-4 rounded-xl border border-amber-500/18 bg-amber-500/[0.075] px-4 py-2.5 text-xs text-amber-200/75">
-                            Esta liberação não pode ser revertida porque o aluno já iniciou/concluiu o simulado ou a data prevista já chegou.
+                            Para desliberar, zere as tentativas e confirme que o Total real também ficou em zero.
                           </div>
                         )}
                       </div>
