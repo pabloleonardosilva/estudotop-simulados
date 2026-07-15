@@ -187,7 +187,7 @@ export async function GET(request: Request) {
   }
 
   const completedAttemptIds = ((attempts || []) as AttemptRow[])
-    .filter((attempt) => attempt.status === "completed")
+    .filter((attempt) => attempt.status === "completed" && attempt.counts_toward_limit)
     .map((attempt) => attempt.id);
 
   const { data: results, error: resultsError } = completedAttemptIds.length
@@ -231,7 +231,7 @@ export async function GET(request: Request) {
     const status = computeStudentJornadaStatus(row.status, row.expires_at);
     const completed = itens.filter((item) => {
       const itemAttempts = attemptsBySimulado.get(item.simulado_id) || [];
-      return item.status === "completed" || itemAttempts.some((attempt) => attempt.status === "completed");
+      return itemAttempts.some((attempt) => attempt.status === "completed" && attempt.counts_toward_limit);
     }).length;
     const available = itens.filter((item) => ["available", "in_progress"].includes(item.status)).length;
     const locked = Math.max(0, total - completed - available);
@@ -264,7 +264,7 @@ export async function GET(request: Request) {
   const activeJornadas = jornadas.filter((jornada) => jornada.status === "active");
   const completedSimuladoIds = new Set(
     ((attempts || []) as AttemptRow[])
-      .filter((attempt) => attempt.status === "completed")
+      .filter((attempt) => attempt.status === "completed" && attempt.counts_toward_limit)
       .map((attempt) => attempt.simulado_id),
   );
   const inProgressAttempt = mostRecentAttempt(((attempts || []) as AttemptRow[]).filter((attempt) => attempt.status === "in_progress"));

@@ -105,6 +105,10 @@ test("admin reset removes attempt history and completed journeys remain availabl
   const adminRoute = read("app/api/admin/student-jornadas/[studentJornadaId]/simulados/[studentJornadaSimuladoId]/route.ts");
   const assertions = read("lib/server/studentAssertions.ts");
   const attemptsRoute = read("app/api/student/simulados/[id]/attempts/route.ts");
+  const jornadaDetailRoute = read("app/api/student/jornadas/[id]/route.ts");
+  const jornadasRoute = read("app/api/student/jornadas/route.ts");
+  const dashboardRoute = read("app/api/student/dashboard/route.ts");
+  const adminPage = read("app/admin/alunos/[id]/page.tsx");
   const adminClient = read("app/admin/alunos/[id]/page-client.tsx");
 
   expect(adminRoute).toContain("resetSimuladoHistory");
@@ -116,6 +120,11 @@ test("admin reset removes attempt history and completed journeys remain availabl
   expect(assertions).toContain('const START_STATUSES = ["available", "in_progress", "completed"]');
   expect(assertions).toContain("allowedStatuses.includes(row.status) || Boolean(row.released_at)");
   expect(attemptsRoute).toContain('(!jornadaSimulado.released_at && !["available", "in_progress", "completed"].includes(jornadaSimulado.status))');
+  expect(jornadaDetailRoute).toContain('attempt.status === "completed" && attempt.counts_toward_limit');
+  expect(jornadaDetailRoute).toContain('row.status === "completed" && !anyCompleted');
+  expect(jornadasRoute).toContain('.eq("counts_toward_limit", true)');
+  expect(dashboardRoute).toContain('attempt.status === "completed" && attempt.counts_toward_limit');
+  expect(adminPage).toContain('item.status === "completed" && !hasValidCompletion');
   expect(adminClient).toContain("Sim, zerar tentativas");
   expect(adminClient).toContain("As anotações do caderno serão preservadas.");
 });

@@ -5,6 +5,7 @@ import { logSystemError } from "@/app/lib/server/auditLogger";
 
 type StudentJornadaSimuladoRow = {
   id: string;
+  simulado_id: string;
   status: string;
   released_at: string | null;
   completed_at: string | null;
@@ -54,6 +55,7 @@ export async function GET(request: Request) {
       ),
       student_jornada_simulados(
         id,
+        simulado_id,
         status,
         released_at,
         completed_at
@@ -68,11 +70,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: "Não foi possível carregar as jornadas." }, { status: 500 });
   }
 
+  const simuladoIds = Array.from(new Set((data || []).flatMap((row: any) =>
+    ((row.student_jornada_simulados || []) as StudentJornadaSimuladoRow[]).map((item) => item.simulado_id),
+  ).filter(Boolean)));
+  const { data: completedAttempts, error: attemptsError } = simuladoIds.length
+    ? await supabase
+        .from("simulado_attempts")
+        .select("simulado_id")
+        .eq("student_id", student.id)
+        .eq("status", "completed")
+        .eq("counts_toward_limit", true)
+        .in("simulado_id", simuladoIds)
+    : { data: [], error: null };
+
+  if (attemptsError) {
+    void logSystemError({ source: "api.student.jornadas.attempts", error: attemptsError, request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar as jornadas." }, { status: 500 });
+  }
+
+  const completedSimuladoIds = new Set((completedAttempts || []).map((attempt) => attempt.simulado_id));
   const jornadas = (data || []).map((row: any) => {
     const itens = (row.student_jornada_simulados || []) as StudentJornadaSimuladoRow[];
     const linkedTotal = itens.length;
     const total = row.jornadas?.planned_simulados_count || linkedTotal;
-    const completed = itens.filter((item) => item.status === "completed").length;
+    const completed = itens.filter((item) => completedSimuladoIds.has(item.simulado_id)).length;
     const available = itens.filter((item) => item.status === "available" || item.status === "in_progress").length;
     const progress_percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 

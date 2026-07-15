@@ -139,7 +139,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     : { data: [] as AttemptRow[] };
 
   const completedAttemptIds = ((attempts || []) as AttemptRow[])
-    .filter((attempt) => attempt.status === "completed")
+    .filter((attempt) => attempt.status === "completed" && attempt.counts_toward_limit)
     .map((attempt) => attempt.id);
 
   const { data: results } = completedAttemptIds.length
@@ -171,8 +171,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const anyCompleted = simAttempts.find((attempt) => attempt.status === "completed" && attempt.counts_toward_limit) || null;
     const previousAttempts = previous?.simulado_id ? attemptsBySimulado.get(previous.simulado_id) || [] : [];
     const previousCompleted =
-      index === 0 || previous?.status === "completed" || previousAttempts.some((attempt) => attempt.status === "completed");
-    const status = anyCompleted ? "completed" : normalizeStatus(row.status, row.scheduled_release_at, previousCompleted, jornadaExpired);
+      index === 0 || previousAttempts.some((attempt) => attempt.status === "completed" && attempt.counts_toward_limit);
+    const rawStatus = row.status === "completed" && !anyCompleted
+      ? (row.released_at ? "available" : "locked")
+      : row.status;
+    const status = anyCompleted ? "completed" : normalizeStatus(rawStatus, row.scheduled_release_at, previousCompleted, jornadaExpired);
     const limitAttempts = simAttempts.filter((attempt) => Boolean(attempt.counts_toward_limit));
     const completedAttempts = limitAttempts.filter((attempt) => attempt.status === "completed");
     const incompleteAttempts = limitAttempts.filter((attempt) => attempt.status !== "completed");
@@ -216,7 +219,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       average_time_seconds: averageTimeSeconds,
       scheduled_release_at: row.scheduled_release_at,
       released_at: row.released_at,
-      completed_at: result?.finished_at || completed?.submitted_at || row.completed_at || null,
+      completed_at: completed ? (result?.finished_at || completed.submitted_at || row.completed_at || null) : null,
       status,
       raw_status: row.status,
       thumbnail_url: MINI_IMAGES[(row.order_number - 1) % MINI_IMAGES.length],

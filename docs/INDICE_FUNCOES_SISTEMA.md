@@ -1437,6 +1437,8 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 
 **Acesso para refazer:** `student_jornada_simulados.status = completed` é estado de progresso, não bloqueio de acesso. `assertStudentCanStartSimulado` aceita `available`, `in_progress` e `completed`, e também reconhece `released_at` como evidência de liberação. O bloqueio de uma nova tentativa cabe a `simulados.max_attempts` e `counts_toward_limit`. O resultado real continua sendo a primeira tentativa concluída válida que conta para o limite; após o reset não existe resultado real até uma nova conclusão.
 
+**Fonte de verdade da conclusão (2026-07-15):** cadastro administrativo, painel do aluno, lista de Jornadas e detalhe da Jornada só consideram um simulado resolvido quando existe `simulado_attempts.status = completed` com `counts_toward_limit = true`. Um vínculo legado ainda marcado como `student_jornada_simulados.status = completed`, mas sem tentativa válida, é apresentado como disponível/bloqueado conforme sua liberação, sem nota, data de conclusão ou progresso. Ao confirmar `set_attempts = 0` na versão atual, o histórico do par aluno/simulado é excluído integralmente e o vínculo é normalizado.
+
 ---
 
 ### 9.4.1 Integridade central das contas de alunos — 2026-07-13

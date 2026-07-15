@@ -683,6 +683,13 @@ Escopo previsto:
 - **Validação #1:** após o deploy, remedição em produção mostrou `GET /api/student/jornadas` caindo de ~900ms para ~139ms de mediana (6,4× mais rápido). Vercel aceitou `gru1`.
 - Nenhuma migration foi criada ou alterada.
 
+### Consistência do zeramento de tentativas nas telas — 2026-07-15
+
+- A conclusão de um simulado passou a depender de tentativa concluída válida (`status = completed` e `counts_toward_limit = true`) no cadastro administrativo, dashboard, lista de Jornadas e detalhe da Jornada do aluno.
+- Estados legados em que o contador havia sido zerado sem remover o histórico não exibem mais “Realizado/Resolvido”, nota, conclusão ou progresso apenas porque `student_jornada_simulados` permaneceu como `completed`.
+- O zeramento administrativo atual continua removendo integralmente tentativas e dados derivados; anotações e auditoria permanecem preservadas.
+- Nenhuma migration foi criada ou alterada.
+
 ### Performance #2 — verificação de auth por request paralelizada — 2026-07-15
 
 - **Motivo:** `getStudentFromRequest` (guard usado por 20 rotas `/api/student/**`) fazia 2 round-trips SEQUENCIAIS ao Supabase por request: `auth.getUser(token)` (valida o JWT no GoTrue) e depois a busca na tabela `students`. O segundo só começava após o primeiro terminar.

@@ -243,7 +243,9 @@ async function getData(id: string) {
         const attemptsTotal = attempts.length;
         const attemptsCounting = attempts.filter((attempt: any) => Boolean(attempt.counts_toward_limit)).length;
         const attemptsInProgress = attempts.filter((attempt: any) => String(attempt.status) === "in_progress").length;
-        const sortedAttempts = [...attempts].sort((a: any, b: any) => {
+        const countedAttempts = attempts.filter((attempt: any) => Boolean(attempt.counts_toward_limit));
+        const visibleAttempts = attempts.filter((attempt: any) => Boolean(attempt.counts_toward_limit) || String(attempt.status) === "in_progress");
+        const sortedAttempts = [...visibleAttempts].sort((a: any, b: any) => {
           const aDate = new Date(a.last_activity_at || a.submitted_at || a.started_at || a.created_at || 0).getTime();
           const bDate = new Date(b.last_activity_at || b.submitted_at || b.started_at || b.created_at || 0).getTime();
           return bDate - aDate;
@@ -262,7 +264,11 @@ async function getData(id: string) {
             return aDate.localeCompare(bDate);
           })[0] || null;
         const latestResult = realResultEntry?.result || null;
-        const hasStartedOrCompleted = attempts.some((attempt: any) => ["in_progress", "completed", "disqualified", "expired"].includes(String(attempt.status)));
+        const hasValidCompletion = Boolean(realResultEntry);
+        const effectiveStatus = item.status === "completed" && !hasValidCompletion
+          ? (item.released_at ? "available" : "locked")
+          : item.status;
+        const hasStartedOrCompleted = visibleAttempts.some((attempt: any) => ["in_progress", "completed", "disqualified", "expired"].includes(String(attempt.status)));
         const manuallyReleased = item.status === "available" && Boolean(item.released_at) && scheduledDate !== null && scheduledDate.getTime() > today.getTime();
 
         return {
@@ -273,8 +279,8 @@ async function getData(id: string) {
           released_at: item.released_at,
           release_email_sent_at: item.release_email_sent_at,
           release_email_error: item.release_email_error,
-          completed_at: item.completed_at,
-          status: item.status,
+          completed_at: hasValidCompletion ? item.completed_at : null,
+          status: effectiveStatus,
           title: item.simulados?.title || `Simulado ${item.order_number || ""}`.trim(),
           max_attempts: item.simulados?.max_attempts ?? null,
           attempts_total: attemptsTotal,
@@ -301,7 +307,7 @@ async function getData(id: string) {
       ...sj,
       schedule,
       progress: {
-        completed: schedule.filter((s: any) => s.status === "completed").length,
+        completed: schedule.filter((s: any) => s.status === "completed" && s.attempts_counting > 0).length,
         total: schedule.length,
       },
     };
