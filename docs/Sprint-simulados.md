@@ -806,3 +806,12 @@ Nenhuma migration foi criada ou alterada.
 - O antigo botão flutuante foi substituído por um card premium **Caderno**, com ícone, seta de estado e animação discreta. O painel limita a própria altura e usa rolagem interna; também fecha pelo X e pelo botão "Fechar anotações". "Salvar" mantém o painel aberto com feedback "Anotações salvas".
 - **Preservado:** carregamento e salvamento das anotações (`GET/PUT /api/student/simulados/[id]/notes`), associação por aluno/simulado, timer, respostas, navegação, tesourinha, anti-cheat — nada disso foi tocado.
 - **Arquivo:** `app/meus-simulados/[id]/page-client.tsx` (componente `NotesPanel`, local a essa tela). Nenhuma migration; nenhuma alteração de banco/API.
+
+## Correção — zeramento integral de tentativas e acesso para refazer — 2026-07-15
+
+- **Causa:** `set_attempts = 0` apenas marcava tentativas com `counts_toward_limit = false`, mantendo tentativas, respostas, resultados e o vínculo da Jornada como concluído. Em paralelo, o helper de início não aceitava `completed`, embora esse estado signifique que o simulado já foi liberado.
+- **Reset integral:** após confirmação premium no Cronograma individual, são removidos `simulado_answers`, `simulado_results`, `topcoin_earnings` e `simulado_attempts` do aluno naquele simulado. TopCoins são ressincronizados, `completed_at` é limpo e o status volta para `available` quando já houve liberação; itens nunca liberados permanecem `locked`.
+- **Preservado:** cadastro, matrícula, Jornada, simulado, questões, caderno de anotações e auditoria administrativa. Nenhuma anotação de `student_simulado_notes` é apagada.
+- **Refazer:** `available`, `in_progress`, `completed` e vínculo com `released_at` permitem iniciar/retomar; quem bloqueia nova tentativa é o limite `max_attempts`. A validação duplicada da rota de tentativas segue a mesma regra.
+- **Resultado real:** permanece a primeira tentativa concluída válida com `counts_toward_limit = true`. Depois do reset, nota e resultado ficam vazios até uma nova conclusão.
+- Nenhuma migration foi criada ou alterada.

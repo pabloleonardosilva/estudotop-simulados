@@ -1433,6 +1433,10 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
   - nota/desempenho;
   - simulados disponíveis, bloqueados, atrasados e pendentes.
 
+**Zeramento administrativo de tentativas (2026-07-15):** no Cronograma individual de `/admin/alunos/[id]`, `set_attempts = 0` representa reset completo do aluno naquele simulado. A interface exige confirmação explícita; a API remove `simulado_answers`, `simulado_results`, `topcoin_earnings` e `simulado_attempts` pertencentes ao par aluno/simulado, ressincroniza TopCoins, limpa `student_jornada_simulados.completed_at` e retira o estado `completed`. O caderno em `student_simulado_notes` e os logs de auditoria não são apagados. Se o item já havia sido liberado (`released_at` ou estado de acesso), retorna a `available` preservando `released_at`; caso contrário permanece `locked`.
+
+**Acesso para refazer:** `student_jornada_simulados.status = completed` é estado de progresso, não bloqueio de acesso. `assertStudentCanStartSimulado` aceita `available`, `in_progress` e `completed`, e também reconhece `released_at` como evidência de liberação. O bloqueio de uma nova tentativa cabe a `simulados.max_attempts` e `counts_toward_limit`. O resultado real continua sendo a primeira tentativa concluída válida que conta para o limite; após o reset não existe resultado real até uma nova conclusão.
+
 ---
 
 ### 9.4.1 Integridade central das contas de alunos — 2026-07-13

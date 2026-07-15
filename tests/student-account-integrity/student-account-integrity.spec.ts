@@ -101,6 +101,25 @@ test("student simulados exclude cancelled journeys and completion advances journ
   });
 });
 
+test("admin reset removes attempt history and completed journeys remain available for retakes", () => {
+  const adminRoute = read("app/api/admin/student-jornadas/[studentJornadaId]/simulados/[studentJornadaSimuladoId]/route.ts");
+  const assertions = read("lib/server/studentAssertions.ts");
+  const attemptsRoute = read("app/api/student/simulados/[id]/attempts/route.ts");
+  const adminClient = read("app/admin/alunos/[id]/page-client.tsx");
+
+  expect(adminRoute).toContain("resetSimuladoHistory");
+  expect(adminRoute).toContain('.from("simulado_attempts")');
+  expect(adminRoute).toContain("ON DELETE CASCADE");
+  expect(adminRoute).toContain("resyncTopCoinEarnings(supabase, studentId, simuladoId)");
+  expect(adminRoute).toContain('.update({ status: resetStatus, completed_at: null })');
+  expect(adminRoute).toContain("Tentativas zeradas. O histórico deste simulado foi removido para este aluno.");
+  expect(assertions).toContain('const START_STATUSES = ["available", "in_progress", "completed"]');
+  expect(assertions).toContain("allowedStatuses.includes(row.status) || Boolean(row.released_at)");
+  expect(attemptsRoute).toContain('(!jornadaSimulado.released_at && !["available", "in_progress", "completed"].includes(jornadaSimulado.status))');
+  expect(adminClient).toContain("Sim, zerar tentativas");
+  expect(adminClient).toContain("As anotações do caderno serão preservadas.");
+});
+
 test("public registration identifies every duplicated field without exposing account data", () => {
   const route = read("app/api/auth/register/route.ts");
   expect(route).toContain('duplicate_fields: duplicateFields');

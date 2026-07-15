@@ -11,7 +11,6 @@ import {
   BarChart3,
   Ban,
   CalendarCheck,
-  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -46,6 +45,7 @@ import {
 } from "lucide-react";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumLoadingOverlay from "@/app/components/ui/PremiumLoadingOverlay";
+import PremiumModal from "@/app/components/ui/PremiumModal";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { formatCpf } from "@/lib/utils/cpf";
 import type { ActivityLog, AvailableJornada, StudentDetail, StudentJornada, StudentJornadaScheduleItem, StudentSystemActivity, StudentUsageSession } from "./page";
@@ -1390,6 +1390,7 @@ export default function AlunoAdminDetalheClient({
   const [scheduleModalJornada, setScheduleModalJornada] = useState<StudentJornada | null>(null);
   const [scheduleProcessingId, setScheduleProcessingId] = useState<string | null>(null);
   const [attemptDrafts, setAttemptDrafts] = useState<Record<string, string>>({});
+  const [resetAttemptsTarget, setResetAttemptsTarget] = useState<{ jornada: StudentJornada; item: StudentJornadaScheduleItem } | null>(null);
 
   const [resendEmailModal, setResendEmailModal] = useState(false);
   const [selectedResendOption, setSelectedResendOption] = useState("");
@@ -1732,14 +1733,7 @@ export default function AlunoAdminDetalheClient({
     }
   }
 
-  async function handleSetAttempts(jornada: StudentJornada, item: StudentJornadaScheduleItem) {
-    const raw = attemptDrafts[item.id] ?? String(item.attempts_counting);
-    const attempts = Number(raw);
-    if (!Number.isInteger(attempts) || attempts < 0) {
-      setFeedback({ type: "error", message: "Informe um número inteiro de tentativas." });
-      return;
-    }
-
+  async function performSetAttempts(jornada: StudentJornada, item: StudentJornadaScheduleItem, attempts: number) {
     setScheduleProcessingId(`attempts:${item.id}`);
     setFeedback(null);
     try {
@@ -1748,15 +1742,73 @@ export default function AlunoAdminDetalheClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "set_attempts", attempts }),
       });
-      const data = (await res.json()) as { ok: boolean; message?: string };
+      const data = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        schedule_item?: Pick<StudentJornadaScheduleItem, "id" | "status" | "released_at" | "completed_at" | "attempts_total" | "attempts_counting">;
+      };
       if (!data.ok) throw new Error(data.message || "Não foi possível ajustar as tentativas.");
+
+      if (attempts === 0 && data.schedule_item) {
+        setLocalJornadas((current) => current.map((currentJornada) => {
+          if (currentJornada.id !== jornada.id) return currentJornada;
+          const updatedJornada = {
+            ...currentJornada,
+            schedule: currentJornada.schedule.map((scheduleItem) => scheduleItem.id === item.id
+              ? {
+                  ...scheduleItem,
+                  ...data.schedule_item,
+                  attempts_in_progress: 0,
+                  latest_attempt_id: null,
+                  latest_attempt_status: null,
+                  latest_attempt_started_at: null,
+                  latest_attempt_submitted_at: null,
+                  latest_attempt_last_activity_at: null,
+                  latest_attempt_answered_count: null,
+                  latest_attempt_total_questions: null,
+                  latest_attempt_progress_percent: null,
+                  latest_result_percentage: null,
+                  latest_result_score: null,
+                  latest_result_finished_at: null,
+                  latest_result_time_spent_seconds: null,
+                }
+              : scheduleItem),
+          };
+          updatedJornada.progress = {
+            completed: updatedJornada.schedule.filter((scheduleItem) => scheduleItem.status === "completed").length,
+            total: updatedJornada.schedule.length,
+          };
+          setScheduleModalJornada(updatedJornada);
+          return updatedJornada;
+        }));
+        setAttemptDrafts((current) => ({ ...current, [item.id]: "0" }));
+      }
+
       setFeedback({ type: "success", message: data.message || "Tentativas ajustadas." });
       router.refresh();
+      return true;
     } catch (error) {
       setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erro inesperado ao ajustar tentativas." });
+      return false;
     } finally {
       setScheduleProcessingId(null);
     }
+  }
+
+  async function handleSetAttempts(jornada: StudentJornada, item: StudentJornadaScheduleItem) {
+    const raw = attemptDrafts[item.id] ?? String(item.attempts_counting);
+    const attempts = Number(raw);
+    if (!Number.isInteger(attempts) || attempts < 0) {
+      setFeedback({ type: "error", message: "Informe um número inteiro de tentativas." });
+      return;
+    }
+
+    if (attempts === 0) {
+      setResetAttemptsTarget({ jornada, item });
+      return;
+    }
+
+    await performSetAttempts(jornada, item, attempts);
   }
 
   async function handleAssignJornada() {
@@ -1851,6 +1903,14 @@ export default function AlunoAdminDetalheClient({
                 onClick={() => { setAssignModal(true); setFeedback(null); }}
               >
                 Gerenciar Jornadas
+              </PremiumButton>
+              <PremiumButton
+                className="!h-[46px] !rounded-[14px] !border-blue-300/30 !bg-[linear-gradient(180deg,rgba(18,35,57,0.96),rgba(10,24,42,0.96))] !px-[22px] !text-[13px] !font-bold !text-slate-100 !shadow-[0_10px_26px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] hover:!border-blue-200/45"
+                variant="secondary"
+                icon={<Mail size={16} />}
+                onClick={() => { setResendEmailModal(true); setFeedback(null); }}
+              >
+                Reenvio de E-mails
               </PremiumButton>
               {!editing && (
                 <PremiumButton className="!h-[46px] !rounded-[14px] !border-amber-300/70 !bg-[linear-gradient(135deg,#FF6500_0%,#FF9E00_55%,#FFC000_100%)] !px-6 !text-[13px] !font-bold !text-[#07111F] !shadow-[0_0_0_1px_rgba(255,152,0,0.22),0_8px_24px_rgba(255,105,0,0.40),0_0_34px_rgba(255,138,0,0.30),inset_0_1px_0_rgba(255,255,255,0.45)] hover:!-translate-y-0.5 hover:!brightness-105" icon={<Edit3 size={16} />} onClick={() => { setEditing(true); setFeedback(null); }}>
@@ -2021,72 +2081,6 @@ export default function AlunoAdminDetalheClient({
                   <p><span className="font-semibold text-white/60">Bloqueado</span> — acesso suspenso (administrativo).</p>
                   <p><span className="font-semibold text-white/60">Inativo</span> — conta desativada; login bloqueado, histórico preservado.</p>
                 </div>
-              </div>
-            </DarkCard>
-
-            {/* Informações do sistema */}
-            <DarkCard
-              title="Sistema"
-              action={
-                <PremiumButton
-                  variant="secondary"
-                  icon={<Mail size={14} />}
-                  onClick={() => setResendEmailModal(true)}
-                  className="!px-3 !py-2 !text-xs"
-                >
-                  Reenvio de E-mails
-                </PremiumButton>
-              }
-            >
-              <div className="space-y-2">
-                <SysRow icon={<Clock3 size={13} />} label="Último acesso" value={fmtDateTime(student.last_login_at)} />
-                <SysRow icon={<CalendarDays size={13} />} label="Cadastrado em" value={fmtDateTime(student.created_at)} />
-                <SysRow icon={<CalendarDays size={13} />} label="Atualizado em" value={fmtDateTime(student.updated_at)} />
-                <SysRow icon={<ShieldCheck size={13} />} label="Cadastro aprovado" value={
-                  student.approved_at ? fmtDateTime(student.approved_at) : "Aguardando aprovação"
-                } />
-                <SysRow icon={<Mail size={13} />} label="E-mail boas-vindas" value={
-                  student.welcome_email_status === "sent" ? `Enviado em ${fmtDateTime(student.welcome_email_sent_at)}`
-                  : student.welcome_email_status === "sending" ? "Enviando…"
-                  : student.welcome_email_status === "failed" ? `Falha no envio${student.welcome_email_attempted_at ? ` (${fmtDateTime(student.welcome_email_attempted_at)})` : ""}`
-                  : "Não enviado"
-                } />
-                {localJornadas.map((sj) => (
-                  <div key={`email-history-${sj.id}`} className="space-y-2">
-                    <SysRow
-                      icon={<Mail size={13} />}
-                      label={`Jornada — ${sj.jornadas?.title || "Jornada"}`}
-                      value={sj.welcome_email_sent_at
-                        ? `Enviado em ${fmtDateTime(sj.welcome_email_sent_at)}`
-                        : sj.welcome_email_error
-                          ? "Falha no envio"
-                          : "Não enviado"}
-                    />
-                    {sj.schedule
-                      .filter((item) => Boolean(item.released_at) || Boolean(item.release_email_sent_at) || Boolean(item.release_email_error))
-                      .map((item) => (
-                        <SysRow
-                          key={`release-email-${item.id}`}
-                          icon={<Mail size={13} />}
-                          label={`Simulado — ${item.title}`}
-                          value={item.release_email_sent_at
-                            ? `Enviado em ${fmtDateTime(item.release_email_sent_at)}`
-                            : item.release_email_error
-                              ? "Falha no envio"
-                              : "Não enviado"}
-                        />
-                      ))}
-                  </div>
-                ))}
-                {student.welcome_email_status === "failed" && (
-                  <button
-                    type="button"
-                    onClick={() => setResendEmailModal(true)}
-                    className="w-full rounded-xl border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2 text-xs font-semibold text-amber-300 transition hover:border-amber-500/45 hover:bg-amber-500/[0.14]"
-                  >
-                    Reenviar e-mail de boas-vindas
-                  </button>
-                )}
               </div>
             </DarkCard>
 
@@ -2623,6 +2617,41 @@ export default function AlunoAdminDetalheClient({
         </div>
       )}
 
+      <PremiumModal
+        open={Boolean(resetAttemptsTarget)}
+        tone="warning"
+        title="Zerar tentativas deste simulado?"
+        message="Zerar as tentativas deste simulado irá apagar as tentativas, respostas, notas, resultados e TopCoins deste aluno neste simulado. O aluno voltará a vê-lo como não realizado. As anotações do caderno serão preservadas. Deseja continuar?"
+        onClose={() => setResetAttemptsTarget(null)}
+        dismissible={!scheduleProcessingId}
+        actions={resetAttemptsTarget ? (
+          <div className="flex w-full flex-col-reverse gap-3 sm:flex-row">
+            <PremiumButton
+              variant="secondary"
+              full
+              onClick={() => setResetAttemptsTarget(null)}
+              disabled={Boolean(scheduleProcessingId)}
+            >
+              Cancelar
+            </PremiumButton>
+            <PremiumButton
+              variant="dark-warning"
+              full
+              icon={<AlertTriangle size={16} />}
+              disabled={Boolean(scheduleProcessingId)}
+              onClick={async () => {
+                const target = resetAttemptsTarget;
+                if (!target) return;
+                const resetCompleted = await performSetAttempts(target.jornada, target.item, 0);
+                if (resetCompleted) setResetAttemptsTarget(null);
+              }}
+            >
+              {scheduleProcessingId ? "Zerando…" : "Sim, zerar tentativas"}
+            </PremiumButton>
+          </div>
+        ) : undefined}
+      />
+
       {/* Modal — Cronograma da Jornada */}
       {scheduleModalJornada && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[radial-gradient(circle_at_25%_15%,rgba(32,132,255,0.10),transparent_34%),radial-gradient(circle_at_80%_88%,rgba(255,111,0,0.12),transparent_30%),rgba(1,5,12,0.78)] px-4 py-6 backdrop-blur-[14px]">
@@ -3014,15 +3043,6 @@ function DarkCard({
         {action}
       </div>
       <div className="p-5">{children}</div>
-    </div>
-  );
-}
-
-function SysRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex min-h-[42px] items-center justify-between gap-3 rounded-[11px] border border-white/[0.065] bg-white/[0.028] px-[14px] py-2.5 text-xs transition hover:border-blue-400/20">
-      <span className="flex shrink-0 items-center gap-1.5 text-white/38">{icon}{label}</span>
-      <span className="text-right font-semibold text-white/68">{value}</span>
     </div>
   );
 }

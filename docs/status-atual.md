@@ -680,4 +680,14 @@ Escopo previsto:
 - **Correção:** adicionado `"regions": ["gru1"]` (São Paulo) ao `vercel.json`, co-localizando as Serverless Functions com o banco. Reduz a latência de rede de TODA chamada de API (aluno e admin), não só Jornadas.
 - **Escopo:** somente `vercel.json`. Sem alteração de código, banco, API ou regras. Passa a valer no próximo deploy de produção.
 - **Pendência:** confirmar após o deploy que a Vercel aceitou `gru1` no plano atual (se não aceitar, escolher a região disponível mais próxima) e remedir a latência das APIs de Jornadas. As demais recomendações de performance (#2 auth por request, #3 SSR das telas, #4/#5) seguem em aberto.
+- **Validação #1:** após o deploy, remedição em produção mostrou `GET /api/student/jornadas` caindo de ~900ms para ~139ms de mediana (6,4× mais rápido). Vercel aceitou `gru1`.
+- Nenhuma migration foi criada ou alterada.
+
+### Performance #2 — verificação de auth por request paralelizada — 2026-07-15
+
+- **Motivo:** `getStudentFromRequest` (guard usado por 20 rotas `/api/student/**`) fazia 2 round-trips SEQUENCIAIS ao Supabase por request: `auth.getUser(token)` (valida o JWT no GoTrue) e depois a busca na tabela `students`. O segundo só começava após o primeiro terminar.
+- **Correção:** os dois passam a rodar em PARALELO via `Promise.all`. Um helper `decodeJwtSub(token)` lê apenas o claim `sub` do JWT (sem verificar assinatura) para pré-buscar o aluno em paralelo com `auth.getUser`. O pré-fetch só é aproveitado depois que `auth.getUser` valida o token E confirma `sub === user.id`; se o `sub` estiver ausente/divergente, faz uma busca sequencial pelo id realmente verificado (fallback).
+- **Segurança preservada:** o token continua sendo validado por `auth.getUser` (assinatura + expiração). O `sub` decodificado nunca é confiado sozinho. Testado: sem token → 401; token lixo → 401; token com assinatura adulterada → 401 (mesmo com o `sub` decodificável, o pré-fetch é descartado); token válido → 200.
+- **Escopo:** somente `lib/server/supabaseStudentAuth.ts`. Sem alteração de banco, API, contrato de resposta ou variáveis de ambiente. Nenhum novo segredo (evitou-se a alternativa de verificação local do JWT, que exigiria `SUPABASE_JWT_SECRET` e abriria mão de revogação imediata).
+- **Impacto:** ganho modesto após o #1 (sobrepõe ~um round-trip de auth, dezenas de ms), sem tradeoff de segurança ou nova dependência.
 - Nenhuma migration foi criada ou alterada.

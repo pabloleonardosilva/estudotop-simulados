@@ -7,7 +7,7 @@ import { logSecurityEvent } from "@/app/lib/server/auditLogger";
 type Supabase = ReturnType<typeof createSupabaseAdminClient>;
 
 const ACCESS_STATUSES = ["available", "in_progress", "completed"];
-const START_STATUSES = ["available", "in_progress"];
+const START_STATUSES = ["available", "in_progress", "completed"];
 
 async function assertStudentJornadaAccess(
   studentId: string,
@@ -37,17 +37,31 @@ async function assertStudentJornadaAccess(
     return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
   }
 
-  const { data: releaseRow } = await supabase
+  const { data: releaseRows } = await supabase
     .from("student_jornada_simulados")
-    .select("id")
+    .select("id, status, released_at")
     .eq("simulado_id", simuladoId)
     .in("student_jornada_id", studentJornadas.map((row) => row.id))
     .in("jornada_simulado_id", jornadaLinks.map((row) => row.id))
-    .in("status", allowedStatuses)
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
+
+  const releaseRow = (releaseRows || []).find(
+    (row) => allowedStatuses.includes(row.status) || Boolean(row.released_at),
+  );
 
   if (!releaseRow) {
+    // Se o aluno já tem tentativa neste simulado, ele foi liberado em algum momento:
+    // não bloquear como "não liberado". Reconcilia o status da liberação quando
+    // necessário e libera o acesso — o limite de tentativas é validado à parte.
+    const reconciled = await reconcileReleaseFromAttempts(
+      studentId,
+      simuladoId,
+      studentJornadas.map((row) => row.id),
+      jornadaLinks.map((row) => row.id),
+      supabase,
+    );
+    if (reconciled) return null;
+
     void logSecurityEvent({ event: "student.forbidden", actorType: "student", actorId: studentId, resourceType: "simulado", resourceId: simuladoId, request, metadata: { reason: "simulado_locked" } });
     return NextResponse.json(
       { ok: false, message: "Este simulado ainda não está liberado para você." },
@@ -56,6 +70,54 @@ async function assertStudentJornadaAccess(
   }
 
   return null;
+}
+
+// Reconciliação segura: quando existe tentativa do próprio aluno para o simulado
+// dentro de uma matrícula ativa, a liberação já ocorreu. Repara linhas de
+// `student_jornada_simulados` travadas/desatualizadas (sem rebaixar "completed")
+// e preenche `released_at` quando ausente. Retorna true se houver tentativa.
+async function reconcileReleaseFromAttempts(
+  studentId: string,
+  simuladoId: string,
+  studentJornadaIds: string[],
+  jornadaSimuladoIds: string[],
+  supabase: Supabase,
+): Promise<boolean> {
+  const { data: attempts } = await supabase
+    .from("simulado_attempts")
+    .select("id, status, counts_toward_limit")
+    .eq("student_id", studentId)
+    .eq("simulado_id", simuladoId);
+
+  if (!attempts?.length) return false;
+
+  const hasCountedCompleted = attempts.some((row) => row.status === "completed" && row.counts_toward_limit);
+  const hasInProgress = attempts.some((row) => row.status === "in_progress");
+  const targetStatus = hasCountedCompleted ? "completed" : hasInProgress ? "in_progress" : "available";
+
+  const { data: rows } = await supabase
+    .from("student_jornada_simulados")
+    .select("id, status, released_at")
+    .eq("simulado_id", simuladoId)
+    .in("student_jornada_id", studentJornadaIds)
+    .in("jornada_simulado_id", jornadaSimuladoIds);
+
+  for (const row of rows || []) {
+    const patch: { status?: string; released_at?: string } = {};
+    if (row.status === "locked" || row.status === "locked_late") {
+      patch.status = targetStatus;
+    } else if (targetStatus === "completed" && row.status !== "completed") {
+      patch.status = "completed";
+    }
+    if (!row.released_at) {
+      patch.released_at = new Date().toISOString();
+    }
+    if (Object.keys(patch).length > 0) {
+      await supabase.from("student_jornada_simulados").update(patch).eq("id", row.id);
+    }
+  }
+
+  return true;
 }
 
 export async function assertStudentOwnsAttempt(

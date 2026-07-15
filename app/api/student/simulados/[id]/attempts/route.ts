@@ -138,12 +138,12 @@ export async function POST(
 
     const { data: jornadaSimulado } = await supabase
       .from("student_jornada_simulados")
-      .select("id, status")
+      .select("id, status, released_at")
       .eq("student_jornada_id", jornadaId)
       .eq("simulado_id", simuladoId)
       .maybeSingle();
 
-    if (!jornadaSimulado || !["available", "in_progress", "completed"].includes(jornadaSimulado.status)) {
+    if (!jornadaSimulado || (!jornadaSimulado.released_at && !["available", "in_progress", "completed"].includes(jornadaSimulado.status))) {
       return NextResponse.json(
         { ok: false, message: "Este simulado ainda não está liberado nesta Jornada." },
         { status: 403 },

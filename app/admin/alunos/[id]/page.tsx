@@ -249,7 +249,19 @@ async function getData(id: string) {
           return bDate - aDate;
         });
         const latestAttempt = sortedAttempts[0] || null;
-        const latestResult = latestAttempt?.id ? resultsByAttempt.get(String(latestAttempt.id)) : null;
+        // Nota/percentual exibidos usam o "resultado real": a primeira tentativa
+        // concluída que conta para o limite (mesma regra da Área do Aluno), e não a
+        // última tentativa. Ordena por conclusão crescente.
+        const realResultEntry = attempts
+          .filter((attempt: any) => Boolean(attempt.counts_toward_limit) && String(attempt.status) === "completed")
+          .map((attempt: any) => ({ attempt, result: resultsByAttempt.get(String(attempt.id)) || null }))
+          .filter((entry: any) => entry.result)
+          .sort((a: any, b: any) => {
+            const aDate = String(a.attempt.submitted_at || a.attempt.created_at || "");
+            const bDate = String(b.attempt.submitted_at || b.attempt.created_at || "");
+            return aDate.localeCompare(bDate);
+          })[0] || null;
+        const latestResult = realResultEntry?.result || null;
         const hasStartedOrCompleted = attempts.some((attempt: any) => ["in_progress", "completed", "disqualified", "expired"].includes(String(attempt.status)));
         const manuallyReleased = item.status === "available" && Boolean(item.released_at) && scheduledDate !== null && scheduledDate.getTime() > today.getTime();
 

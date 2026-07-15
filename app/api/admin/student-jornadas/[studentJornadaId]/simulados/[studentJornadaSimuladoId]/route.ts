@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/server/authGuard";
 import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
 
 function todayDateOnly() {
   const d = new Date();
@@ -159,6 +160,36 @@ async function setAttemptsCount(
   await resyncTopCoinEarnings(supabase, studentId, simuladoId);
 }
 
+async function resetSimuladoHistory(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  studentId: string,
+  simuladoId: string,
+) {
+  const { data: attempts, error: attemptsError } = await supabase
+    .from("simulado_attempts")
+    .select("id")
+    .eq("student_id", studentId)
+    .eq("simulado_id", simuladoId);
+
+  if (attemptsError) throw new Error(attemptsError.message);
+
+  const attemptIds = (attempts || []).map((attempt) => attempt.id);
+  if (attemptIds.length > 0) {
+    // As três tabelas derivadas possuem FK attempt_id ON DELETE CASCADE.
+    // Uma única exclusão evita deixar o histórico parcialmente apagado.
+    const { error: deleteAttemptsError } = await supabase
+      .from("simulado_attempts")
+      .delete()
+      .eq("student_id", studentId)
+      .eq("simulado_id", simuladoId);
+
+    if (deleteAttemptsError) throw new Error(deleteAttemptsError.message);
+  }
+
+  await resyncTopCoinEarnings(supabase, studentId, simuladoId);
+  return attemptIds.length;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ studentJornadaId: string; studentJornadaSimuladoId: string }> },
@@ -303,14 +334,71 @@ export async function PATCH(
         return NextResponse.json({ ok: false, message: "Informe um número inteiro e não negativo de tentativas." }, { status: 400 });
       }
 
+      if (attempts === 0) {
+        const wasReleased = Boolean(row.released_at) || ["available", "in_progress", "completed"].includes(row.status);
+        const resetStatus = wasReleased ? "available" : "locked";
+        const { error: resetProgressError } = await supabase
+          .from("student_jornada_simulados")
+          .update({ status: resetStatus, completed_at: null })
+          .eq("id", row.id)
+          .eq("student_jornada_id", studentJornadaId);
+
+        if (resetProgressError) throw new Error(resetProgressError.message);
+
+        let removedAttempts = 0;
+        try {
+          removedAttempts = await resetSimuladoHistory(supabase, studentId, row.simulado_id);
+        } catch (resetError) {
+          await supabase
+            .from("student_jornada_simulados")
+            .update({ status: row.status, completed_at: row.completed_at })
+            .eq("id", row.id)
+            .eq("student_jornada_id", studentJornadaId);
+          throw resetError;
+        }
+
+        void logAdminAction({
+          action: "admin.student_simulado.attempts_reset",
+          entityType: "student_jornada_simulado",
+          entityId: row.id,
+          request,
+          metadata: {
+            student_id: studentId,
+            simulado_id: row.simulado_id,
+            student_jornada_id: studentJornadaId,
+            removed_attempts: removedAttempts,
+            status_after_reset: resetStatus,
+          },
+        });
+
+        return NextResponse.json({
+          ok: true,
+          message: "Tentativas zeradas. O histórico deste simulado foi removido para este aluno.",
+          schedule_item: {
+            id: row.id,
+            status: resetStatus,
+            released_at: row.released_at,
+            completed_at: null,
+            attempts_total: 0,
+            attempts_counting: 0,
+          },
+        });
+      }
+
       await setAttemptsCount(supabase, studentId, row.simulado_id, attempts);
       return NextResponse.json({ ok: true, message: "Número de tentativas ajustado para este aluno." });
     }
 
     return NextResponse.json({ ok: false, message: "Ação inválida." }, { status: 400 });
   } catch (error) {
+    void logSystemError({
+      source: "api.admin.student_jornada_simulado.update",
+      error,
+      request,
+      metadata: { student_jornada_id: studentJornadaId, student_jornada_simulado_id: studentJornadaSimuladoId, action },
+    });
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : "Erro inesperado ao atualizar cronograma." },
+      { ok: false, message: "Não foi possível atualizar o cronograma individual." },
       { status: 500 },
     );
   }
