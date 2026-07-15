@@ -798,3 +798,11 @@ Na área do aluno, a contagem de tentativas foi explicitada para evitar ambiguid
 - `app/meus-simulados/[id]/page-client.tsx`
 
 Nenhuma migration foi criada ou alterada.
+
+## Correção — Caderno de anotações lateral durante o simulado — 2026-07-15
+
+- **Problema:** na execução do simulado (`/meus-simulados/[id]`), o `NotesPanel` abria como modal/overlay (`fixed inset-0 z-50`, `backdrop-blur-sm`, fundo `bg-slate-950/30`), desfocando a prova e cobrindo a questão — impedindo consultar enunciado/alternativas enquanto anotava.
+- **Correção (UX/layout apenas):** no desktop, o `NotesPanel` virou painel expansível dentro da coluna lateral direita, abaixo dos cards **Mapa da prova** e **Modo foco**. Sem overlay, blur ou `fixed inset-0`; não cobre nem empurra questão, alternativas ou navegação. Em telas estreitas, aparece como bloco recolhível no fluxo responsivo, pois não existe coluna lateral.
+- O antigo botão flutuante foi substituído por um card premium **Caderno**, com ícone, seta de estado e animação discreta. O painel limita a própria altura e usa rolagem interna; também fecha pelo X e pelo botão "Fechar anotações". "Salvar" mantém o painel aberto com feedback "Anotações salvas".
+- **Preservado:** carregamento e salvamento das anotações (`GET/PUT /api/student/simulados/[id]/notes`), associação por aluno/simulado, timer, respostas, navegação, tesourinha, anti-cheat — nada disso foi tocado.
+- **Arquivo:** `app/meus-simulados/[id]/page-client.tsx` (componente `NotesPanel`, local a essa tela). Nenhuma migration; nenhuma alteração de banco/API.

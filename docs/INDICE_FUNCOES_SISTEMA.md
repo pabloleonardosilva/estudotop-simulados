@@ -1283,10 +1283,13 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Deve salvar por aluno e por simulado.
 - Deve ficar disponível posteriormente em área própria.
 
+**Comportamento do painel (correção 2026-07-15):** o `NotesPanel` (componente local em `app/meus-simulados/[id]/page-client.tsx`, usado só nessa tela) deixou de ser modal/overlay. No desktop, o controle **Caderno** e o painel expansível ficam dentro da coluna lateral direita, junto de **Mapa da prova** e **Modo foco**, sem deslocar a questão ou a navegação principal. Em telas estreitas, o mesmo bloco é exibido no fluxo responsivo, abaixo da questão, porque não há coluna lateral. Não usa `fixed inset-0`, `backdrop-blur` nem fundo escurecendo a prova; o painel limita a própria altura e usa rolagem interna. O card **Caderno** alterna entre aberto e fechado, com seta de estado; o painel também fecha pelo X e pelo botão "Fechar anotações". "Salvar" mantém o painel aberto com feedback "Anotações salvas". Carregamento, salvamento e API (`GET/PUT /api/student/simulados/[id]/notes`) permanecem inalterados.
+
 **Checklist:**
 
 - [ ] Botão/ícone aparece durante o simulado.
-- [ ] Abre modal/painel de anotação.
+- [ ] Abre painel expansível na coluna lateral direita no desktop (sem modal/overlay/blur).
+- [ ] Enunciado e alternativas permanecem visíveis.
 - [ ] Permite escrever.
 - [ ] Salva.
 - [ ] Não marca resposta.

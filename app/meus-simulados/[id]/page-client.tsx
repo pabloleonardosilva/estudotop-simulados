@@ -8,8 +8,10 @@ import {
   Bookmark,
   Calculator,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleCheck,
   Clock3,
   FileText,
@@ -810,7 +812,7 @@ export default function SimuladoExperience({
       }
 
       setNotesLoaded(true);
-      setNotesOpen(false);
+      setNotesFeedback("Anotações salvas.");
     } catch {
       setNotesFeedback("Não foi possível salvar suas anotações.");
     } finally {
@@ -947,32 +949,6 @@ export default function SimuladoExperience({
         <FocusModeLightButton onToggle={() => setFocusMode(false)} />
       )}
 
-      {!focusMode && phase === "in_progress" && (
-        <button
-          type="button"
-          onClick={openNotesPanel}
-          className={`fixed bottom-6 right-7 z-40 inline-flex items-center gap-3 rounded-full px-6 py-3.5 text-sm font-black shadow-[0_18px_50px_rgba(255,138,0,0.18)] ring-1 ring-white/70 backdrop-blur-xl transition duration-300 hover:-translate-y-1 ${focusMode ? "border border-white/10 bg-slate-950/85 text-orange-200 hover:border-orange-400/40 hover:bg-slate-900" : "border border-orange-200/90 bg-white/95 text-orange-600 hover:border-orange-300 hover:bg-orange-50 hover:shadow-[0_22px_60px_rgba(255,138,0,0.28)]"}`}
-        >
-          <BookOpen size={18} /> Caderno
-        </button>
-      )}
-
-      <NotesPanel
-        open={notesOpen}
-        content={currentQuestion ? notesByQuestion[currentQuestion.simulado_question_id] || "" : ""}
-        previousText={currentQuestion ? previousNotesByQuestion[currentQuestion.simulado_question_id] || "" : ""}
-        noteNumber={currentNoteNumber}
-        questionNumber={currentIndex + 1}
-        saving={notesSaving}
-        feedback={notesFeedback}
-        onChange={(value) => {
-          if (!currentQuestion) return;
-          setNotesByQuestion((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: value }));
-        }}
-        onSave={saveNotesPanel}
-        onClose={() => setNotesOpen(false)}
-      />
-
       <TopCoinRewardModal
         amount={topCoinsReward ?? 0}
         open={topCoinsReward !== null}
@@ -1005,6 +981,24 @@ export default function SimuladoExperience({
               onToggleEliminate={(alternativeId) => toggleEliminatedAlternative(currentQuestion.simulado_question_id, alternativeId)}
               onSelect={(alt) => chooseAnswer(currentQuestion, alt)}
             />
+          )}
+
+          {currentQuestion && !focusMode && (
+            <div className="mt-4 lg:hidden">
+              <NotebookControl
+                open={notesOpen}
+                onToggle={() => (notesOpen ? setNotesOpen(false) : openNotesPanel())}
+                content={notesByQuestion[currentQuestion.simulado_question_id] || ""}
+                previousText={previousNotesByQuestion[currentQuestion.simulado_question_id] || ""}
+                noteNumber={currentNoteNumber}
+                questionNumber={currentIndex + 1}
+                saving={notesSaving}
+                feedback={notesFeedback}
+                onChange={(value) => setNotesByQuestion((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: value }))}
+                onSave={saveNotesPanel}
+                onClose={() => setNotesOpen(false)}
+              />
+            </div>
           )}
 
           {isInstantMode && currentQuestion && answers[currentQuestion.simulado_question_id]?.alternativeId && !answers[currentQuestion.simulado_question_id]?.isLocked && (
@@ -1044,6 +1038,20 @@ export default function SimuladoExperience({
             totalQuestions={questions.length}
             focusMode={focusMode}
             onToggleFocusMode={() => setFocusMode((current) => !current)}
+            notesOpen={notesOpen}
+            onToggleNotes={() => (notesOpen ? setNotesOpen(false) : openNotesPanel())}
+            notesContent={currentQuestion ? notesByQuestion[currentQuestion.simulado_question_id] || "" : ""}
+            previousNotesText={currentQuestion ? previousNotesByQuestion[currentQuestion.simulado_question_id] || "" : ""}
+            noteNumber={currentNoteNumber}
+            questionNumber={currentIndex + 1}
+            notesSaving={notesSaving}
+            notesFeedback={notesFeedback}
+            onNotesChange={(value) => {
+              if (!currentQuestion) return;
+              setNotesByQuestion((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: value }));
+            }}
+            onSaveNotes={saveNotesPanel}
+            onCloseNotes={() => setNotesOpen(false)}
           />
         )}
       </div>
@@ -1092,6 +1100,50 @@ export default function SimuladoExperience({
   );
 }
 
+function NotebookControl({
+  open,
+  onToggle,
+  ...panelProps
+}: {
+  open: boolean;
+  onToggle: () => void;
+  content: string;
+  previousText: string;
+  noteNumber: number | null;
+  questionNumber: number;
+  saving: boolean;
+  feedback: string | null;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="group relative flex w-full items-center justify-between overflow-hidden rounded-[1.5rem] border border-orange-200/90 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(255,247,237,0.96))] p-4 text-left shadow-[0_16px_44px_rgba(249,115,22,0.10)] transition duration-300 hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_20px_50px_rgba(249,115,22,0.16)]"
+      >
+        <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-200/35 blur-2xl transition group-hover:bg-orange-300/45" />
+        <span className="relative flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 text-white shadow-lg shadow-orange-500/20">
+            <BookOpen size={20} />
+          </span>
+          <span>
+            <span className="block text-[10px] font-black uppercase tracking-[0.2em] text-orange-600">Recurso de apoio</span>
+            <span className="mt-0.5 block text-base font-black text-slate-950">Caderno</span>
+          </span>
+        </span>
+        <span className="relative flex h-9 w-9 items-center justify-center rounded-full border border-orange-200 bg-white text-orange-600 shadow-sm transition duration-300 group-hover:scale-105">
+          {open ? <ChevronUp size={18} /> : <ChevronDown size={18} className="animate-bounce" />}
+        </span>
+      </button>
+      <NotesPanel open={open} {...panelProps} />
+    </div>
+  );
+}
+
 function NotesPanel({
   open,
   content,
@@ -1118,53 +1170,51 @@ function NotesPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-end bg-slate-950/30 p-4 backdrop-blur-sm md:p-6" onClick={onClose}>
-      <section
-        className="w-full max-w-xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl shadow-slate-950/20"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-5 py-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-600">Caderno de anotações</p>
-            <h2 className="mt-1 text-lg font-black text-slate-950">Questão {questionNumber}</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Essas anotações ficam disponíveis depois em Minhas anotações.</p>
+    <section className="max-h-[56vh] overflow-y-auto rounded-[1.7rem] border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-5 py-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-600">Caderno de anotações</p>
+          <h2 className="mt-1 text-lg font-black text-slate-950">Questão {questionNumber}</h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Essas anotações ficam disponíveis depois em Minhas anotações.</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Fechar anotações" className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <XCircle size={18} />
+        </button>
+      </div>
+
+      <div className="p-5">
+        {previousText && (
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
+              Anotações das tentativas anteriores
+            </p>
+            <div className="whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-100 p-4 text-sm leading-6 text-slate-600">
+              {previousText}
+            </div>
+            <hr className="my-4 border-t border-dashed border-slate-300" />
           </div>
-          <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-white hover:text-slate-700">
-            <XCircle size={18} />
+        )}
+
+        <p className="mb-2 text-sm font-black text-slate-800">
+          {noteNumber ? `Nota ${noteNumber}:` : "Nova nota"}
+        </p>
+        <textarea
+          value={content}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Digite sua anotação para esta questão..."
+          className="min-h-[200px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
+        />
+        {feedback && <p className="mt-3 text-xs font-bold text-slate-500">{feedback}</p>}
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-50">
+            Fechar anotações
+          </button>
+          <button type="button" onClick={onSave} disabled={saving} className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-2 text-sm font-black text-slate-950 shadow-lg shadow-orange-500/20 disabled:cursor-wait disabled:opacity-60">
+            {saving ? "Salvando..." : "Salvar"}
           </button>
         </div>
-
-        <div className="p-5">
-          {previousText && (
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
-                Anotações das tentativas anteriores
-              </p>
-              <div className="whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-100 p-4 text-sm leading-6 text-slate-600">
-                {previousText}
-              </div>
-              <hr className="my-4 border-t border-dashed border-slate-300" />
-            </div>
-          )}
-
-          <p className="mb-2 text-sm font-black text-slate-800">
-            {noteNumber ? `Nota ${noteNumber}:` : "Nova nota"}
-          </p>
-          <textarea
-            value={content}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="Digite sua anotação para esta questão..."
-            className="min-h-[260px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
-          />
-          {feedback && <p className="mt-3 text-xs font-bold text-slate-500">{feedback}</p>}
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={onSave} disabled={saving} className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-2 text-sm font-black text-slate-950 shadow-lg shadow-orange-500/20 disabled:cursor-wait disabled:opacity-60">
-              {saving ? "Salvando..." : "Salvar e fechar"}
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -1484,6 +1534,17 @@ function QuestionSidePanel({
   totalQuestions,
   focusMode = false,
   onToggleFocusMode,
+  notesOpen,
+  onToggleNotes,
+  notesContent,
+  previousNotesText,
+  noteNumber,
+  questionNumber,
+  notesSaving,
+  notesFeedback,
+  onNotesChange,
+  onSaveNotes,
+  onCloseNotes,
 }: {
   questions: OrderedQuestion[];
   answers: AnswerMap;
@@ -1493,6 +1554,17 @@ function QuestionSidePanel({
   totalQuestions: number;
   focusMode?: boolean;
   onToggleFocusMode?: () => void;
+  notesOpen: boolean;
+  onToggleNotes: () => void;
+  notesContent: string;
+  previousNotesText: string;
+  noteNumber: number | null;
+  questionNumber: number;
+  notesSaving: boolean;
+  notesFeedback: string | null;
+  onNotesChange: (value: string) => void;
+  onSaveNotes: () => void;
+  onCloseNotes: () => void;
 }) {
   const remaining = Math.max(0, totalQuestions - answeredCount);
 
@@ -1539,6 +1611,19 @@ function QuestionSidePanel({
         </div>
       </div>
       <LightSwitchControl focusMode={focusMode} onToggle={onToggleFocusMode} />
+      <NotebookControl
+        open={notesOpen}
+        onToggle={onToggleNotes}
+        content={notesContent}
+        previousText={previousNotesText}
+        noteNumber={noteNumber}
+        questionNumber={questionNumber}
+        saving={notesSaving}
+        feedback={notesFeedback}
+        onChange={onNotesChange}
+        onSave={onSaveNotes}
+        onClose={onCloseNotes}
+      />
       </div>
     </aside>
   );

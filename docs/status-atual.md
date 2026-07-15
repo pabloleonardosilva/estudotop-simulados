@@ -673,3 +673,11 @@ Escopo previsto:
 - [x] O reset administrativo invalida links anteriores antes de gerar o novo token e identifica o e-mail com a data e hora da solicitação, evitando o uso acidental de botões antigos agrupados pelo cliente de e-mail.
 - [x] Erros do Supabase Auth e do Resend são sanitizados; respostas de erro do Resend são verificadas antes de registrar o envio como concluído.
 - [x] Nenhuma migration foi criada ou executada.
+
+### Performance — funções da Vercel co-localizadas com o Supabase — 2026-07-15
+
+- **Motivo:** medição em produção mostrou que `GET /api/student/jornadas` levava ~900ms de mediana mesmo retornando lista VAZIA — overhead fixo por request, não a query (índices ok). Causa principal: `vercel.json` sem `regions` → funções na região padrão da Vercel (US-East), enquanto o Supabase é `sa-east-1` (São Paulo); cada round-trip de auth/DB cruzava o continente.
+- **Correção:** adicionado `"regions": ["gru1"]` (São Paulo) ao `vercel.json`, co-localizando as Serverless Functions com o banco. Reduz a latência de rede de TODA chamada de API (aluno e admin), não só Jornadas.
+- **Escopo:** somente `vercel.json`. Sem alteração de código, banco, API ou regras. Passa a valer no próximo deploy de produção.
+- **Pendência:** confirmar após o deploy que a Vercel aceitou `gru1` no plano atual (se não aceitar, escolher a região disponível mais próxima) e remedir a latência das APIs de Jornadas. As demais recomendações de performance (#2 auth por request, #3 SSR das telas, #4/#5) seguem em aberto.
+- Nenhuma migration foi criada ou alterada.
