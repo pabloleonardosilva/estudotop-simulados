@@ -1248,6 +1248,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Anti-cheat não pode ser quebrado.
 - Salvamento de resposta deve continuar funcionando.
 - Finalização deve preservar cálculo de nota.
+- **Voltar da tela de instruções (2026-07-16):** com contexto de Jornada (`?jornada=` na URL), o botão "Voltar" leva para `/minhas-jornadas/[studentJornadaId]?tab=simulados` (Etapa 02 · Simulados já ativa); sem contexto, mantém `/meus-simulados`. A página `/minhas-jornadas/[id]` aceita `?tab=dados|simulados|resultados|info` como aba inicial (validado em `page.tsx`, tipo `JornadaTab`).
 
 **Ajuda da Coruja na execução real (corrigido 2026-07-16):**
 

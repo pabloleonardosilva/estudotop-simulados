@@ -731,3 +731,10 @@ Escopo previsto:
 - **Modal de preparação do feedback:** ao abrir o resultado da tentativa recém-finalizada (`?attemptId=`), o `FeedbackPreparingModal` exibe "Nossas corujas estão reunidas montando seu feedback" com contagem regressiva 5 → 0 e fechamento automático imediato; a contagem roda enquanto o resultado carrega. Acessos sem `attemptId` não exibem o modal.
 - Detalhes nos documentos oficiais `docs/Sprint-simulados.md` e `docs/Sprint-resultados.md` (seções 2026-07-16).
 - Nenhuma migration foi criada ou alterada.
+
+### Voltar das instruções retorna à Jornada na aba Simulados — 2026-07-16
+
+- O botão **Voltar** da tela de instruções de `/meus-simulados/[id]` passou a ser dinâmico: com contexto de Jornada (`?jornada=`), volta para `/minhas-jornadas/[studentJornadaId]?tab=simulados` (Etapa 02 · Simulados ativa); simulado avulso continua voltando para `/meus-simulados`.
+- `/minhas-jornadas/[id]` aceita `?tab=dados|simulados|resultados|info` como aba inicial, validado no server component; valor ausente/inválido mantém a aba "Sobre".
+- Detalhes em `docs/Sprint-simulados.md` (seção 2026-07-16).
+- Nenhuma migration foi criada ou alterada.

@@ -1059,7 +1059,11 @@ export default function SimuladoExperience({
         simulado={simulado}
         attemptInfo={attemptInfo}
         onStart={startAttempt}
-        onBack={() => router.push("/meus-simulados")}
+        onBack={() =>
+          router.push(
+            jornadaId ? `/minhas-jornadas/${jornadaId}?tab=simulados` : "/meus-simulados",
+          )
+        }
       />
     );
   }

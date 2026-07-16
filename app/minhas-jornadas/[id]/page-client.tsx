@@ -207,14 +207,22 @@ function connectorClass(current: SimuladoStatus, next?: SimuladoStatus) {
   return "student-detail-connector student-detail-connector-locked";
 }
 
-export default function JornadaAlunoClient({ id }: { id: string }) {
+export type JornadaTab = "dados" | "simulados" | "resultados" | "info";
+
+export default function JornadaAlunoClient({
+  id,
+  initialTab = "dados",
+}: {
+  id: string;
+  initialTab?: JornadaTab;
+}) {
   const router = useRouter();
   const [jornada, setJornada] = useState<Jornada | null>(null);
   const [simulados, setSimulados] = useState<Simulado[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLateModal, setShowLateModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dados" | "simulados" | "resultados" | "info">("dados");
+  const [activeTab, setActiveTab] = useState<JornadaTab>(initialTab);
   const [attemptsHelpSimulado, setAttemptsHelpSimulado] = useState<Simulado | null>(null);
   const [realResultHelpSimulado, setRealResultHelpSimulado] = useState<Simulado | null>(null);
 

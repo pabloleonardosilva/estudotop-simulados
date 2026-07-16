@@ -875,3 +875,13 @@ Nenhuma migration foi criada, alterada ou executada.
 **Preservado:** imagem oficial `public/images/coruja-ajuda.jpg` (a solicitação volta a citar `.png`, mas o único arquivo oficial em `public/images/` continua sendo o `.jpg` — o código referencia o arquivo real), clique abrindo o mesmo modal/API, todas as condições de elegibilidade e os resets da regra dos 10 segundos.
 
 Nenhuma migration foi criada, alterada ou executada.
+
+### Ajuste — Voltar das instruções retorna à Jornada na aba Simulados — 2026-07-16
+
+- Na tela de instruções de `/meus-simulados/[id]`, o botão **Voltar** deixou de apontar sempre para `/meus-simulados`.
+- Com contexto de Jornada (`?jornada=` na URL, presente quando o aluno abre o simulado a partir da Jornada), o Voltar leva para `/minhas-jornadas/[studentJornadaId]?tab=simulados`, abrindo a Jornada correta já com a **Etapa 02 · Simulados** ativa.
+- Simulado avulso (sem `?jornada=`) continua voltando para `/meus-simulados`.
+- Suporte novo: `/minhas-jornadas/[id]` aceita `?tab=` (`dados|simulados|resultados|info`) como aba inicial. O valor é validado no server component (`page.tsx`); valor ausente/inválido cai em `dados`, preservando o comportamento anterior.
+- Nada mais foi alterado: telas de erro/desqualificação, execução, APIs e regras de Jornada permanecem intactas.
+
+Nenhuma migration foi criada, alterada ou executada.
