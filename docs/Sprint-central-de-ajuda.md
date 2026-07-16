@@ -87,3 +87,7 @@ revoke all on table public.student_help_messages from anon, authenticated;
 - Sem indicador (bolinha) de mensagem não lida no próprio botão "Ajuda" do aluno nesta primeira versão — só o popup ao entrar + o histórico dentro do modal.
 - Mensagem do aluno é texto simples (sem anexos/imagens) nesta primeira versão.
 - Sem envio de e-mail avisando o admin de nova mensagem — a visibilidade do admin é via badge no menu + painel `/admin/ajuda`.
+
+## Atualização 2026-07-16 — Acesso do aluno temporariamente oculto
+
+O item **Ajuda** do menu do aluno e o **sininho de notificações** do header foram temporariamente ocultos pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`, por decisão de produto. A funcionalidade não foi removida: `HelpCenterModal`, as APIs `help-messages` (aluno e admin) e o painel `/admin/ajuda` permanecem implementados e funcionais. Para reexibir os acessos, basta retornar a flag para `true`.

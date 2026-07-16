@@ -803,7 +803,7 @@ Finalização do simulado
 → cálculo e persistência da tentativa (inalterados)
 → modal de TopCoins ganhos (inalterado)
 → redirect para /meus-simulados/[id]/resultado?attemptId=...
-→ modal "Nossas corujas estão reunidas montando seu feedback" (contagem 5 → 0)
+→ modal "Nossas corujas estão reunidas montando seu feedback" (contagem 10 → 0)
 → fechamento automático imediato no zero
 → feedback da tentativa recém-finalizada
 ```
@@ -811,7 +811,7 @@ Finalização do simulado
 Regras implementadas (componente local `FeedbackPreparingModal` em `app/meus-simulados/[id]/resultado/page-client.tsx`):
 
 - Título oficial em duas linhas e texto complementar exatos da especificação; frase "Seu feedback estará pronto em X segundos" com singular automático em "1 segundo".
-- Contagem regressiva 5 → 4 → 3 → 2 → 1 → 0, um passo por segundo (`setTimeout` encadeado com limpeza no cleanup); ao chegar a zero o modal desmonta imediatamente, com transição de saída de ~200 ms via `AnimatePresence` — sem clique, sem overlay residual, sem bloqueio de rolagem e sem timers vazando.
+- Contagem regressiva de **10 até 0** (ajustada de 5 para 10 segundos em 2026-07-16, constante `FEEDBACK_COUNTDOWN_SECONDS`), um passo por segundo (`setTimeout` encadeado com limpeza no cleanup); ao chegar a zero o modal desmonta imediatamente, com transição de saída de ~200 ms via `AnimatePresence` — sem clique, sem overlay residual, sem bloqueio de rolagem e sem timers vazando.
 - Visual premium clean: overlay escuro com blur, card branco com degradê quente, barra superior laranja, três corujinhas animadas em bounce, anel SVG de progresso que esvazia de forma contínua e número central com troca animada.
 - A contagem roda **enquanto** a API de resultado carrega por baixo (o fetch começa junto com a montagem da página) — nenhuma chamada de backend foi atrasada e nenhuma chamada nova de IA foi criada.
 - Nada mais mudou: cálculo de TC, regras de tentativas, resultado oficial da primeira tentativa, abas do resultado, Sidebar/Header/layout global permanecem intactos.

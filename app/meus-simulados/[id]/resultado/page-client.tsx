@@ -35,6 +35,8 @@ import { supabase } from "@/app/lib/supabase/client";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
+const FEEDBACK_COUNTDOWN_SECONDS = 10;
+
 type ResultQuestion = {
   simulado_question_id: string;
   order_number: number;
@@ -529,7 +531,7 @@ export default function ResultadoClient({
   // Etapa intermediária pós-finalização: só existe no fluxo da tentativa
   // recém-concluída (com attemptId na URL). A contagem roda enquanto o
   // resultado carrega por baixo — nenhuma chamada de backend é atrasada.
-  const [feedbackCountdown, setFeedbackCountdown] = useState(() => (attemptId ? 5 : 0));
+  const [feedbackCountdown, setFeedbackCountdown] = useState(() => (attemptId ? FEEDBACK_COUNTDOWN_SECONDS : 0));
   const isPreparingFeedback = feedbackCountdown > 0;
 
   useEffect(() => {
@@ -669,7 +671,7 @@ export default function ResultadoClient({
 function FeedbackPreparingModal({ countdown }: { countdown: number }) {
   const ringRadius = 52;
   const circumference = 2 * Math.PI * ringRadius;
-  const progress = Math.max(0, Math.min(1, countdown / 5));
+  const progress = Math.max(0, Math.min(1, countdown / FEEDBACK_COUNTDOWN_SECONDS));
 
   return (
     <motion.div

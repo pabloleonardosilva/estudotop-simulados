@@ -738,3 +738,10 @@ Escopo previsto:
 - `/minhas-jornadas/[id]` aceita `?tab=dados|simulados|resultados|info` como aba inicial, validado no server component; valor ausente/inválido mantém a aba "Sobre".
 - Detalhes em `docs/Sprint-simulados.md` (seção 2026-07-16).
 - Nenhuma migration foi criada ou alterada.
+
+### Contagem de 10s no modal de preparação + sininho/Ajuda ocultos — 2026-07-16
+
+- A contagem regressiva do modal "Nossas corujas estão reunidas montando seu feedback" passou de 5 para **10 segundos** (constante `FEEDBACK_COUNTDOWN_SECONDS` em `app/meus-simulados/[id]/resultado/page-client.tsx`), com anel de progresso recalibrado.
+- O sininho de notificações e o item "Ajuda" foram **temporariamente ocultos** do header do aluno pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`. A Central de Ajuda (modal, APIs e `/admin/ajuda`) permanece implementada; reativação = flag `true`.
+- Detalhes em `docs/Sprint-resultados.md` e `docs/Sprint-central-de-ajuda.md` (seções 2026-07-16).
+- Nenhuma migration foi criada ou alterada.

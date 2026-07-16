@@ -29,6 +29,11 @@ function getInitials(name: string | null | undefined): string {
     .join("");
 }
 
+// Sininho de notificações e item "Ajuda" ocultos temporariamente do menu do
+// aluno (2026-07-16). A Central de Ajuda continua implementada; para reativar,
+// basta voltar esta flag para true.
+const SHOW_STUDENT_HELP_MENU = false;
+
 export default function Header({
   onOpenMobileMenu,
   onOpenHelp,
@@ -131,10 +136,12 @@ export default function Header({
                 <BarChart3 size={21} strokeWidth={2.2} />
                 <span>Resultados</span>
               </DesktopNavItem>
-              <DesktopNavItem active={false} onClick={onOpenHelp}>
-                <LifeBuoy size={21} strokeWidth={2.2} />
-                <span>Ajuda</span>
-              </DesktopNavItem>
+              {SHOW_STUDENT_HELP_MENU && (
+                <DesktopNavItem active={false} onClick={onOpenHelp}>
+                  <LifeBuoy size={21} strokeWidth={2.2} />
+                  <span>Ajuda</span>
+                </DesktopNavItem>
+              )}
             </nav>
 
             <div className="flex items-center justify-end gap-[18px]">
@@ -149,20 +156,22 @@ export default function Header({
                 {topCoinsBalance ?? 0}
               </Link>
 
-              <button
-                type="button"
-                onClick={onOpenHelp}
-                aria-label="Notificações"
-                className="relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl text-white/[0.82] transition hover:bg-white/[0.055] hover:text-white"
-              >
-                <Bell size={20} />
-                {hasUnseenHelpReply && (
-                  <span
-                    aria-hidden
-                    className="absolute right-[9px] top-2 h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(255,138,0,0.70)]"
-                  />
-                )}
-              </button>
+              {SHOW_STUDENT_HELP_MENU && (
+                <button
+                  type="button"
+                  onClick={onOpenHelp}
+                  aria-label="Notificações"
+                  className="relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl text-white/[0.82] transition hover:bg-white/[0.055] hover:text-white"
+                >
+                  <Bell size={20} />
+                  {hasUnseenHelpReply && (
+                    <span
+                      aria-hidden
+                      className="absolute right-[9px] top-2 h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(255,138,0,0.70)]"
+                    />
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
