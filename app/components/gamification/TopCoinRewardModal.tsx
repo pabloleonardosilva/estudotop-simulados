@@ -50,7 +50,7 @@ export function TopCoinValueInfo({
           <div className={`flex items-start gap-4 rounded-2xl border p-4 text-sm leading-6 ${dark ? "border-amber-400/25 bg-amber-400/10 text-amber-50" : "border-orange-200 bg-orange-50 text-slate-700"}`}>
             <TopCoinStack size="lg" />
             <p>
-              Este simulado vale até <strong>{formatTopCoinsLabel(amount)}</strong> nesta tentativa. O valor segue a regra universal de TopCoins: considera a quantidade de questões e o número da tentativa; cada erro reduz uma moeda, sem deixar o ganho negativo.
+              Este simulado vale até <strong>{formatTopCoinsLabel(amount)}</strong> nesta tentativa. Você começa com zero e ganha moedas por acerto: 4 por questão na primeira tentativa, 2 na segunda e 1 da terceira em diante.
             </p>
           </div>
         </PremiumModal>,
@@ -95,7 +95,7 @@ export default function TopCoinRewardModal({
       message={
         amount > 0
           ? "Continue acumulando mérito rumo à aprovação."
-          : "Na próxima tentativa, erre menos para acumular TopCoins."
+          : "Continue praticando: cada acerto pode render TopCoins na próxima tentativa."
       }
       onClose={onClose}
       closeLabel="Ver resultado"

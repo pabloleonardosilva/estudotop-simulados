@@ -82,7 +82,7 @@ export default function ExtratoTopCoinsClient() {
             <p className="text-xs font-black uppercase tracking-[0.36em] text-orange-600">Área do aluno</p>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950">Extrato de TopCoins</h1>
             <p className="mt-3 max-w-3xl text-base font-medium leading-7 text-slate-600">
-              TopCoin é a moeda universal do EstudoTOP Simulados. Cada simulado resolvido pode render moedas conforme a quantidade de questões, o número da tentativa e os erros cometidos. No futuro, seus TopCoins garantirão vantagens dentro da plataforma.
+              TopCoin é a moeda universal do EstudoTOP Simulados. Você começa com zero e ganha moedas por acerto: 4 por questão na primeira tentativa, 2 na segunda e 1 da terceira em diante. No futuro, seus TopCoins garantirão vantagens dentro da plataforma.
             </p>
           </div>
 

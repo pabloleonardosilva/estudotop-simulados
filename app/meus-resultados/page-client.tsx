@@ -68,6 +68,9 @@ export default function MeusResultadosClient() {
             <p className="text-xs font-black uppercase tracking-[0.36em] text-orange-600">Área do aluno</p>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950">Meus Resultados</h1>
             <p className="mt-3 text-base font-medium text-slate-600">Acompanhe o resultado de cada simulado que você já concluiu.</p>
+            <p className="mt-3 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+              Mesmo quando um simulado permite várias tentativas, o resultado apresentado nesta página corresponde à sua primeira tentativa completa. Essa tentativa é considerada o retrato mais fiel do seu desempenho inicial e, por isso, é utilizada como resultado oficial no seu histórico. As tentativas seguintes continuam sendo úteis para revisão e treinamento, mas não substituem esse resultado oficial.
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">

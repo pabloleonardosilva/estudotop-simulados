@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
 import { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
-import { getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
+import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
 
 type StudentSimulado = {
   id: string;
@@ -330,7 +330,7 @@ export default function MeusSimuladosClient() {
                       <span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} /> {simulado.student_status === "not_started" ? "Não iniciado" : info.label}
                     </span>
                     <TopCoinValueInfo
-                      amount={getTopCoinBaseValue(
+                      amount={getTopCoinMaxValue(
                         simulado.question_count,
                         Math.max(1, simulado.attempts_remaining === 0 ? simulado.attempts_used : simulado.attempts_used + 1),
                       )}

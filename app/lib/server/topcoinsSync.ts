@@ -3,14 +3,13 @@ import { calculateEarnedTopCoins } from "@/app/lib/gamification/topcoins";
 
 type AttemptWithResult = {
   id: string;
-  total_questions: number;
   created_at: string;
-  simulado_results: { wrong_count: number } | { wrong_count: number }[] | null;
+  simulado_results: { correct_count: number } | { correct_count: number }[] | null;
 };
 
-function wrongCountOf(value: AttemptWithResult["simulado_results"]): number {
+function correctCountOf(value: AttemptWithResult["simulado_results"]): number {
   const row = Array.isArray(value) ? value[0] : value;
-  return row?.wrong_count ?? 0;
+  return row?.correct_count ?? 0;
 }
 
 /**
@@ -27,7 +26,7 @@ export async function resyncTopCoinEarnings(
 ): Promise<void> {
   const { data: attempts } = await supabase
     .from("simulado_attempts")
-    .select("id, total_questions, created_at, simulado_results ( wrong_count )")
+    .select("id, created_at, simulado_results ( correct_count )")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
     .eq("status", "completed")
@@ -67,9 +66,8 @@ export async function resyncTopCoinEarnings(
       jornada_id: jornadaId,
       attempt_number: attemptNumber,
       amount: calculateEarnedTopCoins({
-        totalQuestions: row.total_questions,
+        correctAnswers: correctCountOf(row.simulado_results),
         attemptNumber,
-        wrongAnswers: wrongCountOf(row.simulado_results),
       }),
     };
   });

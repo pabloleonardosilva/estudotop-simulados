@@ -815,3 +815,11 @@ Nenhuma migration foi criada ou alterada.
 - **Refazer:** `available`, `in_progress`, `completed` e vínculo com `released_at` permitem iniciar/retomar; quem bloqueia nova tentativa é o limite `max_attempts`. A validação duplicada da rota de tentativas segue a mesma regra.
 - **Resultado real:** permanece a primeira tentativa concluída válida com `counts_toward_limit = true`. Depois do reset, nota e resultado ficam vazios até uma nova conclusão.
 - Nenhuma migration foi criada ou alterada.
+### Regra oficial de TopCoins por acerto — 2026-07-15
+
+- O aluno parte de 0 TopCoins em cada tentativa e recebe moedas exclusivamente pelos acertos confirmados no resultado: `correct_count × multiplicador`.
+- Multiplicadores: 4 por acerto na primeira tentativa, 2 na segunda e 1 da terceira em diante.
+- O valor máximo exibido antes da tentativa usa `total_questions × multiplicador`.
+- A regra anterior de valor-base menos erros (`ceil(total/2)`, `ceil(total/3)` e desconto por `wrong_count`) foi removida.
+- O submit pedagógico permanece inalterado; a sincronização de TopCoins lê `correct_count` do resultado persistido no servidor.
+- Nenhuma migration foi criada, alterada ou executada.

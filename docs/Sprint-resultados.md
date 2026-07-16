@@ -721,3 +721,71 @@ A etapa **Vídeo de Correção** integra o fluxo principal da página `/meus-sim
 - nenhum cálculo de nota, acertos, erros, tempo ou comportamento foi alterado;
 - nenhuma migration foi criada;
 - a alteração é exclusivamente de apresentação, fluxo visual e embed do vídeo.
+
+---
+
+## Atualização 2026-07-16 — Resultado da tentativa atual vs resultado oficial
+
+### Regra de duas camadas
+
+O sistema separa dois conceitos de resultado:
+
+**1. Resultado imediato (tentativa atual)**
+
+- Ao finalizar qualquer tentativa, o aluno é redirecionado para
+  `/meus-simulados/[id]/resultado?attemptId=[attemptId]` (com `&jornada=[studentJornadaId]` quando a tentativa veio de uma Jornada).
+- A página exibe integralmente os dados **da tentativa recém-finalizada**: nota, percentual, acertos, erros, brancos, anuladas, tempo total/médio, Resultado Geral, Raio-X, Desempenho por Assunto, Comportamento, Vídeo de Correção, Revisão das Questões e PDF.
+- Todos os blocos usam o mesmo `attempt.id` resolvido — nenhum bloco mistura dados de tentativas diferentes.
+- O resultado imediato **não substitui** o resultado oficial.
+
+**2. Resultado oficial (histórico)**
+
+- Continua sendo a **primeira tentativa completa válida** (`status = completed` e `counts_toward_limit = true`), ordenada por `submitted_at`/`created_at` ascendente.
+- É o resultado usado em: página **Meus Resultados**, histórico do aluno, métricas/cards da Jornada (`real_score_percent`), perfil administrativo, dashboards e comparações.
+- Tentativas posteriores podem ser concluídas e visualizadas logo após o término, mas não alteram o histórico nem a referência oficial.
+
+### API de resultado
+
+`GET /api/student/simulados/[id]/resultado` aceita parâmetros opcionais:
+
+- `attemptId` — quando presente, a API busca a tentativa informada e valida no backend:
+  `attempt.student_id = aluno autenticado`, `attempt.simulado_id = simulado da rota` e `attempt.status = completed`.
+  Falha em qualquer validação → `404` genérico ("Resultado não encontrado para esta tentativa."), sem fallback silencioso para outra tentativa e sem vazar dados de terceiros.
+- `jornada` — id de `student_jornadas` usado apenas como contexto de navegação (ver botão de retorno). Só é aceito se pertencer ao aluno autenticado e contiver o simulado.
+- Sem `attemptId`, mantém-se o comportamento anterior: primeira tentativa completa válida (compatibilidade com links antigos, Meus Resultados e acessos diretos).
+
+### Botão de retorno da página de resultado
+
+- A resposta da API inclui `jornada: { student_jornada_id, title } | null`, resolvido assim:
+  1. vínculo explícito da navegação (`?jornada=`) validado contra os vínculos reais do aluno;
+  2. sem contexto explícito, somente quando o simulado está em **exatamente uma** Jornada do aluno;
+  3. nunca escolhe Jornada arbitrária quando há ambiguidade.
+- Com contexto: botão **Voltar para a Jornada** → `/minhas-jornadas/[studentJornadaId]`.
+- Sem contexto (simulado avulso): botão **Voltar para Meus Simulados** → `/meus-simulados`.
+- O `result_url` retornado por `GET /api/student/jornadas/[id]` passou a incluir `?jornada=[studentJornadaId]` para preservar a Jornada real de origem.
+
+### Desempenho por Assunto — regras vigentes
+
+- **Tópicos para revisar** são todos os tópicos avaliados (`questions.evaluated_topics`) presentes nas questões em que o aluno **errou ou deixou em branco**. Tópicos de questões apenas acertadas não aparecem.
+- Todos os tópicos dessas questões são exibidos no próprio card, com quebra de linha dos chips — **sem truncamento** e sem resumo "+N".
+- Tópicos semanticamente equivalentes (ex.: `HTTP` / `Protocolo HTTP`, `RAM` / `Memória RAM`) continuam consolidados pela normalização local determinística (`canonicalizeTopicLabel`), sem chamada de IA por aluno/tentativa.
+- O botão **"Ir para revisão"** foi removido dos cards de assunto (a navegação para Revisão das Questões continua no rodapé da aba e na aba própria).
+- Antes dos cards há um texto explicativo fixo informando que os tópicos vêm das questões sem êxito e devem ser revisados antes de nova tentativa.
+- Questões anuladas continuam fora do diagnóstico por tópico.
+
+### Meus Resultados
+
+- A página `/meus-resultados` exibe, abaixo do título, texto explicando que o resultado mostrado é o da **primeira tentativa completa** (resultado oficial), que ela é o retrato mais fiel do desempenho inicial e que tentativas seguintes servem para revisão/treinamento sem substituir o histórico.
+
+### Arquivos da entrega
+
+```text
+app/api/student/simulados/[id]/resultado/route.ts
+app/api/student/jornadas/[id]/route.ts
+app/meus-simulados/[id]/page-client.tsx
+app/meus-simulados/[id]/resultado/page.tsx
+app/meus-simulados/[id]/resultado/page-client.tsx
+app/meus-resultados/page-client.tsx
+```
+
+Nenhuma migration foi criada ou alterada nesta entrega.

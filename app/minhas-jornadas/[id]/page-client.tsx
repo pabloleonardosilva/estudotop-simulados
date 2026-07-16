@@ -33,7 +33,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "@/app/lib/supabase/client";
 import PremiumModal from "../../components/ui/PremiumModal";
 import { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
-import { getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
+import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
 
 const SIMULADO_THUMBNAIL = "/images/mini_simulados/simulado-coruja-estudando.png";
 const SIMULADO_THUMBNAIL_FALLBACK = "/images/mini_simulados/simulado-mini1.png";
@@ -445,7 +445,7 @@ export default function JornadaAlunoClient({ id }: { id: string }) {
                       <Fact icon={<FileText size={14} />} label={simulado.total_questions ? `${simulado.total_questions} questões` : "Questões"} tone="orange" />
                       <Fact icon={<Clock3 size={14} />} label={simulado.time_label} tone="blue" />
                       <TopCoinValueInfo
-                        amount={getTopCoinBaseValue(
+                        amount={getTopCoinMaxValue(
                           simulado.total_questions || 0,
                           Math.max(1, simulado.attempts_remaining === 0 ? simulado.attempts_used : simulado.attempts_used + 1),
                         )}

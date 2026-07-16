@@ -116,6 +116,10 @@ type ResultPayload = {
   };
   subjects: string[];
   gabarito: ResultQuestion[];
+  jornada?: {
+    student_jornada_id: string;
+    title: string;
+  } | null;
 };
 
 type TopicRollup = {
@@ -507,7 +511,15 @@ function BehaviorSignalsParagraph({ result, metrics }: { result: NonNullable<Res
   );
 }
 
-export default function ResultadoClient({ simuladoId }: { simuladoId: string }) {
+export default function ResultadoClient({
+  simuladoId,
+  attemptId = null,
+  studentJornadaId = null,
+}: {
+  simuladoId: string;
+  attemptId?: string | null;
+  studentJornadaId?: string | null;
+}) {
   const router = useRouter();
   const [payload, setPayload] = useState<ResultPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -519,12 +531,19 @@ export default function ResultadoClient({ simuladoId }: { simuladoId: string }) 
     setError(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.replace("/login"); return; }
-    const res = await fetch(`/api/student/simulados/${simuladoId}/resultado`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+    // Com attemptId, a API retorna a tentativa recém-finalizada (resultado
+    // imediato); sem ele, retorna a primeira tentativa completa válida
+    // (resultado oficial do histórico).
+    const query = new URLSearchParams();
+    if (attemptId) query.set("attemptId", attemptId);
+    if (studentJornadaId) query.set("jornada", studentJornadaId);
+    const queryString = query.toString();
+    const res = await fetch(`/api/student/simulados/${simuladoId}/resultado${queryString ? `?${queryString}` : ""}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
     const json = await res.json();
     if (!res.ok || !json.ok) { setError(json.message || "Erro ao carregar resultado."); setLoading(false); return; }
     setPayload(json);
     setLoading(false);
-  }, [router, simuladoId]);
+  }, [router, simuladoId, attemptId, studentJornadaId]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => { void load(); }, 0);
@@ -572,8 +591,8 @@ export default function ResultadoClient({ simuladoId }: { simuladoId: string }) 
                 <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">{payload.simulado.title} · tentativa concluída</p>
               </div>
             </div>
-            <Link href="/meus-simulados" className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white/90 px-6 text-sm font-bold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-slate-300 hover:bg-white">
-              <ArrowLeft size={16} /> Meus Simulados
+            <Link href={payload.jornada ? `/minhas-jornadas/${payload.jornada.student_jornada_id}` : "/meus-simulados"} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white/90 px-6 text-sm font-bold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-slate-300 hover:bg-white">
+              <ArrowLeft size={16} /> {payload.jornada ? "Voltar para a Jornada" : "Voltar para Meus Simulados"}
             </Link>
           </div>
         </section>
@@ -838,9 +857,15 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
         </div>
       </section>
 
+      <section className="rounded-[16px] border border-orange-200/80 bg-[linear-gradient(135deg,rgba(255,122,0,0.05),rgba(255,255,255,0.97))] px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.045)]">
+        <p className="text-[14px] font-medium leading-7 text-slate-700">
+          Analisamos detalhadamente as questões em que você não obteve êxito. Os tópicos apresentados nos cards abaixo correspondem aos conteúdos cobrados justamente nessas questões e, por isso, recomendamos fortemente que você os revise antes de realizar uma nova tentativa.
+        </p>
+      </section>
+
       <section className="grid gap-3 lg:grid-cols-3">
         {performance.length ? performance.map((item) => (
-          <SubjectPerformanceCard key={item.subject} item={item} onGoToReview={onGoToReview} />
+          <SubjectPerformanceCard key={item.subject} item={item} />
         )) : <div className="lg:col-span-3"><EmptyState text="Ainda não há dados por assunto para esta tentativa." /></div>}
       </section>
 
@@ -882,11 +907,9 @@ function SubjectExecutiveCard({ icon, label, value, detail, tone }: { icon: Reac
   );
 }
 
-function SubjectPerformanceCard({ item, onGoToReview }: { item: SubjectTopicPerformance; onGoToReview: () => void }) {
+function SubjectPerformanceCard({ item }: { item: SubjectTopicPerformance }) {
   const needsReview = item.wrong + item.blank > 0;
   const colors = getSubjectVisual(item.subject, needsReview);
-  const visibleTopics = item.reviewTopics.slice(0, 3);
-  const hiddenTopicCount = Math.max(0, item.reviewTopics.length - visibleTopics.length);
   const progressGradient = needsReview
     ? item.percent < 50
       ? "from-[#FF5A00] to-red-500"
@@ -894,7 +917,7 @@ function SubjectPerformanceCard({ item, onGoToReview }: { item: SubjectTopicPerf
     : "from-emerald-600 to-emerald-400";
 
   return (
-    <article className={`group flex h-[216px] flex-col overflow-hidden rounded-[16px] border bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085)] ${needsReview ? "border-orange-200/85 bg-[linear-gradient(135deg,rgba(255,122,0,0.035),rgba(255,255,255,0.96))]" : "border-emerald-200/85 bg-[linear-gradient(135deg,rgba(16,185,129,0.035),rgba(255,255,255,0.96))]"}`}>
+    <article className={`group flex min-h-[216px] flex-col rounded-[16px] border bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.085)] ${needsReview ? "border-orange-200/85 bg-[linear-gradient(135deg,rgba(255,122,0,0.035),rgba(255,255,255,0.96))]" : "border-emerald-200/85 bg-[linear-gradient(135deg,rgba(16,185,129,0.035),rgba(255,255,255,0.96))]"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${colors.iconBox}`}>{colors.icon}</span>
@@ -916,13 +939,12 @@ function SubjectPerformanceCard({ item, onGoToReview }: { item: SubjectTopicPerf
         <span className="w-[42px] text-right text-[13px] font-black text-slate-950">{formatPercent(item.percent)}%</span>
       </div>
 
-      <div className="mt-3 flex-1 overflow-hidden">
+      <div className="mt-3 flex-1">
         {needsReview ? (
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-500">Tópicos para revisar</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {visibleTopics.length ? visibleTopics.map((topic) => <TopicChip key={topic.label} tone="red">{topic.label}</TopicChip>) : <TopicChip tone="red">Tópico não informado</TopicChip>}
-              {hiddenTopicCount > 0 && <TopicChip tone="red">+{hiddenTopicCount}</TopicChip>}
+              {item.reviewTopics.length ? item.reviewTopics.map((topic) => <TopicChip key={topic.label} tone="red">{topic.label}</TopicChip>) : <TopicChip tone="red">Tópico não informado</TopicChip>}
             </div>
           </div>
         ) : (
@@ -937,10 +959,6 @@ function SubjectPerformanceCard({ item, onGoToReview }: { item: SubjectTopicPerf
           </div>
         )}
       </div>
-
-      <button type="button" onClick={onGoToReview} className="mt-2 inline-flex items-center gap-1.5 self-start text-[12px] font-black text-[#FF5A00] transition duration-200 hover:translate-x-0.5 hover:text-orange-700">
-        Ir para revisão <ChevronRight size={14} />
-      </button>
     </article>
   );
 }

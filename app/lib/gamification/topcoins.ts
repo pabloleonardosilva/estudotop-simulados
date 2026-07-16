@@ -2,35 +2,34 @@
  * TopCoins são uma moeda de gamificação totalmente separada da nota
  * pedagógica do simulado (não altera score, percentual, ranking ou resultado
  * acadêmico). Regra oficial:
- * 1ª tentativa: valor base = total de questões.
- * 2ª tentativa: valor base = ceil(total / 2).
- * 3ª tentativa em diante: valor base = ceil(total / 3).
- * Ganho final = valor base - erros, nunca negativo.
+ * O aluno parte de zero e cada acerto vale:
+ * 1ª tentativa: 4 TopCoins.
+ * 2ª tentativa: 2 TopCoins.
+ * 3ª tentativa em diante: 1 TopCoin.
  */
-export function getTopCoinBaseValue(totalQuestions: number, attemptNumber: number): number {
-  const safeTotal = Math.max(0, Number(totalQuestions) || 0);
+export function getTopCoinMultiplier(attemptNumber: number): number {
   const safeAttempt = Math.max(1, Number(attemptNumber) || 1);
 
-  if (safeAttempt === 1) {
-    return safeTotal;
-  }
+  if (safeAttempt === 1) return 4;
+  if (safeAttempt === 2) return 2;
+  return 1;
+}
 
-  if (safeAttempt === 2) {
-    return Math.ceil(safeTotal / 2);
-  }
+export function getTopCoinMaxValue(totalQuestions: number, attemptNumber: number): number {
+  const safeTotal = Math.max(0, Number(totalQuestions) || 0);
+  return safeTotal * getTopCoinMultiplier(attemptNumber);
+}
 
-  return Math.ceil(safeTotal / 3);
+export function getTopCoinBaseValue(totalQuestions: number, attemptNumber: number): number {
+  return getTopCoinMaxValue(totalQuestions, attemptNumber);
 }
 
 export function calculateEarnedTopCoins(params: {
-  totalQuestions: number;
+  correctAnswers: number;
   attemptNumber: number;
-  wrongAnswers: number;
 }): number {
-  const baseValue = getTopCoinBaseValue(params.totalQuestions, params.attemptNumber);
-  const wrongAnswers = Math.max(0, Number(params.wrongAnswers) || 0);
-
-  return Math.max(0, baseValue - wrongAnswers);
+  const correctAnswers = Math.max(0, Number(params.correctAnswers) || 0);
+  return correctAnswers * getTopCoinMultiplier(params.attemptNumber);
 }
 
 export function formatTopCoinsLabel(amount: number): string {

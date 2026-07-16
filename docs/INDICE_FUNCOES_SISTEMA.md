@@ -1264,6 +1264,30 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Resultado deve mostrar resposta do aluno e gabarito conforme configuração.
 - PDF deve continuar refletindo acertos, erros, brancos e comentários.
 
+**Regra de duas camadas (2026-07-16):**
+
+- **Resultado imediato:** após o submit, o aluno é redirecionado para `/meus-simulados/[id]/resultado?attemptId=[attemptId]` (com `&jornada=[studentJornadaId]` quando veio de Jornada) e a página exibe a tentativa recém-finalizada. Todos os blocos (nota, Raio-X, Desempenho por Assunto, Comportamento, Revisão, PDF) usam a mesma tentativa.
+- **Resultado oficial:** sem `attemptId`, a API retorna a primeira tentativa completa válida (`status = completed` e `counts_toward_limit = true`) — é o resultado usado em Meus Resultados, Jornadas, dashboards e histórico. Tentativas posteriores não substituem o oficial.
+- A API valida no backend que a tentativa do `attemptId` pertence ao aluno autenticado, ao simulado da rota e está concluída; caso contrário retorna 404 genérico, sem fallback silencioso.
+- Botão do header da página de resultado é dinâmico: **Voltar para a Jornada** (`/minhas-jornadas/[studentJornadaId]`, contexto resolvido pela API — vínculo explícito `?jornada=` validado ou vínculo único) ou **Voltar para Meus Simulados** (simulado avulso).
+- Aba Desempenho por Assunto: tópicos para revisar vêm exclusivamente das questões erradas/em branco, todos exibidos no card (sem truncar), consolidação semântica local sem IA, botão "Ir para revisão" removido dos cards e texto explicativo fixo antes dos cards.
+- Fonte oficial: `docs/Sprint-resultados.md` (seção "Atualização 2026-07-16").
+
+---
+
+### 7.6 Meus Resultados (Área do Aluno)
+
+**Arquivos:**
+
+- `app/meus-resultados/page.tsx`
+- `app/meus-resultados/page-client.tsx`
+- `app/api/student/resultados/route.ts`
+
+**Regras:**
+
+- Lista um resultado por simulado concluído, agrupado por Jornada; o link "Ver resultado" abre `/meus-simulados/[id]/resultado` **sem** `attemptId` (resultado oficial = primeira tentativa completa válida).
+- Abaixo do título há texto fixo explicando a regra da primeira tentativa completa como resultado oficial (2026-07-16); tentativas posteriores servem para revisão/treinamento e não substituem o histórico.
+
 ---
 
 ## 8. CADERNO DE ANOTAÇÕES
@@ -3205,7 +3229,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 
 ## 20. TOPCOINS — EXIBIÇÃO E EXPLICAÇÃO AO ALUNO
 
-**Regra de cálculo:** `app/lib/gamification/topcoins.ts` é a fonte única. A primeira tentativa tem valor-base igual ao total de questões; a segunda usa `ceil(total/2)`; da terceira em diante usa `ceil(total/3)`. O ganho final desconta os erros e nunca fica negativo.
+**Regra de cálculo:** `app/lib/gamification/topcoins.ts` é a fonte única. O aluno parte de zero e ganha `correct_count × multiplicador`: cada acerto vale 4 TopCoins na primeira tentativa, 2 na segunda e 1 da terceira em diante. O máximo informado antes da prova é `total_questions × multiplicador`; erros e questões em branco não geram moedas e não são usados como desconto.
 
 **Componente informativo compartilhado:** `TopCoinValueInfo`, exportado por `app/components/gamification/TopCoinRewardModal.tsx`, exibe a pilha de moedas, o valor calculado e abre um `PremiumModal` explicando a moeda universal, a regra de ganho e as futuras vantagens na plataforma. O modal é montado por portal diretamente em `document.body`, fora da árvore e dos limites visuais do card de simulado; o clique no informativo não aciona a navegação do card.
 

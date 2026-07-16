@@ -655,6 +655,15 @@ Escopo previsto:
 - [x] O hero de `/extrato-topcoins` explica o que são TopCoins e quais fatores determinam o ganho.
 - [x] Nenhum saldo, tentativa, resultado, API ou regra de persistência foi alterado.
 
+### Nova regra oficial de TopCoins por acerto — 2026-07-15
+
+- [x] TopCoins passam a premiar acertos: `correct_count × 4` na primeira tentativa, `correct_count × 2` na segunda e `correct_count × 1` da terceira em diante.
+- [x] Cards e tela do simulado exibem o máximo possível da próxima tentativa com a mesma regra.
+- [x] Modal e extrato explicam que o aluno parte de zero e acumula moedas por acerto.
+- [x] Removidos o desconto por `wrong_count` e os divisores `ceil(total/2)` e `ceil(total/3)`.
+- [x] Resultado pedagógico, respostas, notas e submit permanecem inalterados.
+- Nenhuma migration foi criada, alterada ou executada.
+
 ### Coerência entre Jornadas e Meus Simulados — 2026-07-14
 
 - [x] `/meus-simulados` deixou de exibir simulados provenientes de matrículas de Jornada canceladas ou expiradas.
@@ -704,4 +713,13 @@ Escopo previsto:
 - **Segurança preservada:** o token continua sendo validado por `auth.getUser` (assinatura + expiração). O `sub` decodificado nunca é confiado sozinho. Testado: sem token → 401; token lixo → 401; token com assinatura adulterada → 401 (mesmo com o `sub` decodificável, o pré-fetch é descartado); token válido → 200.
 - **Escopo:** somente `lib/server/supabaseStudentAuth.ts`. Sem alteração de banco, API, contrato de resposta ou variáveis de ambiente. Nenhum novo segredo (evitou-se a alternativa de verificação local do JWT, que exigiria `SUPABASE_JWT_SECRET` e abriria mão de revogação imediata).
 - **Impacto:** ganho modesto após o #1 (sobrepõe ~um round-trip de auth, dezenas de ms), sem tradeoff de segurança ou nova dependência.
+- Nenhuma migration foi criada ou alterada.
+
+### Sprint Resultados — tentativa atual vs resultado oficial — 2026-07-16
+
+- A página de resultado passou a exibir imediatamente a tentativa recém-finalizada (`?attemptId=` na URL, validado no backend), preservando a primeira tentativa completa válida como resultado oficial quando o acesso é sem `attemptId`.
+- Botão do header da página de resultado tornou-se dinâmico: **Voltar para a Jornada** (com contexto `?jornada=`) ou **Voltar para Meus Simulados** (simulado avulso).
+- Aba **Desempenho por Assunto**: texto explicativo antes dos cards, exibição integral dos tópicos para revisar (sem truncar em 3 + "+N") e remoção do botão "Ir para revisão" de cada card.
+- Página **Meus Resultados** ganhou texto explicando a regra da primeira tentativa completa como resultado oficial.
+- Detalhes completos no documento oficial `docs/Sprint-resultados.md` (seção "Atualização 2026-07-16").
 - Nenhuma migration foi criada ou alterada.

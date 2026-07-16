@@ -228,7 +228,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       total_questions: result?.total_questions ?? sim.question_count ?? null,
       time_spent_seconds: result?.time_spent_seconds ?? completed?.time_spent_seconds ?? inProgress?.time_spent_seconds ?? null,
       progress_percent: inProgress?.progress_percent ?? null,
-      result_url: completed ? `/meus-simulados/${row.simulado_id}/resultado` : null,
+      result_url: completed ? `/meus-simulados/${row.simulado_id}/resultado?jornada=${data.id}` : null,
       simulado_url: `/meus-simulados/${row.simulado_id}?jornada=${data.id}`,
     };
   });

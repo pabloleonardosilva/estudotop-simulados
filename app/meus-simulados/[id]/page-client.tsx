@@ -34,7 +34,7 @@ import { supabase } from "@/app/lib/supabase/client";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumModal from "../../components/ui/PremiumModal";
 import TopCoinRewardModal, { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
-import { getTopCoinBaseValue } from "@/app/lib/gamification/topcoins";
+import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -695,6 +695,19 @@ export default function SimuladoExperience({
     else goNext();
   }
 
+  // Após finalizar, o resultado exibido deve ser o da tentativa recém-concluída
+  // (attemptId na URL); o contexto de Jornada é propagado para o botão de retorno.
+  const buildResultUrl = useCallback(
+    (attemptIdValue: string | null | undefined) => {
+      const query = new URLSearchParams();
+      if (attemptIdValue) query.set("attemptId", attemptIdValue);
+      if (jornadaId) query.set("jornada", jornadaId);
+      const queryString = query.toString();
+      return `/meus-simulados/${simuladoId}/resultado${queryString ? `?${queryString}` : ""}`;
+    },
+    [simuladoId, jornadaId],
+  );
+
   const submitAttempt = useCallback(
     async (auto = false) => {
       if (!attempt) return;
@@ -734,15 +747,15 @@ export default function SimuladoExperience({
       }
 
       setPhase("done");
-      router.replace(`/meus-simulados/${simuladoId}/resultado`);
+      router.replace(buildResultUrl(attempt.id));
     },
-    [attempt, simuladoId, timeSpent, router],
+    [attempt, simuladoId, timeSpent, router, buildResultUrl],
   );
 
   function closeTopCoinsReward() {
     setTopCoinsReward(null);
     setPhase("done");
-    router.replace(`/meus-simulados/${simuladoId}/resultado`);
+    router.replace(buildResultUrl(attempt?.id));
   }
 
   const openNotesPanel = useCallback(async () => {
@@ -1762,7 +1775,7 @@ function RulesScreen({
 
           {!attemptsExhausted && (
             <TopCoinValueInfo
-              amount={getTopCoinBaseValue(simulado.question_count, attemptInfo.used + 1)}
+              amount={getTopCoinMaxValue(simulado.question_count, attemptInfo.used + 1)}
               prefix="Essa tentativa vale"
               dark
               className="mt-6 flex w-full items-center gap-3 rounded-2xl border border-amber-400/30 bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-4 text-left text-sm font-black text-amber-100 transition hover:border-amber-300/50 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
