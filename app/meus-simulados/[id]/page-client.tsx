@@ -30,6 +30,7 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "@/app/lib/supabase/client";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumModal from "../../components/ui/PremiumModal";
@@ -66,6 +67,7 @@ type InitialSimulado = {
   allow_blank_answers: boolean;
   scoring_model: "traditional" | "cebraspe";
   navigation_type?: "open" | "closed" | null;
+  owl_help_enabled?: boolean | null;
 };
 
 type AttemptData = {
@@ -81,6 +83,8 @@ type AttemptData = {
   time_spent_seconds: number;
   tab_switch_count: number;
   focus_violation_count: number;
+  owl_help_used_count?: number | null;
+  owl_help_data?: Record<string, string[]> | null;
 };
 
 type OrderedQuestion = {
@@ -137,6 +141,17 @@ function normalizeHtml(value?: string | null): string {
 
 function isTrueFalseQuestionType(value?: string | null): boolean {
   return String(value || "").toLowerCase() === "true_false";
+}
+
+// Mesma fórmula do backend (owl-help/route.ts): 10% das questões, mínimo 1.
+function getOwlHelpLimit(totalQuestions: number): number {
+  if (!totalQuestions || totalQuestions <= 0) return 1;
+  return Math.max(1, Math.floor(totalQuestions * 0.1));
+}
+
+function isOwlEligibleQuestion(question?: OrderedQuestion | null): boolean {
+  if (!question || isTrueFalseQuestionType(question.question_type)) return false;
+  return question.alternatives.length >= 3;
 }
 
 function escapeNoteHtml(value: string): string {
@@ -275,6 +290,12 @@ export default function SimuladoExperience({
   const [notesFeedback, setNotesFeedback] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [topCoinsReward, setTopCoinsReward] = useState<number | null>(null);
+  const [owlHelpModalOpen, setOwlHelpModalOpen] = useState(false);
+  const [owlHelpLoading, setOwlHelpLoading] = useState(false);
+  const [owlHelpError, setOwlHelpError] = useState<string | null>(null);
+  const [owlHelpUsedCount, setOwlHelpUsedCount] = useState(0);
+  const [owlHelpData, setOwlHelpData] = useState<Record<string, string[]>>({});
+  const [owlPromptShownForKey, setOwlPromptShownForKey] = useState<string | null>(null);
 
   const submittingRef = useRef(false);
   const autoSubmitTriggeredRef = useRef(false);
@@ -389,6 +410,12 @@ export default function SimuladoExperience({
       }
       setAnswers(map);
       setViolationCount(json.attempt.focus_violation_count || 0);
+      setOwlHelpUsedCount(Number(json.attempt.owl_help_used_count || 0));
+      setOwlHelpData(
+        json.attempt.owl_help_data && typeof json.attempt.owl_help_data === "object"
+          ? json.attempt.owl_help_data
+          : {},
+      );
       autoSubmitTriggeredRef.current = false;
     }
 
@@ -884,6 +911,91 @@ export default function SimuladoExperience({
   const currentQuestion = questions[currentIndex] || null;
   const isInstantMode = simulado.feedback_mode === "instant" || Boolean(simulado.instant_feedback_enabled);
 
+  const owlHelpEnabled = Boolean(simulado.owl_help_enabled);
+  const owlHelpLimit = getOwlHelpLimit(questions.length || simulado.question_count);
+  const owlHelpRemaining = owlHelpEnabled ? Math.max(owlHelpLimit - owlHelpUsedCount, 0) : 0;
+  const currentOwlEliminatedIds = currentQuestion
+    ? owlHelpData[currentQuestion.simulado_question_id] || []
+    : [];
+  const currentQuestionLocked = Boolean(
+    currentQuestion && answers[currentQuestion.simulado_question_id]?.isLocked,
+  );
+  // Regra dos 10 segundos: a coruja só surge após o aluno ficar parado na
+  // mesma questão. A chave abaixo muda a cada interação relevante (trocar de
+  // questão, responder/alterar resposta, tesourinha, caderno, anotação,
+  // abrir/fechar modais, usar a ajuda); mudar a chave esconde a coruja na hora
+  // (a chave armada pelo timer deixa de bater) e reinicia a contagem.
+  const currentAnswer = currentQuestion ? answers[currentQuestion.simulado_question_id] : undefined;
+  const owlIdleKey = currentQuestion
+    ? [
+        currentQuestion.simulado_question_id,
+        currentAnswer?.alternativeId || "",
+        currentAnswer?.isLocked ? 1 : 0,
+        (eliminatedAlternatives[currentQuestion.simulado_question_id] || []).length,
+        notesOpen ? 1 : 0,
+        (notesByQuestion[currentQuestion.simulado_question_id] || "").length,
+        currentOwlEliminatedIds.length,
+        owlHelpModalOpen ? 1 : 0,
+        confirmFinish ? 1 : 0,
+        instantResultQuestionId ? 1 : 0,
+      ].join("|")
+    : "";
+
+  useEffect(() => {
+    if (phase !== "in_progress" || !owlIdleKey) return;
+    if (owlHelpModalOpen || confirmFinish || instantResultQuestionId || notesOpen) return;
+    const timer = window.setTimeout(() => setOwlPromptShownForKey(owlIdleKey), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [phase, owlIdleKey, owlHelpModalOpen, confirmFinish, instantResultQuestionId, notesOpen]);
+
+  const owlPromptVisible = Boolean(owlIdleKey) && owlPromptShownForKey === owlIdleKey;
+
+  const showOwlHelper =
+    owlPromptVisible &&
+    owlHelpEnabled &&
+    phase === "in_progress" &&
+    Boolean(attempt) &&
+    Boolean(currentQuestion) &&
+    isOwlEligibleQuestion(currentQuestion) &&
+    owlHelpRemaining > 0 &&
+    currentOwlEliminatedIds.length === 0 &&
+    !currentQuestionLocked &&
+    !owlHelpModalOpen;
+
+  async function confirmOwlHelp() {
+    if (!attempt || !currentQuestion || owlHelpLoading) return;
+    if (!isOwlEligibleQuestion(currentQuestion)) {
+      setOwlHelpModalOpen(false);
+      return;
+    }
+    setOwlHelpLoading(true);
+    setOwlHelpError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(
+        `/api/student/simulados/${simuladoId}/attempts/${attempt.id}/owl-help`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ simulado_question_id: currentQuestion.simulado_question_id }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setOwlHelpError(json.message || "Não foi possível usar a ajuda agora.");
+        return;
+      }
+      const hiddenIds = Array.isArray(json.hiddenAlternativeIds) ? json.hiddenAlternativeIds : [];
+      setOwlHelpData((prev) => ({ ...prev, [currentQuestion.simulado_question_id]: hiddenIds }));
+      setOwlHelpUsedCount(Number(json.used || 0));
+      setOwlHelpModalOpen(false);
+    } catch {
+      setOwlHelpError("Não foi possível usar a ajuda agora. Tente novamente.");
+    } finally {
+      setOwlHelpLoading(false);
+    }
+  }
+
   let currentNoteNumber: number | null = null;
   {
     let count = legacyNoteBlockCount;
@@ -1020,6 +1132,7 @@ export default function SimuladoExperience({
               instantFeedback={isInstantMode}
               showTeacherComment={simulado.show_teacher_comment}
               eliminatedAlternativeIds={eliminatedAlternatives[currentQuestion.simulado_question_id] || []}
+              owlEliminatedAlternativeIds={currentOwlEliminatedIds}
               onToggleEliminate={(alternativeId) => toggleEliminatedAlternative(currentQuestion.simulado_question_id, alternativeId)}
               onSelect={(alt) => chooseAnswer(currentQuestion, alt)}
             />
@@ -1053,6 +1166,27 @@ export default function SimuladoExperience({
               </button>
             </div>
           )}
+
+          <AnimatePresence initial={false}>
+            {showOwlHelper && (
+              <motion.div
+                key={`owl-help-${currentQuestion?.simulado_question_id || "prompt"}`}
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <OwlHelpFlyingPrompt
+                  remaining={owlHelpRemaining}
+                  onClick={() => {
+                    setOwlHelpError(null);
+                    setOwlHelpModalOpen(true);
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <Navigator
             questions={questions}
@@ -1136,7 +1270,137 @@ export default function SimuladoExperience({
           }}
         />
       )}
+
+      {owlHelpModalOpen && currentQuestion && (
+        <FullScreenModal
+          icon={<Lightbulb size={56} className="text-orange-400" />}
+          title="Usar Ajuda da Coruja?"
+          description={
+            isOwlEligibleQuestion(currentQuestion)
+              ? `A Coruja vai eliminar duas alternativas erradas desta questão. Você tem ${owlHelpRemaining} ajuda${owlHelpRemaining === 1 ? "" : "s"} disponíve${owlHelpRemaining === 1 ? "l" : "is"} e só pode usar uma ajuda por questão.`
+              : "A Ajuda da Coruja só pode ser usada em questões de alternativas. Questões de certo ou errado não são elegíveis."
+          }
+          actionLabel={
+            isOwlEligibleQuestion(currentQuestion)
+              ? owlHelpLoading
+                ? "Chamando a Coruja..."
+                : "Sim, chamar a Coruja"
+              : "Entendi"
+          }
+          onAction={() => {
+            if (owlHelpLoading) return;
+            if (isOwlEligibleQuestion(currentQuestion)) void confirmOwlHelp();
+            else setOwlHelpModalOpen(false);
+          }}
+          variant="warning"
+        >
+          {owlHelpError && (
+            <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {owlHelpError}
+            </p>
+          )}
+          {isOwlEligibleQuestion(currentQuestion) && (
+            <button
+              type="button"
+              onClick={() => setOwlHelpModalOpen(false)}
+              disabled={owlHelpLoading}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          )}
+        </FullScreenModal>
+      )}
     </main>
+  );
+}
+
+function OwlHelpFlyingPrompt({
+  remaining,
+  onClick,
+}: {
+  remaining: number;
+  onClick: () => void;
+}) {
+  const [hasLanded, setHasLanded] = useState(false);
+  const label =
+    remaining === 1
+      ? "Você tem direito a 1 ajuda. Clique aqui!"
+      : `Você tem direito a ${remaining} ajudas. Clique aqui!`;
+
+  return (
+    <div className="pointer-events-none flex justify-end overflow-hidden px-1 pb-1 pt-4 md:px-3">
+      <motion.button
+        type="button"
+        onClick={onClick}
+        aria-label="Abrir Ajuda da Coruja"
+        initial={{ x: 480, y: -120, opacity: 0 }}
+        animate={{
+          x: [480, 310, 150, 45, 0],
+          y: [-120, -92, -46, -12, 0],
+          rotate: [-11, -8, -4, 2, 0],
+          opacity: [0, 1, 1, 1, 1],
+        }}
+        transition={{ duration: 1.6, times: [0, 0.28, 0.58, 0.85, 1], ease: "easeOut" }}
+        onAnimationComplete={() => setHasLanded(true)}
+        className="pointer-events-auto group relative flex items-center gap-3 focus:outline-none"
+      >
+        <AnimatePresence>
+          {hasLanded && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.82, x: 10 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="relative -mt-8 rounded-2xl border border-orange-200 bg-white px-4 py-2.5 text-left shadow-[0_14px_34px_rgba(15,23,42,0.14)] transition duration-200 group-hover:-translate-y-0.5 group-hover:border-orange-300"
+            >
+              <span className="block text-sm font-black text-slate-950">{label}</span>
+              <span className="mt-0.5 block text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">
+                Ajuda da Coruja
+              </span>
+              <span
+                aria-hidden="true"
+                className="absolute -right-[7px] top-[58%] h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-r border-t border-orange-200 bg-white"
+              />
+            </motion.span>
+          )}
+        </AnimatePresence>
+
+        <span className="relative flex shrink-0 flex-col items-center" aria-hidden="true">
+          <motion.span
+            animate={
+              hasLanded
+                ? { y: [0, -4, 0], scaleY: [1, 1.02, 1], rotate: 0 }
+                : { y: [0, -8, 3, -6, 0], scaleY: [1, 0.93, 1.05, 0.94, 1], rotate: [0, -3, 2, -2, 0] }
+            }
+            transition={
+              hasLanded
+                ? { repeat: Infinity, duration: 3, ease: "easeInOut" }
+                : { repeat: Infinity, duration: 0.42, ease: "easeInOut" }
+            }
+            className="relative z-10 block h-20 w-20 overflow-hidden rounded-full border-2 border-orange-300 bg-white shadow-[0_16px_36px_rgba(255,138,0,0.26)] transition duration-200 group-hover:scale-105"
+          >
+            <img
+              src="/images/coruja-ajuda.jpg"
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          </motion.span>
+          <motion.span
+            animate={
+              hasLanded
+                ? { scaleX: [1, 0.88, 1], opacity: [0.32, 0.24, 0.32] }
+                : { scaleX: [0.62, 0.5, 0.68, 0.52, 0.62], opacity: [0.16, 0.1, 0.18, 0.11, 0.16] }
+            }
+            transition={
+              hasLanded
+                ? { repeat: Infinity, duration: 3, ease: "easeInOut" }
+                : { repeat: Infinity, duration: 0.42, ease: "easeInOut" }
+            }
+            className="mt-1.5 block h-2 w-14 rounded-full bg-slate-900 blur-[3px]"
+          />
+        </span>
+      </motion.button>
+    </div>
   );
 }
 
@@ -1397,6 +1661,7 @@ function QuestionCard({
   instantFeedback,
   showTeacherComment,
   eliminatedAlternativeIds = [],
+  owlEliminatedAlternativeIds = [],
   onToggleEliminate,
   onSelect,
 }: {
@@ -1407,6 +1672,7 @@ function QuestionCard({
   instantFeedback: boolean;
   showTeacherComment: boolean;
   eliminatedAlternativeIds?: string[];
+  owlEliminatedAlternativeIds?: string[];
   onToggleEliminate?: (alternativeId: string) => void;
   onSelect: (alt: { id: string; label: string }) => void;
 }) {
@@ -1443,13 +1709,15 @@ function QuestionCard({
       <div className="relative mt-5 space-y-2.5">
         {question.alternatives.map((alt) => {
           const isSelected = answer?.alternativeId === alt.id;
-          const locked = answer?.isLocked || isAnnulled;
+          const isOwlEliminated = owlEliminatedAlternativeIds.includes(alt.id) && !isSelected;
+          const locked = answer?.isLocked || isAnnulled || isOwlEliminated;
           const isEliminated = eliminatedAlternativeIds.includes(alt.id) && !isSelected;
           const isWrongTrueFalseSelected = question.question_type === "true_false" && isSelected && answer?.isCorrect && (alt.label === "E" || String(alt.text || "").trim().toLowerCase() === "errado");
           let cls = "group relative flex w-full items-center gap-3.5 rounded-[1.2rem] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfd_100%)] px-4 py-3.5 pl-[4.5rem] text-left text-[15px] leading-6 shadow-[0_6px_18px_rgba(15,23,42,0.03)] transition duration-200";
           if (!locked) cls += " cursor-pointer hover:-translate-y-0.5 hover:border-orange-300 hover:bg-orange-50/50 hover:shadow-[0_10px_28px_rgba(255,138,0,0.08)]";
           else cls += " cursor-default";
           if (isEliminated) cls += " opacity-55";
+          if (isOwlEliminated) cls += " border-orange-200 bg-orange-50/40 opacity-60";
           if (showFeedback && isSelected) cls = answer?.isCorrect
             ? isWrongTrueFalseSelected
               ? "group relative flex w-full items-center gap-3.5 rounded-[1.2rem] border-2 border-red-400 bg-red-50 px-4 py-3.5 pl-[4.5rem] text-left text-sm"
@@ -1470,11 +1738,16 @@ function QuestionCard({
                   <Scissors size={26} />
                 </button>
               )}
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black transition ${isSelected ? showFeedback ? answer?.isCorrect ? isWrongTrueFalseSelected ? "border-red-500 bg-red-500 text-white" : "border-emerald-500 bg-emerald-500 text-white" : "border-red-500 bg-red-500 text-white" : "border-orange-500 bg-orange-500 text-white shadow-[0_0_16px_rgba(255,138,0,0.24)]" : isEliminated ? "border-red-200 bg-red-50 text-red-500" : "border-orange-200 bg-white text-orange-600"}`}>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black transition ${isSelected ? showFeedback ? answer?.isCorrect ? isWrongTrueFalseSelected ? "border-red-500 bg-red-500 text-white" : "border-emerald-500 bg-emerald-500 text-white" : "border-red-500 bg-red-500 text-white" : "border-orange-500 bg-orange-500 text-white shadow-[0_0_16px_rgba(255,138,0,0.24)]" : isOwlEliminated ? "border-orange-300 bg-orange-200 text-orange-700" : isEliminated ? "border-red-200 bg-red-50 text-red-500" : "border-orange-200 bg-white text-orange-600"}`}>
                 <span className="sr-only">{alt.label}</span>
                 {isSelected && !showFeedback ? <span className="text-base leading-none" aria-label="Selecionada pela Coruja">{OWL_MARK}</span> : isTrueFalse ? null : <span>{alt.label}</span>}
               </span>
-              <div className="flex-1"><div className={`prose prose-slate max-w-none text-[15px] leading-6 text-slate-700 md:text-base ${isEliminated ? "line-through decoration-red-500 decoration-2" : ""}`} dangerouslySetInnerHTML={{ __html: normalizeHtml(alt.text) }} /></div>
+              <div className="flex-1">
+                <div className={`prose prose-slate max-w-none text-[15px] leading-6 text-slate-700 md:text-base ${isEliminated ? "line-through decoration-red-500 decoration-2" : ""}`} dangerouslySetInnerHTML={{ __html: normalizeHtml(alt.text) }} />
+                {isOwlEliminated && (
+                  <p className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-orange-700">Eliminada pela Coruja</p>
+                )}
+              </div>
               {showFeedback && isSelected && <span className="ml-2">{answer?.isCorrect ? <CheckCircle2 className={isWrongTrueFalseSelected ? "text-red-500" : "text-emerald-500"} size={22} /> : <XCircle className="text-red-500" size={22} />}</span>}
             </div>
           );

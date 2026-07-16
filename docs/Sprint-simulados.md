@@ -823,3 +823,55 @@ Nenhuma migration foi criada ou alterada.
 - A regra anterior de valor-base menos erros (`ceil(total/2)`, `ceil(total/3)` e desconto por `wrong_count`) foi removida.
 - O submit pedagógico permanece inalterado; a sincronização de TopCoins lê `correct_count` do resultado persistido no servidor.
 - Nenhuma migration foi criada, alterada ou executada.
+
+### Correção — Ajuda da Coruja na execução real do aluno — 2026-07-16
+
+**Problema:** mesmo com `owl_help_enabled = true` no simulado, a coruja não aparecia para o aluno em `/meus-simulados/[id]`. A API `POST /api/student/simulados/[id]/attempts/[attemptId]/owl-help` já existia e validava tudo, mas o flag nunca chegava ao cliente e a tela de execução não tinha UI para o recurso (apenas o preview admin simulava localmente).
+
+**Correção aplicada:**
+
+- `owl_help_enabled` propagado ao cliente por três caminhos: query do server component `app/meus-simulados/[id]/page.tsx`, resposta de `GET /api/student/simulados/[id]` e `buildSimuladoSnapshot` de `POST /api/student/simulados/[id]/attempts`.
+- `sanitizeAttempt` passou a retornar `owl_help_used_count` e `owl_help_data`, restaurando ajudas já usadas ao retomar tentativa (refresh/reabertura).
+- Coruja flutuante (`/images/coruja-welcome.png`) no canto inferior direito durante a execução, com balão "Quer uma ajuda aí?" e contador de ajudas. Aparece somente quando: recurso habilitado, tentativa em andamento, há ajudas restantes, a questão atual ainda não recebeu ajuda e a resposta não está bloqueada.
+- Clique abre modal de confirmação ("Usar Ajuda da Coruja?" → "Sim, chamar a Coruja" / "Cancelar"). Em questão certo/errado o modal informa a inelegibilidade ("Entendi") e não chama a API. A própria API também passou a rejeitar questões `true_false` e questões com menos de duas alternativas erradas, garantindo a regra no servidor mesmo em chamadas diretas.
+- Confirmação chama a API real, que elimina duas alternativas erradas escolhidas **no servidor**, incrementa `owl_help_used_count` e persiste `owl_help_data`. O cliente apenas renderiza os IDs retornados: alternativa com estilo laranja, selo "Eliminada pela Coruja", sem seleção e sem tesourinha.
+- Limite igual ao backend: 10% das questões, mínimo 1 (`getOwlHelpLimit`). Uma ajuda por questão (reuso retorna os mesmos IDs sem novo débito).
+
+**Não alterado:** submit, respostas, timer, anti-cheat, TopCoins, notas, resultados, regras de Jornada e o preview admin.
+
+**Segurança:** o cliente nunca recebe `is_correct` das alternativas durante a execução; a escolha das eliminadas, o limite e a elegibilidade são validados exclusivamente no servidor com ownership da tentativa (`student_id` + `simulado_id` + `in_progress`).
+
+Nenhuma migration foi criada, alterada ou executada.
+
+### Melhoria — Coruja voadora da Ajuda da Coruja com regra de 10 segundos — 2026-07-16
+
+**Motivo:** a primeira versão da coruja na execução real usava posição fixa no canto inferior direito da viewport, competindo visualmente com o card "Caderno" e os demais recursos de apoio da coluna lateral.
+
+**Comportamento novo (`/meus-simulados/[id]`):**
+
+- A coruja usa a imagem oficial `public/images/coruja-ajuda.jpg` (servida em `/images/coruja-ajuda.jpg`), dentro de badge circular branco com anel laranja. **Atenção:** a solicitação citava `coruja-ajuda.png`, mas o arquivo oficial entregue em `public/images/` é `.jpg`; o código referencia o arquivo real para não quebrar na Vercel (case/extensão sensível em Linux).
+- Regra dos 10 segundos: um `useEffect` com `setTimeout` mostra a coruja apenas depois de 10s parado na mesma questão. As dependências do efeito fazem qualquer interação relevante (mudar `currentIndex`, alterar resposta, tesourinha, abrir/fechar caderno, digitar anotação, abrir/fechar modais, usar a ajuda) esconder a coruja e reiniciar a contagem. Com caderno ou modal aberto a contagem nem inicia.
+- Elegibilidade completa para aparecer: `phase === "in_progress"`, `owl_help_enabled`, tentativa ativa, questão atual elegível (não certo/errado, ≥ 3 alternativas), ajuda ainda não usada na questão, resposta não bloqueada, ajudas restantes > 0 e modal fechado.
+- Animação com framer-motion (dependência já aprovada no stack): a coruja entra voando da direita (fora da área visível, com clip por `overflow-hidden`), pousa na faixa livre entre o card da questão e a barra inferior de navegação — dentro da coluna principal, antes da coluna lateral — e flutua suavemente após o pouso. A faixa expande com animação de altura para não deslocar a navegação de forma abrupta. Sem overlay, sem `fixed inset-0`, sem backdrop-blur, sem scroll horizontal e sem sobrepor Caderno, Mapa da prova, Modo foco, alternativas ou botões.
+- Balão de fala: "Você tem direito a 1 ajuda. Clique aqui!" (plural automático para X ajudas).
+- Clique na coruja/balão abre o mesmo modal existente da Ajuda da Coruja, que chama a mesma API (`POST .../owl-help`). Após o uso, `owl_help_data` marca a questão e a coruja some nela; com créditos zerados ela não aparece mais.
+- A aparição da coruja não é registrada no banco; somente o uso da ajuda continua persistido pela API existente.
+
+**Não alterado:** API owl-help, submit, respostas, timer, anti-cheat, TopCoins, notas, resultados, regras de Jornada, Sidebar, Header, AppShell e preview admin.
+
+Nenhuma migration foi criada, alterada ou executada.
+
+### Refinamento — animação premium da coruja da Ajuda da Coruja — 2026-07-16
+
+**Escopo:** apenas o componente local `OwlHelpFlyingPrompt` em `app/meus-simulados/[id]/page-client.tsx`. Nenhuma regra funcional, API, elegibilidade ou a regra dos 10 segundos foi alterada; `globals.css` não foi tocado (a animação usa framer-motion, dependência já aprovada — nenhuma dependência nova).
+
+**Fases da animação:**
+
+1. **Voo:** a coruja surge fora da área visível (direita/acima, recortada por `overflow-hidden`) e percorre uma trajetória em arco com desaceleração até o ponto de pouso na faixa livre entre o card da questão e a barra de navegação.
+2. **Batida de asas simulada:** durante o voo, oscilação rápida (~0,4s por ciclo) e sutil de `scaleY` (0,93–1,05), `rotate` (±3°) e `y`, dando ilusão de flap sem deformar a arte única (a imagem não tem asas separadas). A sombra elíptica sob a coruja fica menor e mais fraca enquanto ela está "no ar".
+3. **Pouso:** ao completar a trajetória (`onAnimationComplete`), a coruja troca para movimento de respiração/flutuação lenta (ciclo de 3s) e a sombra cresce/estabiliza, ancorando-a no "chão".
+4. **Fala:** só após o pouso o balão aparece (fade + scale), com rabinho triangular saindo da lateral direita do balão na direção do bico da coruja. Texto: "Você tem direito a 1 ajuda. Clique aqui!" (plural automático para X ajudas).
+
+**Preservado:** imagem oficial `public/images/coruja-ajuda.jpg` (a solicitação volta a citar `.png`, mas o único arquivo oficial em `public/images/` continua sendo o `.jpg` — o código referencia o arquivo real), clique abrindo o mesmo modal/API, todas as condições de elegibilidade e os resets da regra dos 10 segundos.
+
+Nenhuma migration foi criada, alterada ou executada.

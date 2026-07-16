@@ -86,7 +86,7 @@ export async function POST(
 
   const { data: relation, error: relationError } = await supabase
     .from("simulado_questions")
-    .select("id, question_id, questions:question_id(question_alternatives(id, is_correct))")
+    .select("id, question_id, questions:question_id(question_type, question_alternatives(id, is_correct))")
     .eq("id", simuladoQuestionId)
     .eq("simulado_id", simuladoId)
     .single();
@@ -95,11 +95,17 @@ export async function POST(
     return NextResponse.json({ ok: false, message: "Questão não encontrada." }, { status: 404 });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const questionType = String((relation as any).questions?.question_type || "").toLowerCase();
+  if (questionType === "true_false") {
+    return NextResponse.json({ ok: false, message: "A Ajuda da Coruja não pode ser usada em questões de certo ou errado." }, { status: 400 });
+  }
+
   const alternatives = ((relation as any).questions?.question_alternatives || []) as { id: string; is_correct: boolean }[];
   const wrong = alternatives.filter((alt) => !alt.is_correct);
   const selected = pickTwoWrong(wrong).map((alt) => alt.id);
 
-  if (!selected.length) {
+  if (selected.length < 2) {
     return NextResponse.json({ ok: false, message: "Não há alternativas erradas suficientes para eliminar." }, { status: 400 });
   }
 

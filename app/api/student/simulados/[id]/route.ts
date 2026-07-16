@@ -41,6 +41,7 @@ export async function GET(
         allow_blank_answers,
         scoring_model,
         navigation_type,
+        owl_help_enabled,
         simulado_questions ( id )
       `,
     )
@@ -183,6 +184,7 @@ export async function GET(
       allow_blank_answers: simulado.allow_blank_answers,
       scoring_model: simulado.scoring_model,
       navigation_type: simulado.navigation_type || "open",
+      owl_help_enabled: Boolean(simulado.owl_help_enabled),
     },
     attempts: {
       in_progress: inProgress,

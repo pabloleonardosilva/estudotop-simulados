@@ -41,6 +41,7 @@ export default async function MeusSimuladosDetailPage({
         allow_blank_answers,
         scoring_model,
         navigation_type,
+        owl_help_enabled,
         simulado_questions ( id )
       `,
     )
@@ -73,6 +74,7 @@ export default async function MeusSimuladosDetailPage({
         allow_blank_answers: simulado.allow_blank_answers,
         scoring_model: simulado.scoring_model,
         navigation_type: simulado.navigation_type || "open",
+        owl_help_enabled: Boolean(simulado.owl_help_enabled),
       }}
     />
   );

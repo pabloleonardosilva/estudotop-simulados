@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -525,6 +526,19 @@ export default function ResultadoClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resultStep, setResultStep] = useState(0);
+  // Etapa intermediária pós-finalização: só existe no fluxo da tentativa
+  // recém-concluída (com attemptId na URL). A contagem roda enquanto o
+  // resultado carrega por baixo — nenhuma chamada de backend é atrasada.
+  const [feedbackCountdown, setFeedbackCountdown] = useState(() => (attemptId ? 5 : 0));
+  const isPreparingFeedback = feedbackCountdown > 0;
+
+  useEffect(() => {
+    if (feedbackCountdown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setFeedbackCountdown((current) => current - 1);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [feedbackCountdown]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -553,8 +567,14 @@ export default function ResultadoClient({
 
   const performanceBySubject = useMemo(() => buildSubjectTopicPerformance(payload?.gabarito || []), [payload]);
 
-  if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4"><div className="rounded-xl border border-slate-200 bg-white px-8 py-6 text-sm text-slate-500 shadow-sm">Carregando resultado...</div></main>;
-  if (error || !payload) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4"><div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm"><AlertTriangle className="mx-auto text-red-500" size={32} /><h1 className="mt-4 text-base font-semibold text-slate-900">Não foi possível carregar o resultado</h1><p className="mt-2 text-sm text-slate-500">{error || "Resultado indisponível."}</p><Link href="/meus-simulados" className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"><ArrowLeft size={15} /> Voltar para Meus Simulados</Link></div></main>;
+  const preparingOverlay = (
+    <AnimatePresence>
+      {isPreparingFeedback && <FeedbackPreparingModal countdown={feedbackCountdown} />}
+    </AnimatePresence>
+  );
+
+  if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">{preparingOverlay}<div className="rounded-xl border border-slate-200 bg-white px-8 py-6 text-sm text-slate-500 shadow-sm">Carregando resultado...</div></main>;
+  if (error || !payload) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">{preparingOverlay}<div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm"><AlertTriangle className="mx-auto text-red-500" size={32} /><h1 className="mt-4 text-base font-semibold text-slate-900">Não foi possível carregar o resultado</h1><p className="mt-2 text-sm text-slate-500">{error || "Resultado indisponível."}</p><Link href="/meus-simulados" className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"><ArrowLeft size={15} /> Voltar para Meus Simulados</Link></div></main>;
 
   const r = payload.result;
   const isDisqualified = payload.attempt.status === "disqualified";
@@ -578,6 +598,7 @@ export default function ResultadoClient({
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_12%_10%,rgba(255,138,0,0.045),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(37,99,235,0.035),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#F4F7FB_100%)] px-4 py-5 text-slate-900 md:px-6">
+      {preparingOverlay}
       <div className="mx-auto flex w-full max-w-[1560px] flex-col gap-[18px] pb-14">
         <section className="relative overflow-hidden rounded-[10px] border border-slate-200/95 bg-[radial-gradient(circle_at_7%_50%,rgba(255,138,0,0.10),transparent_21%),linear-gradient(135deg,#FFFFFF_0%,#FFF9F2_52%,#FFFFFF_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.075),0_2px_8px_rgba(15,23,42,0.035)]">
           <div className="h-[2px] bg-gradient-to-r from-[#FF5A00] to-[#FFB300]" />
@@ -642,6 +663,109 @@ export default function ResultadoClient({
         </section>
       </div>
     </main>
+  );
+}
+
+function FeedbackPreparingModal({ countdown }: { countdown: number }) {
+  const ringRadius = 52;
+  const circumference = 2 * Math.PI * ringRadius;
+  const progress = Math.max(0, Math.min(1, countdown / 5));
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.2, ease: "easeOut" } }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Preparando seu feedback"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 26, scale: 0.94 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -12, scale: 0.97, transition: { duration: 0.2, ease: "easeIn" } }}
+        transition={{ duration: 0.35, ease: [0.22, 0.9, 0.3, 1] }}
+        className="relative w-full max-w-xl overflow-hidden rounded-[28px] border border-orange-100 bg-[linear-gradient(160deg,#FFFFFF_0%,#FFF9F1_55%,#FFFFFF_100%)] px-6 py-9 text-center shadow-[0_40px_90px_rgba(2,6,23,0.45)] md:px-10"
+      >
+        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#FF5A00] via-[#FFB300] to-[#FF5A00]" />
+        <div className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-orange-200/30 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -right-16 h-40 w-40 rounded-full bg-amber-200/30 blur-3xl" />
+
+        <div className="relative">
+          <div className="flex items-center justify-center gap-2 text-2xl" aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <motion.span
+                key={index}
+                animate={{ y: [0, -6, 0] }}
+                transition={{ repeat: Infinity, duration: 1.2, delay: index * 0.18, ease: "easeInOut" }}
+              >
+                {OWL_MARK}
+              </motion.span>
+            ))}
+          </div>
+
+          <h2 className="mt-4 text-[26px] font-black leading-[1.15] tracking-[-0.03em] text-slate-950 md:text-[30px]">
+            Nossas corujas estão reunidas
+            <br />
+            montando seu feedback
+          </h2>
+
+          <p className="mx-auto mt-4 max-w-md text-sm font-medium leading-6 text-slate-500">
+            Aqui você verá seus erros e acertos de forma organizada.
+            <br />
+            Navegue por todas as abas com muita atenção para aproveitar cada análise.
+          </p>
+
+          <div className="relative mx-auto mt-7 h-[132px] w-[132px]">
+            <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+              <circle cx="60" cy="60" r={ringRadius} fill="none" stroke="#F1E8DC" strokeWidth="8" />
+              <motion.circle
+                cx="60"
+                cy="60"
+                r={ringRadius}
+                fill="none"
+                stroke="url(#feedbackCountdownGradient)"
+                strokeWidth="8"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                initial={false}
+                animate={{ strokeDashoffset: circumference * (1 - progress) }}
+                transition={{ duration: 1, ease: "linear" }}
+              />
+              <defs>
+                <linearGradient id="feedbackCountdownGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#FF7A00" />
+                  <stop offset="100%" stopColor="#FFC400" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="absolute inset-0">
+              <AnimatePresence initial={false}>
+                <motion.span
+                  key={countdown}
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.25 }}
+                  transition={{ duration: 0.24, ease: "easeOut" }}
+                  className="absolute inset-0 flex items-center justify-center text-[44px] font-black tracking-[-0.04em] text-slate-950"
+                >
+                  {countdown}
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          </div>
+
+          <p aria-live="polite" className="mt-4 text-sm font-bold text-slate-700">
+            Seu feedback estará pronto em{" "}
+            <strong className="text-[#FF5A00]">
+              {countdown} segundo{countdown === 1 ? "" : "s"}
+            </strong>
+          </p>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

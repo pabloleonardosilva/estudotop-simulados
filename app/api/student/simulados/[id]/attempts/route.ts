@@ -96,7 +96,8 @@ export async function POST(
         shuffle_questions,
         shuffle_alternatives,
         allow_blank_answers,
-        scoring_model
+        scoring_model,
+        owl_help_enabled
       `,
     )
     .eq("id", simuladoId)
@@ -478,6 +479,8 @@ function sanitizeAttempt(attempt: Record<string, unknown>) {
     tab_switch_count: attempt.tab_switch_count,
     focus_violation_count: attempt.focus_violation_count,
     rules_accepted_at: attempt.rules_accepted_at,
+    owl_help_used_count: attempt.owl_help_used_count ?? 0,
+    owl_help_data: attempt.owl_help_data ?? null,
   };
 }
 
@@ -496,5 +499,6 @@ function buildSimuladoSnapshot(simulado: Record<string, unknown>) {
     correction_video_url: simulado.correction_video_url,
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
+    owl_help_enabled: Boolean(simulado.owl_help_enabled),
   };
 }
