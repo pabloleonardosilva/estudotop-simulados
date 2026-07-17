@@ -777,3 +777,11 @@ Escopo previsto:
 - Os avisos separados de “Bem-vindo à Jornada” e “Novo simulado liberado” foram consolidados no momento da matrícula. Simulados liberados posteriormente preservam o aviso individual existente.
 - O envio confirmado atualiza o rastreamento da Jornada, da aprovação e dos simulados cobertos; falhas têm a mensagem limitada a 500 caracteres e são registradas sem desfazer aprovação ou matrícula.
 - Nenhuma migration foi criada ou alterada.
+
+### Links de e-mail válidos entre localhost e produção — 2026-07-17
+
+- Links próprios de primeiro acesso deixaram de depender do `REGISTRATION_TOKEN_SECRET` do ambiente que iniciou o envio: tokens aleatórios de 256 bits passam a usar SHA-256 portátil no armazenamento e na validação.
+- A validação mantém fallback para o HMAC legado, preservando links antigos quando o segredo correspondente estiver disponível; novos links funcionam entre localhost e produção mesmo com segredos diferentes, desde que os ambientes compartilhem o mesmo banco operacional.
+- Códigos numéricos de confirmação continuam protegidos por HMAC; links comuns usam `getPublicAppUrl()` e links de recuperação de senha continuam sob emissão/validação do Supabase.
+- Teste automatizado comprova que o hash do link permanece igual ao trocar o segredo de localhost pelo de produção.
+- Nenhuma migration foi criada ou alterada.

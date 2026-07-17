@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { studentWelcomeTemplate } from "@/lib/email/studentWelcomeTemplate";
-import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
@@ -43,7 +43,7 @@ export async function sendFirstAccessEmail(studentId: string) {
     phone: student.phone || null,
     cpf: student.cpf || null,
     desired_contests: student.desired_contests || null,
-    token_hash: hashRegistrationValue(rawToken),
+    token_hash: hashEmailActionToken(rawToken),
     desired_status: "active",
     expires_at: addHours(FIRST_ACCESS_EXPIRATION_HOURS),
     metadata: { source: "first_access" },

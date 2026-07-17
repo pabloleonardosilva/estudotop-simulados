@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { containsPersonalData, hasAscendingOrDescendingNumberSequence, hasTripleRepeatedCharacter, passwordPolicyError, validatePassword } from "../../lib/auth/passwordPolicy";
@@ -104,6 +105,21 @@ test("admin password reset sends a one-time creation link without changing accou
   expect(emailService).toContain("if (emailError)");
   expect(firstAccessRoute).toContain("if (!preserveAccountStatus)");
   expect(firstAccessRoute).toContain("O acesso continua sujeito ao status atual da sua conta");
+});
+
+test("email action links remain valid across environments with different secrets", () => {
+  const token = "secure-token-created-in-localhost";
+  const portableHash = createHash("sha256").update(token).digest("hex");
+  const legacyLocalHash = createHmac("sha256", "localhost-secret").update(token).digest("hex");
+  const legacyProductionHash = createHmac("sha256", "production-secret").update(token).digest("hex");
+  const tokenModule = read("lib/security/registrationTokens.ts");
+
+  expect(legacyProductionHash).not.toBe(legacyLocalHash);
+  expect(createHash("sha256").update(token).digest("hex")).toBe(portableHash);
+  expect(tokenModule).toContain('crypto.createHash("sha256").update(value).digest("hex")');
+  expect(tokenModule).toContain("const candidates = [hashEmailActionToken(value)]");
+  expect(read("app/api/auth/first-access/route.ts")).toContain('.in("token_hash", tokenHashes)');
+  expect(read("app/api/auth/confirm-invite/route.ts")).toContain('.in("token_hash", tokenHashes)');
 });
 
 test("first-access interface updates requirements and only enables a valid matching password", async ({ page }) => {

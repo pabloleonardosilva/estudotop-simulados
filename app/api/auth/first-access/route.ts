@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { emailActionTokenHashCandidates } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { passwordPolicyError } from "@/lib/auth/passwordPolicy";
 import { getPasswordPolicyContext } from "@/lib/server/passwordPolicyContext";
@@ -21,13 +21,13 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const tokenHash = hashRegistrationValue(token);
+    const tokenHashes = emailActionTokenHashCandidates(token);
 
     const { data: confirmation, error } = await supabase
       .from("student_registration_confirmations")
       .select("*")
       .eq("purpose", "first_access")
-      .eq("token_hash", tokenHash)
+      .in("token_hash", tokenHashes)
       .is("used_at", null)
       .gt("expires_at", new Date().toISOString())
       .maybeSingle();

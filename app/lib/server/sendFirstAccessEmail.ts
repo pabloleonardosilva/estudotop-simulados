@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
@@ -43,7 +43,7 @@ export async function sendFirstAccessEmail(
     user_id: studentId,
     full_name: student.name,
     email: student.email,
-    token_hash: hashRegistrationValue(rawToken),
+    token_hash: hashEmailActionToken(rawToken),
     expires_at: addHours(FIRST_ACCESS_EXPIRATION_HOURS),
     metadata: {
       generated_by: "admin",

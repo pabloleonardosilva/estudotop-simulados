@@ -12,7 +12,7 @@ import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornadas/utils";
-import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { validateStudentAccountIntegrity } from "@/lib/server/studentAccountService";
 
 const FIRST_ACCESS_EXPIRATION_HOURS = 24;
@@ -465,7 +465,7 @@ export async function POST(
               user_id: studentId,
               full_name: student.name,
               email: student.email,
-              token_hash: hashRegistrationValue(rawToken),
+              token_hash: hashEmailActionToken(rawToken),
               expires_at: addHours(FIRST_ACCESS_EXPIRATION_HOURS),
               metadata: { generated_by: "admin", source: "jornada_assignment" },
             });
