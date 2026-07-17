@@ -11,7 +11,8 @@ import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
+const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
+const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 
 type CreateStudentPayload = {
   fullName: string;
@@ -130,8 +131,9 @@ export async function POST(request: Request) {
       const resend = new Resend(resendApiKey);
       await resend.emails.send({
         from: FROM_EMAIL,
+        replyTo: REPLY_TO_EMAIL,
         to: email,
-        subject: "🦉 Você chegou ao EstudoTOP Simulados",
+        subject: "Você chegou ao EstudoTOP Simulados",
         html: studentWelcomeTemplate({
           studentName: fullName,
           studentEmail: email,

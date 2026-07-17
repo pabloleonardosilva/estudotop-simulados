@@ -760,3 +760,12 @@ Escopo previsto:
 - **PDF de anotações:** cada simulado agora inicia em página nova (exceto o primeiro de cada Jornada, que fica na página do banner).
 - Detalhes na seção 9.2.1 e na seção 8 do `docs/INDICE_FUNCOES_SISTEMA.md`.
 - Nenhuma migration foi criada ou alterada.
+
+### Entregabilidade de e-mails — remetente respondível, reply-to e assuntos sem emoji — 2026-07-17
+
+- **Contexto:** e-mails da plataforma caindo em spam. Autenticação DNS auditada e OK (DKIM `resend._domainkey`, SPF em `send.estudotop.com.br`/amazonses sa-east-1, DMARC `p=none`); domínio `estudotop.com.br` verificado no Google Postmaster Tools em 17/07.
+- Remetente oficial de todos os envios trocado de `noreply@` para **`EstudoTOP <estudotop@estudotop.com.br>`**, com `replyTo` em todos os 12 pontos de envio (welcome, primeiro acesso, registro/confirmação, criação de aluno, jornada, liberações, release-job e reenvios).
+- Assuntos sem emoji (prefixos 🦉/🎯 removidos); emojis no corpo dos templates preservados.
+- Padrão obrigatório para novos envios documentado na seção 11 do `docs/INDICE_FUNCOES_SISTEMA.md`.
+- **Pendências operacionais:** criar/encaminhar a caixa `estudotop@estudotop.com.br`; evoluir DMARC para `rua` + `p=quarantine`; teste pós-deploy via mail-tester e acompanhamento no Postmaster Tools.
+- Nenhuma migration foi criada ou alterada.

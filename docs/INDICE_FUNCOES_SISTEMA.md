@@ -1817,9 +1817,12 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 - Deve conter cronograma quando for e-mail de Jornada.
 - E-mail de liberação de simulado deve conter simulado liberado e cronograma completo.
 
----
+**Remetente e entregabilidade (decisão 2026-07-17, anti-spam):**
 
-## 12. APIs CRÍTICAS
+- Remetente oficial de TODOS os envios: `EstudoTOP <estudotop@estudotop.com.br>` (caixa real, respondível — substituiu `noreply@`), sempre com `replyTo: "estudotop@estudotop.com.br"`. Aplicado nos 12 pontos de envio (welcome/first-access/registro/confirmação/criação de aluno/jornada/liberações/release-job/reenvios).
+- Assuntos **sem emoji** (os prefixos 🦉/🎯 foram removidos de todos os subjects; emojis no corpo dos templates continuam permitidos).
+- Autenticação DNS verificada em 2026-07-17: DKIM `resend._domainkey`, SPF em `send.estudotop.com.br` (amazonses, região sa-east-1) e DMARC presente (`p=none`; evoluir para `rua` + `quarantine` é pendência de DNS do domínio). Domínio registrado no Google Postmaster Tools.
+- Novos envios devem seguir este padrão: remetente oficial + `replyTo` + assunto sem emoji + versão texto junto do HTML.
 
 ### Questões
 

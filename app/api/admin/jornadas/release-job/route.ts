@@ -171,9 +171,10 @@ export async function GET(request: Request) {
         try {
           const resend = new Resend(resendApiKey);
           const { error: emailError } = await resend.emails.send({
-              from: "EstudoTOP <noreply@estudotop.com.br>",
+              from: "EstudoTOP <estudotop@estudotop.com.br>",
+              replyTo: "estudotop@estudotop.com.br",
               to: sj.students.email,
-              subject: `🎯 Novo simulado liberado — ${sj.jornadas.title}`,
+              subject: `Novo simulado liberado — ${sj.jornadas.title}`,
               html: simuladoReleasedTemplate({
                 studentName: sj.students.name,
                 simuladoTitle: simulado.title,

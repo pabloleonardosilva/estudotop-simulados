@@ -7,7 +7,8 @@ import { addMinutes, generateNumericCode, hashRegistrationValue } from "@/lib/se
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
+const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
+const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
 
 type RegisterPayload = {
@@ -159,6 +160,7 @@ export async function POST(request: Request) {
     const resend = new Resend(resendApiKey);
     const { error: emailError } = await resend.emails.send({
       from: FROM_EMAIL,
+      replyTo: REPLY_TO_EMAIL,
       to: email,
       subject: "Código de confirmação — EstudoTOP Simulados",
       html: publicRegistrationCodeTemplate({

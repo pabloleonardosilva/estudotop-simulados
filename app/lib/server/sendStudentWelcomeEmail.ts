@@ -5,8 +5,9 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { generateTemporaryPassword } from "@/lib/utils/password";
 import { studentWelcomePlainText, studentWelcomeTemplate } from "@/app/lib/email/studentWelcomeTemplate";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
-const WELCOME_EMAIL_SUBJECT = "🦉 Bem-vindo(a) ao EstudoTOP Simulados!";
+const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
+const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
+const WELCOME_EMAIL_SUBJECT = "Bem-vindo(a) ao EstudoTOP Simulados!";
 
 export type WelcomeEmailSource = "approval" | "manual_resend";
 
@@ -76,6 +77,7 @@ export async function sendStudentWelcomeEmail(params: {
     const resend = new Resend(resendApiKey);
     const { error: emailError } = await resend.emails.send({
       from: FROM_EMAIL,
+      replyTo: REPLY_TO_EMAIL,
       to: student.email,
       subject: WELCOME_EMAIL_SUBJECT,
       html: studentWelcomeTemplate({

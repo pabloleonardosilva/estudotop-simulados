@@ -340,7 +340,8 @@ export async function POST(
           const resend = new Resend(resendApiKey);
           try {
             const { error: welcomeEmailError } = await resend.emails.send({
-                from: "EstudoTOP <noreply@estudotop.com.br>",
+                from: "EstudoTOP <estudotop@estudotop.com.br>",
+                replyTo: "estudotop@estudotop.com.br",
                 to: student.email,
                 subject: `Bem-vindo à ${jornada.title} — EstudoTOP`,
                 html: jornadaWelcomeTemplate({
@@ -399,9 +400,10 @@ export async function POST(
 
             try {
               const { error: releaseEmailError } = await resend.emails.send({
-                from: "EstudoTOP <noreply@estudotop.com.br>",
+                from: "EstudoTOP <estudotop@estudotop.com.br>",
+                replyTo: "estudotop@estudotop.com.br",
                 to: student.email,
-                subject: `🎯 Novo simulado liberado — ${jornada.title}`,
+                subject: `Novo simulado liberado — ${jornada.title}`,
                 html: simuladoReleasedTemplate(payload),
                 text: simuladoReleasedPlainText(payload),
               });

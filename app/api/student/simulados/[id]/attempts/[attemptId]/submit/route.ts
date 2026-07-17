@@ -432,7 +432,8 @@ export async function POST(
                 schedule,
               };
               const { error: emailError } = await resend.emails.send({
-                from: "EstudoTOP <noreply@estudotop.com.br>",
+                from: "EstudoTOP <estudotop@estudotop.com.br>",
+                replyTo: "estudotop@estudotop.com.br",
                 to: student.email,
                 subject: `Novo simulado liberado — ${journey.jornadas.title}`,
                 html: simuladoReleasedTemplate(emailParams),

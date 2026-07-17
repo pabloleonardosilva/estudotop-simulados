@@ -8,7 +8,8 @@ import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
+const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
+const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
 const INVALID_CODE_RESEND_COOLDOWN_SECONDS = 60;
 
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
       try {
         const result = await resend.emails.send({
           from: FROM_EMAIL,
+          replyTo: REPLY_TO_EMAIL,
           to: email,
           subject: "Novo código de confirmação — EstudoTOP Simulados",
           html: publicRegistrationCodeTemplate({

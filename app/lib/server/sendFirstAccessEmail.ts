@@ -3,7 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
+const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
+const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const FIRST_ACCESS_EXPIRATION_HOURS = 24;
 
 export async function sendFirstAccessEmail(
@@ -67,6 +68,7 @@ export async function sendFirstAccessEmail(
   }).format(new Date());
   const { error: emailError } = await resend.emails.send({
     from: FROM_EMAIL,
+    replyTo: REPLY_TO_EMAIL,
     to: student.email,
     subject: options?.preserveAccountStatus
       ? `Redefinição de senha solicitada em ${resetRequestedAt}`
