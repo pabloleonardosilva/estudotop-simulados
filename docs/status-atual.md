@@ -769,3 +769,11 @@ Escopo previsto:
 - Padrão obrigatório para novos envios documentado na seção 11 do `docs/INDICE_FUNCOES_SISTEMA.md`.
 - **Pendências operacionais:** criar/encaminhar a caixa `estudotop@estudotop.com.br`; evoluir DMARC para `rua` + `p=quarantine`; teste pós-deploy via mail-tester e acompanhamento no Postmaster Tools.
 - Nenhuma migration foi criada ou alterada.
+
+### E-mail consolidado na matrícula em Jornada — 2026-07-17
+
+- A inserção de aluno pendente em Jornada passou a executar a aprovação formal (`approved_at`, `approved_by`, `students.status`, `profiles.is_active`, auditoria) e gerar link individual de primeiro acesso válido por 24 horas.
+- A matrícula envia no máximo um e-mail imediato: pendente recebe aprovação + primeiro acesso + Jornada + simulados disponíveis; aluno já aprovado recebe somente Jornada + simulados disponíveis, sem repetir boas-vindas à plataforma.
+- Os avisos separados de “Bem-vindo à Jornada” e “Novo simulado liberado” foram consolidados no momento da matrícula. Simulados liberados posteriormente preservam o aviso individual existente.
+- O envio confirmado atualiza o rastreamento da Jornada, da aprovação e dos simulados cobertos; falhas têm a mensagem limitada a 500 caracteres e são registradas sem desfazer aprovação ou matrícula.
+- Nenhuma migration foi criada ou alterada.

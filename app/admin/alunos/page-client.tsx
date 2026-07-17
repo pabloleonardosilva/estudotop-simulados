@@ -99,7 +99,7 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(30);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -369,8 +369,7 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="h-8 appearance-none rounded-xl border border-white/[0.08] bg-white/[0.04] pl-3 pr-8 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] focus:border-orange-500/50 [color-scheme:dark]"
                 >
-                  <option value={10}>10 por página</option>
-                  <option value={25}>25 por página</option>
+                  <option value={30}>30 por página</option>
                   <option value={50}>50 por página</option>
                 </select>
                 <ChevronDown

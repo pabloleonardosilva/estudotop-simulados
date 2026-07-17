@@ -179,6 +179,15 @@ type ReleasedParams = {
   schedule?: ScheduleItem[];
 };
 
+type ConsolidatedEnrollmentParams = WelcomeParams & {
+  firstSimuladoUrl?: string | null;
+};
+
+type ConsolidatedApprovalParams = ConsolidatedEnrollmentParams & {
+  firstAccessUrl: string;
+  firstAccessExpiresInHours: number;
+};
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("pt-BR").format(new Date(value + "T00:00:00"));
@@ -298,6 +307,161 @@ export function jornadaWelcomeTemplate(params: WelcomeParams): string {
       </div>
     `,
   );
+}
+
+function consolidatedJourneyBody(
+  params: ConsolidatedEnrollmentParams,
+  intro: string,
+  ctaUrl: string,
+  ctaLabel: string,
+): string {
+  const firstSimulado = params.firstSimuladoTitle
+    ? `<div style="margin:22px 0;padding:20px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#ea580c;font-weight:800;">Seu primeiro simulado já está disponível</div>
+        <p style="margin:9px 0 5px;font-size:17px;font-weight:800;color:#0f172a;">${escapeHtml(params.firstSimuladoTitle)}</p>
+        <p style="margin:0;color:#64748b;font-size:13px;">Simulado 1 de ${params.totalSimulados}</p>
+      </div>`
+    : `<div style="margin:22px 0;padding:18px;border-radius:18px;background:#f8fafc;border:1px dashed #cbd5e1;color:#475569;">
+        Ainda não há simulados disponíveis nesta Jornada. Você receberá um aviso quando o primeiro for liberado.
+      </div>`;
+
+  return `
+    <p style="margin:0 0 18px;font-size:16px;line-height:1.65;">Olá, <strong>${escapeHtml(params.studentName)}</strong>!</p>
+    ${intro}
+
+    <div style="margin:22px 0;padding:22px;border-radius:18px;background:#0f172a;color:#fff;text-align:center;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.16em;color:#fb923c;font-weight:800;">Sua Jornada</div>
+      <p style="margin:10px 0 0;font-size:21px;line-height:1.4;font-weight:900;">${escapeHtml(params.jornadaTitle)}</p>
+    </div>
+
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">
+      Essa Jornada foi organizada para conduzir sua preparação de forma progressiva. Ao longo do cronograma, novos simulados serão liberados para que você acompanhe seu desempenho, identifique pontos de melhoria e evolua com consistência até a prova.
+    </p>
+
+    ${firstSimulado}
+
+    <h2 style="font-size:18px;margin:26px 0 12px;color:#0f172a;">Dados da sua Jornada</h2>
+    <div style="display:grid;gap:10px;margin:0 0 20px;">
+      <div style="padding:14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;"><strong>Início:</strong> ${formatDate(params.startedAt)}</div>
+      <div style="padding:14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;"><strong>Acesso disponível até:</strong> ${formatDate(params.expiresAt)}</div>
+      <div style="padding:14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;"><strong>Total de simulados:</strong> ${params.totalSimulados}</div>
+      ${params.firstSimuladoTitle ? `<div style="padding:14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;"><strong>Primeiro simulado:</strong> ${escapeHtml(params.firstSimuladoTitle)}</div>` : ""}
+    </div>
+
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">
+      Os próximos simulados serão disponibilizados progressivamente, conforme o cronograma da Jornada. Sempre que um novo simulado for liberado posteriormente, você receberá um aviso.
+    </p>
+
+    ${scheduleTable(params.schedule)}
+
+    <div style="margin-top:28px;text-align:center;">
+      <a href="${ctaUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">${ctaLabel}</a>
+    </div>
+
+    <p style="margin:24px 0 0;font-size:14px;line-height:1.7;color:#64748b;">
+      Se você não reconhece esta matrícula ou precisa de ajuda, responda a este e-mail para falar com nossa equipe.
+    </p>
+    <p style="margin:20px 0 0;font-size:15px;line-height:1.7;color:#334155;">
+      Bons estudos e uma excelente Jornada!<br /><strong style="color:#0f172a;">Equipe EstudoTOP</strong>
+    </p>
+  `;
+}
+
+export function approvedStudentJornadaConsolidatedTemplate(params: ConsolidatedEnrollmentParams): string {
+  return shell(
+    "Sua nova Jornada já começou",
+    "Você foi matriculado em uma nova Jornada e seu primeiro simulado já está liberado.",
+    consolidatedJourneyBody(
+      params,
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">Você acaba de ser matriculado em uma nova Jornada.</p>`,
+      params.firstSimuladoUrl || params.jornadaUrl,
+      params.firstSimuladoUrl ? "Acessar primeiro simulado" : "Acessar minha Jornada",
+    ),
+  );
+}
+
+export function pendingStudentJornadaConsolidatedTemplate(params: ConsolidatedApprovalParams): string {
+  const firstAccessIntro = `
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">
+      Temos uma ótima notícia: seu cadastro no <strong style="color:#0f172a;">EstudoTOP Simulados foi aprovado</strong> e seu acesso à plataforma já está liberado.
+    </p>
+    <div style="margin:22px 0;padding:20px;border-radius:18px;background:#eff6ff;border:1px solid #bfdbfe;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#1d4ed8;font-weight:800;">Primeiro acesso</div>
+      <p style="margin:9px 0 0;font-size:14px;line-height:1.7;color:#334155;">
+        Para acessar a plataforma pela primeira vez, crie sua senha pessoal pelo botão abaixo. O link é individual, seguro e válido por <strong>${params.firstAccessExpiresInHours} horas</strong>.
+      </p>
+    </div>`;
+
+  return shell(
+    "Seu acesso ao EstudoTOP foi liberado",
+    "Seu cadastro foi aprovado, sua Jornada já está disponível e o primeiro simulado foi liberado.",
+    consolidatedJourneyBody(
+      params,
+      firstAccessIntro,
+      params.firstAccessUrl,
+      "Criar minha senha e começar",
+    ) + `
+      <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#64748b;word-break:break-all;">
+        Se o botão não funcionar, copie e cole este endereço no navegador:<br />${escapeHtml(params.firstAccessUrl)}
+      </p>`,
+  );
+}
+
+export function approvedStudentJornadaConsolidatedPlainText(params: ConsolidatedEnrollmentParams): string {
+  return `Olá, ${params.studentName}!
+
+Você acaba de ser matriculado na Jornada:
+
+${params.jornadaTitle}
+
+Essa Jornada foi organizada para conduzir sua preparação de forma progressiva.
+
+${params.firstSimuladoTitle ? `Seu primeiro simulado já está disponível:\n${params.firstSimuladoTitle}\nSimulado 1 de ${params.totalSimulados}` : "Ainda não há simulados disponíveis nesta Jornada."}
+
+Dados da sua Jornada:
+- Início: ${formatDate(params.startedAt)}
+- Acesso disponível até: ${formatDate(params.expiresAt)}
+- Total de simulados: ${params.totalSimulados}
+${params.firstSimuladoTitle ? `- Primeiro simulado: ${params.firstSimuladoTitle}` : ""}
+
+Os próximos simulados serão disponibilizados progressivamente. Sempre que um novo simulado for liberado posteriormente, você receberá um aviso.
+
+Acesse em: ${params.firstSimuladoUrl || params.jornadaUrl}
+
+Se você não reconhece esta matrícula ou precisa de ajuda, responda a este e-mail.
+
+Bons estudos e uma excelente Jornada!
+Equipe EstudoTOP`;
+}
+
+export function pendingStudentJornadaConsolidatedPlainText(params: ConsolidatedApprovalParams): string {
+  return `Olá, ${params.studentName}!
+
+Temos uma ótima notícia: seu cadastro no EstudoTOP Simulados foi aprovado e seu acesso à plataforma já está liberado.
+
+Você também foi matriculado na Jornada:
+
+${params.jornadaTitle}
+
+${params.firstSimuladoTitle ? `Seu primeiro simulado já está disponível:\n${params.firstSimuladoTitle}\nSimulado 1 de ${params.totalSimulados}` : "Ainda não há simulados disponíveis nesta Jornada."}
+
+Dados da sua Jornada:
+- Início: ${formatDate(params.startedAt)}
+- Acesso disponível até: ${formatDate(params.expiresAt)}
+- Total de simulados: ${params.totalSimulados}
+${params.firstSimuladoTitle ? `- Primeiro simulado: ${params.firstSimuladoTitle}` : ""}
+
+Primeiro acesso:
+Crie sua senha pessoal pelo link individual abaixo. Ele é válido por ${params.firstAccessExpiresInHours} horas.
+
+${params.firstAccessUrl}
+
+Os próximos simulados serão disponibilizados progressivamente. Sempre que um novo simulado for liberado posteriormente, você receberá um aviso.
+
+Se você não reconhece este cadastro ou precisa de ajuda, responda a este e-mail.
+
+Bons estudos e seja muito bem-vindo(a) ao EstudoTOP Simulados!
+Equipe EstudoTOP`;
 }
 
 export function simuladoReleasedTemplate(params: ReleasedParams): string {

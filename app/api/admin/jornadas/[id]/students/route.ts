@@ -2,14 +2,20 @@ import { NextResponse, after } from "next/server";
 import { Resend } from "resend";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { jornadaWelcomeTemplate } from "@/lib/email/jornadaEmailTemplates";
-import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
+import {
+  approvedStudentJornadaConsolidatedPlainText,
+  approvedStudentJornadaConsolidatedTemplate,
+  pendingStudentJornadaConsolidatedPlainText,
+  pendingStudentJornadaConsolidatedTemplate,
+} from "@/app/lib/email/jornadaEmailTemplates";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornadas/utils";
+import { addHours, generateSecureToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { validateStudentAccountIntegrity } from "@/lib/server/studentAccountService";
 
-const JORNADA_EMAIL_INTERVAL_MS = 10_000;
+const FIRST_ACCESS_EXPIRATION_HOURS = 24;
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -126,12 +132,24 @@ export async function POST(
 
     const { data: student } = await supabase
       .from("students")
-      .select("id, name, email, status")
+      .select("id, name, email, status, approved_at, welcome_email_sent_at")
       .eq("id", studentId)
       .single();
 
     if (!student) {
       return NextResponse.json({ ok: false, message: "Aluno não encontrado." }, { status: 404 });
+    }
+
+    const requiresApproval = student.status === "pending" && !student.approved_at;
+    if (requiresApproval && !(await validateStudentAccountIntegrity(supabase, studentId))) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "STUDENT_ACCOUNT_INCOMPLETE",
+          message: "A conta do aluno está incompleta ou divergente e precisa ser regularizada antes da matrícula.",
+        },
+        { status: 409 },
+      );
     }
 
     const { data: jornadaSimulados, error: jsErr } = await supabase
@@ -278,8 +296,70 @@ export async function POST(
       insertedScheduleRows = insertedRows || [];
     }
 
-    if (["pending", "inactive"].includes(student.status)) {
-      await supabase.from("students").update({ status: "active" }).eq("id", studentId);
+    if (requiresApproval) {
+      const { data: approvedRows, error: approveError } = await supabase
+        .from("students")
+        .update({ status: "active", approved_at: new Date().toISOString(), approved_by: admin.id })
+        .eq("id", studentId)
+        .eq("status", "pending")
+        .is("approved_at", null)
+        .select("id");
+
+      if (approveError || !approvedRows?.length) {
+        if (existingEnroll?.status === "cancelled") {
+          await supabase.from("student_jornadas").update({ status: "cancelled" }).eq("id", sj.id);
+        } else {
+          await supabase.from("student_jornadas").delete().eq("id", sj.id);
+        }
+        return NextResponse.json(
+          { ok: false, message: "Não foi possível concluir a aprovação formal do aluno." },
+          { status: 409 },
+        );
+      }
+
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update({ is_active: true, must_change_password: true })
+        .eq("id", studentId);
+
+      if (profileUpdateError) {
+        await logSystemError({
+          request,
+          source: "jornada_assign_student_approval",
+          actorType: "admin",
+          errorMessage: `Aluno aprovado, mas falha ao ativar profile: ${profileUpdateError.message}`,
+          safeDetails: { studentId, jornadaId },
+          severity: "error",
+        });
+      }
+
+      await supabase.from("student_activity_log").insert({
+        student_id: studentId,
+        event_type: "registration_approved",
+        description: "Cadastro aprovado automaticamente durante a matrícula em Jornada. Acesso ativado.",
+        details: {
+          approved_by: admin.id,
+          approved_by_name: admin.full_name || "Admin",
+          source: "jornada_assignment",
+          jornada_id: jornadaId,
+        },
+        performed_by_name: admin.full_name || "Admin",
+      });
+
+      await logActivity({
+        request,
+        actorType: "admin",
+        actorName: admin.full_name || "Admin",
+        action: "student_registration_approved",
+        entityType: "student",
+        entityId: studentId,
+        metadata: { approved: true, source: "jornada_assignment", jornada_id: jornadaId },
+      });
+    } else if (student.status === "inactive") {
+      await Promise.all([
+        supabase.from("students").update({ status: "active" }).eq("id", studentId),
+        supabase.from("profiles").update({ is_active: true }).eq("id", studentId),
+      ]);
     }
 
     // Auditoria da atribuição registrada antes de responder (writes rápidos).
@@ -337,42 +417,149 @@ export async function POST(
             };
           });
 
+          const releasedRows = insertedScheduleRows.filter((row) => row.status === "available");
+          const firstReleasedRow = releasedRows[0] || null;
+          const firstReleasedSimulado = firstReleasedRow
+            ? orderedSimulados.find((item) => item.simulado_id === firstReleasedRow.simulado_id)
+            : null;
+          const firstSimuladoTitle = firstReleasedRow
+            ? getLinkedSimuladoTitle(firstReleasedSimulado?.simulados) || `Simulado ${firstReleasedRow.order_number}`
+            : null;
+          const firstSimuladoUrl = firstReleasedRow
+            ? `${appUrl}/meus-simulados/${firstReleasedRow.simulado_id}`
+            : null;
+          const baseEmailParams = {
+            studentName: student.name,
+            jornadaTitle: jornada.title,
+            startedAt: startedAtRaw,
+            expiresAt: toDateString(expiresAt),
+            totalSimulados: jornada.planned_simulados_count || orderedSimulados.length,
+            examDate: jornada.exam_date,
+            effectiveEndDate: jornada.effective_end_date,
+            firstSimuladoTitle,
+            firstSimuladoUrl,
+            schedule,
+            jornadaUrl: `${appUrl}/minhas-jornadas`,
+          };
+
+          let subject: string;
+          let html: string;
+          let text: string;
+
+          if (requiresApproval) {
+            const rawToken = generateSecureToken();
+            const firstAccessUrl = `${appUrl}/primeiro-acesso?token=${encodeURIComponent(rawToken)}`;
+            const attemptedAt = new Date().toISOString();
+
+            const { error: invalidateError } = await supabase
+              .from("student_registration_confirmations")
+              .update({ used_at: attemptedAt })
+              .eq("user_id", studentId)
+              .eq("purpose", "first_access")
+              .is("used_at", null);
+
+            if (invalidateError) throw new Error("Não foi possível invalidar os links anteriores de primeiro acesso.");
+
+            const { error: tokenError } = await supabase.from("student_registration_confirmations").insert({
+              purpose: "first_access",
+              user_id: studentId,
+              full_name: student.name,
+              email: student.email,
+              token_hash: hashRegistrationValue(rawToken),
+              expires_at: addHours(FIRST_ACCESS_EXPIRATION_HOURS),
+              metadata: { generated_by: "admin", source: "jornada_assignment" },
+            });
+
+            if (tokenError) throw new Error("Não foi possível gerar o link de primeiro acesso.");
+
+            await supabase
+              .from("students")
+              .update({
+                welcome_email_status: "sending",
+                welcome_email_attempted_at: attemptedAt,
+                welcome_email_error: null,
+              })
+              .eq("id", studentId);
+
+            const params = {
+              ...baseEmailParams,
+              firstAccessUrl,
+              firstAccessExpiresInHours: FIRST_ACCESS_EXPIRATION_HOURS,
+            };
+            subject = "Seu acesso ao EstudoTOP foi liberado — comece sua Jornada";
+            html = pendingStudentJornadaConsolidatedTemplate(params);
+            text = pendingStudentJornadaConsolidatedPlainText(params);
+          } else {
+            subject = "Sua nova Jornada já começou — primeiro simulado disponível";
+            html = approvedStudentJornadaConsolidatedTemplate(baseEmailParams);
+            text = approvedStudentJornadaConsolidatedPlainText(baseEmailParams);
+          }
+
           const resend = new Resend(resendApiKey);
           try {
-            const { error: welcomeEmailError } = await resend.emails.send({
-                from: "EstudoTOP <estudotop@estudotop.com.br>",
-                replyTo: "estudotop@estudotop.com.br",
-                to: student.email,
-                subject: `Bem-vindo à ${jornada.title} — EstudoTOP`,
-                html: jornadaWelcomeTemplate({
-                  studentName: student.name,
-                  jornadaTitle: jornada.title,
-                  startedAt: startedAtRaw,
-                  expiresAt: toDateString(expiresAt),
-                  totalSimulados: jornada.planned_simulados_count || orderedSimulados.length,
-                  examDate: jornada.exam_date,
-                  effectiveEndDate: jornada.effective_end_date,
-                  firstSimuladoTitle: orderedSimulados.length > 0 ? getLinkedSimuladoTitle(orderedSimulados[0].simulados) : null,
-                  schedule,
-                  jornadaUrl: `${appUrl}/minhas-jornadas`,
-                }),
+            const { error: consolidatedEmailError } = await resend.emails.send({
+              from: "EstudoTOP <estudotop@estudotop.com.br>",
+              replyTo: "estudotop@estudotop.com.br",
+              to: student.email,
+              subject,
+              html,
+              text,
             });
-            if (welcomeEmailError) throw welcomeEmailError;
+            if (consolidatedEmailError) throw consolidatedEmailError;
             const sentAt = new Date().toISOString();
             await supabase.from("student_jornadas").update({ welcome_email_sent_at: sentAt, welcome_email_error: null }).eq("id", sj.id);
+            if (releasedRows.length > 0) {
+              await supabase
+                .from("student_jornada_simulados")
+                .update({ release_email_sent_at: sentAt, release_email_error: null })
+                .in("id", releasedRows.map((row) => row.id));
+            }
+            if (requiresApproval) {
+              await supabase
+                .from("students")
+                .update({
+                  welcome_email_status: "sent",
+                  welcome_email_sent_at: student.welcome_email_sent_at || sentAt,
+                  welcome_email_error: null,
+                })
+                .eq("id", studentId);
+            }
             await supabase.from("student_activity_log").insert({
               student_id: studentId,
-              event_type: "jornada_welcome_email_sent",
-              description: `E-mail de entrada na jornada "${jornada.title}" enviado`,
-              details: { jornada_id: jornadaId, student_jornada_id: sj.id },
+              event_type: requiresApproval ? "approval_jornada_email_sent" : "jornada_welcome_email_sent",
+              description: requiresApproval
+                ? `E-mail consolidado de aprovação e entrada na jornada "${jornada.title}" enviado`
+                : `E-mail consolidado de entrada na jornada "${jornada.title}" enviado`,
+              details: {
+                jornada_id: jornadaId,
+                student_jornada_id: sj.id,
+                source: requiresApproval ? "approval_and_jornada" : "jornada_assignment",
+                covered_release_ids: releasedRows.map((row) => row.id),
+              },
               performed_by_name: "Sistema",
             });
           } catch (err) {
-            const message = err instanceof Error ? err.message : "Erro desconhecido";
+            const message = (err instanceof Error ? err.message : "Erro desconhecido").slice(0, 500);
             await supabase.from("student_jornadas").update({ welcome_email_error: message }).eq("id", sj.id);
+            if (releasedRows.length > 0) {
+              await supabase
+                .from("student_jornada_simulados")
+                .update({ release_email_error: message })
+                .in("id", releasedRows.map((row) => row.id));
+            }
+            if (requiresApproval) {
+              await supabase
+                .from("students")
+                .update({
+                  welcome_email_status: "failed",
+                  welcome_email_attempted_at: new Date().toISOString(),
+                  welcome_email_error: message,
+                })
+                .eq("id", studentId);
+            }
             await logSystemError({
               request,
-              source: "jornada_welcome_email",
+              source: "jornada_consolidated_email",
               actorType: "admin",
               errorMessage: message,
               safeDetails: { studentId, jornadaId, studentJornadaId: sj.id },
@@ -380,62 +567,24 @@ export async function POST(
             });
           }
 
-          if (insertedScheduleRows.some((row) => row.status === "available")) {
-            await new Promise((resolve) => setTimeout(resolve, JORNADA_EMAIL_INTERVAL_MS));
-          }
-
-          for (const releasedRow of insertedScheduleRows.filter((row) => row.status === "available")) {
-            const linked = orderedSimulados.find((item) => item.simulado_id === releasedRow.simulado_id);
-            const simuladoTitle = getLinkedSimuladoTitle(linked?.simulados) || `Simulado ${releasedRow.order_number}`;
-            const payload = {
-              studentName: student.name,
-              simuladoTitle,
-              jornadaTitle: jornada.title,
-              position: releasedRow.order_number,
-              total: jornada.planned_simulados_count || orderedSimulados.length,
-              expiresAt: toDateString(expiresAt),
-              simuladoUrl: `${appUrl}/meus-simulados/${releasedRow.simulado_id}`,
-              schedule: schedule.map((item) => ({ ...item, highlight: item.order === releasedRow.order_number })),
-            };
-
-            try {
-              const { error: releaseEmailError } = await resend.emails.send({
-                from: "EstudoTOP <estudotop@estudotop.com.br>",
-                replyTo: "estudotop@estudotop.com.br",
-                to: student.email,
-                subject: `Novo simulado liberado — ${jornada.title}`,
-                html: simuladoReleasedTemplate(payload),
-                text: simuladoReleasedPlainText(payload),
-              });
-              if (releaseEmailError) throw releaseEmailError;
-              const sentAt = new Date().toISOString();
-              await supabase.from("student_jornada_simulados").update({ release_email_sent_at: sentAt, release_email_error: null }).eq("id", releasedRow.id);
-              await supabase.from("student_activity_log").insert({
-                student_id: studentId,
-                event_type: "simulado_release_email_sent",
-                description: `E-mail de liberação do simulado "${simuladoTitle}" enviado`,
-                details: { jornada_id: jornadaId, student_jornada_id: sj.id, student_jornada_simulado_id: releasedRow.id, simulado_id: releasedRow.simulado_id },
-                performed_by_name: "Sistema",
-              });
-            } catch (err) {
-              const message = err instanceof Error ? err.message : "Erro desconhecido";
-              await supabase.from("student_jornada_simulados").update({ release_email_error: message }).eq("id", releasedRow.id);
-              await logSystemError({
-                request,
-                source: "jornada_simulado_release_email",
-                actorType: "admin",
-                errorMessage: message,
-                safeDetails: { studentId, jornadaId, studentJornadaId: sj.id, studentJornadaSimuladoId: releasedRow.id },
-                severity: "warning",
-              });
-            }
-          }
         } catch (err) {
+          const message = (err instanceof Error ? err.message : "Falha no envio de e-mails em segundo plano.").slice(0, 500);
+          await supabase.from("student_jornadas").update({ welcome_email_error: message }).eq("id", sj.id);
+          if (requiresApproval) {
+            await supabase
+              .from("students")
+              .update({
+                welcome_email_status: "failed",
+                welcome_email_attempted_at: new Date().toISOString(),
+                welcome_email_error: message,
+              })
+              .eq("id", studentId);
+          }
           void logSystemError({
             request,
             source: "jornada_assign_emails_after",
             actorType: "admin",
-            errorMessage: err instanceof Error ? err.message : "Falha no envio de e-mails em segundo plano.",
+            errorMessage: message,
             safeDetails: { studentId, jornadaId, studentJornadaId: sj.id },
             severity: "warning",
           });
@@ -447,7 +596,7 @@ export async function POST(
       {
         ok: true,
         student_jornada_id: sj.id,
-        message: `Aluno ${existingEnroll?.status === "cancelled" ? "reinserido" : "inserido"} com sucesso.${resendApiKey ? " O e-mail da Jornada será enviado em instantes." : ""}`,
+        message: `Aluno ${existingEnroll?.status === "cancelled" ? "reinserido" : "inserido"} com sucesso.${resendApiKey ? " O e-mail consolidado será enviado em instantes." : ""}`,
       },
       { status: 201 },
     );

@@ -741,7 +741,8 @@ function MiniTag({ children }: { children: React.ReactNode }) {
 }
 
 function AlunosPanel({ students, total, search, setSearch, statusFilter, setStatusFilter, progressFilter, setProgressFilter, onAssign, onAddDays, onPauseResume, onCancel }: { students: StudentJornada[]; total: number; search: string; setSearch: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void; progressFilter: ProgressFilter; setProgressFilter: (value: ProgressFilter) => void; onAssign: () => void; onAddDays: (sj: StudentJornada) => void; onPauseResume: (sj: StudentJornada, action: "pause" | "resume") => void; onCancel: (sj: StudentJornada) => void }) {
-  const shown = students.slice(0, 5);
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? students : students.slice(0, 5);
   return (
     <section className="rounded-[24px] border border-white/[0.065] bg-[#040A12]/92 p-6 shadow-[0_18px_65px_rgba(0,0,0,.42)] backdrop-blur-xl">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -789,9 +790,9 @@ function AlunosPanel({ students, total, search, setSearch, statusFilter, setStat
         ) : shown.map((sj, index) => <StudentRow key={sj.id} sj={sj} index={index} onAddDays={onAddDays} onPauseResume={onPauseResume} onCancel={onCancel} />)}
       </div>
 
-      {total > 5 && (
-        <button type="button" className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/[0.075] bg-white/[0.022] text-sm font-black text-orange-300 transition hover:bg-white/[0.07]">
-          <Users size={16} /> Ver todos os {total} alunos
+      {students.length > 5 && (
+        <button type="button" onClick={() => setShowAll((current) => !current)} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/[0.075] bg-white/[0.022] text-sm font-black text-orange-300 transition hover:bg-white/[0.07]">
+          <Users size={16} /> {showAll ? "Mostrar apenas 5 alunos" : `Ver todos os ${students.length} alunos`}
         </button>
       )}
     </section>
