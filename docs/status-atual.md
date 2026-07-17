@@ -803,3 +803,12 @@ Escopo previsto:
 - O modificador `screen` na media query garante que impressão e exportações em PDF permaneçam inalteradas; telas ≥1440px, tablets e mobile não são afetados.
 - Ver seção 1.2 do `docs/INDICE_FUNCOES_SISTEMA.md` para regras de manutenção e checklist.
 - Nenhuma migration foi criada ou alterada.
+
+### Header do aluno em uma linha e prova compacta em notebooks 1366px — 2026-07-17
+
+- O header desktop da Área do Aluno deixou de quebrar em duas linhas em notebooks: a partir de `xl` (1280px) ele usa uma única linha compacta de 92px (logo, menu, TopCoins, usuário e Sair reduzidos proporcionalmente); a composição de duas linhas ficou restrita a 1024–1279px; em `2xl+` nada mudou.
+- O `AppShell` acompanha as novas alturas (88/136/92/112px) no `min-h` do conteúdo do aluno.
+- A tela de execução do simulado ganhou densidade de notebook via classes `et-laptop-exam-*` no bloco de banda 1024–1366px do `globals.css`: header da prova com 96px (antes 124px), escudo 56px, título 24px, cards de tempo/progresso com 58px, e coluna lateral 310px → 284px (fora do modo foco), dando mais protagonismo à questão.
+- Sem zoom/transform; escala tipográfica oficial, mobile, tablet e telas ≥1536px preservados; nenhuma regra de negócio, API ou fluxo alterado.
+- Ver seção 1.2 do `docs/INDICE_FUNCOES_SISTEMA.md`.
+- Nenhuma migration foi criada ou alterada.

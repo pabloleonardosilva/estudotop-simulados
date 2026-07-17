@@ -1113,7 +1113,7 @@ export default function SimuladoExperience({
         onClose={closeTopCoinsReward}
       />
 
-      <div className={`relative z-10 mx-auto grid w-full gap-5 px-4 py-5 md:px-6 xl:px-8 ${focusMode ? "max-w-[1280px] pt-18" : "max-w-[1680px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
+      <div className={`relative z-10 mx-auto grid w-full gap-5 px-4 py-5 md:px-6 xl:px-8 ${focusMode ? "max-w-[1280px] pt-18" : "et-laptop-exam-grid max-w-[1680px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
         <div className="min-w-0">
           {phase === "submitting" && (
             <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
@@ -1549,9 +1549,9 @@ function StickyHeader({
     <header className={`sticky top-0 z-30 overflow-hidden border-b border-white/15 text-white shadow-[0_22px_58px_rgba(15,23,42,0.28)] transition duration-500 ${focusMode ? "bg-[#010204]" : "bg-black"}`}>
       <div className="pointer-events-none absolute inset-0 opacity-90 [background:linear-gradient(132deg,transparent_0%,transparent_37%,rgba(255,138,0,0.09)_46%,rgba(255,138,0,0.035)_56%,transparent_66%),linear-gradient(180deg,#000000_0%,#030303_100%)]" />
       <div className="pointer-events-none absolute left-[34%] top-[-90px] h-[260px] w-[330px] rotate-45 bg-orange-500/10 blur-2xl" />
-      <div className="relative flex min-h-[124px] w-full flex-col gap-5 px-5 py-5 md:px-9 lg:flex-row lg:items-center lg:justify-between xl:px-[54px]">
+      <div className="et-laptop-exam-topbar relative flex min-h-[124px] w-full flex-col gap-5 px-5 py-5 md:px-9 lg:flex-row lg:items-center lg:justify-between xl:px-[54px]">
         <div className="flex min-w-0 items-center gap-5">
-          <div className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] border border-orange-400/60 bg-[linear-gradient(145deg,rgba(255,138,0,0.18),rgba(255,138,0,0.035)_54%,rgba(0,0,0,0.24))] shadow-[0_0_0_1px_rgba(255,255,255,0.035)_inset,0_0_26px_rgba(255,122,24,0.42)]">
+          <div className="et-laptop-exam-badge relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] border border-orange-400/60 bg-[linear-gradient(145deg,rgba(255,138,0,0.18),rgba(255,138,0,0.035)_54%,rgba(0,0,0,0.24))] shadow-[0_0_0_1px_rgba(255,255,255,0.035)_inset,0_0_26px_rgba(255,122,24,0.42)]">
             <Shield size={36} strokeWidth={2.2} className="text-orange-300 drop-shadow-[0_0_12px_rgba(255,138,0,0.62)]" />
             <div className="pointer-events-none absolute inset-0 rounded-[1.05rem] ring-1 ring-inset ring-orange-300/10" />
           </div>
@@ -1559,12 +1559,12 @@ function StickyHeader({
             <p className="text-[11px] font-black uppercase tracking-[0.42em] text-orange-300">
               Simulado em andamento
             </p>
-            <h1 className="mt-3 truncate text-[26px] font-black leading-none tracking-tight text-white md:text-[30px]">{title}</h1>
+            <h1 className="et-laptop-exam-title mt-3 truncate text-[26px] font-black leading-none tracking-tight text-white md:text-[30px]">{title}</h1>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-5 text-xs">
-          <div className="flex h-[72px] min-w-[208px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
+          <div className="et-laptop-exam-stat flex h-[72px] min-w-[208px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
             <Clock3 size={31} strokeWidth={2.1} className="text-orange-300" />
             <div>
               <strong className="block text-[18px] leading-none text-white md:text-[19px]">{formatTime(timeSpent)}</strong>
@@ -1572,7 +1572,7 @@ function StickyHeader({
             </div>
           </div>
           {remainingSeconds !== null && (
-            <div className={`flex h-[72px] min-w-[190px] items-center gap-4 rounded-[1rem] border px-5 backdrop-blur-md transition duration-500 ${warningTime ? "border-2 border-orange-400 bg-[#170d04] shadow-[0_0_0_1px_rgba(251,146,60,0.7)_inset,0_0_16px_4px_rgba(251,146,60,0.95),0_0_48px_16px_rgba(251,146,60,0.55)]" : "border-orange-400/50 bg-orange-500/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_22px_rgba(255,122,24,0.42),0_12px_28px_rgba(0,0,0,0.26)]"}`}>
+            <div className={`et-laptop-exam-stat flex h-[72px] min-w-[190px] items-center gap-4 rounded-[1rem] border px-5 backdrop-blur-md transition duration-500 ${warningTime ? "border-2 border-orange-400 bg-[#170d04] shadow-[0_0_0_1px_rgba(251,146,60,0.7)_inset,0_0_16px_4px_rgba(251,146,60,0.95),0_0_48px_16px_rgba(251,146,60,0.55)]" : "border-orange-400/50 bg-orange-500/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_22px_rgba(255,122,24,0.42),0_12px_28px_rgba(0,0,0,0.26)]"}`}>
               <Hourglass size={31} strokeWidth={2.1} className={warningTime ? "text-orange-100 drop-shadow-[0_0_10px_rgba(251,146,60,0.95)]" : "text-amber-300 drop-shadow-[0_0_12px_rgba(251,146,60,0.7)]"} />
               <div>
                 <strong className="block text-[18px] leading-none text-white md:text-[19px]">{formatTime(remainingSeconds)}</strong>
@@ -1580,7 +1580,7 @@ function StickyHeader({
               </div>
             </div>
           )}
-          <div className="flex h-[72px] min-w-[296px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
+          <div className="et-laptop-exam-stat flex h-[72px] min-w-[296px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
             <ProgressRing percent={progressPercent} />
             <div>
               <strong className="block text-[18px] leading-none text-white md:text-[19px]">{Math.min(currentIndex + 1, total)}/{total}</strong>

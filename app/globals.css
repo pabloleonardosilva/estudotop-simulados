@@ -2985,4 +2985,48 @@ button:disabled,
   .et-laptop-density .gap-8 {
     gap: 1.25rem;
   }
+
+  /* Tela de execução do simulado: topo menos dominante e coluna lateral
+     mais estreita, para a questão ganhar protagonismo em notebooks. */
+  .et-laptop-exam-grid {
+    grid-template-columns: minmax(0, 1fr) 284px;
+  }
+
+  .et-laptop-exam-topbar {
+    min-height: 96px;
+    gap: 1rem;
+    padding: 14px 32px;
+  }
+
+  .et-laptop-exam-badge {
+    height: 56px;
+    width: 56px;
+  }
+
+  .et-laptop-exam-badge svg.lucide {
+    height: 30px;
+    width: 30px;
+  }
+
+  .et-laptop-exam-title {
+    margin-top: 8px;
+    font-size: 24px;
+  }
+
+  .et-laptop-exam-stat {
+    height: 58px;
+    min-width: 0;
+    gap: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .et-laptop-exam-stat > svg.lucide {
+    height: 26px;
+    width: 26px;
+  }
+
+  .et-laptop-exam-stat strong {
+    font-size: 16px;
+  }
 }

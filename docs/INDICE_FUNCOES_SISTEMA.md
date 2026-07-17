@@ -153,7 +153,7 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 - **Regra:** se uma nova página usar fundo `bg-[#07111F]` customizado, adicionar seu prefixo em `isDarkPremiumRoute` no `AppShell.tsx`.
 - **Sininho e "Ajuda" ocultos no menu do aluno (2026-07-16):** o item de navegação `Ajuda` e o botão do sininho de notificações do header do aluno estão temporariamente ocultos pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`. A Central de Ajuda (`HelpCenterModal`, APIs `help-messages` e painel `/admin/ajuda`) permanece implementada e intacta; para reexibir, voltar a flag para `true`.
 - **Rótulos compactos no menu superior do aluno (2026-07-17):** no header desktop, os itens foram abreviados para `Meu Painel`, `Jornadas`, `Simulados`, `Anotações` e `Resultados`, preservando ícones, rotas e estados ativos. A redução diminui a largura mínima ocupada pela navegação em notebooks.
-- **Responsividade do menu superior do aluno (2026-07-17):** abaixo de `lg` permanece o header compacto; entre `lg` e `2xl`, logo/controles ficam na primeira linha e a navegação completa ocupa uma segunda linha; a partir de `2xl`, o header volta à composição de uma linha. O `AppShell` acompanha as alturas de 88/136/112px para manter conteúdo e footer corretos.
+- **Responsividade do menu superior do aluno (atualizada 2026-07-17):** abaixo de `lg` permanece o header compacto; entre `lg` e `xl` (1024–1279px), logo/controles ficam na primeira linha e a navegação completa ocupa uma segunda linha; a partir de `xl` (1280px), o header fica em **uma única linha compacta** (92px) e, a partir de `2xl`, volta à composição de uma linha grande (112px). O `AppShell` acompanha as alturas de 88/136/92/112px para manter conteúdo e footer corretos. Ver seção 1.2.
 - **Modal explicativo inicial responsivo (2026-07-17):** `StudentJourneyExplainerModal` não força mais altura mínima de 760px em notebooks. O card respeita `100dvh`, possui rolagem interna de contingência e separa ilustração panorâmica de título/descrição em HTML; usa composição horizontal em desktop/notebook e vertical em tablet/celular, mantendo cabeçalho, fechar, setas e paginação acessíveis em 1366×768 e em viewports menores.
 
 
@@ -183,6 +183,18 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 - `.et-admin-sidebar-slot aside` — reduz a largura da sidebar admin de 288px (`w-72`) para 256px apenas na faixa de notebook, sem alterar `Sidebar.tsx` (arquivo protegido, não modificado).
 - `.et-laptop-density` — reduz somente os espaçamentos de maior escala dentro da área de conteúdo: `p-10`→28px, `p-8`→24px, `p-16`→40px, `px-10`/`py-10`→28px, `px-8`→24px, `py-12`→32px, `gap-10`/`gap-9`→24px, `gap-8`→20px. O mecanismo é o mesmo já usado por `.et-dark-admin-page` (regra não-camadas em `globals.css` vence as utilities do Tailwind v4).
 - O modificador `screen` na media query garante que impressão e PDFs não sejam afetados.
+
+**Header da Área do Aluno em uma linha (2026-07-17):**
+
+- A partir de `xl` (1280px), o header desktop do aluno usa **uma única linha compacta de 92px** (logo 52px, itens de menu `h-[46px]`/`text-[13.5px]`, TopCoins 38px, avatar 34px, Sair 44px), tudo via classes Tailwind responsivas em `Header.tsx`; em `2xl` (1536px+) volta à composição de uma linha grande de 112px já existente.
+- A composição de **duas linhas (136px)** permanece apenas como fallback entre `lg` (1024px) e `xl` (1280px), onde uma linha única não cabe com legibilidade.
+- O `AppShell` acompanha as alturas: 88px (< lg), 136px (lg–xl), **92px (xl–2xl)** e 112px (2xl+) no `min-h` do conteúdo do aluno.
+- Em 1366px o header **não pode quebrar em duas linhas** — testar essa resolução antes de mexer no header do aluno.
+
+**Tela de execução do simulado em notebook (2026-07-17):**
+
+- Dentro da faixa 1024–1366px, `app/meus-simulados/[id]/page-client.tsx` usa as classes `et-laptop-exam-*` (definidas no bloco de banda do `globals.css`, inertes fora da faixa): `et-laptop-exam-topbar` (header da prova com 96px de altura mínima e paddings menores), `et-laptop-exam-badge` (escudo 56px), `et-laptop-exam-title` (título 24px), `et-laptop-exam-stat` (cards de tempo/progresso com 58px de altura, ícones lucide 26px e valores 16px) e `et-laptop-exam-grid` (coluna lateral 310px → 284px, aplicada só fora do modo foco).
+- Título, status, tempo decorrido, tempo restante, progresso, mapa da prova, modo foco e recursos de apoio são preservados — apenas a densidade muda.
 
 **Regras de manutenção:**
 

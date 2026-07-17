@@ -101,21 +101,21 @@ export default function Header({
 
         {/* Desktop (lg+): header institucional dark premium. */}
         <div className="student-header relative hidden lg:block">
-          <div className="mx-auto grid h-[136px] max-w-[1980px] grid-cols-[minmax(0,1fr)_auto] grid-rows-[76px_57px] items-center gap-x-7 px-8 2xl:h-[112px] 2xl:grid-cols-[280px_minmax(0,1fr)_auto] 2xl:grid-rows-1 2xl:gap-7">
+          <div className="mx-auto grid h-[136px] max-w-[1980px] grid-cols-[minmax(0,1fr)_auto] grid-rows-[76px_57px] items-center gap-x-7 px-8 xl:h-[92px] xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:grid-rows-1 xl:gap-5 xl:px-6 2xl:h-[112px] 2xl:grid-cols-[280px_minmax(0,1fr)_auto] 2xl:gap-7 2xl:px-8">
             <div className="relative col-start-1 row-start-1 flex items-center justify-start">
               <div
                 aria-hidden
-                className="pointer-events-none absolute left-0 h-[62px] w-[220px] rounded-full bg-[radial-gradient(circle,rgba(255,138,0,0.10),transparent_66%)] blur-xl 2xl:h-[76px]"
+                className="pointer-events-none absolute left-0 h-[62px] w-[220px] rounded-full bg-[radial-gradient(circle,rgba(255,138,0,0.10),transparent_66%)] blur-xl xl:h-[52px] xl:w-[170px] 2xl:h-[76px] 2xl:w-[220px]"
               />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/images/Logo%2004%20-transp.png"
                 alt="EstudoTOP Simulados"
-                className="relative z-[1] h-[62px] w-auto object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)] 2xl:h-[88px]"
+                className="relative z-[1] h-[62px] w-auto object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)] xl:h-[52px] 2xl:h-[88px]"
               />
             </div>
 
-            <nav className="col-span-2 col-start-1 row-start-2 flex h-full min-w-0 items-center justify-center gap-5 border-t border-white/[0.06] 2xl:col-span-1 2xl:col-start-2 2xl:row-start-1 2xl:border-t-0 2xl:gap-[30px]" aria-label="Menu principal do aluno">
+            <nav className="col-span-2 col-start-1 row-start-2 flex h-full min-w-0 items-center justify-center gap-5 border-t border-white/[0.06] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:gap-3 xl:border-t-0 2xl:gap-[30px]" aria-label="Menu principal do aluno">
               <DesktopNavItem href="/aluno" active={pathname.startsWith("/aluno")}>
                 <Home size={21} strokeWidth={2.2} />
                 <span>Meu Painel</span>
@@ -144,13 +144,13 @@ export default function Header({
               )}
             </nav>
 
-            <div className="col-start-2 row-start-1 flex items-center justify-end gap-[18px] 2xl:col-start-3">
+            <div className="col-start-2 row-start-1 flex items-center justify-end gap-[18px] xl:col-start-3 xl:gap-3 2xl:gap-[18px]">
               <div aria-hidden className="h-[34px] w-px shrink-0 bg-gradient-to-b from-transparent via-white/[0.22] to-transparent" />
 
               <Link
                 href="/extrato-topcoins"
                 title="Ver extrato de TopCoins"
-                className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-2xl border border-orange-400/25 bg-orange-400/10 px-3 text-[15px] font-black text-orange-200 transition hover:border-orange-400/45 hover:bg-orange-400/15"
+                className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-2xl border border-orange-400/25 bg-orange-400/10 px-3 text-[15px] font-black text-orange-200 transition hover:border-orange-400/45 hover:bg-orange-400/15 xl:h-[38px] xl:text-[13.5px] 2xl:h-[42px] 2xl:text-[15px]"
               >
                 <TopCoinStack size="lg" />
                 {topCoinsBalance ?? 0}
@@ -175,28 +175,28 @@ export default function Header({
 
               <button
                 type="button"
-                className="inline-flex h-[46px] shrink-0 items-center gap-[10px] px-2 text-[15px] font-extrabold text-white/[0.90] transition hover:text-white"
+                className="inline-flex h-[46px] shrink-0 items-center gap-[10px] px-2 text-[15px] font-extrabold text-white/[0.90] transition hover:text-white xl:h-[42px] xl:gap-2 xl:text-[13.5px] 2xl:h-[46px] 2xl:gap-[10px] 2xl:text-[15px]"
               >
                 {profile?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={profile.avatar_url}
                     alt=""
-                    className="h-[38px] w-[38px] shrink-0 rounded-full border border-white/[0.12] object-cover shadow-[0_0_0_2px_rgba(255,138,0,0.08),0_8px_18px_rgba(0,0,0,0.28)]"
+                    className="h-[38px] w-[38px] shrink-0 rounded-full border border-white/[0.12] object-cover shadow-[0_0_0_2px_rgba(255,138,0,0.08),0_8px_18px_rgba(0,0,0,0.28)] xl:h-[34px] xl:w-[34px] 2xl:h-[38px] 2xl:w-[38px]"
                   />
                 ) : (
-                  <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full border border-white/[0.12] bg-gradient-to-br from-orange-500 to-amber-400 text-sm font-black text-slate-950 shadow-[0_0_0_2px_rgba(255,138,0,0.08),0_8px_18px_rgba(0,0,0,0.28)]">
+                  <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full border border-white/[0.12] bg-gradient-to-br from-orange-500 to-amber-400 text-sm font-black text-slate-950 shadow-[0_0_0_2px_rgba(255,138,0,0.08),0_8px_18px_rgba(0,0,0,0.28)] xl:h-[34px] xl:w-[34px] 2xl:h-[38px] 2xl:w-[38px]">
                     {getInitials(profile?.full_name)}
                   </span>
                 )}
-                <span className="max-w-[120px] truncate">{(profile?.full_name || "Aluno").split(/\s+/)[0]}</span>
+                <span className="max-w-[120px] truncate xl:max-w-[90px] 2xl:max-w-[120px]">{(profile?.full_name || "Aluno").split(/\s+/)[0]}</span>
                 <ChevronDown size={16} className="shrink-0 text-white/[0.62]" />
               </button>
 
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="inline-flex h-[52px] shrink-0 items-center gap-[10px] rounded-2xl border border-white/[0.12] bg-[#080c14]/60 bg-gradient-to-b from-white/[0.045] to-white/[0.018] px-[22px] text-[15px] font-extrabold text-white/[0.92] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_10px_22px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-orange-400/[0.42] hover:text-white hover:shadow-[0_0_22px_rgba(255,138,0,0.12),inset_0_1px_0_rgba(255,255,255,0.10)]"
+                className="inline-flex h-[52px] shrink-0 items-center gap-[10px] rounded-2xl border border-white/[0.12] bg-[#080c14]/60 bg-gradient-to-b from-white/[0.045] to-white/[0.018] px-[22px] text-[15px] font-extrabold text-white/[0.92] shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_10px_22px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-orange-400/[0.42] hover:text-white hover:shadow-[0_0_22px_rgba(255,138,0,0.12),inset_0_1px_0_rgba(255,255,255,0.10)] xl:h-[44px] xl:gap-2 xl:px-4 xl:text-[13.5px] 2xl:h-[52px] 2xl:gap-[10px] 2xl:px-[22px] 2xl:text-[15px]"
               >
                 <LogOut size={20} />
                 Sair
@@ -283,7 +283,7 @@ function DesktopNavItem({
   children: ReactNode;
   onClick?: () => void;
 }) {
-  const className = `relative inline-flex h-[52px] shrink-0 items-center gap-[10px] whitespace-nowrap rounded-xl px-1.5 text-[15px] font-extrabold tracking-[-0.015em] transition ${
+  const className = `relative inline-flex h-[52px] shrink-0 items-center gap-[10px] whitespace-nowrap rounded-xl px-1.5 text-[15px] font-extrabold tracking-[-0.015em] transition xl:h-[46px] xl:gap-2 xl:text-[13.5px] 2xl:h-[52px] 2xl:gap-[10px] 2xl:text-[15px] ${
     active
       ? "text-[#ff8a00]"
       : "text-white/[0.78] hover:-translate-y-px hover:bg-white/[0.035] hover:text-white/[0.96]"
@@ -295,7 +295,7 @@ function DesktopNavItem({
       {active && (
         <span
           aria-hidden
-          className="absolute bottom-[-5px] left-1/2 h-1 w-[78px] -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_18px_rgba(255,138,0,0.75),0_-4px_18px_rgba(255,138,0,0.20)] 2xl:bottom-[-34px]"
+          className="absolute bottom-[-5px] left-1/2 h-1 w-[78px] -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_18px_rgba(255,138,0,0.75),0_-4px_18px_rgba(255,138,0,0.20)] xl:bottom-[-24px] xl:w-[64px] 2xl:bottom-[-34px] 2xl:w-[78px]"
         />
       )}
     </>
