@@ -599,7 +599,7 @@ export default function ResultadoClient({
   const safeStep = Math.min(Math.max(resultStep, 0), steps.length - 1);
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_12%_10%,rgba(255,138,0,0.045),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(37,99,235,0.035),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#F4F7FB_100%)] px-4 py-5 text-slate-900 md:px-6">
+    <main className="et-laptop-density min-h-screen overflow-hidden bg-[radial-gradient(circle_at_12%_10%,rgba(255,138,0,0.045),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(37,99,235,0.035),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#F4F7FB_100%)] px-4 py-5 text-slate-900 md:px-6">
       {preparingOverlay}
       <div className="mx-auto flex w-full max-w-[1560px] flex-col gap-[18px] pb-14">
         <section className="relative overflow-hidden rounded-[10px] border border-slate-200/95 bg-[radial-gradient(circle_at_7%_50%,rgba(255,138,0,0.10),transparent_21%),linear-gradient(135deg,#FFFFFF_0%,#FFF9F2_52%,#FFFFFF_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.075),0_2px_8px_rgba(15,23,42,0.035)]">

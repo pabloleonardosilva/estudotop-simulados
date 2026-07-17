@@ -2924,3 +2924,65 @@ button:disabled,
 .student-theme .student-detail-tab-active:focus-visible .student-detail-tab-copy strong {
   color: #ffffff;
 }
+
+/* ==========================================================================
+   RESPONSIVIDADE PREMIUM PARA NOTEBOOK (1024px–1366px)
+   Camada de densidade visual documentada em docs/INDICE_FUNCOES_SISTEMA.md.
+   Ativada pela classe .et-laptop-density (aplicada nos <main> do AppShell e
+   no container raiz das rotas de foco que não usam o shell) e pela classe
+   .et-admin-sidebar-slot (wrapper da sidebar admin no AppShell).
+   Regras: sem zoom/transform, sem mexer na escala tipográfica; apenas os
+   maiores paddings/gaps são reduzidos dentro da faixa de notebook.
+   `screen` garante que impressão/PDF não sejam afetados.
+   ========================================================================== */
+@media screen and (min-width: 1024px) and (max-width: 1366px) {
+  /* Sidebar admin mais enxuta (288px → 256px) sem alterar Sidebar.tsx */
+  .et-admin-sidebar-slot aside {
+    width: 16rem;
+  }
+
+  /* Densidade do conteúdo: reduz apenas os espaçamentos de maior escala */
+  .et-laptop-density .p-10 {
+    padding: 1.75rem;
+  }
+
+  .et-laptop-density .p-8 {
+    padding: 1.5rem;
+  }
+
+  .et-laptop-density .p-16 {
+    padding: 2.5rem;
+  }
+
+  .et-laptop-density .px-10 {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
+  }
+
+  .et-laptop-density .px-8 {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .et-laptop-density .py-12 {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+
+  .et-laptop-density .py-10 {
+    padding-top: 1.75rem;
+    padding-bottom: 1.75rem;
+  }
+
+  .et-laptop-density .gap-10 {
+    gap: 1.5rem;
+  }
+
+  .et-laptop-density .gap-9 {
+    gap: 1.5rem;
+  }
+
+  .et-laptop-density .gap-8 {
+    gap: 1.25rem;
+  }
+}

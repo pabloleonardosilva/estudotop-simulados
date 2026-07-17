@@ -484,7 +484,7 @@ export default function PreviewSimuladoClient({
 
   // ── In progress ──
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#f7f7f5]">
+    <main className="et-laptop-density relative min-h-screen overflow-x-hidden bg-[#f7f7f5]">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_8%_86%,rgba(255,138,0,0.075),transparent_19%),radial-gradient(circle_at_94%_80%,rgba(255,179,71,0.07),transparent_23%),radial-gradient(circle_at_50%_4%,rgba(148,163,184,0.055),transparent_30%),linear-gradient(180deg,#fbfcfd_0%,#f5f6f8_58%,#f9f7f3_100%)]" />
       <div className="pointer-events-none fixed bottom-0 left-0 z-0 h-56 w-56 opacity-40 [background-image:radial-gradient(circle,rgba(255,138,0,0.35)_1.2px,transparent_1.2px)] [background-size:13px_13px] [mask-image:linear-gradient(135deg,#000,transparent_72%)]" />
       <div className="pointer-events-none fixed bottom-0 right-0 z-0 h-64 w-64 rounded-full bg-orange-100/35 blur-3xl" />

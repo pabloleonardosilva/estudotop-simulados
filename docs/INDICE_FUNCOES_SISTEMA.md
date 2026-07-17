@@ -168,6 +168,40 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 
 ---
 
+### 1.2 Responsividade premium para notebooks 1366px (2026-07-17)
+
+**Função:** camada de densidade visual para telas de notebook, ativa apenas na faixa `@media screen and (min-width: 1024px) and (max-width: 1366px)`, preservando o visual premium em telas maiores, tablets e mobile.
+
+**Arquivos envolvidos:**
+
+- `app/globals.css` — bloco final "RESPONSIVIDADE PREMIUM PARA NOTEBOOK (1024px–1366px)" com todas as regras.
+- `app/components/AppShell.tsx` — aplica `et-admin-sidebar-slot` no wrapper da sidebar admin e `et-laptop-density` nos `<main>` do shell admin e do aluno.
+- `app/simulados/[id]/preview/page-client.tsx`, `app/meus-simulados/[id]/page-client.tsx`, `app/meus-simulados/[id]/resultado/page-client.tsx` — rotas de foco (fora do shell) que aplicam `et-laptop-density` no próprio container raiz.
+
+**Como funciona:**
+
+- `.et-admin-sidebar-slot aside` — reduz a largura da sidebar admin de 288px (`w-72`) para 256px apenas na faixa de notebook, sem alterar `Sidebar.tsx` (arquivo protegido, não modificado).
+- `.et-laptop-density` — reduz somente os espaçamentos de maior escala dentro da área de conteúdo: `p-10`→28px, `p-8`→24px, `p-16`→40px, `px-10`/`py-10`→28px, `px-8`→24px, `py-12`→32px, `gap-10`/`gap-9`→24px, `gap-8`→20px. O mecanismo é o mesmo já usado por `.et-dark-admin-page` (regra não-camadas em `globals.css` vence as utilities do Tailwind v4).
+- O modificador `screen` na media query garante que impressão e PDFs não sejam afetados.
+
+**Regras de manutenção:**
+
+- Não usar `zoom` nem `transform: scale(...)` para densidade — apenas esta camada.
+- Não reduzir a escala tipográfica oficial (seção 1.0) por causa de notebook.
+- Nova rota de foco (renderizada sem o AppShell) que precise da densidade de notebook deve adicionar `et-laptop-density` ao seu container raiz.
+- Paddings com prefixo responsivo (`md:p-7`, `xl:px-8` etc.) não são atingidos pela camada — se uma tela ficar densa demais em 1366px, preferir ajustar as classes da própria tela.
+- Testar 1366×768 antes de entregar alterações visuais amplas; nada pode quebrar em 1920/1536/1440/1280/1024/768/mobile.
+
+**Checklist de teste:**
+
+- [ ] Em 1366px: sidebar admin com 256px e conteúdo sem aperto.
+- [ ] Em 1366px: cards, heroes e grids com paddings/gaps reduzidos, visual premium preservado.
+- [ ] Em ≥1440px: nenhum efeito da camada (espaçamentos originais).
+- [ ] Em ≤1023px e mobile: nenhum efeito da camada.
+- [ ] Impressão da prévia de simulado e PDFs inalterados.
+
+---
+
 ## 2. SISTEMA VISUAL / INTERFACES
 
 ### 2.0 Página de Login (`/login`)

@@ -794,3 +794,12 @@ Escopo previsto:
 - O modal explicativo inicial foi reconstruído em cards responsivos: seis novas ilustrações panorâmicas WebP, derivadas dos cartazes originais, são combinadas com títulos e descrições em HTML para manter tipografia legível em qualquer escala.
 - Em desktop/notebook, cada etapa usa ilustração e texto lado a lado; em tablet/celular, os blocos são empilhados. O modal respeita a altura útil do viewport e mantém rolagem interna de contingência sem cortar conteúdo ou controles em 1366×768.
 - Nenhuma migration foi criada ou alterada.
+
+### Responsividade premium para notebooks 1366px — 2026-07-17
+
+- Criada a camada de densidade visual para a faixa `@media screen and (min-width: 1024px) and (max-width: 1366px)` em `app/globals.css` (bloco final documentado), sem zoom, sem transform e sem alterar a escala tipográfica oficial.
+- `AppShell.tsx` ativa a camada: `et-admin-sidebar-slot` reduz a sidebar admin de 288px para 256px apenas na faixa de notebook (sem tocar no arquivo protegido `Sidebar.tsx`) e `et-laptop-density` nos `<main>` do shell admin e da área do aluno reduz apenas os maiores espaçamentos (`p-10`, `p-8`, `p-16`, `px-10`, `px-8`, `py-10`, `py-12`, `gap-8/9/10`).
+- As rotas de foco fora do shell — prévia do simulado, execução da prova e resultado — aplicam `et-laptop-density` no container raiz para receber a mesma densidade.
+- O modificador `screen` na media query garante que impressão e exportações em PDF permaneçam inalteradas; telas ≥1440px, tablets e mobile não são afetados.
+- Ver seção 1.2 do `docs/INDICE_FUNCOES_SISTEMA.md` para regras de manutenção e checklist.
+- Nenhuma migration foi criada ou alterada.

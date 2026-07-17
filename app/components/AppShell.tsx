@@ -298,7 +298,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Menu size={22} />
           </button>
 
-          <main className={isPainel ? "min-w-0 flex-1" : "student-content-frame min-w-0 flex-1"}>
+          <main className={isPainel ? "et-laptop-density min-w-0 flex-1" : "et-laptop-density student-content-frame min-w-0 flex-1"}>
             {children}
           </main>
 
@@ -320,7 +320,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className={`min-h-dvh ${isDarkPremiumRoute ? "bg-[#03070D]" : "bg-[#eef0f4]"} lg:h-dvh lg:overflow-hidden`}>
       <div className="flex min-h-dvh lg:h-dvh">
-        <div className="hidden lg:block lg:h-dvh lg:shrink-0">
+        <div className="et-admin-sidebar-slot hidden lg:block lg:h-dvh lg:shrink-0">
           <Sidebar />
         </div>
 
@@ -329,7 +329,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:h-dvh lg:overflow-y-auto">
           <Header onOpenMobileMenu={() => setMobileMenuOpen(true)} />
 
-          <main className="min-w-0 flex-1">{children}</main>
+          <main className="et-laptop-density min-w-0 flex-1">{children}</main>
 
           {(
             <footer className={`px-4 pb-5 pt-6 md:px-6 ${isDarkPremiumRoute ? "bg-transparent" : ""}`}>

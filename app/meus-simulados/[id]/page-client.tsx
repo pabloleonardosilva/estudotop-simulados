@@ -1082,7 +1082,7 @@ export default function SimuladoExperience({
   }
 
   return (
-    <main className={`relative min-h-screen overflow-x-hidden transition-colors duration-500 ${focusMode ? "bg-[#020617]" : "bg-[#f7f7f5]"}`}>
+    <main className={`et-laptop-density relative min-h-screen overflow-x-hidden transition-colors duration-500 ${focusMode ? "bg-[#020617]" : "bg-[#f7f7f5]"}`}>
       <div className={`pointer-events-none fixed inset-0 z-0 transition duration-500 ${focusMode ? "bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.055),transparent_22%),radial-gradient(circle_at_72%_72%,rgba(255,138,0,0.08),transparent_24%),linear-gradient(180deg,#020617_0%,#050914_55%,#01030a_100%)]" : "bg-[radial-gradient(circle_at_8%_86%,rgba(255,138,0,0.075),transparent_19%),radial-gradient(circle_at_94%_80%,rgba(255,179,71,0.07),transparent_23%),radial-gradient(circle_at_50%_4%,rgba(148,163,184,0.055),transparent_30%),linear-gradient(180deg,#fbfcfd_0%,#f5f6f8_58%,#f9f7f3_100%)]"}`} />
       <div className={`pointer-events-none fixed bottom-0 left-0 z-0 h-56 w-56 transition-opacity duration-500 [background-image:radial-gradient(circle,rgba(255,138,0,0.35)_1.2px,transparent_1.2px)] [background-size:13px_13px] [mask-image:linear-gradient(135deg,#000,transparent_72%)] ${focusMode ? "opacity-15" : "opacity-40"}`} />
       <div className={`pointer-events-none fixed bottom-0 right-0 z-0 h-64 w-64 rounded-full blur-3xl transition duration-500 ${focusMode ? "bg-orange-500/10" : "bg-orange-100/35"}`} />
