@@ -484,7 +484,7 @@ function JornadaFormCard({
             icon={<Clock3 size={16} />}
             helper={form.exam_date
               ? "A distribuição será calculada automaticamente utilizando a data da prova."
-              : "Janela de liberação dos simulados — independente da duração da Jornada. Deve terminar ao menos 7 dias antes do fim."}
+              : "O último simulado é liberado no dia informado, contando o dia da entrada do aluno como dia 1. Independente da duração da Jornada; deve terminar ao menos 7 dias antes do fim."}
           >
             <DarkNumberInput
               value={form.release_duration_days}

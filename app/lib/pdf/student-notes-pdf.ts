@@ -479,10 +479,12 @@ function StudentNotesPdf({
                   `${jornada.simulados.length} simulado${jornada.simulados.length === 1 ? "" : "s"} com anotações`,
                 ),
               ),
-              jornada.simulados.map((simulado) =>
+              jornada.simulados.map((simulado, simuladoIndex) =>
                 React.createElement(
                   View,
-                  { key: simulado.simulado_id },
+                  // Cada simulado inicia em página nova; o primeiro da Jornada
+                  // permanece na mesma página do banner da Jornada.
+                  { key: simulado.simulado_id, break: simuladoIndex > 0 },
                   React.createElement(
                     View,
                     { style: s.simuladoHeader, wrap: false },

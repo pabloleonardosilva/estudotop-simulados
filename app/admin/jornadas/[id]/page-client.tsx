@@ -37,6 +37,7 @@ import PremiumModal from "../../../components/ui/PremiumModal";
 import PremiumSelect from "../../../components/ui/PremiumSelect";
 import type { AvailableStudent, Jornada, JornadaSimulado, StudentJornada } from "../types";
 import {
+  calcReleaseSchedule,
   daysRemaining,
   enrollmentStatusLabel,
   formatDate,
@@ -277,24 +278,37 @@ export default function JornadaDetailClient({
   const plannedCount = Math.max(0, Number(jornada.planned_simulados_count || 0));
   const linkedCount = jornadaSimulados.length;
   const durationDays = Math.max(1, jornadaDurationDays(jornada));
-  const releaseBaseCount = Math.max(1, plannedCount || linkedCount || 1);
-  const releaseIntervalDays = Math.max(1, Math.round(durationDays / releaseBaseCount));
   const activeStudents = studentJornadas.filter((sj) => sj.status === "active").length;
   const pausedStudents = studentJornadas.filter((sj) => sj.status === "paused").length;
   const completedSum = studentJornadas.reduce((sum, sj) => sum + (sj.progress?.completed ?? 0), 0);
   const totalProgressSum = studentJornadas.reduce((sum, sj) => sum + (sj.progress?.total ?? 0), 0);
   const averageCompletion = totalProgressSum > 0 ? Math.round((completedSum / totalProgressSum) * 100) : 0;
 
-  function relativeReleaseDay(orderNumber: number): number {
-    const safeOrder = Math.max(1, Number(orderNumber || 1));
-    if (safeOrder <= 1) return 1;
-    return Math.max(1, Math.round((safeOrder - 1) * releaseIntervalDays) + 1);
-  }
+  // Prévia do cronograma usando a MESMA regra oficial da atribuição
+  // (calcReleaseSchedule): janela = release_duration_days ("Todos os simulados
+  // serão liberados em X dias") ou exam_date - 7 dias quando houver data da
+  // prova; intervalo = janela / (total - 1). A âncora é a criação da Jornada
+  // (o cronograma real de cada aluno conta a partir da matrícula dele).
+  const releaseAnchor = new Date((jornada.created_at || new Date().toISOString()).slice(0, 10) + "T08:00:00");
+  const releasePreviewSchedule = calcReleaseSchedule(
+    releaseAnchor,
+    linkedCount,
+    Math.max(0, Number(jornada.release_duration_days || 0)),
+    jornada.exam_date ? new Date(`${jornada.exam_date}T08:00:00`) : null,
+    plannedCount || linkedCount,
+  );
 
   function scheduleDateFor(orderNumber: number): Date {
-    const start = new Date((jornada.created_at || new Date().toISOString()).slice(0, 10) + "T08:00:00");
-    start.setDate(start.getDate() + relativeReleaseDay(orderNumber) - 1);
-    return start;
+    const safeOrder = Math.max(1, Number(orderNumber || 1));
+    const index = Math.min(safeOrder, Math.max(1, releasePreviewSchedule.length)) - 1;
+    return releasePreviewSchedule[index] || new Date(releaseAnchor);
+  }
+
+  function relativeReleaseDay(orderNumber: number): number {
+    const diffDays = Math.round(
+      (scheduleDateFor(orderNumber).getTime() - releaseAnchor.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    return Math.max(1, diffDays + 1);
   }
 
   function openAssignStudentModal() {

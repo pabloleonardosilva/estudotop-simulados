@@ -752,3 +752,11 @@ Escopo previsto:
 - Novo módulo `app/lib/pdf/student-notes-pdf.ts`, no mesmo padrão técnico de `simulado-result-pdf.ts` (`@react-pdf/renderer`). Nenhuma API foi alterada (a Jornada de cada nota já vinha em `GET /api/student/notes`).
 - Detalhes na seção 8 do `docs/INDICE_FUNCOES_SISTEMA.md`.
 - Nenhuma migration foi criada ou alterada.
+
+### Regra "liberados em X dias" + prévia dos cards da Jornada + quebra de página no PDF — 2026-07-17
+
+- **Semântica oficial (decisão 2026-07-17):** "Todos os simulados serão liberados em X dias" passou a significar que o **último simulado sai no dia X de calendário** (dia da entrada = dia 1); janela efetiva = `release_duration_days − 1` em `calcReleaseSchedule` (fonte única). Data da prova continua soberana e inalterada. Matrículas existentes preservam as datas gravadas; a nova régua vale para novas matrículas e recálculos por edição da Jornada. Textos de ajuda dos formulários atualizados.
+- **Cards do detalhe admin da Jornada:** o chip "Liberado no dia X" e a data de liberação passaram a usar `calcReleaseSchedule` (regra oficial com `release_duration_days`/`exam_date`), no lugar da fórmula antiga baseada em `duration_days ÷ total`.
+- **PDF de anotações:** cada simulado agora inicia em página nova (exceto o primeiro de cada Jornada, que fica na página do banner).
+- Detalhes na seção 9.2.1 e na seção 8 do `docs/INDICE_FUNCOES_SISTEMA.md`.
+- Nenhuma migration foi criada ou alterada.

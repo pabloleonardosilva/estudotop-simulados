@@ -506,7 +506,7 @@ export default function EditarJornadaClient({
                 <p className="mt-2 text-xs text-slate-500">
                   {form.exam_date
                     ? "A distribuição será calculada automaticamente utilizando a data da prova."
-                    : "Janela de liberação dos simulados, independente da duração. Deve terminar ao menos 7 dias antes do fim da Jornada."}
+                    : "O último simulado é liberado no dia informado, contando o dia da entrada do aluno como dia 1. Independente da duração da Jornada; deve terminar ao menos 7 dias antes do fim."}
                 </p>
               </div>
 

@@ -128,6 +128,9 @@ export function isWithinFinalExamWindow(startedAt: Date, examDate: Date | null):
 // (com data da prova, que é soberana). Intervalo = janela / (total - 1): o 1º
 // simulado cai no dia 0 e o último no último dia permitido; com 1 simulado (ou
 // janela nula), tudo é liberado no dia da entrada.
+// Decisão 2026-07-17: "liberados em X dias" significa que o ÚLTIMO simulado sai
+// no dia X de calendário (dia da entrada = dia 1). Por isso a janela efetiva em
+// dias corridos após a entrada é X - 1.
 export function calcReleaseSchedule(
   startedAt: Date,
   linkedSimuladoCount: number,
@@ -157,7 +160,7 @@ export function calcReleaseSchedule(
     effectiveEnd.setDate(effectiveEnd.getDate() - 7);
     windowDays = Math.round((effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24));
   } else {
-    windowDays = releaseDurationDays;
+    windowDays = Math.max(0, releaseDurationDays - 1);
   }
 
   if (windowDays <= 0) {
