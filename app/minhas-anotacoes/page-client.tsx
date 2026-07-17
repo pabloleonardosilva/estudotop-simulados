@@ -8,18 +8,20 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardList,
-  ExternalLink,
+  FileText,
   Loader2,
   Monitor,
   Save,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
+import { useAuth } from "@/app/contexts/AuthContext";
 import StudentNotebookEditor from "@/app/components/student/StudentNotebookEditor";
 
 type NoteApiRow = {
   simulado_id: string;
   simulado_title: string;
   simulado_description: string | null;
+  jornadas?: Array<{ id: string; jornada_id: string; title: string }> | null;
   content: string;
 };
 
@@ -27,6 +29,7 @@ type Tab = {
   simulado_id: string;
   title: string;
   description: string | null;
+  jornada: { id: string; title: string } | null;
 };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -49,9 +52,12 @@ function countAnotacoes(html: string) {
 
 export default function MinhasAnotacoesClient() {
   const router = useRouter();
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [contentBySimulado, setContentBySimulado] = useState<Record<string, string>>({});
   const [savedContentBySimulado, setSavedContentBySimulado] = useState<Record<string, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -91,11 +97,15 @@ export default function MinhasAnotacoesClient() {
     }
 
     const rows = (json.notes || []) as NoteApiRow[];
-    const nextTabs = rows.map((row) => ({
-      simulado_id: row.simulado_id,
-      title: row.simulado_title,
-      description: row.simulado_description,
-    }));
+    const nextTabs = rows.map((row) => {
+      const firstJornada = (row.jornadas || [])[0] || null;
+      return {
+        simulado_id: row.simulado_id,
+        title: row.simulado_title,
+        description: row.simulado_description,
+        jornada: firstJornada ? { id: firstJornada.jornada_id, title: firstJornada.title } : null,
+      };
+    });
     const nextContent: Record<string, string> = {};
     rows.forEach((row) => {
       nextContent[row.simulado_id] = row.content;
@@ -155,6 +165,35 @@ export default function MinhasAnotacoesClient() {
   async function saveNow() {
     if (!activeId) return;
     await persist(activeId, contentBySimulado[activeId] ?? "");
+  }
+
+  // Gera o PDF premium com TODAS as anotações da tela (não só a aba ativa),
+  // agrupadas por Jornada e por simulado, usando o conteúdo atual do editor.
+  async function handleDownloadPdf() {
+    if (isGeneratingPdf || tabs.length === 0) return;
+    setIsGeneratingPdf(true);
+    setPdfError(null);
+
+    try {
+      const { downloadStudentNotesPdf } = await import("@/app/lib/pdf/student-notes-pdf");
+      await downloadStudentNotesPdf({
+        student: {
+          name: profile?.full_name ?? null,
+          email: user?.email ?? null,
+        },
+        simulados: tabs.map((tab) => ({
+          simulado_id: tab.simulado_id,
+          title: tab.title,
+          jornada: tab.jornada,
+          content: contentBySimulado[tab.simulado_id] ?? "",
+        })),
+      });
+    } catch (pdfGenerationError) {
+      console.error("Erro ao gerar PDF das anotações", pdfGenerationError);
+      setPdfError("Não foi possível gerar o PDF agora. Tente novamente.");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   }
 
   const hasAnyUnsavedChanges = tabs.some(
@@ -290,12 +329,19 @@ export default function MinhasAnotacoesClient() {
 
                     <span aria-hidden className="h-14 w-px bg-[#E5E7EB]" />
 
-                    <Link
-                      href={`/meus-simulados/${activeTab.simulado_id}`}
-                      className="inline-flex h-12 items-center gap-2 rounded-[14px] border border-[rgba(255,90,0,0.35)] bg-[#FFF7F1] px-[22px] text-sm font-extrabold text-[#F45100] transition hover:-translate-y-0.5"
-                    >
-                      <ExternalLink size={18} /> Ver origem
-                    </Link>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleDownloadPdf}
+                        disabled={isGeneratingPdf}
+                        title="Baixar PDF com todas as suas anotações, organizadas por Jornada e simulado"
+                        className="inline-flex h-12 items-center gap-2 rounded-[14px] border border-[rgba(255,90,0,0.35)] bg-[#FFF7F1] px-[22px] text-sm font-extrabold text-[#F45100] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isGeneratingPdf ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
+                        {isGeneratingPdf ? "Gerando PDF..." : "PDF"}
+                      </button>
+                      {pdfError && <span className="text-xs font-bold text-red-600">{pdfError}</span>}
+                    </div>
                   </div>
                 </header>
 

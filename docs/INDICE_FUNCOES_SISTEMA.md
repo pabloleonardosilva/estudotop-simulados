@@ -1319,6 +1319,14 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Deve salvar por aluno e por simulado.
 - Deve ficar disponível posteriormente em área própria.
 
+**Exportação em PDF (2026-07-17):**
+
+- Em `/minhas-anotacoes`, o botão **"Ver origem"** foi substituído pelo botão **"PDF"** no cabeçalho do simulado ativo (`app/minhas-anotacoes/page-client.tsx`).
+- O clique gera e baixa um PDF premium com **todas** as anotações da tela (não só a aba ativa), via `downloadStudentNotesPdf` em `app/lib/pdf/student-notes-pdf.ts` (novo, mesmo padrão técnico de `simulado-result-pdf.ts`: `@react-pdf/renderer`, A4, `pdf(...).toBlob()` + download por `<a>`/`URL.createObjectURL`).
+- Estrutura do PDF: capa com `public/images/minhas-anotações.png` (constante `COVER_BG_SRC`; se o asset faltar em runtime há fallback premium sem imagem), painel de dados do aluno, seções por **Jornada** (cada Jornada inicia nova página) contendo os simulados com faixa/acento laranja, chip de contagem de notas e separador visual; simulados sem Jornada entram na seção **"Simulados avulsos"** ao final.
+- Notas numeradas por simulado (Nota 1, 2, 3... reiniciando a cada simulado), extraídas dos blocos `[data-note-block]` do caderno (rótulos "Nota N:" removidos) + conteúdo legado dividido por parágrafos; HTML limpo sem tags cruas, preservando quebras; anotações vazias não entram; rodapé fixo (EstudoTOP Simulados · Minhas Anotações · página) e marca d'água discreta com nome/e-mail do aluno.
+- A Jornada de cada simulado vem do campo `jornadas` já retornado por `GET /api/student/notes` (primeiro vínculo); nenhuma API foi alterada.
+
 **Comportamento do painel (correção 2026-07-15):** o `NotesPanel` (componente local em `app/meus-simulados/[id]/page-client.tsx`, usado só nessa tela) deixou de ser modal/overlay. No desktop, o controle **Caderno** e o painel expansível ficam dentro da coluna lateral direita, junto de **Mapa da prova** e **Modo foco**, sem deslocar a questão ou a navegação principal. Em telas estreitas, o mesmo bloco é exibido no fluxo responsivo, abaixo da questão, porque não há coluna lateral. Não usa `fixed inset-0`, `backdrop-blur` nem fundo escurecendo a prova; o painel limita a própria altura e usa rolagem interna. O card **Caderno** alterna entre aberto e fechado, com seta de estado; o painel também fecha pelo X e pelo botão "Fechar anotações". Não existe botão manual **Salvar**: alterações são persistidas automaticamente via `PUT /api/student/simulados/[id]/notes` cerca de 700 ms após a última digitação, com fila para mudanças feitas durante uma gravação e feedback de estado. O carregamento permanece via `GET` na mesma API.
 
 **Checklist:**

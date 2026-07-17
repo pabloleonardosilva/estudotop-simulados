@@ -745,3 +745,10 @@ Escopo previsto:
 - O sininho de notificações e o item "Ajuda" foram **temporariamente ocultos** do header do aluno pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`. A Central de Ajuda (modal, APIs e `/admin/ajuda`) permanece implementada; reativação = flag `true`.
 - Detalhes em `docs/Sprint-resultados.md` e `docs/Sprint-central-de-ajuda.md` (seções 2026-07-16).
 - Nenhuma migration foi criada ou alterada.
+
+### PDF de anotações em Minhas Anotações — 2026-07-17
+
+- O botão "Ver origem" de `/minhas-anotacoes` foi substituído pelo botão **PDF**, que gera e baixa um PDF premium A4 com todas as anotações do aluno, agrupadas por Jornada (com seção "Simulados avulsos") e por simulado, notas renumeradas por simulado, capa oficial (`public/images/minhas-anotações.png`, com fallback premium sem imagem), painel de dados do aluno, marca d'água e rodapé paginado.
+- Novo módulo `app/lib/pdf/student-notes-pdf.ts`, no mesmo padrão técnico de `simulado-result-pdf.ts` (`@react-pdf/renderer`). Nenhuma API foi alterada (a Jornada de cada nota já vinha em `GET /api/student/notes`).
+- Detalhes na seção 8 do `docs/INDICE_FUNCOES_SISTEMA.md`.
+- Nenhuma migration foi criada ou alterada.
