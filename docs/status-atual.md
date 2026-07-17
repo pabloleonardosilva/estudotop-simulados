@@ -785,3 +785,12 @@ Escopo previsto:
 - Códigos numéricos de confirmação continuam protegidos por HMAC; links comuns usam `getPublicAppUrl()` e links de recuperação de senha continuam sob emissão/validação do Supabase.
 - Teste automatizado comprova que o hash do link permanece igual ao trocar o segredo de localhost pelo de produção.
 - Nenhuma migration foi criada ou alterada.
+
+### Rótulos compactos no menu superior do aluno — 2026-07-17
+
+- Os itens `Minhas Jornadas`, `Meus Simulados` e `Minhas Anotações` do header desktop foram reduzidos para `Jornadas`, `Simulados` e `Anotações`; `Meu Painel` e `Resultados` já estavam no formato solicitado.
+- Ícones, rotas, estados ativos e os menus lateral/mobile foram preservados.
+- O header ganhou três composições responsivas: compacto abaixo de `lg`, duas linhas entre `lg` e `2xl` e uma linha a partir de `2xl`; assim logo, navegação, TopCoins, perfil e saída não se sobrepõem em notebooks.
+- O modal explicativo inicial foi reconstruído em cards responsivos: seis novas ilustrações panorâmicas WebP, derivadas dos cartazes originais, são combinadas com títulos e descrições em HTML para manter tipografia legível em qualquer escala.
+- Em desktop/notebook, cada etapa usa ilustração e texto lado a lado; em tablet/celular, os blocos são empilhados. O modal respeita a altura útil do viewport e mantém rolagem interna de contingência sem cortar conteúdo ou controles em 1366×768.
+- Nenhuma migration foi criada ou alterada.

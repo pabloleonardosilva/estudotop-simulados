@@ -1,32 +1,45 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Sparkles, X } from "lucide-react";
 
 const STEPS = [
   {
     title: "Nossas corujas especialistas criam simulados realistas",
-    image: "/images/comofunciona/001.png",
+    description:
+      "Com estudo, análise e inspiração, elas observam o perfil da banca e montam simulados que retratam a realidade da sua prova.",
+    image: "/images/comofunciona/illustrations/001.webp",
   },
   {
     title: "Montamos a Jornada focada no seu concurso",
-    image: "/images/comofunciona/002.png",
+    description:
+      "Depois de criar os simulados, nossas corujas organizam tudo em um caminho de estudo claro, progressivo e pensado para a sua aprovação.",
+    image: "/images/comofunciona/illustrations/002.webp",
   },
   {
     title: "Você é inserido no sistema e na sua Jornada",
-    image: "/images/comofunciona/003.png",
+    description:
+      "Com cuidado e estratégia, nossa equipe cadastra seu perfil e o vincula à Jornada certa para liberar a preparação planejada para você.",
+    image: "/images/comofunciona/illustrations/003.webp",
   },
   {
     title: "Os simulados são liberados aos poucos",
-    image: "/images/comofunciona/004.png",
+    description:
+      "Sempre que um novo simulado da sua Jornada fica disponível, você recebe um aviso para continuar sua preparação no momento certo.",
+    image: "/images/comofunciona/illustrations/004.webp",
   },
   {
     title: "Resolva, acompanhe seus resultados e evolua",
-    image: "/images/comofunciona/005.png",
+    description:
+      "Ao concluir cada simulado, você vê seu desempenho, identifica pontos fortes e descobre onde evoluir. Quando disponível, também acessa a correção em vídeo.",
+    image: "/images/comofunciona/illustrations/005.webp",
   },
   {
     title: "Então você aprende e vence!",
-    image: "/images/comofunciona/006.png",
+    description:
+      "Que a sabedoria da coruja esteja com você. Conte conosco em cada passo da sua Jornada até a sua grande conquista.",
+    image: "/images/comofunciona/illustrations/006.webp",
   },
 ];
 
@@ -90,9 +103,9 @@ export default function StudentJourneyExplainerModal({ open, onClose }: { open: 
   }
 
   return (
-    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-[rgba(3,10,24,0.70)] px-4 py-4 backdrop-blur-[10px]">
-      <div className="relative flex max-h-[calc(100dvh-32px)] min-h-0 w-full max-w-[1180px] flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[radial-gradient(circle_at_top_left,rgba(255,138,0,0.055),transparent_30%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.065),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.985),rgba(248,250,252,0.985))] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.30),0_12px_30px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.75)] sm:p-7 lg:min-h-[760px]">
-        <div className="relative flex items-start justify-between gap-5">
+    <div className="fixed inset-0 z-[10020] flex items-start justify-center overflow-y-auto bg-[rgba(3,10,24,0.70)] px-4 py-4 backdrop-blur-[10px] sm:items-center">
+      <div className="relative flex max-h-[calc(100dvh-32px)] min-h-0 w-full max-w-[1180px] flex-col overflow-y-auto overscroll-contain rounded-[28px] border border-white/60 bg-[radial-gradient(circle_at_top_left,rgba(255,138,0,0.055),transparent_30%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.065),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.985),rgba(248,250,252,0.985))] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.30),0_12px_30px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.75)] sm:p-7">
+        <div className="relative flex shrink-0 items-start justify-between gap-5">
           <div className="flex min-w-0 items-start gap-4">
             <span className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border border-orange-300/20 bg-gradient-to-b from-[#fff8ef] to-[#fff1df] text-orange-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_10px_18px_rgba(249,115,22,0.08)]">
               <Sparkles size={21} strokeWidth={2.3} />
@@ -119,7 +132,7 @@ export default function StudentJourneyExplainerModal({ open, onClose }: { open: 
         </div>
 
         <div className="relative mt-5 flex min-h-0 flex-1 flex-col sm:mt-[22px]">
-          <div className="relative flex min-h-0 flex-1 items-center justify-center px-10 py-2 sm:px-16 sm:py-3">
+          <div className="relative flex min-h-0 flex-1 items-stretch justify-center sm:px-16">
             <button
               type="button"
               onClick={goPrevious}
@@ -130,9 +143,10 @@ export default function StudentJourneyExplainerModal({ open, onClose }: { open: 
               <ArrowLeft size={24} />
             </button>
 
-            <div className="mx-auto w-full max-w-[920px]">
+            <div className="mx-auto flex min-h-0 w-full max-w-[980px]">
               <div
-                className={`relative flex items-center justify-center will-change-transform transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                aria-live="polite"
+                className={`relative grid min-h-0 w-full overflow-y-auto rounded-[22px] border border-slate-200/80 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.11),inset_0_1px_0_rgba(255,255,255,0.9)] will-change-transform transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)] lg:overflow-hidden ${
                   transitionPhase === "out"
                     ? "scale-[0.975] translate-y-2 opacity-0 blur-[5px]"
                     : transitionPhase === "in"
@@ -140,12 +154,33 @@ export default function StudentJourneyExplainerModal({ open, onClose }: { open: 
                       : "scale-100 translate-y-0 opacity-100 blur-0"
                 }`}
               >
-                <img
-                  src={activeStep.image}
-                  alt={activeStep.title}
-                  className="block max-h-[calc(100dvh-250px)] w-full select-none rounded-[20px] object-contain shadow-[0_18px_45px_rgba(15,23,42,0.10)] sm:max-h-[530px]"
-                  draggable={false}
-                />
+                <div className="relative aspect-[16/9] min-h-[190px] overflow-hidden bg-slate-950 sm:min-h-[250px] lg:aspect-auto lg:min-h-[290px]">
+                  <Image
+                    src={activeStep.image}
+                    alt=""
+                    fill
+                    priority={step === 0}
+                    sizes="(max-width: 1023px) calc(100vw - 40px), 620px"
+                    className="select-none object-cover"
+                    draggable={false}
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/15 via-transparent to-white/5 lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-slate-950/15" />
+                </div>
+
+                <div className="relative flex flex-col justify-center overflow-hidden p-5 sm:p-7 lg:p-8">
+                  <div className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full bg-orange-100/70 blur-3xl" />
+                  <div className="relative">
+                    <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-orange-600">
+                      Etapa {String(step + 1).padStart(2, "0")}
+                    </span>
+                    <h3 className="mt-4 text-[clamp(1.45rem,2.2vw,2rem)] font-black leading-[1.08] tracking-[-0.035em] text-slate-950">
+                      {activeStep.title}
+                    </h3>
+                    <p className="mt-4 text-[15px] font-medium leading-6 text-slate-600 sm:text-base sm:leading-7">
+                      {activeStep.description}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -152,6 +152,9 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 - **Footer da área do aluno (adicionado 2026-07-12):** o ramo compartilhado de aluno no `AppShell.tsx` renderiza um rodapé claro após o conteúdo, com fundo `#faf8f5`, cartão branco translúcido, borda slate e identificação institucional em laranja. Ele aparece nas páginas comuns da área do aluno; rotas de execução e resultado que usam layout focado continuam sem o shell global.
 - **Regra:** se uma nova página usar fundo `bg-[#07111F]` customizado, adicionar seu prefixo em `isDarkPremiumRoute` no `AppShell.tsx`.
 - **Sininho e "Ajuda" ocultos no menu do aluno (2026-07-16):** o item de navegação `Ajuda` e o botão do sininho de notificações do header do aluno estão temporariamente ocultos pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`. A Central de Ajuda (`HelpCenterModal`, APIs `help-messages` e painel `/admin/ajuda`) permanece implementada e intacta; para reexibir, voltar a flag para `true`.
+- **Rótulos compactos no menu superior do aluno (2026-07-17):** no header desktop, os itens foram abreviados para `Meu Painel`, `Jornadas`, `Simulados`, `Anotações` e `Resultados`, preservando ícones, rotas e estados ativos. A redução diminui a largura mínima ocupada pela navegação em notebooks.
+- **Responsividade do menu superior do aluno (2026-07-17):** abaixo de `lg` permanece o header compacto; entre `lg` e `2xl`, logo/controles ficam na primeira linha e a navegação completa ocupa uma segunda linha; a partir de `2xl`, o header volta à composição de uma linha. O `AppShell` acompanha as alturas de 88/136/112px para manter conteúdo e footer corretos.
+- **Modal explicativo inicial responsivo (2026-07-17):** `StudentJourneyExplainerModal` não força mais altura mínima de 760px em notebooks. O card respeita `100dvh`, possui rolagem interna de contingência e separa ilustração panorâmica de título/descrição em HTML; usa composição horizontal em desktop/notebook e vertical em tablet/celular, mantendo cabeçalho, fechar, setas e paginação acessíveis em 1366×768 e em viewports menores.
 
 
 **Checklist de teste:**
@@ -1555,7 +1558,7 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 **Arquivos envolvidos:**
 
-- `app/components/StudentJourneyExplainerModal.tsx` — componente client do modal informativo, com janela branca premium/glassmorphism claro, exibição de uma imagem por tela, 6 telas manuais baseadas nas imagens `/images/comofunciona/001.png` até `/images/comofunciona/006.png`, navegação por bolinhas, contador discreto, botão lateral esquerdo para voltar, botão lateral direito para avançar e botão final de conclusão; visual premium seguindo o modelo aprovado: overlay escuro com blur, header refinado, modal grande claro com cantos generosos, imagem oficial exibida diretamente na área central sem molduras internas extras, setas laterais flutuantes, indicadores inferiores em cápsula e transição manual em fade/blur/scale premium.
+- `app/components/StudentJourneyExplainerModal.tsx` — componente client do modal informativo, com janela branca premium, 6 telas manuais, navegação por bolinhas, contador discreto, botões para voltar/avançar e conclusão. Cada tela combina uma ilustração panorâmica otimizada em `/images/comofunciona/illustrations/001.webp` até `/images/comofunciona/illustrations/006.webp` com título e descrição em HTML, preservando legibilidade sem atrelar o tamanho do texto à escala da imagem. Em desktop/notebook o card usa composição horizontal; em tablet/celular passa para composição vertical, com rolagem interna apenas quando a altura útil exigir.
 - `app/components/AppShell.tsx` — mantém o estado `journeyExplainerOpen` apenas na área do aluno, renderiza o modal junto aos demais modais globais do aluno e controla a abertura automática nas primeiras 10 assinaturas de login do aluno, usando `localStorage` por `user.id` e `last_sign_in_at` para não repetir o modal na mesma sessão de login.
 - `app/components/Header.tsx` — não exibe mais o item `Como funciona` no menu do aluno; o modal passa a ser aberto automaticamente pelo `AppShell`.
 
@@ -1573,8 +1576,9 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 - O modal é informativo; não altera dados, não chama API e não interfere no fluxo de simulados, Jornadas, matrícula, TopCoins ou Central de Ajuda.
 - A abertura acontece automaticamente na Área do Aluno nas primeiras 10 vezes que o aluno faz login. Depois da 10ª abertura por login, o modal não deve abrir automaticamente. Não existe mais acesso pelo menu/header.
 - Não aplicar este modal em rotas públicas, troca de senha, execução de simulado, resultado ou rotas administrativas sem autorização explícita.
-- Manter linguagem curta e visual claro/clean. O modal deve funcionar como uma janela premium de onboarding: uma imagem/tela aparece por vez, sem textos duplicados fora da imagem, sem autoplay e sem coluna lateral com lista completa. O layout oficial usa overlay escuro com blur, grande painel claro com degradê sutil, header refinado, imagem oficial inteira sem corte vertical e sem molduras internas extras ao redor do slide, troca manual por fade premium com blur/scale suave, setas laterais circulares flutuantes e indicadores inferiores discretos.
-- As imagens oficiais do fluxo devem ser referenciadas em `/images/comofunciona/001.png`, `/images/comofunciona/002.png`, `/images/comofunciona/003.png`, `/images/comofunciona/004.png`, `/images/comofunciona/005.png` e `/images/comofunciona/006.png`.
+- Manter linguagem curta e visual claro/clean. O modal deve funcionar como uma janela premium de onboarding: uma etapa aparece por vez, sem autoplay e sem coluna lateral com a lista completa. O layout oficial usa overlay escuro com blur, painel claro com degradê sutil, header refinado, ilustração responsiva, texto HTML com tamanho independente, troca manual por fade/blur/scale suave, setas laterais circulares e indicadores inferiores discretos.
+- As ilustrações oficiais usadas pelo componente ficam em `/images/comofunciona/illustrations/001.webp`, `/images/comofunciona/illustrations/002.webp`, `/images/comofunciona/illustrations/003.webp`, `/images/comofunciona/illustrations/004.webp`, `/images/comofunciona/illustrations/005.webp` e `/images/comofunciona/illustrations/006.webp`. Os cartazes PNG originais permanecem preservados em `/images/comofunciona/` como fonte visual e não devem voltar a ser exibidos diretamente no modal.
+- Não reduzir texto como parte da imagem para fazer o modal caber. Em larguras `lg` ou maiores, manter ilustração e texto lado a lado; abaixo de `lg`, empilhar os dois blocos. A altura do modal deve respeitar o viewport e permitir rolagem interna de contingência sem cortar título, descrição ou controles.
 - Se a lógica de Jornada mudar, atualizar as 6 etapas do modal e esta seção do índice.
 
 **Checklist:**
@@ -1584,8 +1588,9 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 - [ ] Confirmar que após 10 logins registrados para o aluno o modal não abre automaticamente.
 - [ ] Confirmar que não há autoplay e que a troca de tela é manual.
 - [ ] Confirmar clique manual nas bolinhas, no botão lateral esquerdo de voltar e no botão lateral direito de avançar, com transição em fade entre as imagens.
-- [ ] Confirmar carregamento das imagens em `/images/comofunciona/001.png` até `/images/comofunciona/006.png`.
-- [ ] Confirmar que a imagem de cada tela aparece inteira, sem cortar o rodapé/texto da própria imagem.
+- [ ] Confirmar carregamento das ilustrações em `/images/comofunciona/illustrations/001.webp` até `/images/comofunciona/illustrations/006.webp`.
+- [ ] Confirmar em 1366×768 que a composição horizontal mantém ilustração, título, descrição e controles legíveis, sem corte.
+- [ ] Confirmar em tablet e celular que ilustração e texto são empilhados e que a rolagem interna, quando necessária, não oculta os controles.
 - [ ] Confirmar fechamento pelo X e pelo botão final `Entendi`.
 - [ ] Confirmar que Central de Ajuda continua abrindo normalmente.
 - [ ] Confirmar que admin não vê o botão/modal.

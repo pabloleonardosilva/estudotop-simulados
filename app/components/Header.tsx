@@ -101,36 +101,36 @@ export default function Header({
 
         {/* Desktop (lg+): header institucional dark premium. */}
         <div className="student-header relative hidden lg:block">
-          <div className="mx-auto grid h-[112px] max-w-[1980px] grid-cols-[230px_1fr_auto] items-center gap-7 px-8 xl:grid-cols-[280px_1fr_auto]">
-            <div className="relative flex items-center justify-start">
+          <div className="mx-auto grid h-[136px] max-w-[1980px] grid-cols-[minmax(0,1fr)_auto] grid-rows-[76px_57px] items-center gap-x-7 px-8 2xl:h-[112px] 2xl:grid-cols-[280px_minmax(0,1fr)_auto] 2xl:grid-rows-1 2xl:gap-7">
+            <div className="relative col-start-1 row-start-1 flex items-center justify-start">
               <div
                 aria-hidden
-                className="pointer-events-none absolute left-0 h-[76px] w-[220px] rounded-full bg-[radial-gradient(circle,rgba(255,138,0,0.10),transparent_66%)] blur-xl"
+                className="pointer-events-none absolute left-0 h-[62px] w-[220px] rounded-full bg-[radial-gradient(circle,rgba(255,138,0,0.10),transparent_66%)] blur-xl 2xl:h-[76px]"
               />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/images/Logo%2004%20-transp.png"
                 alt="EstudoTOP Simulados"
-                className="relative z-[1] h-[76px] w-auto object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)] xl:h-[88px]"
+                className="relative z-[1] h-[62px] w-auto object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)] 2xl:h-[88px]"
               />
             </div>
 
-            <nav className="flex h-full min-w-0 items-center justify-center gap-5 xl:gap-[30px]" aria-label="Menu principal do aluno">
+            <nav className="col-span-2 col-start-1 row-start-2 flex h-full min-w-0 items-center justify-center gap-5 border-t border-white/[0.06] 2xl:col-span-1 2xl:col-start-2 2xl:row-start-1 2xl:border-t-0 2xl:gap-[30px]" aria-label="Menu principal do aluno">
               <DesktopNavItem href="/aluno" active={pathname.startsWith("/aluno")}>
                 <Home size={21} strokeWidth={2.2} />
                 <span>Meu Painel</span>
               </DesktopNavItem>
               <DesktopNavItem href="/minhas-jornadas" active={pathname.startsWith("/minhas-jornadas")}>
                 <Map size={21} strokeWidth={2.2} />
-                <span>Minhas Jornadas</span>
+                <span>Jornadas</span>
               </DesktopNavItem>
               <DesktopNavItem href="/meus-simulados" active={pathname.startsWith("/meus-simulados")}>
                 <ClipboardList size={21} strokeWidth={2.2} />
-                <span>Meus Simulados</span>
+                <span>Simulados</span>
               </DesktopNavItem>
               <DesktopNavItem href="/minhas-anotacoes" active={pathname.startsWith("/minhas-anotacoes")}>
                 <NotebookText size={21} strokeWidth={2.2} />
-                <span>Minhas Anotações</span>
+                <span>Anotações</span>
               </DesktopNavItem>
               <DesktopNavItem href="/meus-resultados" active={pathname.startsWith("/meus-resultados")}>
                 <BarChart3 size={21} strokeWidth={2.2} />
@@ -144,7 +144,7 @@ export default function Header({
               )}
             </nav>
 
-            <div className="flex items-center justify-end gap-[18px]">
+            <div className="col-start-2 row-start-1 flex items-center justify-end gap-[18px] 2xl:col-start-3">
               <div aria-hidden className="h-[34px] w-px shrink-0 bg-gradient-to-b from-transparent via-white/[0.22] to-transparent" />
 
               <Link
@@ -295,7 +295,7 @@ function DesktopNavItem({
       {active && (
         <span
           aria-hidden
-          className="absolute bottom-[-34px] left-1/2 h-1 w-[78px] -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_18px_rgba(255,138,0,0.75),0_-4px_18px_rgba(255,138,0,0.20)]"
+          className="absolute bottom-[-5px] left-1/2 h-1 w-[78px] -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_18px_rgba(255,138,0,0.75),0_-4px_18px_rgba(255,138,0,0.20)] 2xl:bottom-[-34px]"
         />
       )}
     </>

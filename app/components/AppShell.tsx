@@ -288,7 +288,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }}
         />
 
-        <div className="relative flex min-h-[calc(100dvh-88px)] flex-col lg:min-h-[calc(100dvh-112px)]">
+        <div className="relative flex min-h-[calc(100dvh-88px)] flex-col lg:min-h-[calc(100dvh-136px)] 2xl:min-h-[calc(100dvh-112px)]">
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
