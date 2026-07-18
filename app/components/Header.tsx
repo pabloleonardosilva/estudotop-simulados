@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   Bell,
-  ChevronDown,
   ClipboardList,
   Home,
   LifeBuoy,
@@ -173,10 +172,7 @@ export default function Header({
                 </button>
               )}
 
-              <button
-                type="button"
-                className="inline-flex h-[46px] shrink-0 items-center gap-[10px] px-2 text-[15px] font-extrabold text-white/[0.90] transition hover:text-white xl:h-[42px] xl:gap-2 xl:text-[13.5px] 2xl:h-[46px] 2xl:gap-[10px] 2xl:text-[15px]"
-              >
+              <div className="inline-flex h-[46px] shrink-0 items-center gap-[10px] px-2 text-[15px] font-extrabold text-white/[0.90] xl:h-[42px] xl:gap-2 xl:text-[13.5px] 2xl:h-[46px] 2xl:gap-[10px] 2xl:text-[15px]">
                 {profile?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -190,8 +186,7 @@ export default function Header({
                   </span>
                 )}
                 <span className="max-w-[120px] truncate xl:max-w-[90px] 2xl:max-w-[120px]">{(profile?.full_name || "Aluno").split(/\s+/)[0]}</span>
-                <ChevronDown size={16} className="shrink-0 text-white/[0.62]" />
-              </button>
+              </div>
 
               <button
                 type="button"

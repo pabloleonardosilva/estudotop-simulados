@@ -19,6 +19,7 @@ import {
   FilePen,
   Filter,
   Gauge,
+  History,
   KeyRound,
   Layers,
   ListChecks,
@@ -48,7 +49,7 @@ import PremiumLoadingOverlay from "@/app/components/ui/PremiumLoadingOverlay";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { formatCpf } from "@/lib/utils/cpf";
-import type { ActivityLog, AvailableJornada, StudentDetail, StudentJornada, StudentJornadaScheduleItem, StudentSystemActivity, StudentUsageSession } from "./page";
+import type { ActivityLog, AvailableJornada, StudentDetail, StudentEmailHistoryItem, StudentJornada, StudentJornadaScheduleItem, StudentSystemActivity, StudentUsageSession } from "./page";
 
 // ── Formatadores ─────────────────────────────────────────────────────────────
 
@@ -1352,6 +1353,7 @@ export default function AlunoAdminDetalheClient({
   systemActivities,
   jornadas,
   availableJornadas,
+  emailHistory,
 }: {
   student: StudentDetail;
   activityLog: ActivityLog[];
@@ -1359,6 +1361,7 @@ export default function AlunoAdminDetalheClient({
   systemActivities: StudentSystemActivity[];
   jornadas: StudentJornada[];
   availableJornadas: AvailableJornada[];
+  emailHistory: StudentEmailHistoryItem[];
 }) {
   const router = useRouter();
 
@@ -1393,6 +1396,7 @@ export default function AlunoAdminDetalheClient({
   const [resetAttemptsTarget, setResetAttemptsTarget] = useState<{ jornada: StudentJornada; item: StudentJornadaScheduleItem } | null>(null);
 
   const [resendEmailModal, setResendEmailModal] = useState(false);
+  const [resendEmailTab, setResendEmailTab] = useState<"emails" | "history">("emails");
   const [selectedResendOption, setSelectedResendOption] = useState("");
   const [sendingResendEmail, setSendingResendEmail] = useState(false);
   const [localJornadas, setLocalJornadas] = useState<StudentJornada[]>(jornadas);
@@ -1639,7 +1643,6 @@ export default function AlunoAdminDetalheClient({
         const data = (await res.json()) as { ok: boolean; message: string };
         if (!data.ok) throw new Error(data.message || "Erro ao reenviar e-mail de boas-vindas.");
         setFeedback({ type: "success", message: data.message || "E-mail de boas-vindas reenviado com sucesso." });
-        router.refresh();
       } else if (selectedResendOption.startsWith("jornada:")) {
         const jornadaId = selectedResendOption.replace("jornada:", "");
         const res = await adminFetch(`/api/admin/students/${student.id}/resend-jornada-email`, {
@@ -1661,6 +1664,7 @@ export default function AlunoAdminDetalheClient({
         if (!data.ok) throw new Error(data.message || "Erro ao reenviar e-mail de simulado liberado.");
         setFeedback({ type: "success", message: data.message || "E-mail de simulado liberado reenviado com sucesso." });
       }
+      router.refresh();
       setResendEmailModal(false);
       setSelectedResendOption("");
     } catch (error) {
@@ -1908,7 +1912,7 @@ export default function AlunoAdminDetalheClient({
                 className="!h-[46px] !rounded-[14px] !border-blue-300/30 !bg-[linear-gradient(180deg,rgba(18,35,57,0.96),rgba(10,24,42,0.96))] !px-[22px] !text-[13px] !font-bold !text-slate-100 !shadow-[0_10px_26px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] hover:!border-blue-200/45"
                 variant="secondary"
                 icon={<Mail size={16} />}
-                onClick={() => { setResendEmailModal(true); setFeedback(null); }}
+                onClick={() => { setResendEmailModal(true); setResendEmailTab("emails"); setFeedback(null); }}
               >
                 Reenvio de E-mails
               </PremiumButton>
@@ -2843,13 +2847,14 @@ export default function AlunoAdminDetalheClient({
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-400">Central de e-mails</p>
                 <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Reenvio de e-mails</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                  Escolha exatamente qual comunicação deseja reenviar para <span className="font-bold text-white">{student.name}</span>.
+                  Reenvie uma comunicação ou consulte os envios registrados para <span className="font-bold text-white">{student.name}</span>.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   setResendEmailModal(false);
+                  setResendEmailTab("emails");
                   setSelectedResendOption("");
                 }}
                 className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3 text-white/35 transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white/70"
@@ -2859,7 +2864,39 @@ export default function AlunoAdminDetalheClient({
               </button>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-y-auto px-7 py-6 md:px-8">
+            <div className="flex gap-2 border-b border-white/[0.08] bg-black/10 px-7 pt-4 md:px-8">
+              <button
+                type="button"
+                onClick={() => setResendEmailTab("emails")}
+                className={`inline-flex h-11 items-center gap-2 rounded-t-xl border-b-2 px-4 text-sm font-black transition ${
+                  resendEmailTab === "emails"
+                    ? "border-orange-400 bg-orange-500/[0.10] text-orange-200"
+                    : "border-transparent text-white/40 hover:bg-white/[0.04] hover:text-white/70"
+                }`}
+              >
+                <Mail size={16} />
+                E-mails
+              </button>
+              <button
+                type="button"
+                onClick={() => setResendEmailTab("history")}
+                className={`inline-flex h-11 items-center gap-2 rounded-t-xl border-b-2 px-4 text-sm font-black transition ${
+                  resendEmailTab === "history"
+                    ? "border-orange-400 bg-orange-500/[0.10] text-orange-200"
+                    : "border-transparent text-white/40 hover:bg-white/[0.04] hover:text-white/70"
+                }`}
+              >
+                <History size={16} />
+                Histórico
+                <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-white/55">
+                  {emailHistory.length}
+                </span>
+              </button>
+            </div>
+
+            {resendEmailTab === "emails" ? (
+              <>
+                <div className="flex-1 space-y-6 overflow-y-auto px-7 py-6 md:px-8">
               <div className="grid gap-4 md:grid-cols-2">
                 <ResendEmailCard
                   active={selectedResendOption === "welcome"}
@@ -2953,6 +2990,7 @@ export default function AlunoAdminDetalheClient({
                 className="!h-[50px] !rounded-[14px] !border-white/[0.12] !bg-white/[0.04] !text-slate-100 hover:!bg-white/[0.07]"
                 onClick={() => {
                   setResendEmailModal(false);
+                  setResendEmailTab("emails");
                   setSelectedResendOption("");
                 }}
                 disabled={sendingResendEmail}
@@ -2968,6 +3006,56 @@ export default function AlunoAdminDetalheClient({
                 {sendingResendEmail ? "Enviando…" : "Reenviar e-mail"}
               </PremiumButton>
             </div>
+              </>
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto px-7 py-6 md:px-8">
+                  <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/32">Linha do tempo</p>
+                      <h3 className="mt-1 text-lg font-black text-white">Histórico de e-mails</h3>
+                    </div>
+                    <p className="text-xs font-semibold text-white/38">Do primeiro ao mais recente · {student.email}</p>
+                  </div>
+
+                  {emailHistory.length === 0 ? (
+                    <div className="flex min-h-52 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.10] bg-white/[0.025] px-6 text-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-white/35">
+                        <History size={21} />
+                      </span>
+                      <p className="mt-4 text-sm font-black text-white/70">Nenhum envio registrado</p>
+                      <p className="mt-1 max-w-md text-xs leading-5 text-white/38">
+                        O sistema ainda não possui um registro interno de e-mail enviado para este aluno.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative space-y-3 before:absolute before:bottom-6 before:left-[21px] before:top-6 before:w-px before:bg-gradient-to-b before:from-orange-400/35 before:via-white/10 before:to-transparent">
+                      {emailHistory.map((item) => (
+                        <EmailHistoryCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-5 rounded-2xl border border-blue-300/15 bg-blue-500/[0.055] px-5 py-4 text-xs leading-5 text-blue-100/65">
+                    Este histórico reúne os registros internos disponíveis no sistema. Ele confirma tentativas e envios registrados, não a abertura da mensagem pelo destinatário.
+                  </div>
+                </div>
+
+                <div className="flex justify-end border-t border-white/[0.08] bg-black/15 px-7 py-5 md:px-8">
+                  <PremiumButton
+                    variant="secondary"
+                    className="!h-[50px] !rounded-[14px] !border-white/[0.12] !bg-white/[0.04] !text-slate-100 hover:!bg-white/[0.07]"
+                    onClick={() => {
+                      setResendEmailModal(false);
+                      setResendEmailTab("emails");
+                      setSelectedResendOption("");
+                    }}
+                  >
+                    Fechar
+                  </PremiumButton>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3017,6 +3105,48 @@ function ResendEmailCard({
         </span>
       </div>
     </button>
+  );
+}
+
+function EmailHistoryCard({ item }: { item: StudentEmailHistoryItem }) {
+  const failed = item.status === "failed";
+  const categoryLabel = {
+    welcome: "Boas-vindas",
+    jornada: "Jornada",
+    simulado: "Simulado",
+    password: "Senha",
+  }[item.category];
+
+  return (
+    <div className="relative flex gap-4 rounded-[1.35rem] border border-white/[0.08] bg-white/[0.035] p-4 shadow-lg shadow-black/10">
+      <span className={`relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+        failed
+          ? "border-red-300/25 bg-red-500/[0.12] text-red-300"
+          : "border-emerald-300/25 bg-emerald-500/[0.12] text-emerald-300"
+      }`}>
+        {failed ? <AlertTriangle size={18} /> : <Mail size={18} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/32">{categoryLabel}</p>
+            <h4 className="mt-1 truncate text-sm font-black text-white">{item.title}</h4>
+          </div>
+          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+            failed
+              ? "border-red-300/20 bg-red-500/[0.10] text-red-300"
+              : "border-emerald-300/20 bg-emerald-500/[0.10] text-emerald-300"
+          }`}>
+            {failed ? "Falhou" : "Enviado"}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-white/48">{item.description}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold text-white/35">
+          <span className="inline-flex items-center gap-1.5"><Clock3 size={12} /> {fmtDateTime(item.occurred_at)}</span>
+          <span>{item.source}</span>
+        </div>
+      </div>
+    </div>
   );
 }
 

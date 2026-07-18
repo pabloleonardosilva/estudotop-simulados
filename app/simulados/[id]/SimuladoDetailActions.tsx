@@ -10,7 +10,7 @@ import QuestionActionModal, { type QuestionActionModalState } from "../../compon
 import { downloadSimuladoAdminPdf } from "@/app/lib/pdf/simulado-admin-pdf";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import SimuladoCard from "../components/SimuladoCard";
-import { scoringLabel } from "../utils";
+import { resolveOwlHelpLimit, scoringLabel } from "../utils";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -46,15 +46,10 @@ type SimuladoDetailActionsProps = {
     scoring_model?: "traditional" | "cebraspe" | string | null;
     question_count?: number | null;
     owl_help_enabled?: boolean | null;
+    owl_help_limit?: number | null;
   };
   questions: SimuladoPdfRelation[];
 };
-
-function getOwlHelpLimit(questionCount?: number | null) {
-  const total = Number(questionCount || 0);
-  if (total <= 0) return 1;
-  return Math.max(1, Math.floor(total * 0.1));
-}
 
 export default function SimuladoDetailActions({ simulado, questions }: SimuladoDetailActionsProps) {
   const router = useRouter();
@@ -140,7 +135,7 @@ export default function SimuladoDetailActions({ simulado, questions }: SimuladoD
         scoringModel: scoringLabel(simulado.scoring_model as any),
         questionCount: simulado.question_count ?? questions.length,
         owlHelpEnabled: Boolean(simulado.owl_help_enabled),
-        owlHelpLimit: getOwlHelpLimit(simulado.question_count ?? questions.length),
+        owlHelpLimit: resolveOwlHelpLimit(simulado.owl_help_limit, simulado.question_count ?? questions.length),
       },
       questions: questions.map((relation, index) => ({
         orderNumber: index + 1,

@@ -33,6 +33,7 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
+import { resolveOwlHelpLimit } from "../../utils";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -56,6 +57,7 @@ type SimuladoMeta = {
   allow_blank_answers: boolean;
   scoring_model: "traditional" | "cebraspe";
   owl_help_enabled?: boolean;
+  owl_help_limit?: number | null;
 };
 
 type PreviewQuestion = {
@@ -118,11 +120,6 @@ function scoringDescription(model: "traditional" | "cebraspe"): string {
     : "Modelo tradicional: acerto soma, erro e branco não pontuam.";
 }
 
-function getOwlHelpLimit(totalQuestions: number): number {
-  if (!totalQuestions || totalQuestions <= 0) return 1;
-  return Math.max(1, Math.floor(totalQuestions * 0.1));
-}
-
 function isOwlEligibleQuestion(question?: PreviewQuestion | null): boolean {
   if (!question || question.question_type === "true_false") return false;
   const wrongAlternatives = question.alternatives.filter((alt) => !alt.is_correct);
@@ -182,6 +179,7 @@ export default function PreviewSimuladoClient({
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model || "traditional",
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
+    owl_help_limit: simulado.owl_help_limit ?? null,
   };
 
   const [phase, setPhase] = useState<Phase>("rules");
@@ -318,7 +316,10 @@ export default function PreviewSimuladoClient({
   );
 
   const currentQuestion = questions[currentIndex] || null;
-  const owlHelpLimit = useMemo(() => getOwlHelpLimit(totalQuestions), [totalQuestions]);
+  const owlHelpLimit = useMemo(
+    () => resolveOwlHelpLimit(meta.owl_help_limit, totalQuestions),
+    [meta.owl_help_limit, totalQuestions],
+  );
   const owlHelpUsedCount = Object.keys(owlHelpUsed).length;
   const owlHelpRemaining = meta.owl_help_enabled ? Math.max(owlHelpLimit - owlHelpUsedCount, 0) : 0;
 

@@ -85,6 +85,7 @@ export type Simulado = {
   allow_blank_answers: boolean;
   scoring_model: ScoringModel;
   owl_help_enabled?: boolean | null;
+  owl_help_limit?: number | null;
   created_at: string;
   updated_at: string;
   published_at?: string | null;
@@ -117,4 +118,5 @@ export type SimuladoPayload = {
   allow_blank_answers: boolean;
   scoring_model: ScoringModel;
   owl_help_enabled?: boolean | null;
+  owl_help_limit?: number | null;
 };

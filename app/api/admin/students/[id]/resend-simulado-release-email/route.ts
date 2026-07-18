@@ -155,7 +155,7 @@ export async function POST(
       .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })
       .eq("id", typedRow.id);
 
-    void logAdminAction({ adminUserId: admin.id, action: "admin.student.simulado_release_email_resent", entityType: "student_jornada_simulado", entityId: studentJornadaSimuladoId, request, metadata: { student_id: studentId, student_jornada_id: studentJornadaId } });
+    await logAdminAction({ adminUserId: admin.id, action: "admin.student.simulado_release_email_resent", entityType: "student_jornada_simulado", entityId: studentJornadaSimuladoId, request, metadata: { student_id: studentId, student_jornada_id: studentJornadaId } });
 
     return NextResponse.json({
       ok: true,

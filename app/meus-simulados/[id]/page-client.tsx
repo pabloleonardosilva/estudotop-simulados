@@ -30,8 +30,9 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { supabase } from "@/app/lib/supabase/client";
+import { resolveOwlHelpLimit } from "@/app/simulados/utils";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumModal from "../../components/ui/PremiumModal";
 import TopCoinRewardModal, { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
@@ -68,6 +69,7 @@ type InitialSimulado = {
   scoring_model: "traditional" | "cebraspe";
   navigation_type?: "open" | "closed" | null;
   owl_help_enabled?: boolean | null;
+  owl_help_limit?: number | null;
 };
 
 type AttemptData = {
@@ -141,12 +143,6 @@ function normalizeHtml(value?: string | null): string {
 
 function isTrueFalseQuestionType(value?: string | null): boolean {
   return String(value || "").toLowerCase() === "true_false";
-}
-
-// Mesma fórmula do backend (owl-help/route.ts): 10% das questões, mínimo 1.
-function getOwlHelpLimit(totalQuestions: number): number {
-  if (!totalQuestions || totalQuestions <= 0) return 1;
-  return Math.max(1, Math.floor(totalQuestions * 0.1));
 }
 
 function isOwlEligibleQuestion(question?: OrderedQuestion | null): boolean {
@@ -912,7 +908,7 @@ export default function SimuladoExperience({
   const isInstantMode = simulado.feedback_mode === "instant" || Boolean(simulado.instant_feedback_enabled);
 
   const owlHelpEnabled = Boolean(simulado.owl_help_enabled);
-  const owlHelpLimit = getOwlHelpLimit(questions.length || simulado.question_count);
+  const owlHelpLimit = resolveOwlHelpLimit(simulado.owl_help_limit, questions.length || simulado.question_count);
   const owlHelpRemaining = owlHelpEnabled ? Math.max(owlHelpLimit - owlHelpUsedCount, 0) : 0;
   const currentOwlEliminatedIds = currentQuestion
     ? owlHelpData[currentQuestion.simulado_question_id] || []
@@ -920,35 +916,39 @@ export default function SimuladoExperience({
   const currentQuestionLocked = Boolean(
     currentQuestion && answers[currentQuestion.simulado_question_id]?.isLocked,
   );
-  // Regra dos 10 segundos: a coruja só surge após o aluno ficar parado na
-  // mesma questão. A chave abaixo muda a cada interação relevante (trocar de
-  // questão, responder/alterar resposta, tesourinha, caderno, anotação,
-  // abrir/fechar modais, usar a ajuda); mudar a chave esconde a coruja na hora
-  // (a chave armada pelo timer deixa de bater) e reinicia a contagem.
-  const currentAnswer = currentQuestion ? answers[currentQuestion.simulado_question_id] : undefined;
-  const owlIdleKey = currentQuestion
-    ? [
-        currentQuestion.simulado_question_id,
-        currentAnswer?.alternativeId || "",
-        currentAnswer?.isLocked ? 1 : 0,
-        (eliminatedAlternatives[currentQuestion.simulado_question_id] || []).length,
-        notesOpen ? 1 : 0,
-        (notesByQuestion[currentQuestion.simulado_question_id] || "").length,
-        currentOwlEliminatedIds.length,
-        owlHelpModalOpen ? 1 : 0,
-        confirmFinish ? 1 : 0,
-        instantResultQuestionId ? 1 : 0,
-      ].join("|")
+  const currentQuestionOwlEligible = isOwlEligibleQuestion(currentQuestion);
+  const owlQuestionKey = attempt && currentQuestion
+    ? `${attempt.id}:${currentQuestion.simulado_question_id}`
     : "";
 
   useEffect(() => {
-    if (phase !== "in_progress" || !owlIdleKey) return;
-    if (owlHelpModalOpen || confirmFinish || instantResultQuestionId || notesOpen) return;
-    const timer = window.setTimeout(() => setOwlPromptShownForKey(owlIdleKey), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [phase, owlIdleKey, owlHelpModalOpen, confirmFinish, instantResultQuestionId, notesOpen]);
+    if (
+      phase !== "in_progress"
+      || !owlQuestionKey
+      || !owlHelpEnabled
+      || owlHelpRemaining <= 0
+      || !currentQuestionOwlEligible
+      || currentOwlEliminatedIds.length > 0
+      || currentQuestionLocked
+      || owlHelpModalOpen
+      || owlPromptShownForKey === owlQuestionKey
+    ) return;
 
-  const owlPromptVisible = Boolean(owlIdleKey) && owlPromptShownForKey === owlIdleKey;
+    const timer = window.setTimeout(() => setOwlPromptShownForKey(owlQuestionKey), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    phase,
+    owlQuestionKey,
+    owlHelpEnabled,
+    owlHelpRemaining,
+    currentQuestionOwlEligible,
+    currentOwlEliminatedIds.length,
+    currentQuestionLocked,
+    owlHelpModalOpen,
+    owlPromptShownForKey,
+  ]);
+
+  const owlPromptVisible = Boolean(owlQuestionKey) && owlPromptShownForKey === owlQuestionKey;
 
   const showOwlHelper =
     owlPromptVisible &&
@@ -956,7 +956,7 @@ export default function SimuladoExperience({
     phase === "in_progress" &&
     Boolean(attempt) &&
     Boolean(currentQuestion) &&
-    isOwlEligibleQuestion(currentQuestion) &&
+    currentQuestionOwlEligible &&
     owlHelpRemaining > 0 &&
     currentOwlEliminatedIds.length === 0 &&
     !currentQuestionLocked &&
@@ -1011,14 +1011,17 @@ export default function SimuladoExperience({
   }
 
   const goPrev = () => {
+    setOwlPromptShownForKey(null);
     setCurrentIndex((idx) => Math.max(0, idx - 1));
     questionStartRef.current = Date.now();
   };
   const goNext = () => {
+    setOwlPromptShownForKey(null);
     setCurrentIndex((idx) => Math.min(questions.length - 1, idx + 1));
     questionStartRef.current = Date.now();
   };
   const goTo = (index: number) => {
+    setOwlPromptShownForKey(null);
     setCurrentIndex(index);
     questionStartRef.current = Date.now();
   };
@@ -1179,11 +1182,12 @@ export default function SimuladoExperience({
                 animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
-                className="overflow-hidden"
+                className="relative z-30 overflow-visible"
               >
                 <OwlHelpFlyingPrompt
                   remaining={owlHelpRemaining}
                   onClick={() => {
+                    setOwlPromptShownForKey(null);
                     setOwlHelpError(null);
                     setOwlHelpModalOpen(true);
                   }}
@@ -1327,34 +1331,39 @@ function OwlHelpFlyingPrompt({
   onClick: () => void;
 }) {
   const [hasLanded, setHasLanded] = useState(false);
+  const reduceMotion = useReducedMotion();
   const label =
     remaining === 1
       ? "Você tem direito a 1 ajuda. Clique aqui!"
       : `Você tem direito a ${remaining} ajudas. Clique aqui!`;
 
   return (
-    <div className="pointer-events-none flex justify-end overflow-hidden px-1 pb-1 pt-4 md:px-3">
+    <div className="pointer-events-none flex min-h-[126px] items-end justify-center overflow-visible px-1 pb-1 pt-4 md:px-3">
       <motion.button
         type="button"
         onClick={onClick}
         aria-label="Abrir Ajuda da Coruja"
-        initial={{ x: 480, y: -120, opacity: 0 }}
-        animate={{
-          x: [480, 310, 150, 45, 0],
-          y: [-120, -92, -46, -12, 0],
-          rotate: [-11, -8, -4, 2, 0],
-          opacity: [0, 1, 1, 1, 1],
-        }}
-        transition={{ duration: 1.6, times: [0, 0.28, 0.58, 0.85, 1], ease: "easeOut" }}
+        initial={reduceMotion ? { opacity: 0 } : { y: "-38vh", opacity: 0, scale: 1.6 }}
+        animate={reduceMotion
+          ? { y: 0, opacity: 1, scale: 1 }
+          : {
+              y: ["-38vh", "-38vh", "-16vh", 0],
+              scale: [1.6, 1.6, 1.18, 1],
+              rotate: [0, -3, 2, 0],
+              opacity: [0, 1, 1, 1],
+            }}
+        transition={reduceMotion
+          ? { duration: 0.2 }
+          : { duration: 2.15, times: [0, 0.28, 0.72, 1], ease: "easeInOut" }}
         onAnimationComplete={() => setHasLanded(true)}
         className="pointer-events-auto group relative flex items-center gap-3 focus:outline-none"
       >
         <AnimatePresence>
           {hasLanded && (
             <motion.span
-              initial={{ opacity: 0, scale: 0.82, x: 10 }}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.82, x: 10 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
-              transition={{ duration: 0.28, ease: "easeOut" }}
+              transition={{ duration: reduceMotion ? 0 : 0.28, ease: "easeOut" }}
               className="relative -mt-8 rounded-2xl border border-orange-200 bg-white px-4 py-2.5 text-left shadow-[0_14px_34px_rgba(15,23,42,0.14)] transition duration-200 group-hover:-translate-y-0.5 group-hover:border-orange-300"
             >
               <span className="block text-sm font-black text-slate-950">{label}</span>
@@ -1372,16 +1381,20 @@ function OwlHelpFlyingPrompt({
         <span className="relative flex shrink-0 flex-col items-center" aria-hidden="true">
           <motion.span
             animate={
-              hasLanded
+              reduceMotion
+                ? { y: 0, scaleY: 1, rotate: 0 }
+                : hasLanded
                 ? { y: [0, -4, 0], scaleY: [1, 1.02, 1], rotate: 0 }
                 : { y: [0, -8, 3, -6, 0], scaleY: [1, 0.93, 1.05, 0.94, 1], rotate: [0, -3, 2, -2, 0] }
             }
             transition={
-              hasLanded
+              reduceMotion
+                ? { duration: 0 }
+                : hasLanded
                 ? { repeat: Infinity, duration: 3, ease: "easeInOut" }
                 : { repeat: Infinity, duration: 0.42, ease: "easeInOut" }
             }
-            className="relative z-10 block h-20 w-20 overflow-hidden rounded-full border-2 border-orange-300 bg-white shadow-[0_16px_36px_rgba(255,138,0,0.26)] transition duration-200 group-hover:scale-105"
+            className="relative z-10 block h-24 w-24 overflow-hidden rounded-full border-2 border-orange-300 bg-white shadow-[0_16px_36px_rgba(255,138,0,0.26)] transition duration-200 group-hover:scale-105"
           >
             <img
               src="/images/coruja-ajuda.jpg"
@@ -1391,12 +1404,16 @@ function OwlHelpFlyingPrompt({
           </motion.span>
           <motion.span
             animate={
-              hasLanded
+              reduceMotion
+                ? { scaleX: 1, opacity: 0.32 }
+                : hasLanded
                 ? { scaleX: [1, 0.88, 1], opacity: [0.32, 0.24, 0.32] }
                 : { scaleX: [0.62, 0.5, 0.68, 0.52, 0.62], opacity: [0.16, 0.1, 0.18, 0.11, 0.16] }
             }
             transition={
-              hasLanded
+              reduceMotion
+                ? { duration: 0 }
+                : hasLanded
                 ? { repeat: Infinity, duration: 3, ease: "easeInOut" }
                 : { repeat: Infinity, duration: 0.42, ease: "easeInOut" }
             }

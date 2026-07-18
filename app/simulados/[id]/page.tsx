@@ -29,6 +29,7 @@ import {
   attemptsLabel,
   difficultyLabel,
   formatDateTime,
+  resolveOwlHelpLimit,
   scoringLabel,
   statusClass,
   statusLabel,
@@ -162,12 +163,6 @@ function formatDuration(seconds: number | null | undefined): string {
   const s = safe % 60;
   if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function getOwlHelpLimit(questionCount?: number | null) {
-  const total = Number(questionCount || 0);
-  if (total <= 0) return 1;
-  return Math.max(1, Math.floor(total * 0.1));
 }
 
 function normalizeSubjectDisplayName(value: string | null | undefined) {
@@ -433,7 +428,7 @@ export default async function SimuladoDetailPage({
               <Summary label="Pontuação" value={scoringLabel(simulado.scoring_model)} icon={<Trophy size={15} />} />
               <Summary label="Status" value={statusLabel(simulado.status)} icon={<FileQuestion size={15} />} />
               <Summary label="Tentativas" value={attemptsLabel(simulado.max_attempts)} icon={<RotateCcw size={15} />} />
-              <Summary label="Ajuda da Coruja" value={(simulado as any).owl_help_enabled ? `${getOwlHelpLimit(simulado.question_count || questions.length)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean((simulado as any).owl_help_enabled)} />
+              <Summary label="Ajuda da Coruja" value={(simulado as any).owl_help_enabled ? `${resolveOwlHelpLimit((simulado as any).owl_help_limit, simulado.question_count || questions.length)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean((simulado as any).owl_help_enabled)} />
             </div>
           </div>
 

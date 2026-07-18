@@ -81,7 +81,7 @@ export async function POST(
       .update({ welcome_email_sent_at: new Date().toISOString(), welcome_email_error: null })
       .eq("id", enrollment.id);
 
-    void logAdminAction({ adminUserId: admin.id, action: "admin.student.jornada_email_resent", entityType: "student", entityId: id, request, metadata: { jornada_id: jornadaId } });
+    await logAdminAction({ adminUserId: admin.id, action: "admin.student.jornada_email_resent", entityType: "student", entityId: id, request, metadata: { jornada_id: jornadaId } });
 
     return NextResponse.json({
       ok: true,

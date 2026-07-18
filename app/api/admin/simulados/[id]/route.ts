@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
+import { getDefaultOwlHelpLimit } from "@/app/simulados/utils";
 
 function clean(value: unknown) {
   return String(value || "").trim();
@@ -40,6 +41,15 @@ function parseQuestionCount(value: unknown) {
   return Number.isInteger(count) && count >= 0 ? count : undefined;
 }
 
+function parseOwlHelpLimit(enabled: boolean, value: unknown, questionCount: number) {
+  if (!enabled) return null;
+  if (value === null || value === undefined || value === "") {
+    return getDefaultOwlHelpLimit(questionCount);
+  }
+  const limit = Number(value);
+  return Number.isInteger(limit) && limit > 0 ? limit : undefined;
+}
+
 function parseScoringModel(value: unknown) {
   const model = clean(value) || "traditional";
   return ["traditional", "cebraspe"].includes(model) ? model : null;
@@ -64,6 +74,10 @@ export async function PATCH(
     const title = clean(body.title);
     const status = parseStatus(body.status);
     const questionCount = parseQuestionCount(body.question_count);
+    const owlHelpEnabled = body.owl_help_enabled === true;
+    const owlHelpLimit = questionCount === undefined
+      ? undefined
+      : parseOwlHelpLimit(owlHelpEnabled, body.owl_help_limit, questionCount);
     const timeLimit = parseTimeLimit(body.time_limit_minutes);
     const maxAttempts = parseMaxAttempts(body.max_attempts);
     const scoringModel = parseScoringModel(body.scoring_model);
@@ -83,6 +97,10 @@ export async function PATCH(
 
     if (questionCount === undefined) {
       return NextResponse.json({ ok: false, message: "Numero de questoes invalido." }, { status: 400 });
+    }
+
+    if (owlHelpLimit === undefined) {
+      return NextResponse.json({ ok: false, message: "A quantidade de ajudas da Coruja deve ser um número inteiro maior que zero." }, { status: 400 });
     }
 
     if (maxAttempts === undefined) {
@@ -169,7 +187,8 @@ export async function PATCH(
         shuffle_alternatives: body.shuffle_alternatives ?? false,
         allow_blank_answers: body.allow_blank_answers ?? false,
         scoring_model: scoringModel,
-        owl_help_enabled: Boolean(body.owl_help_enabled),
+        owl_help_enabled: owlHelpEnabled,
+        owl_help_limit: owlHelpLimit,
         published_at: status === "published" && !current.published_at ? now : current.published_at,
         archived_at: status === "archived" && !current.archived_at ? now : status !== "archived" ? null : current.archived_at,
       })

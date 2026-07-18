@@ -3,17 +3,24 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
-import { LockKeyhole, Target } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Eye, EyeOff, LockKeyhole, Target } from "lucide-react";
 import { supabase } from "../lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const passwordRevealTimerRef = useRef<number | null>(null);
 
+  useEffect(() => () => {
+    if (passwordRevealTimerRef.current !== null) {
+      window.clearTimeout(passwordRevealTimerRef.current);
+    }
+  }, []);
 
   function logClientSecurityEvent(payload: Record<string, unknown>) {
     fetch("/api/system/security-event", {
@@ -21,6 +28,24 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ route: "/login", ...payload }),
     }).catch(() => undefined);
+  }
+
+  function togglePasswordVisibility() {
+    if (passwordRevealTimerRef.current !== null) {
+      window.clearTimeout(passwordRevealTimerRef.current);
+      passwordRevealTimerRef.current = null;
+    }
+
+    if (showPassword) {
+      setShowPassword(false);
+      return;
+    }
+
+    setShowPassword(true);
+    passwordRevealTimerRef.current = window.setTimeout(() => {
+      setShowPassword(false);
+      passwordRevealTimerRef.current = null;
+    }, 10_000);
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
@@ -221,15 +246,26 @@ export default function LoginPage() {
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
-              <input
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
-                placeholder="Senha"
-                aria-label="Senha"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
+              <div className="relative">
+                <input
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 pr-14 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
+                  placeholder="Senha"
+                  aria-label="Senha"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={togglePasswordVisibility}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha por 10 segundos"}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-2 my-auto inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-400/60"
+                >
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                </button>
+              </div>
 
               {errorMessage && (
                 <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">

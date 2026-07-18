@@ -727,10 +727,26 @@ Escopo previsto:
 ### Ajuda da Coruja na execução real + modal de preparação do feedback — 2026-07-16
 
 - **Ajuda da Coruja corrigida em `/meus-simulados/[id]`:** `owl_help_enabled` propagado ao cliente (page.tsx, `GET /api/student/simulados/[id]` e snapshot da rota de tentativas); estado restaurado ao retomar tentativa; API `owl-help` passou a rejeitar questões certo/errado e questões com menos de duas alternativas erradas no servidor.
-- **Coruja voadora premium:** componente `OwlHelpFlyingPrompt` com regra de 10 segundos de inatividade na questão, voo em arco com batida de asas simulada, pouso com respiração/sombra dinâmica e balão ligado ao bico ("Você tem direito a X ajuda(s). Clique aqui!"). Asset oficial `public/images/coruja-ajuda.jpg`.
+- **Coruja voadora premium:** componente `OwlHelpFlyingPrompt` com regra de 10 segundos na mesma questão, aparição grande no centro com fade, deslocamento até a faixa inferior, pouso com respiração/sombra dinâmica e balão ligado ao bico ("Você tem direito a X ajuda(s). Clique aqui!"). Interações na questão não reiniciam a contagem. Asset oficial `public/images/coruja-ajuda.jpg`.
 - **Modal de preparação do feedback:** ao abrir o resultado da tentativa recém-finalizada (`?attemptId=`), o `FeedbackPreparingModal` exibe "Nossas corujas estão reunidas montando seu feedback" com contagem regressiva 5 → 0 e fechamento automático imediato; a contagem roda enquanto o resultado carrega. Acessos sem `attemptId` não exibem o modal.
 - Detalhes nos documentos oficiais `docs/Sprint-simulados.md` e `docs/Sprint-resultados.md` (seções 2026-07-16).
 - Nenhuma migration foi criada ou alterada.
+
+### Limite manual da Ajuda da Coruja — 2026-07-18
+
+- Admin define um limite inteiro positivo ao habilitar a ajuda; 10% das questões, mínimo 1, é somente sugestão inicial e fallback para simulados antigos sem limite salvo.
+- O limite é propagado ao preview, PDF, execução do aluno, snapshot da tentativa, detalhe da Jornada e API `owl-help`; a validação efetiva e a escolha das alternativas erradas continuam no servidor.
+- A chamada aparece após 10 segundos na mesma questão, sem reiniciar por mouse, resposta, tesourinha ou caderno, e anima do centro grande com fade até o pouso inferior.
+- Migration preparada e não executada: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
+- Submit, respostas, timer, anti-cheat, TopCoins, resultado pedagógico e regras de Jornada permanecem inalterados.
+
+### Refinamentos de interface e histórico de e-mails — 2026-07-18
+
+- O limite da Ajuda da Coruja passou a aparecer dentro do próprio card de habilitação, com campo numérico compacto e sugestão discreta.
+- O login ganhou revelação de senha por botão acessível; após 10 segundos a senha volta automaticamente a ficar mascarada.
+- O header do aluno não exibe mais a seta de dropdown nem trata o nome como botão enquanto não existir menu associado.
+- O resultado do simulado preserva o texto `Tentativa concluída`.
+- O modal administrativo **Reenvio de E-mails** ganhou as abas **E-mails** e **Histórico**. A linha do tempo usa registros internos existentes (`student_activity_log`, `admin_audit_logs` e timestamps de alunos/Jornadas/simulados), em ordem cronológica do primeiro envio ao mais recente, sem consultar o provedor e sem criar migration adicional.
 
 ### Voltar das instruções retorna à Jornada na aba Simulados — 2026-07-16
 

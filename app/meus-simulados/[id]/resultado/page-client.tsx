@@ -611,7 +611,7 @@ export default function ResultadoClient({
               </div>
               <div className="min-w-0">
                 <h1 className="text-[29px] font-extrabold leading-tight tracking-[-0.03em] text-slate-950">Resultado do Simulado</h1>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">{payload.simulado.title} · tentativa concluída</p>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">{payload.simulado.title} · Tentativa concluída</p>
               </div>
             </div>
             <Link href={payload.jornada ? `/minhas-jornadas/${payload.jornada.student_jornada_id}` : "/meus-simulados"} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white/90 px-6 text-sm font-bold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-slate-300 hover:bg-white">

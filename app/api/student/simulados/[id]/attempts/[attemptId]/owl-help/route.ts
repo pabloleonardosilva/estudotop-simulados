@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSystemError } from "@/app/lib/server/auditLogger";
-
-function getOwlHelpLimit(totalQuestions: number) {
-  return Math.max(1, Math.floor(Math.max(0, totalQuestions) * 0.1));
-}
+import { resolveOwlHelpLimit } from "@/app/simulados/utils";
 
 function pickTwoWrong<T>(items: T[]) {
   const pool = [...items];
@@ -53,7 +50,7 @@ export async function POST(
 
   const { data: simulado, error: simuladoError } = await supabase
     .from("simulados")
-    .select("id, owl_help_enabled")
+    .select("id, owl_help_enabled, owl_help_limit")
     .eq("id", simuladoId)
     .single();
 
@@ -68,17 +65,17 @@ export async function POST(
   }
 
   const currentData = (attempt.owl_help_data && typeof attempt.owl_help_data === "object" ? attempt.owl_help_data : {}) as Record<string, string[]>;
+  const limit = resolveOwlHelpLimit(simulado.owl_help_limit, Number(attempt.total_questions || 0));
   if (Array.isArray(currentData[simuladoQuestionId])) {
     return NextResponse.json({
       ok: true,
       hiddenAlternativeIds: currentData[simuladoQuestionId],
       used: Number(attempt.owl_help_used_count || 0),
-      limit: getOwlHelpLimit(Number(attempt.total_questions || 0)),
+      limit,
       reused: true,
     });
   }
 
-  const limit = getOwlHelpLimit(Number(attempt.total_questions || 0));
   const used = Number(attempt.owl_help_used_count || 0);
   if (used >= limit) {
     return NextResponse.json({ ok: false, message: "Você já usou todas as ajudas disponíveis neste simulado." }, { status: 403 });

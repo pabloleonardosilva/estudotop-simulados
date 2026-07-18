@@ -111,6 +111,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           time_limit_minutes,
           max_attempts,
           owl_help_enabled,
+          owl_help_limit,
           status,
           disciplines:discipline_id(name)
         )
@@ -209,6 +210,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       time_limit_minutes: sim.time_limit_minutes ?? null,
       max_attempts: sim.max_attempts ?? null,
       owl_help_enabled: Boolean(sim.owl_help_enabled),
+      owl_help_limit: sim.owl_help_limit ?? null,
       attempts_used: limitAttempts.length,
       attempts_completed: completedAttempts.length,
       attempts_incomplete: incompleteAttempts.length,

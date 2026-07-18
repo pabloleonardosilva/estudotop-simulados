@@ -103,7 +103,7 @@ function richHtml(value?: string | null): string {
 }
 
 import type { BankQuestion, Discipline, ExamBoard, Simulado, SimuladoPayload, SimuladoQuestion, Subject } from "../../types";
-import { difficultyLabel, scoringLabel, stripHtml } from "../../utils";
+import { difficultyLabel, getDefaultOwlHelpLimit, resolveOwlHelpLimit, scoringLabel, stripHtml } from "../../utils";
 import { normalizeBoardComparableName } from "@/lib/utils/text";
 import { qCard } from "@/lib/ui/question-tokens";
 
@@ -132,13 +132,6 @@ function getQuestionAccuracyStats(question?: BankQuestion | null) {
     fullLabel: `${correct} acerto(s), ${wrong} erro(s), ${total} resposta(s) em simulados`,
   };
 }
-
-function getOwlHelpLimit(questionCount?: number | null) {
-  const total = Number(questionCount || 0);
-  if (total <= 0) return 1;
-  return Math.max(1, Math.floor(total * 0.1));
-}
-
 
 function isTrueFalseBankQuestion(question?: BankQuestion | null) {
   if (!question) return false;
@@ -241,6 +234,7 @@ function normalizeConfigSnapshot(payload: SimuladoPayload) {
     allow_blank_answers: Boolean(payload.allow_blank_answers),
     scoring_model: payload.scoring_model || "traditional",
     owl_help_enabled: Boolean(payload.owl_help_enabled),
+    owl_help_limit: payload.owl_help_enabled ? payload.owl_help_limit ?? null : null,
   });
 }
 
@@ -326,6 +320,9 @@ export default function EditarSimuladoClient({
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
+    owl_help_limit: simulado.owl_help_enabled
+      ? resolveOwlHelpLimit(simulado.owl_help_limit, simulado.question_count)
+      : null,
   });
   const [relations, setRelations] = useState(initialRelations || []);
   const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(() => normalizeConfigSnapshot({
@@ -347,6 +344,7 @@ export default function EditarSimuladoClient({
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
+    owl_help_limit: simulado.owl_help_limit ?? null,
   }));
   const [savedQuestionSnapshot, setSavedQuestionSnapshot] = useState(() => normalizeQuestionSnapshot(initialRelations || []));
 
@@ -552,6 +550,16 @@ export default function EditarSimuladoClient({
     });
   }
 
+  function updateOwlHelpEnabled(enabled: boolean) {
+    setForm((current) => ({
+      ...current,
+      owl_help_enabled: enabled,
+      owl_help_limit: enabled
+        ? resolveOwlHelpLimit(current.owl_help_limit, current.question_count)
+        : null,
+    }));
+  }
+
   async function save() {
     setFeedback(null);
 
@@ -562,6 +570,11 @@ export default function EditarSimuladoClient({
 
     if (form.question_count !== null && form.question_count !== undefined && (!Number.isInteger(form.question_count) || form.question_count <= 0)) {
       setFeedback({ type: "error", title: "Número de questões inválido", message: "Informe um número inteiro positivo maior que zero." });
+      return;
+    }
+
+    if (form.owl_help_enabled && (!Number.isInteger(Number(form.owl_help_limit)) || Number(form.owl_help_limit) < 1)) {
+      setFeedback({ type: "error", title: "Quantidade de ajudas inválida", message: "Informe um número inteiro maior que zero ou desabilite a Ajuda da Coruja." });
       return;
     }
 
@@ -1095,7 +1108,26 @@ export default function EditarSimuladoClient({
                   </PremiumSelect>
                 </div>
                 <Toggle label="Mostrar comentário do professor" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
-                <Toggle label="Ajuda da Coruja" value={Boolean(form.owl_help_enabled)} onChange={(value) => update("owl_help_enabled", value)} />
+                <Toggle label="Ajuda da Coruja" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
+                  {form.owl_help_enabled && (
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,0.42fr)] sm:items-end">
+                      <p className="text-xs font-semibold leading-5 text-slate-400">
+                        Sugestão automática: {getDefaultOwlHelpLimit(form.question_count)} ajuda(s). O número informado será o limite deste simulado.
+                      </p>
+                    <PremiumInput
+                      label="Quantidade de ajudas"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={form.owl_help_limit ?? ""}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => update("owl_help_limit", event.target.value ? Number(event.target.value) : null)}
+                      placeholder={String(getDefaultOwlHelpLimit(form.question_count))}
+                      variant="jornada"
+                      className="!h-10 !rounded-xl !border-orange-300/20 !bg-black/20 text-center !font-black"
+                    />
+                    </div>
+                  )}
+                </Toggle>
                 <Toggle label="Embaralhar questões" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
                 <Toggle label="Embaralhar alternativas" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
               </div>
@@ -1159,7 +1191,7 @@ export default function EditarSimuladoClient({
                 <Summary label="Tentativas" value={form.max_attempts ? String(form.max_attempts) : "Ilimitado"} icon={<RotateCcw size={15} />} />
                 <Summary label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Sem limite"} icon={<Clock3 size={15} />} />
                 <Summary label="Questões" value={form.question_count ? String(form.question_count) : String(relations.length || "Não definido")} icon={<Target size={15} />} />
-                <Summary label="Ajuda da Coruja" value={form.owl_help_enabled ? `${getOwlHelpLimit(form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean(form.owl_help_enabled)} />
+                <Summary label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean(form.owl_help_enabled)} />
               </div>
             </SidebarPanel>
 
@@ -1343,16 +1375,34 @@ function SidebarPanel({ eyebrow, title, description, icon, children }: {
   );
 }
 
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
+function Toggle({ label, value, onChange, children }: { label: string; value: boolean; onChange: (value: boolean) => void; children?: React.ReactNode }) {
+  const activeClass = value
+    ? "border-orange-400/35 bg-orange-500/12 text-slate-50 shadow-lg shadow-orange-500/10"
+    : "border-white/10 bg-white/[0.035] text-slate-300 hover:border-white/15 hover:bg-white/[0.06]";
+
+  if (children) {
+    return (
+      <div className={`group overflow-hidden rounded-2xl border transition ${activeClass}`}>
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className="flex min-h-16 w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-bold"
+        >
+          <span className="leading-5">{label}</span>
+          <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-500 shadow-lg shadow-orange-500/25" : "bg-slate-700"}`}>
+            <span className={`block h-5 w-5 rounded-full bg-white transition ${value ? "translate-x-5" : ""}`} />
+          </span>
+        </button>
+        <div className="border-t border-orange-200/10 bg-black/10 px-4 py-3">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className={`group flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${
-        value
-          ? "border-orange-400/35 bg-orange-500/12 text-slate-50 shadow-lg shadow-orange-500/10"
-          : "border-white/10 bg-white/[0.035] text-slate-300 hover:border-white/15 hover:bg-white/[0.06]"
-      }`}
+      className={`group flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${activeClass}`}
     >
       <span className="leading-5">{label}</span>
       <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-500 shadow-lg shadow-orange-500/25" : "bg-slate-700"}`}>

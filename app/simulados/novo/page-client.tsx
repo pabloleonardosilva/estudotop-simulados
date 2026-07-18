@@ -26,6 +26,7 @@ import PremiumSelect from "../../components/ui/PremiumSelect";
 import SimuladoCard from "../components/SimuladoCard";
 import SimuladoShell from "../components/SimuladoShell";
 import type { Discipline, SimuladoPayload } from "../types";
+import { getDefaultOwlHelpLimit, resolveOwlHelpLimit } from "../utils";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -55,12 +56,6 @@ function buildAutoDescription({
   return `${subject}, ${questions}, ${duration}, ${model}, ${attempts}.`;
 }
 
-function getOwlHelpLimit(questionCount?: number | null) {
-  const total = Number(questionCount || 0);
-  if (total <= 0) return 1;
-  return Math.max(1, Math.floor(total * 0.1));
-}
-
 const defaultForm: SimuladoPayload = {
   title: "",
   description: "",
@@ -80,6 +75,7 @@ const defaultForm: SimuladoPayload = {
   allow_blank_answers: false,
   scoring_model: "traditional",
   owl_help_enabled: false,
+  owl_help_limit: null,
 };
 
 export default function NovoSimuladoClient({ disciplines }: { disciplines: Discipline[] }) {
@@ -110,6 +106,16 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
     });
   }
 
+  function updateOwlHelpEnabled(enabled: boolean) {
+    setForm((current) => ({
+      ...current,
+      owl_help_enabled: enabled,
+      owl_help_limit: enabled
+        ? resolveOwlHelpLimit(current.owl_help_limit, current.question_count)
+        : null,
+    }));
+  }
+
   async function submit() {
     setFeedback(null);
 
@@ -120,6 +126,11 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
 
     if (form.question_count !== null && form.question_count !== undefined && (!Number.isInteger(form.question_count) || form.question_count <= 0)) {
       setFeedback({ type: "error", title: "Numero de questoes invalido", message: "Informe um numero inteiro positivo maior que zero." });
+      return;
+    }
+
+    if (form.owl_help_enabled && (!Number.isInteger(Number(form.owl_help_limit)) || Number(form.owl_help_limit) < 1)) {
+      setFeedback({ type: "error", title: "Quantidade de ajudas inválida", message: "Informe um número inteiro maior que zero ou desabilite a Ajuda da Coruja." });
       return;
     }
 
@@ -265,7 +276,26 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
                 <option value="final_only">Navegação aberta / feedback ao final</option>
               </PremiumSelect>
               <Toggle label="Mostrar comentário do professor?" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
-              <Toggle label="Ajuda da Coruja?" value={Boolean(form.owl_help_enabled)} onChange={(value) => update("owl_help_enabled", value)} />
+              <Toggle label="Ajuda da Coruja?" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
+                {form.owl_help_enabled && (
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,0.42fr)] sm:items-end">
+                    <p className="text-xs font-semibold leading-5 text-slate-400">
+                      Sugestão automática: {getDefaultOwlHelpLimit(form.question_count)} ajuda(s). O número informado será o limite deste simulado.
+                    </p>
+                  <PremiumInput
+                    label="Quantidade de ajudas"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={form.owl_help_limit ?? ""}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => update("owl_help_limit", event.target.value ? Number(event.target.value) : null)}
+                    placeholder={String(getDefaultOwlHelpLimit(form.question_count))}
+                    variant="jornada"
+                    className="!h-10 !rounded-xl !border-orange-300/20 !bg-black/20 text-center !font-black"
+                  />
+                  </div>
+                )}
+              </Toggle>
               <Toggle label="Embaralhar questões?" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
               <Toggle label="Embaralhar alternativas?" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
             </div>
@@ -305,7 +335,7 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
               <Rule label="Pontuação" value={form.scoring_model === "cebraspe" ? "CEBRASPE" : "Tradicional"} icon={<Trophy size={15} />} />
               <Rule label="Em branco" value={form.allow_blank_answers ? "Permitido" : "Obrigatório responder"} icon={<CheckCircle2 size={15} />} />
               <Rule label="Feedback" value={(form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")) === "instant" ? "Imediato" : "Ao final"} icon={<Eye size={15} />} />
-              <Rule label="Ajuda da Coruja" value={form.owl_help_enabled ? `${getOwlHelpLimit(form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={form.owl_help_enabled ?? false} />
+              <Rule label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={form.owl_help_enabled ?? false} />
             </div>
             <div className="border-t border-white/10 p-4">
               <PremiumButton full icon={<CheckCircle2 size={18} />} onClick={submit} disabled={saving}>
@@ -339,16 +369,34 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
   );
 }
 
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
+function Toggle({ label, value, onChange, children }: { label: string; value: boolean; onChange: (value: boolean) => void; children?: React.ReactNode }) {
+  const activeClass = value
+    ? "border-orange-400/45 bg-orange-500/15 text-orange-100 ring-4 ring-orange-500/10"
+    : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-orange-400/25 hover:bg-white/[0.07]";
+
+  if (children) {
+    return (
+      <div className={`overflow-hidden rounded-2xl border transition ${activeClass}`}>
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold"
+        >
+          <span>{label}</span>
+          <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-500" : "bg-slate-700"}`}>
+            <span className={`block h-4 w-4 rounded-full bg-white transition ${value ? "translate-x-4" : ""}`} />
+          </span>
+        </button>
+        <div className="border-t border-orange-200/10 bg-black/10 px-4 py-3">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className={`flex min-h-12 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-        value
-          ? "border-orange-400/45 bg-orange-500/15 text-orange-100 ring-4 ring-orange-500/10"
-          : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-orange-400/25 hover:bg-white/[0.07]"
-      }`}
+      className={`flex min-h-12 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${activeClass}`}
     >
       <span>{label}</span>
       <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-500" : "bg-slate-700"}`}>

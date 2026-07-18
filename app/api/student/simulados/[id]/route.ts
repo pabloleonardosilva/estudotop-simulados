@@ -42,6 +42,7 @@ export async function GET(
         scoring_model,
         navigation_type,
         owl_help_enabled,
+        owl_help_limit,
         simulado_questions ( id )
       `,
     )
@@ -185,6 +186,7 @@ export async function GET(
       scoring_model: simulado.scoring_model,
       navigation_type: simulado.navigation_type || "open",
       owl_help_enabled: Boolean(simulado.owl_help_enabled),
+      owl_help_limit: simulado.owl_help_limit ?? null,
     },
     attempts: {
       in_progress: inProgress,

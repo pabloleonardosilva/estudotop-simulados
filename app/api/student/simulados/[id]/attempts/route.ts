@@ -97,7 +97,8 @@ export async function POST(
         shuffle_alternatives,
         allow_blank_answers,
         scoring_model,
-        owl_help_enabled
+        owl_help_enabled,
+        owl_help_limit
       `,
     )
     .eq("id", simuladoId)
@@ -320,6 +321,8 @@ export async function POST(
     shuffle_alternatives: simulado.shuffle_alternatives,
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
+    owl_help_enabled: Boolean(simulado.owl_help_enabled),
+    owl_help_limit: simulado.owl_help_limit ?? null,
   };
 
   const { data: created, error: createError } = await supabase
@@ -500,5 +503,6 @@ function buildSimuladoSnapshot(simulado: Record<string, unknown>) {
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
+    owl_help_limit: simulado.owl_help_limit ?? null,
   };
 }

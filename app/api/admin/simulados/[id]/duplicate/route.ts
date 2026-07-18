@@ -74,6 +74,7 @@ export async function POST(
       allow_blank_answers: original.allow_blank_answers,
       scoring_model: original.scoring_model,
       owl_help_enabled: Boolean(original.owl_help_enabled),
+      owl_help_limit: original.owl_help_enabled ? original.owl_help_limit : null,
       published_at: null,
       archived_at: null,
       created_at: now,

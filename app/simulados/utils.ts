@@ -55,6 +55,15 @@ export function attemptsLabel(value?: number | null) {
   return value ? `${value} tentativa${value > 1 ? "s" : ""}` : "Ilimitado";
 }
 
+export function getDefaultOwlHelpLimit(totalQuestions?: number | null) {
+  return Math.max(1, Math.floor(Math.max(0, Number(totalQuestions || 0)) * 0.1));
+}
+
+export function resolveOwlHelpLimit(configuredLimit?: number | null, totalQuestions?: number | null) {
+  const limit = Number(configuredLimit);
+  return Number.isInteger(limit) && limit > 0 ? limit : getDefaultOwlHelpLimit(totalQuestions);
+}
+
 export function stripHtml(value?: string | null) {
   return String(value || "")
     .replace(/<[^>]*>/g, " ")

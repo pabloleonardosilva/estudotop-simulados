@@ -34,6 +34,7 @@ import { supabase } from "@/app/lib/supabase/client";
 import PremiumModal from "../../components/ui/PremiumModal";
 import { TopCoinValueInfo } from "@/app/components/gamification/TopCoinRewardModal";
 import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
+import { resolveOwlHelpLimit } from "@/app/simulados/utils";
 
 const SIMULADO_THUMBNAIL = "/images/mini_simulados/simulado-coruja-estudando.png";
 const SIMULADO_THUMBNAIL_FALLBACK = "/images/mini_simulados/simulado-mini1.png";
@@ -93,6 +94,7 @@ type Simulado = {
   progress_percent: number | null;
   max_attempts: number | null;
   owl_help_enabled: boolean;
+  owl_help_limit: number | null;
   attempts_used: number;
   attempts_completed: number;
   attempts_incomplete: number;
@@ -469,7 +471,11 @@ export default function JornadaAlunoClient({
                         {attemptsLabel(simulado.attempts_used, simulado.max_attempts)}
                         <HelpCircle size={13} />
                       </button>
-                      <Fact icon={<HelpCircle size={14} />} label={simulado.owl_help_enabled ? "Ajuda ativa" : "Sem ajuda"} tone={simulado.owl_help_enabled ? "emerald" : "slate"} />
+                      <Fact
+                        icon={<HelpCircle size={14} />}
+                        label={simulado.owl_help_enabled ? `${resolveOwlHelpLimit(simulado.owl_help_limit, simulado.total_questions)} ajuda(s)` : "Sem ajuda"}
+                        tone={simulado.owl_help_enabled ? "emerald" : "slate"}
+                      />
                     </div>
 
                     {simulado.attempts_used > 0 && (
