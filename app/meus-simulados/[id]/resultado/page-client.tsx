@@ -637,7 +637,7 @@ export default function ResultadoClient({
         </div>
 
         <section className="rounded-[18px] border border-slate-200/95 bg-white/95 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.075),0_2px_8px_rgba(15,23,42,0.04)] md:p-[22px]">
-          <div className="mb-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3 md:mb-5">
+          <div className="relative z-30 mb-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3 md:mb-5">
             <div className="justify-self-start">
               <button type="button" onClick={() => setResultStep((current) => Math.max(0, current - 1))} disabled={safeStep === 0} className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-400 shadow-[0_3px_10px_rgba(15,23,42,0.035)] transition duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55">
                 <ChevronLeft size={16} /> Anterior
@@ -944,7 +944,7 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
 
   return (
     <div className="space-y-3.5">
-      <section className="relative mt-8 overflow-visible rounded-[18px] border border-orange-200/80 bg-[radial-gradient(circle_at_18%_50%,rgba(255,138,0,0.10),transparent_34%),radial-gradient(circle_at_72%_45%,rgba(255,138,0,0.055),transparent_30%),linear-gradient(135deg,#FFFFFF_0%,#FFFDF9_48%,#FFFFFF_100%)] px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:px-6 lg:mt-10 lg:px-7">
+      <section className="relative mt-8 overflow-visible rounded-[18px] border border-orange-200/80 bg-[radial-gradient(circle_at_18%_50%,rgba(255,138,0,0.10),transparent_34%),radial-gradient(circle_at_72%_45%,rgba(255,138,0,0.055),transparent_30%),linear-gradient(135deg,#FFFFFF_0%,#FFFDF9_48%,#FFFFFF_100%)] px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:px-6 lg:mt-24 lg:px-7 2xl:mt-28">
         <div className="pointer-events-none absolute left-[46%] top-1/2 hidden h-[210px] w-[440px] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,138,0,0.07),transparent_68%)] lg:block" />
         <div className="pointer-events-none absolute -left-1 -top-[78px] z-20 hidden h-[365px] w-[520px] lg:block 2xl:-left-3 2xl:-top-[92px] 2xl:h-[390px] 2xl:w-[560px]">
           <div className="absolute inset-x-8 bottom-0 h-[210px] rounded-full bg-[radial-gradient(circle_at_50%_60%,rgba(255,138,0,0.16),transparent_67%)] blur-[2px]" />

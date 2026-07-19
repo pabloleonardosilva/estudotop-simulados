@@ -739,7 +739,7 @@ Escopo previsto:
 - Admin define um limite inteiro positivo ao habilitar a ajuda; 10% das questões, mínimo 1, é somente sugestão inicial e fallback para simulados antigos sem limite salvo.
 - O limite é propagado ao preview, PDF, execução do aluno, snapshot da tentativa, detalhe da Jornada e API `owl-help`; a validação efetiva e a escolha das alternativas erradas continuam no servidor.
 - A chamada aparece após 10 segundos na mesma questão, sem reiniciar por mouse, resposta, tesourinha ou caderno, e anima do centro grande com fade até o pouso inferior.
-- Migration preparada e não executada: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
+- Migration `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql` executada com sucesso no banco operacional, conforme confirmação do responsável em 2026-07-19.
 - Submit, respostas, timer, anti-cheat, TopCoins, resultado pedagógico e regras de Jornada permanecem inalterados.
 
 ### Refinamentos de interface e histórico de e-mails — 2026-07-18
@@ -844,5 +844,11 @@ Escopo previsto:
 ### Coruja selecionada e relógio recolhível no Modo Foco — 2026-07-19
 
 - O selo **Eliminada pela Coruja** permanece visível quando a alternativa afetada já estava selecionada.
-- O Modo Foco inicia com o timer recolhido em uma torre-relógio; clicar revela o tempo por 5 segundos e depois restaura automaticamente o ícone no mesmo local.
+- O Modo Foco inicia com o timer recolhido em um ícone premium e inequívoco de despertador; clicar revela o tempo por 5 segundos e depois restaura automaticamente o ícone no mesmo local.
+- O relógio fica ancorado ao topo inicial da execução e rola com a página, deixando de permanecer sempre visível.
 - Timer oficial, respostas, persistência da Coruja, APIs e regras de tentativa permanecem inalterados.
+
+### Navegação visível em Desempenho por Assunto — 2026-07-19
+
+- A ilustração da Coruja reserva uma faixa superior própria antes do card de desempenho e os controles da etapa ficam em uma camada acima da arte.
+- O botão **Anterior** permanece integralmente visível em notebook e desktop sem remover a projeção visual da Coruja.

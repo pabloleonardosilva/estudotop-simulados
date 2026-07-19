@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  AlarmClock,
   AlertTriangle,
   BookOpen,
   Bookmark,
   Calculator,
-  Castle,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -15,7 +15,6 @@ import {
   ChevronUp,
   CircleCheck,
   Clock3,
-  Clock9,
   FileText,
   Hourglass,
   Info,
@@ -2215,7 +2214,7 @@ function FocusModeTimer({
   }
 
   return (
-    <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2">
+    <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2">
       <AnimatePresence mode="wait" initial={false}>
         {timerVisible ? (
           <motion.div
@@ -2249,11 +2248,8 @@ function FocusModeTimer({
               onClick={revealTimer}
               className="group relative h-14 w-14 overflow-visible rounded-2xl border-amber-300/40 bg-slate-950/80 !p-0 text-amber-200 shadow-[0_0_28px_rgba(251,191,36,0.16),0_16px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl hover:border-amber-200/70 hover:bg-slate-900"
             >
-              <span className="relative grid size-9 place-items-center" aria-hidden="true">
-                <Castle size={31} strokeWidth={1.8} className="text-amber-200 transition group-hover:text-amber-100" />
-                <span className="absolute left-1/2 top-[11px] grid size-3.5 -translate-x-1/2 place-items-center rounded-full border border-amber-200/70 bg-slate-950 text-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.42)]">
-                  <Clock9 size={9} strokeWidth={2.3} />
-                </span>
+              <span className="relative grid size-10 place-items-center rounded-xl border border-amber-200/20 bg-[radial-gradient(circle_at_50%_40%,rgba(251,191,36,0.13),transparent_68%)]" aria-hidden="true">
+                <AlarmClock size={30} strokeWidth={1.9} className="text-amber-200 drop-shadow-[0_0_7px_rgba(251,191,36,0.36)] transition group-hover:text-amber-100" />
               </span>
               <span className="sr-only">Exibir o relógio por 5 segundos</span>
             </PremiumButton>

@@ -406,7 +406,8 @@ Um rascunho local (`localStorage`) é salvo automaticamente para evitar perda de
 ### Coruja selecionada e relógio recolhível no Modo Foco — 2026-07-19
 
 - O selo **Eliminada pela Coruja** agora considera diretamente a presença da alternativa em `owl_help_data`, permanecendo visível quando a alternativa eliminada já estava selecionada. Seleção, bloqueio, resposta e dados persistidos não foram modificados.
-- Ao ativar **Apagar a luz**, `FocusModeTimer` mostra inicialmente uma torre-relógio construída com os ícones `Castle` e `Clock9`. O clique revela o tempo no mesmo ponto por 5 segundos; depois o timer se recolhe automaticamente.
+- Ao ativar **Apagar a luz**, `FocusModeTimer` mostra inicialmente um relógio premium com o ícone `AlarmClock`. O clique revela o tempo no mesmo ponto por 5 segundos; depois o timer se recolhe automaticamente.
+- O conjunto usa posicionamento `absolute`, ancorado ao topo inicial da execução: acompanha a página e deixa de ficar visível quando o aluno rola, sem alterar a contagem oficial.
 - O timeout é cancelado ao desmontar/sair do Modo Foco. A contagem oficial continua ativa em segundo plano e nenhuma API, migration ou regra do simulado foi alterada.
 - Navegação controlada por `navigation_type`:
   - `open`: aluno vai e volta livremente
@@ -899,7 +900,7 @@ Nenhuma migration foi criada, alterada ou executada.
 - A API do aluno usa o limite salvo e mantém fallback de 10% apenas para simulados antigos habilitados com `owl_help_limit = null`. Ownership, estado da tentativa e escolha servidor-side das duas alternativas erradas permanecem preservados.
 - O temporizador da chamada deixou de medir inatividade: agora mede 10 segundos contínuos na questão. Interações dentro dela não reiniciam o relógio.
 - `OwlHelpFlyingPrompt` ganhou a sequência centro grande com fade → deslocamento → pouso inferior, além de comportamento direto para `prefers-reduced-motion`.
-- Migration criada e **não executada**: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
+- Migration `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql` **executada com sucesso no banco operacional**, conforme confirmação do responsável em 2026-07-19.
 - Não houve alteração em submit, respostas, timer da prova, anti-cheat, TopCoins, resultado pedagógico ou regras de Jornada.
 
 ### Tutorial inicial dos recursos da prova — 2026-07-18

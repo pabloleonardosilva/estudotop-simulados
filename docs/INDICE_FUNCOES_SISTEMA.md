@@ -1324,9 +1324,10 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 **Relógio recolhível do Modo Foco (2026-07-19):**
 
 - `FocusModeTimer`, componente local de `app/meus-simulados/[id]/page-client.tsx`, começa recolhido quando o aluno ativa **Apagar a luz**.
-- No lugar do tempo aparece um botão com composição `Castle` + `Clock9`, no mesmo ponto central superior. O botão acessível **Exibir o relógio por 5 segundos** revela o timer atual; após 5 segundos ele volta automaticamente ao ícone.
+- No lugar do tempo aparece um botão premium com o ícone inequívoco `AlarmClock`, no mesmo ponto central superior. O botão acessível **Exibir o relógio por 5 segundos** revela o timer atual; após 5 segundos ele volta automaticamente ao ícone.
+- O relógio usa posicionamento `absolute` no topo da execução, em vez de `fixed`: permanece ancorado à faixa inicial da prova e sai naturalmente da tela quando o aluno rola a página.
 - Sair do Modo Foco desmonta o componente e cancela qualquer timeout pendente. O timer oficial continua atualizando normalmente enquanto está visualmente recolhido; nenhuma regra de contagem ou expiração é alterada.
-- Migration preparada e ainda não executada: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
+- Migration `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql` executada com sucesso no banco operacional, conforme confirmação do responsável em 2026-07-19.
 
 ---
 
@@ -1351,6 +1352,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - A API valida no backend que a tentativa do `attemptId` pertence ao aluno autenticado, ao simulado da rota e está concluída; caso contrário retorna 404 genérico, sem fallback silencioso.
 - Botão do header da página de resultado é dinâmico: **Voltar para a Jornada** (`/minhas-jornadas/[studentJornadaId]`, contexto resolvido pela API — vínculo explícito `?jornada=` validado ou vínculo único) ou **Voltar para Meus Simulados** (simulado avulso).
 - Aba Desempenho por Assunto: tópicos para revisar vêm exclusivamente das questões erradas/em branco, todos exibidos no card (sem truncar), consolidação semântica local sem IA, botão "Ir para revisão" removido dos cards e texto explicativo fixo antes dos cards.
+- Na etapa Desempenho por Assunto, a área superior da Coruja reserva espaço para sua projeção acima do card e a navegação da etapa possui camada própria; assim a ilustração não encobre o botão **Anterior** em resoluções de notebook/desktop.
 - **Modal de preparação do feedback (2026-07-16):** quando a página de resultado é aberta com `attemptId` (tentativa recém-finalizada), o componente local `FeedbackPreparingModal` exibe o modal "Nossas corujas estão reunidas montando seu feedback" com contagem regressiva **10 → 0** (um passo/segundo, constante `FEEDBACK_COUNTDOWN_SECONDS`; era 5, ampliada para 10 em 2026-07-16) e fecha automaticamente no zero (saída de ~200 ms, sem clique, sem overlay residual). A contagem roda enquanto o resultado carrega por baixo; acessos sem `attemptId` (Meus Resultados, Jornada, links diretos) não exibem o modal.
 - Fonte oficial: `docs/Sprint-resultados.md` (seção "Atualização 2026-07-16").
 
