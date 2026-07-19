@@ -989,10 +989,10 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
         </p>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-3">
+      <section className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {performance.length ? performance.map((item) => (
           <SubjectPerformanceCard key={item.subject} item={item} />
-        )) : <div className="lg:col-span-3"><EmptyState text="Ainda não há dados por assunto para esta tentativa." /></div>}
+        )) : <div className="lg:col-span-2 2xl:col-span-3"><EmptyState text="Ainda não há dados por assunto para esta tentativa." /></div>}
       </section>
 
       <section className="flex flex-col gap-4 rounded-[16px] border border-slate-200/95 bg-[linear-gradient(135deg,rgba(255,122,0,0.045),rgba(255,255,255,0.96))] p-4 shadow-[0_8px_20px_rgba(15,23,42,0.045)] md:flex-row md:items-center md:justify-between">
@@ -1048,7 +1048,7 @@ function SubjectPerformanceCard({ item }: { item: SubjectTopicPerformance }) {
         <div className="flex min-w-0 items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${colors.iconBox}`}>{colors.icon}</span>
           <div className="min-w-0 pt-0.5">
-            <h4 className="line-clamp-2 text-[16px] font-black leading-[1.12] tracking-[-0.02em] text-slate-950">{item.subject}</h4>
+            <h4 className="break-words text-[16px] font-black leading-[1.12] tracking-[-0.02em] text-slate-950">{item.subject}</h4>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -1125,7 +1125,7 @@ function SubjectMiniStat({ label, value, tone = "slate" }: { label: string; valu
 }
 
 function TopicChip({ children, tone }: { children: ReactNode; tone: "red" | "emerald" }) {
-  return <span className={`inline-flex h-[26px] items-center rounded-full border px-2.5 text-[11px] font-extrabold shadow-[0_4px_10px_rgba(239,68,68,0.055)] ${tone === "red" ? "border-red-200 bg-white/95 text-red-600" : "border-emerald-200 bg-white/95 text-emerald-700"}`}>{children}</span>;
+  return <span className={`inline-flex min-h-[26px] max-w-full items-center whitespace-normal break-words rounded-full border px-2.5 py-1 text-left text-[11px] font-extrabold leading-4 shadow-[0_4px_10px_rgba(239,68,68,0.055)] ${tone === "red" ? "border-red-200 bg-white/95 text-red-600" : "border-emerald-200 bg-white/95 text-emerald-700"}`}>{children}</span>;
 }
 
 function ResultBehavior({ result, metrics, timeSpent, avgTime }: { result: ResultPayload["result"]; metrics?: ResultPayload["behavior_metrics"]; timeSpent: number; avgTime: number }) {

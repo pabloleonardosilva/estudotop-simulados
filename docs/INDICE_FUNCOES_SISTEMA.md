@@ -1299,6 +1299,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Anti-cheat não pode ser quebrado.
 - Salvamento de resposta deve continuar funcionando.
 - Finalização deve preservar cálculo de nota.
+- O enunciado no `QuestionCard` da execução usa a classe compartilhada `richtext-editor`, assim como admin e preview. Isso preserva quebras de linha existentes dentro do HTML salvo (inclusive dentro de `<p>`) sem reescrever o conteúdo ou alterar `normalizeHtml`.
 - **Voltar da tela de instruções (2026-07-16):** com contexto de Jornada (`?jornada=` na URL), o botão "Voltar" leva para `/minhas-jornadas/[studentJornadaId]?tab=simulados` (Etapa 02 · Simulados já ativa); sem contexto, mantém `/meus-simulados`. A página `/minhas-jornadas/[id]` aceita `?tab=dados|simulados|resultados|info` como aba inicial (validado em `page.tsx`, tipo `JornadaTab`).
 
 **Anti-cheat de foco e visibilidade (atualizado 2026-07-18):**
@@ -1310,6 +1311,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Se `visibilitychange` ocorrer durante a tolerância do `blur`, o timer pendente é cancelado e apenas a ocorrência imediata é registrada. A trava temporal em `lastViolationTime` permanece como segunda camada contra duplicidade.
 - A contagem continua sendo persistida por `POST /api/student/simulados/[id]/attempts/[attemptId]/focus-violation`, que valida aluno, ownership, simulado e tentativa em andamento no servidor. A terceira ocorrência mantém a desclassificação existente.
 - O aviso informa explicitamente que outra janela, aplicativo, guia ou minimização é considerado saída da prova. A tela de instruções diferencia troca de guia/minimização imediata da tolerância de 10 segundos para outra janela/aplicativo.
+- O card de segurança das instruções também orienta manter a janela do simulado maximizada e proíbe sua exibição lado a lado com outra janela; trata-se de orientação ao aluno, sem modificar os eventos ou a tolerância do anti-cheat.
 
 **Ajuda da Coruja na execução real (atualizado 2026-07-18):**
 
@@ -1352,6 +1354,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - A API valida no backend que a tentativa do `attemptId` pertence ao aluno autenticado, ao simulado da rota e está concluída; caso contrário retorna 404 genérico, sem fallback silencioso.
 - Botão do header da página de resultado é dinâmico: **Voltar para a Jornada** (`/minhas-jornadas/[studentJornadaId]`, contexto resolvido pela API — vínculo explícito `?jornada=` validado ou vínculo único) ou **Voltar para Meus Simulados** (simulado avulso).
 - Aba Desempenho por Assunto: tópicos para revisar vêm exclusivamente das questões erradas/em branco, todos exibidos no card (sem truncar), consolidação semântica local sem IA, botão "Ir para revisão" removido dos cards e texto explicativo fixo antes dos cards.
+- Os cards usam duas colunas em notebooks/desktops abaixo de 1536px e três colunas a partir de `2xl`. Nomes de assunto não usam `line-clamp`, e chips de tópicos têm altura flexível, `max-w-full` e quebra de palavras; assunto e tópico devem aparecer integralmente mesmo quando extensos.
 - Na etapa Desempenho por Assunto, a área superior da Coruja reserva espaço para sua projeção acima do card e a navegação da etapa possui camada própria; assim a ilustração não encobre o botão **Anterior** em resoluções de notebook/desktop.
 - **Modal de preparação do feedback (2026-07-16):** quando a página de resultado é aberta com `attemptId` (tentativa recém-finalizada), o componente local `FeedbackPreparingModal` exibe o modal "Nossas corujas estão reunidas montando seu feedback" com contagem regressiva **10 → 0** (um passo/segundo, constante `FEEDBACK_COUNTDOWN_SECONDS`; era 5, ampliada para 10 em 2026-07-16) e fecha automaticamente no zero (saída de ~200 ms, sem clique, sem overlay residual). A contagem roda enquanto o resultado carrega por baixo; acessos sem `attemptId` (Meus Resultados, Jornada, links diretos) não exibem o modal.
 - Fonte oficial: `docs/Sprint-resultados.md` (seção "Atualização 2026-07-16").
@@ -3366,6 +3369,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - Os textos explicam que a Tesoura elimina alternativas apenas visualmente, que a Ajuda da Coruja aparece quando disponível e que o Caderno registra observações, dúvidas e estratégias. A Ajuda da Coruja permanece apresentada mesmo quando estiver desabilitada naquele simulado, sem prometer disponibilidade.
 - O exemplo da Tesoura reproduz os dois estados reais da alternativa: controle circular exibido antes da letra durante hover/foco e alternativa já eliminada com tesoura vermelha e texto riscado. A orientação informa que o aluno deve posicionar o mouse antes da letra e clicar na tesoura que aparecer.
 - Os três callouts usam curvas SVG sólidas com gradiente, contorno branco, glow discreto e ponta de seta; cada trajetória termina diretamente na tesoura, na coruja ou no ícone do Caderno. A entrada do modal usa uma sequência de aproximação central com overshoot controlado e clarão laranja, desativada por `prefers-reduced-motion`.
+- Em 1366px, os marcadores 2 e 3 permanecem dentro da área segura da ilustração: seus centros ficam alinhados ao início das respectivas curvas, sem offsets negativos que permitam corte nas bordas inferior ou direita.
 - O modal não fecha por clique no fundo nem por Escape. O foco inicial vai para **Entendi, iniciar simulado**, e a preferência `prefers-reduced-motion` é respeitada.
 - A exibição é controlada por tentativa no `sessionStorage`, com a chave `estudotop:simulado:{simuladoId}:attempt:{attemptId}:resources-intro-seen`. A chave é gravada somente ao confirmar o início. Retomadas na mesma sessão do navegador não reabrem a apresentação; como não há persistência no servidor, uma nova sessão pode apresentar novamente o tutorial de uma tentativa ainda em andamento.
 - O cronômetro oficial não é pausado: a tentativa e seu `expires_at` já existem no servidor quando o modal aparece, portanto a contagem local permanece sincronizada com a fonte de verdade. O tempo de resposta da primeira questão e a chamada de 10 segundos da Coruja começam após o fechamento do modal.

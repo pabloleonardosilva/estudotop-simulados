@@ -768,6 +768,7 @@ O sistema separa dois conceitos de resultado:
 
 - **Tópicos para revisar** são todos os tópicos avaliados (`questions.evaluated_topics`) presentes nas questões em que o aluno **errou ou deixou em branco**. Tópicos de questões apenas acertadas não aparecem.
 - Todos os tópicos dessas questões são exibidos no próprio card, com quebra de linha dos chips — **sem truncamento** e sem resumo "+N".
+- Em notebooks, inclusive 1366px, o grid usa duas colunas; três colunas ficam restritas a telas `2xl` (1536px ou mais). O nome do assunto não possui limite de linhas e os chips usam altura flexível com quebra de palavras, mantendo textos extensos integralmente visíveis.
 - Tópicos semanticamente equivalentes (ex.: `HTTP` / `Protocolo HTTP`, `RAM` / `Memória RAM`) continuam consolidados pela normalização local determinística (`canonicalizeTopicLabel`), sem chamada de IA por aluno/tentativa.
 - O botão **"Ir para revisão"** foi removido dos cards de assunto (a navegação para Revisão das Questões continua no rodapé da aba e na aba própria).
 - Antes dos cards há um texto explicativo fixo informando que os tópicos vêm das questões sem êxito e devem ser revisados antes de nova tentativa.

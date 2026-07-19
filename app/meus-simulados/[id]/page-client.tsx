@@ -1798,7 +1798,7 @@ function SimuladoResourcesIntroModal({
                   </motion.span>
                   <motion.span
                     aria-label="Local da Ajuda da Coruja"
-                    className="absolute -bottom-[1%] left-1/2 grid size-9 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
+                    className="absolute bottom-[1.5%] left-1/2 grid size-9 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
                     animate={reduceMotion ? undefined : { scale: [1, 1.08, 1] }}
                     transition={{ delay: 0.25, duration: 2.1, repeat: Infinity }}
                   >
@@ -1806,7 +1806,7 @@ function SimuladoResourcesIntroModal({
                   </motion.span>
                   <motion.span
                     aria-label="Local do Caderno"
-                    className="absolute -right-[0.5%] top-[62%] grid size-9 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
+                    className="absolute right-[1.5%] top-[62%] grid size-9 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
                     animate={reduceMotion ? undefined : { scale: [1, 1.08, 1] }}
                     transition={{ delay: 0.5, duration: 2.1, repeat: Infinity }}
                   >
@@ -2339,7 +2339,7 @@ function QuestionCard({
         </span>
       </div>
 
-      <div className="prose prose-slate relative mt-6 max-w-none border-b border-slate-100 pb-5 text-[16px] font-medium leading-[1.72] text-slate-800 md:text-[17px]" dangerouslySetInnerHTML={{ __html: normalizeHtml(question.statement) }} />
+      <div className="richtext-editor prose prose-slate relative mt-6 max-w-none border-b border-slate-100 pb-5 text-[16px] font-medium leading-[1.72] text-slate-800 md:text-[17px]" dangerouslySetInnerHTML={{ __html: normalizeHtml(question.statement) }} />
 
       <div className="relative mt-5 space-y-2.5">
         {question.alternatives.map((alt) => {
@@ -2757,7 +2757,7 @@ function RulesScreen({
             <RuleItem
               icon={<ShieldAlert size={20} />}
               title="Não saia da tela do simulado!"
-              description="Trocar de guia ou minimizar é registrado imediatamente. Manter outra janela ou aplicativo em foco por mais de 10 segundos também gera uma ocorrência. Na terceira ocorrência, a tentativa é encerrada e contabilizada."
+              description="Mantenha a janela do simulado maximizada e não a exiba lado a lado com outra janela. Trocar de guia ou minimizar é registrado imediatamente. Manter outra janela ou aplicativo em foco por mais de 10 segundos também gera uma ocorrência. Na terceira ocorrência, a tentativa é encerrada e contabilizada."
               variant="danger"
             />
 

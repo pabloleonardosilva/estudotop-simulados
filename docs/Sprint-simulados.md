@@ -394,8 +394,10 @@ Um rascunho local (`localStorage`) é salvo automaticamente para evitar perda de
 - Respostas salvas em tempo real via API (`simulado_answers`)
 - Timer regressivo visível quando há limite de tempo
 - Violações de foco (troca de aba) registradas em `focus_violation_count`
+- O enunciado usa a mesma classe `richtext-editor` do admin/preview, preservando as quebras de linha e de parágrafo já armazenadas no HTML da questão, sem alterar o conteúdo salvo.
 - Anti-cheat ampliado em 2026-07-18: troca de guia/minimização permanece imediata; perda de foco para outra janela ou aplicativo usa tolerância contínua de 10 segundos. Retorno dentro do prazo cancela a ocorrência, e eventos `blur`/`visibilitychange` são deduplicados antes de chamar a mesma API de violação.
 - A tolerância de `window.blur` exibe `WindowBlurCountdownOverlay`: alerta bloqueante de alto contraste, contador grande de 10 a 1 e aviso sobre a terceira ocorrência. O cálculo usa deadline absoluto para não acumular atraso; `window.focus` desmonta o alerta e cancela os timers imediatamente.
+- Antes do início, o card de segurança orienta manter a janela do simulado maximizada e não exibi-la lado a lado com outra janela. A orientação não altera a tolerância nem os eventos do anti-cheat.
 
 ### Header responsivo da execução — título e métricas — 2026-07-18
 
@@ -908,6 +910,7 @@ Nenhuma migration foi criada, alterada ou executada.
 - `app/meus-simulados/[id]/page-client.tsx` ganhou o componente local `SimuladoResourcesIntroModal`, exibido depois que uma nova tentativa é criada e antes da primeira interação com a questão.
 - O modal apresenta Tesoura, Ajuda da Coruja e Caderno em uma recriação responsiva da execução feita em HTML/CSS, com hotspots numerados e linhas SVG; os textos continuam legíveis e independentes da escala da ilustração.
 - Refinamento visual: as linhas tracejadas foram substituídas por setas curvas sólidas com gradiente, contorno branco, glow e pontas direcionadas precisamente aos três controles. O mock da alternativa passou a mostrar a tesoura no ponto real antes da letra, incluindo um estado de hover e outro já eliminado.
+- Os marcadores 2 e 3 foram trazidos para dentro da área segura da ilustração e alinhados ao início de suas curvas, evitando cortes nas bordas inferior e direita em 1366px.
 - A orientação da Tesoura passou a explicar o gesto completo: posicionar o mouse antes da letra até a tesoura aparecer e clicar para eliminar visualmente a alternativa.
 - A abertura ganhou uma entrada central de maior destaque, com escala ampla, overshoot suave e clarão laranja transitório. Usuários com movimento reduzido continuam recebendo abertura direta, sem o efeito.
 - A apresentação é bloqueante, possui rolagem interna de contingência, foco inicial no botão principal, sem fechamento por backdrop/Escape e com animações reduzidas quando `prefers-reduced-motion` estiver ativo.

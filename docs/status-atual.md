@@ -852,3 +852,20 @@ Escopo previsto:
 
 - A ilustração da Coruja reserva uma faixa superior própria antes do card de desempenho e os controles da etapa ficam em uma camada acima da arte.
 - O botão **Anterior** permanece integralmente visível em notebook e desktop sem remover a projeção visual da Coruja.
+
+### Parágrafos do enunciado consistentes entre admin e aluno — 2026-07-19
+
+- O enunciado exibido durante o simulado passou a usar a mesma classe `richtext-editor` do admin e do preview.
+- Quebras de linha já existentes no HTML da questão permanecem visíveis mesmo quando estão dentro de uma tag de bloco, sem modificar o conteúdo armazenado, APIs, respostas ou regras da tentativa.
+
+### Instruções e marcadores pré-prova refinados — 2026-07-19
+
+- Os marcadores 2 e 3 do modal de recursos foram aproximados do início das curvas e mantidos dentro da moldura, evitando cortes inferior e lateral em 1366px.
+- O card de segurança das instruções passou a orientar que a janela do simulado permaneça maximizada e não seja exibida lado a lado com outra janela.
+- Eventos, tolerância de 10 segundos e demais regras do anti-cheat permanecem inalterados.
+
+### Cards de Desempenho por Assunto sem truncamento — 2026-07-19
+
+- Em 1366px, os cards passam a ocupar duas colunas, preservando três colunas somente a partir de 1536px.
+- Nomes de assunto deixam de usar limite de duas linhas e tópicos extensos passam a quebrar em chips de altura flexível, mantendo todo o texto visível.
+- Cálculos, agrupamentos, consolidação semântica e origem dos tópicos permanecem inalterados.
