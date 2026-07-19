@@ -1121,6 +1121,8 @@ export default function EditarSimuladoClient({
                       step={1}
                       value={form.owl_help_limit ?? ""}
                       onChange={(event: React.ChangeEvent<HTMLInputElement>) => update("owl_help_limit", event.target.value ? Number(event.target.value) : null)}
+                      premiumStepper
+                      onStep={(value) => update("owl_help_limit", value)}
                       placeholder={String(getDefaultOwlHelpLimit(form.question_count))}
                       variant="jornada"
                       className="!h-10 !rounded-xl !border-orange-300/20 !bg-black/20 text-center !font-black"

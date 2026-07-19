@@ -2994,8 +2994,19 @@ button:disabled,
 
   .et-laptop-exam-topbar {
     min-height: 96px;
-    gap: 1rem;
-    padding: 14px 32px;
+    gap: 0.75rem;
+    padding: 14px 24px;
+  }
+
+  .et-laptop-exam-heading {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .et-laptop-exam-stats {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 10px;
   }
 
   .et-laptop-exam-badge {
@@ -3009,16 +3020,28 @@ button:disabled,
   }
 
   .et-laptop-exam-title {
-    margin-top: 8px;
-    font-size: 24px;
+    margin-top: 6px;
+    overflow: visible;
+    white-space: normal;
+    font-size: 20px;
+    line-height: 1.15;
   }
 
   .et-laptop-exam-stat {
     height: 58px;
     min-width: 0;
-    gap: 12px;
-    padding-left: 16px;
-    padding-right: 16px;
+    flex: none;
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .et-laptop-exam-stat-time {
+    width: 132px;
+  }
+
+  .et-laptop-exam-stat-progress {
+    width: 190px;
   }
 
   .et-laptop-exam-stat > svg.lucide {

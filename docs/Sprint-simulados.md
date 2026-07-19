@@ -394,6 +394,20 @@ Um rascunho local (`localStorage`) é salvo automaticamente para evitar perda de
 - Respostas salvas em tempo real via API (`simulado_answers`)
 - Timer regressivo visível quando há limite de tempo
 - Violações de foco (troca de aba) registradas em `focus_violation_count`
+- Anti-cheat ampliado em 2026-07-18: troca de guia/minimização permanece imediata; perda de foco para outra janela ou aplicativo usa tolerância contínua de 10 segundos. Retorno dentro do prazo cancela a ocorrência, e eventos `blur`/`visibilitychange` são deduplicados antes de chamar a mesma API de violação.
+- A tolerância de `window.blur` exibe `WindowBlurCountdownOverlay`: alerta bloqueante de alto contraste, contador grande de 10 a 1 e aviso sobre a terceira ocorrência. O cálculo usa deadline absoluto para não acumular atraso; `window.focus` desmonta o alerta e cancela os timers imediatamente.
+
+### Header responsivo da execução — título e métricas — 2026-07-18
+
+- O título do simulado deixou de usar `truncate`, recebeu escala menor e agora quebra naturalmente, mantendo o nome completo visível em resoluções intermediárias.
+- Tempo decorrido, Tempo restante e Progresso foram compactados e permanecem em uma única faixa horizontal a partir de notebook/desktop (`nowrap`); na banda 1024–1366px usam respectivamente 132px, 132px e 190px, com gap de 10px.
+- O ajuste é exclusivamente visual em `StickyHeader` e na camada `et-laptop-exam-*`; timer, progresso, respostas, anti-cheat, APIs e regras da tentativa não foram alterados.
+
+### Coruja selecionada e relógio recolhível no Modo Foco — 2026-07-19
+
+- O selo **Eliminada pela Coruja** agora considera diretamente a presença da alternativa em `owl_help_data`, permanecendo visível quando a alternativa eliminada já estava selecionada. Seleção, bloqueio, resposta e dados persistidos não foram modificados.
+- Ao ativar **Apagar a luz**, `FocusModeTimer` mostra inicialmente uma torre-relógio construída com os ícones `Castle` e `Clock9`. O clique revela o tempo no mesmo ponto por 5 segundos; depois o timer se recolhe automaticamente.
+- O timeout é cancelado ao desmontar/sair do Modo Foco. A contagem oficial continua ativa em segundo plano e nenhuma API, migration ou regra do simulado foi alterada.
 - Navegação controlada por `navigation_type`:
   - `open`: aluno vai e volta livremente
   - `closed`: confirma uma por uma, sem retorno
@@ -835,7 +849,7 @@ Nenhuma migration foi criada ou alterada.
 - `sanitizeAttempt` passou a retornar `owl_help_used_count` e `owl_help_data`, restaurando ajudas já usadas ao retomar tentativa (refresh/reabertura).
 - Coruja flutuante (`/images/coruja-welcome.png`) no canto inferior direito durante a execução, com balão "Quer uma ajuda aí?" e contador de ajudas. Aparece somente quando: recurso habilitado, tentativa em andamento, há ajudas restantes, a questão atual ainda não recebeu ajuda e a resposta não está bloqueada.
 - Clique abre modal de confirmação ("Usar Ajuda da Coruja?" → "Sim, chamar a Coruja" / "Cancelar"). Em questão certo/errado o modal informa a inelegibilidade ("Entendi") e não chama a API. A própria API também passou a rejeitar questões `true_false` e questões com menos de duas alternativas erradas, garantindo a regra no servidor mesmo em chamadas diretas.
-- Confirmação chama a API real, que elimina duas alternativas erradas escolhidas **no servidor**, incrementa `owl_help_used_count` e persiste `owl_help_data`. O cliente apenas renderiza os IDs retornados: alternativa com estilo laranja, selo "Eliminada pela Coruja", sem seleção e sem tesourinha.
+- Confirmação chama a API real, que elimina duas alternativas erradas escolhidas **no servidor**, incrementa `owl_help_used_count` e persiste `owl_help_data`. O cliente apenas renderiza os IDs retornados: alternativa com estilo laranja, selo "Eliminada pela Coruja" e sem tesourinha. Se uma alternativa já estava selecionada quando a ajuda foi aplicada, a seleção é preservada e o selo permanece visível.
 - O limite vem de `owl_help_limit`; a fórmula de 10% das questões, mínimo 1, permanece somente como sugestão inicial e fallback para simulados antigos habilitados sem limite salvo. Uma ajuda por questão (reuso retorna os mesmos IDs sem novo débito).
 
 **Não alterado:** submit, respostas, timer, anti-cheat, TopCoins, notas, resultados, regras de Jornada e o preview admin.
@@ -879,7 +893,7 @@ Nenhuma migration foi criada, alterada ou executada.
 
 ### Limite manual e permanência na questão — 2026-07-18
 
-- Novo campo administrativo **Quantidade de ajudas da Coruja** nos formulários de criação e edição. Ao habilitar, recebe sugestão de 10% das questões (mínimo 1), mas aceita qualquer inteiro positivo e o valor digitado é soberano. Zero, negativo, vazio ou decimal são bloqueados no cliente e no backend; desabilitar grava limite nulo.
+- Novo campo administrativo **Quantidade de ajudas da Coruja** nos formulários de criação e edição. Ao habilitar, recebe sugestão de 10% das questões (mínimo 1), mas aceita qualquer inteiro positivo e o valor digitado é soberano. O controle numérico usa setas premium integradas ao campo, sem o spinner branco nativo do navegador, preservando digitação e acessibilidade. Zero, negativo, vazio ou decimal são bloqueados no cliente e no backend; desabilitar grava limite nulo.
 - O campo numérico e sua sugestão ficam integrados discretamente ao mesmo card do toggle **Ajuda da Coruja**, separados apenas por uma divisória interna e mantendo o padrão visual dark do formulário.
 - `POST /api/admin/simulados` e `PATCH /api/admin/simulados/[id]` validam e persistem o limite; duplicação copia `owl_help_enabled` e `owl_help_limit`. Resumo, detalhe, preview, PDF e card da Jornada exibem/respeitam o valor resolvido.
 - A API do aluno usa o limite salvo e mantém fallback de 10% apenas para simulados antigos habilitados com `owl_help_limit = null`. Ownership, estado da tentativa e escolha servidor-side das duas alternativas erradas permanecem preservados.
@@ -887,6 +901,18 @@ Nenhuma migration foi criada, alterada ou executada.
 - `OwlHelpFlyingPrompt` ganhou a sequência centro grande com fade → deslocamento → pouso inferior, além de comportamento direto para `prefers-reduced-motion`.
 - Migration criada e **não executada**: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
 - Não houve alteração em submit, respostas, timer da prova, anti-cheat, TopCoins, resultado pedagógico ou regras de Jornada.
+
+### Tutorial inicial dos recursos da prova — 2026-07-18
+
+- `app/meus-simulados/[id]/page-client.tsx` ganhou o componente local `SimuladoResourcesIntroModal`, exibido depois que uma nova tentativa é criada e antes da primeira interação com a questão.
+- O modal apresenta Tesoura, Ajuda da Coruja e Caderno em uma recriação responsiva da execução feita em HTML/CSS, com hotspots numerados e linhas SVG; os textos continuam legíveis e independentes da escala da ilustração.
+- Refinamento visual: as linhas tracejadas foram substituídas por setas curvas sólidas com gradiente, contorno branco, glow e pontas direcionadas precisamente aos três controles. O mock da alternativa passou a mostrar a tesoura no ponto real antes da letra, incluindo um estado de hover e outro já eliminado.
+- A orientação da Tesoura passou a explicar o gesto completo: posicionar o mouse antes da letra até a tesoura aparecer e clicar para eliminar visualmente a alternativa.
+- A abertura ganhou uma entrada central de maior destaque, com escala ampla, overshoot suave e clarão laranja transitório. Usuários com movimento reduzido continuam recebendo abertura direta, sem o efeito.
+- A apresentação é bloqueante, possui rolagem interna de contingência, foco inicial no botão principal, sem fechamento por backdrop/Escape e com animações reduzidas quando `prefers-reduced-motion` estiver ativo.
+- A visualização é registrada apenas no `sessionStorage`, por `simuladoId + attemptId`. Recarregar/retomar a mesma tentativa na mesma sessão do navegador não reapresenta o modal; uma tentativa nova recebe sua própria apresentação. Como não há persistência no servidor, uma nova sessão do navegador pode apresentar novamente o tutorial de uma tentativa ainda em andamento.
+- O timer oficial permanece em andamento e sincronizado com `expires_at`, pois a tentativa já foi iniciada no servidor. Para não contabilizar a leitura do tutorial como tempo de resposta da primeira questão, o marcador local da questão é reiniciado ao clicar em **Entendi, iniciar simulado**. A contagem de 10 segundos da Ajuda da Coruja também só começa após esse fechamento.
+- Nenhuma imagem nova, migration, dependência, API ou persistência em banco foi adicionada. Submit, respostas, anti-cheat, TopCoins, resultado e regras funcionais da prova permanecem inalterados.
 
 ### Ajuste — Voltar das instruções retorna à Jornada na aba Simulados — 2026-07-16
 

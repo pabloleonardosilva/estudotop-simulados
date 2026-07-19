@@ -7,6 +7,7 @@ import {
   BookOpen,
   Bookmark,
   Calculator,
+  Castle,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   ChevronUp,
   CircleCheck,
   Clock3,
+  Clock9,
   FileText,
   Hourglass,
   Info,
@@ -39,6 +41,7 @@ import TopCoinRewardModal, { TopCoinValueInfo } from "@/app/components/gamificat
 import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
+const WINDOW_BLUR_GRACE_MS = 10_000;
 
 type Phase =
   | "loading"
@@ -247,6 +250,28 @@ async function getAuthHeaders() {
   };
 }
 
+function resourcesIntroStorageKey(simuladoId: string, attemptId: string): string {
+  return `estudotop:simulado:${simuladoId}:attempt:${attemptId}:resources-intro-seen`;
+}
+
+function shouldShowResourcesIntro(simuladoId: string, attemptId: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(resourcesIntroStorageKey(simuladoId, attemptId)) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markResourcesIntroSeen(simuladoId: string, attemptId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(resourcesIntroStorageKey(simuladoId, attemptId), "1");
+  } catch {
+    // O fechamento continua disponível quando o armazenamento do navegador estiver bloqueado.
+  }
+}
+
 export default function SimuladoExperience({
   simuladoId,
   initialSimulado,
@@ -292,10 +317,15 @@ export default function SimuladoExperience({
   const [owlHelpUsedCount, setOwlHelpUsedCount] = useState(0);
   const [owlHelpData, setOwlHelpData] = useState<Record<string, string[]>>({});
   const [owlPromptShownForKey, setOwlPromptShownForKey] = useState<string | null>(null);
+  const [showResourcesIntro, setShowResourcesIntro] = useState(false);
+  const [windowBlurCountdown, setWindowBlurCountdown] = useState<number | null>(null);
 
   const submittingRef = useRef(false);
   const autoSubmitTriggeredRef = useRef(false);
   const lastViolationTime = useRef(0);
+  const windowBlurGraceTimerRef = useRef<number | null>(null);
+  const windowBlurCountdownIntervalRef = useRef<number | null>(null);
+  const windowBlurDeadlineRef = useRef<number | null>(null);
   const startedAtRef = useRef<number>(Date.now());
   const questionStartRef = useRef<number>(Date.now());
   const lastActivityRef = useRef<number>(Date.now());
@@ -480,7 +510,7 @@ export default function SimuladoExperience({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remainingSeconds, phase]);
 
-  // Anti-fraud: visibilitychange
+  // Anti-fraud: troca de guia/minimização e perda prolongada de foco da janela
   const recordViolation = useCallback(async () => {
     const newCount = violationCount + 1;
     setViolationCount(newCount);
@@ -509,17 +539,74 @@ export default function SimuladoExperience({
 
   useEffect(() => {
     if (phase !== "in_progress") return;
+
+    function clearWindowBlurGraceTimer() {
+      if (windowBlurGraceTimerRef.current !== null) {
+        window.clearTimeout(windowBlurGraceTimerRef.current);
+      }
+      if (windowBlurCountdownIntervalRef.current !== null) {
+        window.clearInterval(windowBlurCountdownIntervalRef.current);
+      }
+      windowBlurGraceTimerRef.current = null;
+      windowBlurCountdownIntervalRef.current = null;
+      windowBlurDeadlineRef.current = null;
+      setWindowBlurCountdown(null);
+    }
+
+    function registerViolationOnce() {
+      const now = Date.now();
+      if (now - lastViolationTime.current < 1000) return;
+      lastViolationTime.current = now;
+      void recordViolation();
+    }
+
     function handleVisibilityChange() {
       if (document.hidden) {
-        const now = Date.now();
-        if (now - lastViolationTime.current < 1000) return;
-        lastViolationTime.current = now;
-        recordViolation();
+        clearWindowBlurGraceTimer();
+        registerViolationOnce();
       }
     }
+
+    function handleWindowBlur() {
+      if (document.hidden || windowBlurGraceTimerRef.current !== null) return;
+      const deadline = Date.now() + WINDOW_BLUR_GRACE_MS;
+      windowBlurDeadlineRef.current = deadline;
+      setWindowBlurCountdown(Math.ceil(WINDOW_BLUR_GRACE_MS / 1000));
+      windowBlurCountdownIntervalRef.current = window.setInterval(() => {
+        if (windowBlurDeadlineRef.current === null) return;
+        const seconds = Math.max(
+          1,
+          Math.ceil((windowBlurDeadlineRef.current - Date.now()) / 1000),
+        );
+        setWindowBlurCountdown(seconds);
+      }, 200);
+      windowBlurGraceTimerRef.current = window.setTimeout(() => {
+        windowBlurGraceTimerRef.current = null;
+        if (windowBlurCountdownIntervalRef.current !== null) {
+          window.clearInterval(windowBlurCountdownIntervalRef.current);
+        }
+        windowBlurCountdownIntervalRef.current = null;
+        windowBlurDeadlineRef.current = null;
+        setWindowBlurCountdown(null);
+        if (document.visibilityState === "visible" && !document.hasFocus()) {
+          registerViolationOnce();
+        }
+      }, WINDOW_BLUR_GRACE_MS);
+    }
+
+    function handleWindowFocus() {
+      clearWindowBlurGraceTimer();
+    }
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () =>
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      clearWindowBlurGraceTimer();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
   }, [phase, recordViolation]);
 
   // Bloqueia print / save / contextmenu enquanto está em prova
@@ -588,6 +675,7 @@ export default function SimuladoExperience({
     } else {
       setRemainingSeconds(null);
     }
+    setShowResourcesIntro(shouldShowResourcesIntro(simuladoId, json.attempt.id));
     setPhase("in_progress");
   }, [simuladoId, jornadaQuery]);
 
@@ -931,6 +1019,7 @@ export default function SimuladoExperience({
       || currentOwlEliminatedIds.length > 0
       || currentQuestionLocked
       || owlHelpModalOpen
+      || showResourcesIntro
       || owlPromptShownForKey === owlQuestionKey
     ) return;
 
@@ -945,6 +1034,7 @@ export default function SimuladoExperience({
     currentOwlEliminatedIds.length,
     currentQuestionLocked,
     owlHelpModalOpen,
+    showResourcesIntro,
     owlPromptShownForKey,
   ]);
 
@@ -960,7 +1050,8 @@ export default function SimuladoExperience({
     owlHelpRemaining > 0 &&
     currentOwlEliminatedIds.length === 0 &&
     !currentQuestionLocked &&
-    !owlHelpModalOpen;
+    !owlHelpModalOpen &&
+    !showResourcesIntro;
 
   async function confirmOwlHelp() {
     if (!attempt || !currentQuestion || owlHelpLoading) return;
@@ -1024,6 +1115,16 @@ export default function SimuladoExperience({
     setOwlPromptShownForKey(null);
     setCurrentIndex(index);
     questionStartRef.current = Date.now();
+  };
+
+  const closeResourcesIntro = () => {
+    if (attempt) {
+      markResourcesIntroSeen(simuladoId, attempt.id);
+    }
+    questionStartRef.current = Date.now();
+    lastActivityRef.current = Date.now();
+    setOwlPromptShownForKey(null);
+    setShowResourcesIntro(false);
   };
 
   if (phase === "loading") {
@@ -1114,6 +1215,13 @@ export default function SimuladoExperience({
         amount={topCoinsReward ?? 0}
         open={topCoinsReward !== null}
         onClose={closeTopCoinsReward}
+      />
+
+      <WindowBlurCountdownOverlay seconds={windowBlurCountdown} />
+
+      <SimuladoResourcesIntroModal
+        open={showResourcesIntro}
+        onClose={closeResourcesIntro}
       />
 
       <div className={`relative z-10 mx-auto grid w-full gap-5 px-4 py-5 md:px-6 xl:px-8 ${focusMode ? "max-w-[1280px] pt-18" : "et-laptop-exam-grid max-w-[1680px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
@@ -1256,10 +1364,10 @@ export default function SimuladoExperience({
       {phase === "focus_warning" && (
         <FullScreenModal
           icon={<ShieldAlert size={56} className="text-amber-500" />}
-          title="Atenção: você saiu da tela do simulado"
+          title="Atenção: a janela do simulado perdeu o foco"
           description={violationCount >= 2
-            ? "Esta foi a segunda alternância de tela. Isso não é permitido. Se você sair da tela mais uma vez, sua tentativa será encerrada e contará como utilizada."
-            : "A alternância de tela não é permitida. Esta foi a primeira ocorrência. Na terceira ocorrência, sua tentativa será encerrada e contará como utilizada."}
+            ? "A janela do simulado perdeu o foco. Usar outra janela, aplicativo, guia ou minimizar o navegador é considerado saída da prova. Esta foi a segunda ocorrência. Se isso acontecer mais uma vez, sua tentativa será encerrada e contará como utilizada."
+            : "A janela do simulado perdeu o foco. Usar outra janela, aplicativo, guia ou minimizar o navegador é considerado saída da prova. Esta foi a primeira ocorrência. Na terceira ocorrência, sua tentativa será encerrada e contará como utilizada."}
           actionLabel="Entendi, continuar simulado"
           onAction={() => setPhase("in_progress")}
           variant="warning"
@@ -1320,6 +1428,461 @@ export default function SimuladoExperience({
         </FullScreenModal>
       )}
     </main>
+  );
+}
+
+function WindowBlurCountdownOverlay({ seconds }: { seconds: number | null }) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <AnimatePresence>
+      {seconds !== null && (
+        <motion.div
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          className="pointer-events-none fixed inset-0 z-[10050] grid place-items-center overflow-hidden bg-slate-950/[0.88] p-4 backdrop-blur-lg"
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.18 }}
+        >
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_50%_46%,rgba(249,115,22,0.28),transparent_28%),radial-gradient(circle_at_50%_50%,rgba(239,68,68,0.12),transparent_52%)]"
+          />
+          <motion.section
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.82, y: 24 }}
+            animate={reduceMotion
+              ? { opacity: 1, scale: 1, y: 0 }
+              : { opacity: 1, scale: [0.82, 1.035, 1], y: [24, -5, 0] }}
+            exit={reduceMotion ? undefined : { opacity: 0, scale: 0.94, y: 12 }}
+            transition={reduceMotion
+              ? { duration: 0 }
+              : { duration: 0.42, times: [0, 0.78, 1], ease: "easeOut" }}
+            className="relative w-full max-w-2xl overflow-hidden rounded-[2rem] border border-orange-400/45 bg-[linear-gradient(155deg,rgba(15,23,42,0.98),rgba(24,14,8,0.98))] px-5 py-7 text-center shadow-[0_30px_100px_rgba(0,0,0,0.62),0_0_70px_rgba(249,115,22,0.18)] sm:px-9 sm:py-9"
+          >
+            <div className="absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-orange-400 to-transparent" />
+            <span className="inline-flex items-center gap-2 rounded-full border border-orange-400/30 bg-orange-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-orange-300">
+              <ShieldAlert size={15} />
+              Janela do simulado sem foco
+            </span>
+
+            <h2 className="mt-5 text-2xl font-black tracking-[-0.035em] text-white sm:text-4xl">
+              Volte para o simulado agora
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
+              Retorne antes de a contagem zerar. Caso contrário, uma saída será registrada.
+            </p>
+
+            <div className="relative mx-auto mt-5 grid size-44 place-items-center rounded-full border border-orange-400/35 bg-orange-500/[0.07] shadow-[inset_0_0_38px_rgba(249,115,22,0.13),0_0_55px_rgba(249,115,22,0.2)] sm:size-52">
+              <div className="absolute inset-3 rounded-full border-2 border-dashed border-orange-400/35" />
+              <motion.strong
+                key={seconds}
+                initial={reduceMotion ? false : { opacity: 0.35, scale: 1.22 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
+                className="text-[6.5rem] font-black leading-none tracking-[-0.08em] text-white drop-shadow-[0_0_28px_rgba(249,115,22,0.42)] sm:text-[8rem]"
+              >
+                {seconds}
+              </motion.strong>
+              <span className="absolute bottom-6 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-orange-300 sm:bottom-7">
+                <Clock3 size={13} />
+                segundos
+              </span>
+            </div>
+
+            <div className="mx-auto mt-5 flex max-w-md gap-1.5" aria-hidden="true">
+              {Array.from({ length: 10 }, (_, index) => (
+                <span
+                  key={index}
+                  className={`h-2 flex-1 rounded-full transition-colors duration-200 ${
+                    index < seconds
+                      ? "bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_10px_rgba(249,115,22,0.3)]"
+                      : "bg-white/10"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <p className="mx-auto mt-5 max-w-xl rounded-2xl border border-red-400/20 bg-red-500/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-red-100 sm:text-sm">
+              Na terceira saída, esta tentativa será encerrada e contabilizada.
+            </p>
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function SimuladoResourcesIntroModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const actionAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => {
+      actionAreaRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    });
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" && event.key !== "Escape") return;
+      event.preventDefault();
+      actionAreaRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    };
+    document.addEventListener("keydown", keepFocusInside);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", keepFocusInside);
+    };
+  }, [open]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[10030] flex items-center justify-center overflow-y-auto bg-slate-950/[0.78] p-3 backdrop-blur-md sm:p-5"
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.38, ease: "easeOut" }}
+        >
+          {!reduceMotion && (
+            <motion.div
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 h-[58vh] w-[72vw] max-w-[1040px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/35 blur-[90px]"
+              initial={{ opacity: 0.85, scale: 0.35 }}
+              animate={{ opacity: 0, scale: 1.28 }}
+              transition={{ duration: 1.05, ease: "easeOut" }}
+            />
+          )}
+          <motion.section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resources-intro-title"
+            aria-describedby="resources-intro-description"
+            initial={reduceMotion ? false : { opacity: 0, y: 58, scale: 0.72 }}
+            animate={reduceMotion
+              ? { opacity: 1, y: 0, scale: 1 }
+              : {
+                  opacity: [0, 1, 1],
+                  y: [58, -9, 0],
+                  scale: [0.72, 1.035, 1],
+                }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.96 }}
+            transition={reduceMotion
+              ? { duration: 0 }
+              : { duration: 0.72, times: [0, 0.76, 1], ease: [0.22, 1, 0.36, 1] }}
+            className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-[1180px] flex-col overflow-hidden rounded-[1.75rem] border border-white/70 bg-[#fffdfa] shadow-[0_32px_100px_rgba(2,6,23,0.52)] sm:max-h-[calc(100dvh-2.5rem)] sm:rounded-[2.25rem]"
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_12%_0%,rgba(255,138,0,0.13),transparent_34%),radial-gradient(circle_at_88%_0%,rgba(251,191,36,0.1),transparent_30%)]" />
+
+            <div className="relative overflow-y-auto px-4 pb-4 pt-5 sm:px-7 sm:pb-6 sm:pt-7 lg:px-9">
+              <header className="mx-auto max-w-4xl text-center">
+                <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-orange-700">
+                  <Shield size={13} aria-hidden="true" />
+                  Recursos do simulado
+                </span>
+                <h2
+                  id="resources-intro-title"
+                  className="mt-3 text-2xl font-black tracking-[-0.035em] text-slate-950 sm:text-3xl lg:text-[2.15rem]"
+                >
+                  Antes de começar: conheça seus recursos
+                </h2>
+                <p
+                  id="resources-intro-description"
+                  className="mx-auto mt-2 max-w-3xl text-sm leading-6 text-slate-600 sm:text-[15px]"
+                >
+                  Três ferramentas acompanham você durante a prova. Veja onde encontrá-las e como cada uma pode ajudar.
+                </p>
+              </header>
+
+              <div className="mt-5 grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.75fr)] lg:gap-5">
+                <div className="relative min-h-[310px] overflow-hidden rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-white via-[#f8fafc] to-orange-50/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_18px_45px_rgba(15,23,42,0.08)] sm:min-h-[350px] sm:p-4">
+                  <div className="overflow-hidden rounded-[1.15rem] border border-slate-200 bg-white shadow-sm">
+                    <div className="flex h-12 items-center justify-between bg-gradient-to-r from-[#080b12] via-[#191008] to-[#090c12] px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="grid size-7 place-items-center rounded-lg border border-orange-400/50 bg-orange-500/10 text-orange-400">
+                          <Shield size={14} />
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-white">
+                          Simulado em andamento
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="h-6 w-16 rounded-lg border border-white/15 bg-white/5" />
+                        <span className="h-6 w-12 rounded-lg border border-orange-400/40 bg-orange-500/10" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-[minmax(0,1fr)_82px] gap-2 bg-[#f7f7f5] p-3 sm:grid-cols-[minmax(0,1fr)_112px]">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[7px] font-black text-orange-600">
+                            Questão 1
+                          </span>
+                          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[7px] font-bold text-emerald-700">
+                            1,00 pts
+                          </span>
+                        </div>
+                        <div className="mt-4 h-2 w-11/12 rounded-full bg-slate-300" />
+                        <div className="mt-2 h-2 w-8/12 rounded-full bg-slate-200" />
+                        <div className="mt-4 space-y-2">
+                          {["w-8/12", "w-11/12", "w-9/12"].map((widthClass, index) => (
+                            <div
+                              key={widthClass}
+                              className={`relative flex h-9 items-center gap-2 rounded-xl border bg-white py-1.5 pr-2 pl-9 ${
+                                index === 0
+                                  ? "border-orange-300 bg-orange-50/50 shadow-[0_5px_18px_rgba(249,115,22,0.12)]"
+                                  : index === 1
+                                    ? "border-red-200 bg-red-50/40 opacity-55"
+                                    : "border-slate-200"
+                              }`}
+                            >
+                              {index < 2 && (
+                                <span
+                                  className={`absolute left-1.5 grid size-6 place-items-center rounded-full border shadow-sm ${
+                                    index === 0
+                                      ? "border-orange-200 bg-orange-50 text-orange-500"
+                                      : "border-red-200 bg-red-50 text-red-500"
+                                  }`}
+                                >
+                                  <Scissors size={13} />
+                                </span>
+                              )}
+                              <span className="grid size-5 place-items-center rounded-full border border-orange-200 text-[8px] font-bold text-orange-600">
+                                {String.fromCharCode(65 + index)}
+                              </span>
+                              <span className={`h-1.5 rounded-full ${index === 1 ? "bg-red-200" : "bg-slate-200"} ${widthClass}`} />
+                              {index === 1 && (
+                                <span className="absolute right-4 left-9 top-1/2 h-px -rotate-2 bg-red-500" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="rounded-xl border border-slate-200 bg-white p-2">
+                          <span className="text-[7px] font-black uppercase tracking-[0.14em] text-orange-600">
+                            Mapa da prova
+                          </span>
+                          <div className="mt-2 grid grid-cols-2 gap-1">
+                            {[1, 2, 3, 4].map((number) => (
+                              <span
+                                key={number}
+                                className="grid h-6 place-items-center rounded-md border border-slate-200 bg-slate-50 text-[8px] font-bold text-slate-500"
+                              >
+                                {number}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-orange-200 bg-white p-2">
+                          <span className="flex items-center gap-1 text-[7px] font-black uppercase tracking-[0.12em] text-orange-600">
+                            <BookOpen size={10} /> Caderno
+                          </span>
+                          <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200" />
+                          <div className="mt-1.5 h-1.5 w-3/4 rounded-full bg-slate-100" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex h-14 items-center justify-center gap-2 border-t border-slate-200 bg-white">
+                      <span className="text-2xl" aria-hidden="true">{OWL_MARK}</span>
+                      <span className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[8px] font-black text-slate-700">
+                        Precisa de uma ajuda?
+                      </span>
+                    </div>
+                  </div>
+
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    className="pointer-events-none absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] overflow-visible sm:inset-4 sm:h-[calc(100%-2rem)] sm:w-[calc(100%-2rem)]"
+                  >
+                    <defs>
+                      <linearGradient id="resources-intro-line" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#fb923c" />
+                        <stop offset="100%" stopColor="#ea580c" />
+                      </linearGradient>
+                      <filter id="resources-intro-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="0" dy="1" stdDeviation="1.25" floodColor="#fb923c" floodOpacity="0.55" />
+                      </filter>
+                      <marker
+                        id="resources-intro-arrow"
+                        viewBox="0 0 10 10"
+                        refX="8.5"
+                        refY="5"
+                        markerWidth="5.5"
+                        markerHeight="5.5"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 L 2.5 5 z" fill="#ea580c" />
+                      </marker>
+                    </defs>
+                    <path
+                      d="M 8 62 C 5.5 58, 5.5 51, 8 46"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="2.1"
+                      strokeLinecap="round"
+                      opacity="0.95"
+                    />
+                    <motion.path
+                      d="M 8 62 C 5.5 58, 5.5 51, 8 46"
+                      fill="none"
+                      stroke="url(#resources-intro-line)"
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                      markerEnd="url(#resources-intro-arrow)"
+                      filter="url(#resources-intro-glow)"
+                      initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      transition={{ delay: 0.25, duration: reduceMotion ? 0 : 0.7 }}
+                    />
+                    <path
+                      d="M 50 95 C 49 91, 45 87, 41 84"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="2.1"
+                      strokeLinecap="round"
+                      opacity="0.95"
+                    />
+                    <motion.path
+                      d="M 50 95 C 49 91, 45 87, 41 84"
+                      fill="none"
+                      stroke="url(#resources-intro-line)"
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                      markerEnd="url(#resources-intro-arrow)"
+                      filter="url(#resources-intro-glow)"
+                      initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      transition={{ delay: 0.35, duration: reduceMotion ? 0 : 0.7 }}
+                    />
+                    <path
+                      d="M 95 66 C 92 59, 87 53, 82 49"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="2.1"
+                      strokeLinecap="round"
+                      opacity="0.95"
+                    />
+                    <motion.path
+                      d="M 95 66 C 92 59, 87 53, 82 49"
+                      fill="none"
+                      stroke="url(#resources-intro-line)"
+                      strokeWidth="1"
+                      strokeLinecap="round"
+                      markerEnd="url(#resources-intro-arrow)"
+                      filter="url(#resources-intro-glow)"
+                      initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1 }}
+                      transition={{ delay: 0.45, duration: reduceMotion ? 0 : 0.7 }}
+                    />
+                  </svg>
+
+                  <motion.span
+                    aria-label="Local da ferramenta Tesoura"
+                    className="absolute left-[2%] top-[58%] grid size-9 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
+                    animate={reduceMotion ? undefined : { scale: [1, 1.08, 1] }}
+                    transition={{ duration: 2.1, repeat: Infinity }}
+                  >
+                    1
+                  </motion.span>
+                  <motion.span
+                    aria-label="Local da Ajuda da Coruja"
+                    className="absolute -bottom-[1%] left-1/2 grid size-9 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
+                    animate={reduceMotion ? undefined : { scale: [1, 1.08, 1] }}
+                    transition={{ delay: 0.25, duration: 2.1, repeat: Infinity }}
+                  >
+                    2
+                  </motion.span>
+                  <motion.span
+                    aria-label="Local do Caderno"
+                    className="absolute -right-[0.5%] top-[62%] grid size-9 place-items-center rounded-full border-2 border-white bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-black text-white shadow-[0_8px_24px_rgba(249,115,22,0.5)] ring-4 ring-orange-200/60"
+                    animate={reduceMotion ? undefined : { scale: [1, 1.08, 1] }}
+                    transition={{ delay: 0.5, duration: 2.1, repeat: Infinity }}
+                  >
+                    3
+                  </motion.span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  <div className="rounded-[1.25rem] border border-orange-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-orange-50 text-orange-600">
+                        <Scissors size={19} />
+                      </span>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-orange-600">Recurso 1</span>
+                        <h3 className="text-base font-black text-slate-950">Tesoura</h3>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-600 sm:text-[13px]">
+                      Posicione o mouse antes da letra da alternativa até que o ponteiro se transforme em uma tesoura. Depois, clique para eliminar visualmente a opção que considera incorreta.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.25rem] border border-amber-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600">
+                        <span className="text-xl" aria-hidden="true">{OWL_MARK}</span>
+                      </span>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700">Recurso 2</span>
+                        <h3 className="text-base font-black text-slate-950">Ajuda da Coruja</h3>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-600 sm:text-[13px]">
+                      Quando disponível, a coruja oferece uma ajuda extra para a questão atual.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.25rem] border border-blue-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600">
+                        <BookOpen size={19} />
+                      </span>
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-blue-700">Recurso 3</span>
+                        <h3 className="text-base font-black text-slate-950">Caderno</h3>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-600 sm:text-[13px]">
+                      Use o caderno para registrar observações, dúvidas e estratégias durante a prova.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <footer className="mt-4 flex flex-col items-center justify-between gap-3 rounded-[1.25rem] border border-slate-200 bg-white/90 p-3.5 sm:flex-row sm:px-5">
+                <p className="text-center text-xs font-semibold leading-5 text-slate-500 sm:text-left">
+                  Você poderá usar esses recursos durante a prova, sem sair da questão.
+                </p>
+                <div ref={actionAreaRef} className="w-full shrink-0 sm:w-auto">
+                  <PremiumButton
+                    full
+                    icon={<PlayCircle size={17} />}
+                    onClick={onClose}
+                    className="min-w-full px-6 sm:min-w-[245px]"
+                  >
+                    Entendi, iniciar simulado
+                  </PremiumButton>
+                </div>
+              </footer>
+            </div>
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1566,8 +2129,8 @@ function StickyHeader({
     <header className={`sticky top-0 z-30 overflow-hidden border-b border-white/15 text-white shadow-[0_22px_58px_rgba(15,23,42,0.28)] transition duration-500 ${focusMode ? "bg-[#010204]" : "bg-black"}`}>
       <div className="pointer-events-none absolute inset-0 opacity-90 [background:linear-gradient(132deg,transparent_0%,transparent_37%,rgba(255,138,0,0.09)_46%,rgba(255,138,0,0.035)_56%,transparent_66%),linear-gradient(180deg,#000000_0%,#030303_100%)]" />
       <div className="pointer-events-none absolute left-[34%] top-[-90px] h-[260px] w-[330px] rotate-45 bg-orange-500/10 blur-2xl" />
-      <div className="et-laptop-exam-topbar relative flex min-h-[124px] w-full flex-col gap-5 px-5 py-5 md:px-9 lg:flex-row lg:items-center lg:justify-between xl:px-[54px]">
-        <div className="flex min-w-0 items-center gap-5">
+      <div className="et-laptop-exam-topbar relative flex min-h-[124px] w-full flex-col gap-5 px-5 py-5 md:px-9 lg:flex-row lg:items-center lg:justify-between lg:gap-4 xl:px-[54px]">
+        <div className="et-laptop-exam-heading flex min-w-0 flex-1 items-center gap-5">
           <div className="et-laptop-exam-badge relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] border border-orange-400/60 bg-[linear-gradient(145deg,rgba(255,138,0,0.18),rgba(255,138,0,0.035)_54%,rgba(0,0,0,0.24))] shadow-[0_0_0_1px_rgba(255,255,255,0.035)_inset,0_0_26px_rgba(255,122,24,0.42)]">
             <Shield size={36} strokeWidth={2.2} className="text-orange-300 drop-shadow-[0_0_12px_rgba(255,138,0,0.62)]" />
             <div className="pointer-events-none absolute inset-0 rounded-[1.05rem] ring-1 ring-inset ring-orange-300/10" />
@@ -1576,12 +2139,12 @@ function StickyHeader({
             <p className="text-[11px] font-black uppercase tracking-[0.42em] text-orange-300">
               Simulado em andamento
             </p>
-            <h1 className="et-laptop-exam-title mt-3 truncate text-[26px] font-black leading-none tracking-tight text-white md:text-[30px]">{title}</h1>
+            <h1 className="et-laptop-exam-title mt-2 break-words text-[21px] font-black leading-[1.15] tracking-tight text-white md:text-[23px] xl:text-[24px] 2xl:text-[26px]">{title}</h1>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-5 text-xs">
-          <div className="et-laptop-exam-stat flex h-[72px] min-w-[208px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
+        <div className="et-laptop-exam-stats flex w-full flex-wrap items-center gap-3 text-xs lg:w-auto lg:shrink-0 lg:flex-nowrap">
+          <div className="et-laptop-exam-stat et-laptop-exam-stat-time flex h-[72px] min-w-[174px] shrink-0 items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
             <Clock3 size={31} strokeWidth={2.1} className="text-orange-300" />
             <div>
               <strong className="block text-[18px] leading-none text-white md:text-[19px]">{formatTime(timeSpent)}</strong>
@@ -1589,7 +2152,7 @@ function StickyHeader({
             </div>
           </div>
           {remainingSeconds !== null && (
-            <div className={`et-laptop-exam-stat flex h-[72px] min-w-[190px] items-center gap-4 rounded-[1rem] border px-5 backdrop-blur-md transition duration-500 ${warningTime ? "border-2 border-orange-400 bg-[#170d04] shadow-[0_0_0_1px_rgba(251,146,60,0.7)_inset,0_0_16px_4px_rgba(251,146,60,0.95),0_0_48px_16px_rgba(251,146,60,0.55)]" : "border-orange-400/50 bg-orange-500/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_22px_rgba(255,122,24,0.42),0_12px_28px_rgba(0,0,0,0.26)]"}`}>
+            <div className={`et-laptop-exam-stat et-laptop-exam-stat-time flex h-[72px] min-w-[164px] shrink-0 items-center gap-4 rounded-[1rem] border px-5 backdrop-blur-md transition duration-500 ${warningTime ? "border-2 border-orange-400 bg-[#170d04] shadow-[0_0_0_1px_rgba(251,146,60,0.7)_inset,0_0_16px_4px_rgba(251,146,60,0.95),0_0_48px_16px_rgba(251,146,60,0.55)]" : "border-orange-400/50 bg-orange-500/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_22px_rgba(255,122,24,0.42),0_12px_28px_rgba(0,0,0,0.26)]"}`}>
               <Hourglass size={31} strokeWidth={2.1} className={warningTime ? "text-orange-100 drop-shadow-[0_0_10px_rgba(251,146,60,0.95)]" : "text-amber-300 drop-shadow-[0_0_12px_rgba(251,146,60,0.7)]"} />
               <div>
                 <strong className="block text-[18px] leading-none text-white md:text-[19px]">{formatTime(remainingSeconds)}</strong>
@@ -1597,7 +2160,7 @@ function StickyHeader({
               </div>
             </div>
           )}
-          <div className="et-laptop-exam-stat flex h-[72px] min-w-[296px] items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
+          <div className="et-laptop-exam-stat et-laptop-exam-stat-progress flex h-[72px] min-w-[238px] shrink-0 items-center gap-4 rounded-[1rem] border border-white/25 bg-white/[0.055] px-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_26px_rgba(0,0,0,0.26)] backdrop-blur-md">
             <ProgressRing percent={progressPercent} />
             <div>
               <strong className="block text-[18px] leading-none text-white md:text-[19px]">{Math.min(currentIndex + 1, total)}/{total}</strong>
@@ -1606,7 +2169,7 @@ function StickyHeader({
             <span className="ml-auto text-[18px] font-black text-amber-300">{progressPercent}%</span>
           </div>
           {instantFeedback && (
-            <div className="flex items-center gap-3 rounded-[1.1rem] border border-white/10 bg-white/[0.055] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+            <div className="et-laptop-exam-feedback flex shrink-0 items-center gap-3 rounded-[1.1rem] border border-white/10 bg-white/[0.055] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
               <span className="flex items-center gap-1 text-emerald-300"><CheckCircle2 size={14} />{correctCount}</span>
               <span className="flex items-center gap-1 text-red-300"><XCircle size={14} />{wrongCount}</span>
             </div>
@@ -1625,23 +2188,78 @@ function FocusModeTimer({
   timeSpent: number;
   remainingSeconds: number | null;
 }) {
+  const [timerVisible, setTimerVisible] = useState(false);
+  const hideTimerRef = useRef<number | null>(null);
+  const reduceMotion = useReducedMotion();
   const hasLimit = remainingSeconds !== null;
   const warningTime = hasLimit && remainingSeconds < 5 * 60;
   const value = hasLimit ? remainingSeconds : timeSpent;
 
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+      }
+    };
+  }, []);
+
+  function revealTimer() {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+    }
+    setTimerVisible(true);
+    hideTimerRef.current = window.setTimeout(() => {
+      hideTimerRef.current = null;
+      setTimerVisible(false);
+    }, 5_000);
+  }
+
   return (
     <div className="fixed left-1/2 top-4 z-30 -translate-x-1/2">
-      <div className={`flex h-11 items-center gap-2.5 rounded-full border px-4 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)] backdrop-blur-xl ${warningTime ? "border-orange-300/70 bg-orange-500/15 text-orange-100 shadow-[0_0_26px_rgba(251,146,60,0.30)]" : "border-white/10 bg-slate-950/70"}`}>
-        {hasLimit ? (
-          <Hourglass size={16} className={warningTime ? "text-orange-200" : "text-amber-300"} />
+      <AnimatePresence mode="wait" initial={false}>
+        {timerVisible ? (
+          <motion.div
+            key="focus-timer"
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.86, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, scale: 0.88, y: -5 }}
+            transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
+            className={`flex h-11 items-center gap-2.5 rounded-full border px-4 text-white shadow-[0_16px_36px_rgba(0,0,0,0.28)] backdrop-blur-xl ${warningTime ? "border-orange-300/70 bg-orange-500/15 text-orange-100 shadow-[0_0_26px_rgba(251,146,60,0.30)]" : "border-white/10 bg-slate-950/70"}`}
+          >
+            {hasLimit ? (
+              <Hourglass size={16} className={warningTime ? "text-orange-200" : "text-amber-300"} />
+            ) : (
+              <Clock3 size={16} className="text-orange-300" />
+            )}
+            <strong className="text-sm font-black tabular-nums tracking-wide">{formatTime(value)}</strong>
+            <span className="hidden text-[9px] font-black uppercase tracking-[0.16em] text-white/45 sm:block">
+              {hasLimit ? "Restante" : "Decorrido"}
+            </span>
+          </motion.div>
         ) : (
-          <Clock3 size={16} className="text-orange-300" />
+          <motion.div
+            key="focus-clock-tower"
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.82, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, scale: 0.88, y: -5 }}
+            transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
+          >
+            <PremiumButton
+              variant="dark"
+              onClick={revealTimer}
+              className="group relative h-14 w-14 overflow-visible rounded-2xl border-amber-300/40 bg-slate-950/80 !p-0 text-amber-200 shadow-[0_0_28px_rgba(251,191,36,0.16),0_16px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl hover:border-amber-200/70 hover:bg-slate-900"
+            >
+              <span className="relative grid size-9 place-items-center" aria-hidden="true">
+                <Castle size={31} strokeWidth={1.8} className="text-amber-200 transition group-hover:text-amber-100" />
+                <span className="absolute left-1/2 top-[11px] grid size-3.5 -translate-x-1/2 place-items-center rounded-full border border-amber-200/70 bg-slate-950 text-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.42)]">
+                  <Clock9 size={9} strokeWidth={2.3} />
+                </span>
+              </span>
+              <span className="sr-only">Exibir o relógio por 5 segundos</span>
+            </PremiumButton>
+          </motion.div>
         )}
-        <strong className="text-sm font-black tabular-nums tracking-wide">{formatTime(value)}</strong>
-        <span className="hidden text-[9px] font-black uppercase tracking-[0.16em] text-white/45 sm:block">
-          {hasLimit ? "Restante" : "Decorrido"}
-        </span>
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -1730,7 +2348,8 @@ function QuestionCard({
       <div className="relative mt-5 space-y-2.5">
         {question.alternatives.map((alt) => {
           const isSelected = answer?.alternativeId === alt.id;
-          const isOwlEliminated = owlEliminatedAlternativeIds.includes(alt.id) && !isSelected;
+          const wasOwlEliminated = owlEliminatedAlternativeIds.includes(alt.id);
+          const isOwlEliminated = wasOwlEliminated && !isSelected;
           const locked = answer?.isLocked || isAnnulled || isOwlEliminated;
           const isEliminated = eliminatedAlternativeIds.includes(alt.id) && !isSelected;
           const isWrongTrueFalseSelected = question.question_type === "true_false" && isSelected && answer?.isCorrect && (alt.label === "E" || String(alt.text || "").trim().toLowerCase() === "errado");
@@ -1765,7 +2384,7 @@ function QuestionCard({
               </span>
               <div className="flex-1">
                 <div className={`prose prose-slate max-w-none text-[15px] leading-6 text-slate-700 md:text-base ${isEliminated ? "line-through decoration-red-500 decoration-2" : ""}`} dangerouslySetInnerHTML={{ __html: normalizeHtml(alt.text) }} />
-                {isOwlEliminated && (
+                {wasOwlEliminated && (
                   <p className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-orange-700">Eliminada pela Coruja</p>
                 )}
               </div>
@@ -2142,7 +2761,7 @@ function RulesScreen({
             <RuleItem
               icon={<ShieldAlert size={20} />}
               title="Não saia da tela do simulado!"
-              description="Trocar de aba ou minimizar gera um aviso. Na terceira vez, a tentativa é encerrada e contabilizada."
+              description="Trocar de guia ou minimizar é registrado imediatamente. Manter outra janela ou aplicativo em foco por mais de 10 segundos também gera uma ocorrência. Na terceira ocorrência, a tentativa é encerrada e contabilizada."
               variant="danger"
             />
 

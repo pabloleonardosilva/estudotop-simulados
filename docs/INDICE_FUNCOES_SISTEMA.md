@@ -193,7 +193,8 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 
 **Tela de execução do simulado em notebook (2026-07-17):**
 
-- Dentro da faixa 1024–1366px, `app/meus-simulados/[id]/page-client.tsx` usa as classes `et-laptop-exam-*` (definidas no bloco de banda do `globals.css`, inertes fora da faixa): `et-laptop-exam-topbar` (header da prova com 96px de altura mínima e paddings menores), `et-laptop-exam-badge` (escudo 56px), `et-laptop-exam-title` (título 24px), `et-laptop-exam-stat` (cards de tempo/progresso com 58px de altura, ícones lucide 26px e valores 16px) e `et-laptop-exam-grid` (coluna lateral 310px → 284px, aplicada só fora do modo foco).
+- Dentro da faixa 1024–1366px, `app/meus-simulados/[id]/page-client.tsx` usa as classes `et-laptop-exam-*` (definidas no bloco de banda do `globals.css`, inertes fora da faixa): `et-laptop-exam-topbar` (header da prova com 96px de altura mínima e paddings menores), `et-laptop-exam-badge` (escudo 56px), `et-laptop-exam-title` (título 20px, sem `truncate` e com quebra natural), `et-laptop-exam-stat` (cards com 58px de altura, ícones lucide 26px e valores 16px) e `et-laptop-exam-grid` (coluna lateral 310px → 284px, aplicada só fora do modo foco).
+- `et-laptop-exam-heading` ocupa o espaço flexível e mantém `min-width: 0`; `et-laptop-exam-stats` é uma faixa `nowrap` com gap de 10px. Tempo decorrido/restante usam 132px cada e Progresso usa 190px, impedindo que um card caia sozinho para uma segunda linha. Fora da faixa, as larguras-base também foram reduzidas e o título usa escala responsiva menor (21–26px), preservando o nome completo.
 - Título, status, tempo decorrido, tempo restante, progresso, mapa da prova, modo foco e recursos de apoio são preservados — apenas a densidade muda.
 
 **Regras de manutenção:**
@@ -1300,6 +1301,16 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Finalização deve preservar cálculo de nota.
 - **Voltar da tela de instruções (2026-07-16):** com contexto de Jornada (`?jornada=` na URL), o botão "Voltar" leva para `/minhas-jornadas/[studentJornadaId]?tab=simulados` (Etapa 02 · Simulados já ativa); sem contexto, mantém `/meus-simulados`. A página `/minhas-jornadas/[id]` aceita `?tab=dados|simulados|resultados|info` como aba inicial (validado em `page.tsx`, tipo `JornadaTab`).
 
+**Anti-cheat de foco e visibilidade (atualizado 2026-07-18):**
+
+- `document.visibilitychange` continua registrando imediatamente troca de guia e minimização.
+- `window.blur` cobre o uso de outra janela ou aplicativo enquanto o simulado permanece visível. A perda de foco só vira ocorrência quando permanece contínua por 10 segundos; recuperar o foco antes desse prazo cancela o timer sem chamar a API.
+- Durante a tolerância, o componente local `WindowBlurCountdownOverlay` cobre a prova com um alerta de alto contraste e contagem regressiva grande de 10 a 1. O número é calculado pelo prazo absoluto (`Date.now() + 10s`), evitando deriva do `setInterval`; recuperar o foco remove imediatamente overlay, intervalo e timeout.
+- O alerta informa que chegar ao fim registra uma saída e que a terceira saída encerra e contabiliza a tentativa. O overlay usa `role="alert"`, `aria-live="assertive"` e respeita `prefers-reduced-motion`.
+- Se `visibilitychange` ocorrer durante a tolerância do `blur`, o timer pendente é cancelado e apenas a ocorrência imediata é registrada. A trava temporal em `lastViolationTime` permanece como segunda camada contra duplicidade.
+- A contagem continua sendo persistida por `POST /api/student/simulados/[id]/attempts/[attemptId]/focus-violation`, que valida aluno, ownership, simulado e tentativa em andamento no servidor. A terceira ocorrência mantém a desclassificação existente.
+- O aviso informa explicitamente que outra janela, aplicativo, guia ou minimização é considerado saída da prova. A tela de instruções diferencia troca de guia/minimização imediata da tolerância de 10 segundos para outra janela/aplicativo.
+
 **Ajuda da Coruja na execução real (atualizado 2026-07-18):**
 
 - `simulados.owl_help_limit` guarda o limite manual definido pelo admin. Com `owl_help_enabled = true`, POST/PATCH exigem inteiro positivo; com o recurso desabilitado, o limite é gravado como `null`. A sugestão inicial continua sendo 10% das questões, mínimo 1 (`getDefaultOwlHelpLimit`), mas o valor salvo é soberano. Simulados antigos habilitados com limite nulo usam temporariamente essa fórmula por `resolveOwlHelpLimit`.
@@ -1307,8 +1318,14 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - **Coruja voadora com regra de 10 segundos:** a coruja (`OwlHelpFlyingPrompt`, componente local de `page-client.tsx`, imagem oficial `/images/coruja-ajuda.jpg`) aparece após 10 segundos na mesma questão elegível. Movimento do mouse, cliques, resposta, tesourinha, caderno e digitação não reiniciam a contagem; somente a troca de questão reinicia o período. Finalizar a tentativa cancela o fluxo, abrir a própria Ajuda esconde/reinicia a chamada, e questões já ajudadas, sem créditos ou `true_false` não exibem a coruja.
 - **Animação:** primeiro a coruja surge grande no centro da área principal com fade/scale; depois percorre o trajeto até a faixa inferior entre o card e a navegação, reduz ao tamanho final, pousa com movimento leve e exibe o balão "Você tem direito a X ajuda(s). Clique aqui!". Não existe overlay, `fixed inset-0` ou backdrop-blur; o componente não ocupa a coluna de Caderno/Mapa/Modo foco nem cobre permanentemente alternativas ou navegação. `prefers-reduced-motion` mostra diretamente a posição final.
 - O clique abre modal de confirmação; confirmar chama `POST /api/student/simulados/[id]/attempts/[attemptId]/owl-help`, que valida no servidor: ownership e tentativa em andamento, simulado habilitado, limite salvo (ou fallback apenas quando nulo), questão pertencente à tentativa, questão não `true_false` e pelo menos duas alternativas erradas. O servidor escolhe as alternativas eliminadas e persiste `owl_help_used_count`/`owl_help_data`.
-- Alternativas eliminadas pela Coruja ficam com estilo laranja, selo "Eliminada pela Coruja", não são selecionáveis e não exibem tesourinha. Uma ajuda por questão; questões certo/errado não são elegíveis (modal explica); com limite esgotado a coruja não aparece.
+- Alternativas eliminadas pela Coruja ficam com estilo laranja, selo "Eliminada pela Coruja", não são selecionáveis e não exibem tesourinha. O selo usa a presença do ID em `owl_help_data` como fonte de verdade e permanece visível mesmo se a alternativa já estava selecionada quando a ajuda foi aplicada; o estado selecionado continua preservado. Uma ajuda por questão; questões certo/errado não são elegíveis (modal explica); com limite esgotado a coruja não aparece.
 - Cliente, preview, PDF e backend resolvem o limite por `resolveOwlHelpLimit`; a elegibilidade é revalidada no servidor e o cliente nunca recebe `is_correct` nem decide quais alternativas são erradas.
+
+**Relógio recolhível do Modo Foco (2026-07-19):**
+
+- `FocusModeTimer`, componente local de `app/meus-simulados/[id]/page-client.tsx`, começa recolhido quando o aluno ativa **Apagar a luz**.
+- No lugar do tempo aparece um botão com composição `Castle` + `Clock9`, no mesmo ponto central superior. O botão acessível **Exibir o relógio por 5 segundos** revela o timer atual; após 5 segundos ele volta automaticamente ao ícone.
+- Sair do Modo Foco desmonta o componente e cancela qualquer timeout pendente. O timer oficial continua atualizando normalmente enquanto está visualmente recolhido; nenhuma regra de contagem ou expiração é alterada.
 - Migration preparada e ainda não executada: `supabase/migrations/20260718120000_add_simulados_owl_help_limit.sql`.
 
 ---
@@ -3337,5 +3354,17 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - **Login:** `app/login/page.tsx` possui botão acessível `Eye`/`EyeOff` no campo de senha. A revelação dura no máximo 10 segundos, pode ser encerrada antes por novo clique e o timer é limpo ao desmontar a tela. A autenticação e o valor enviado ao Supabase não foram alterados.
 - **Header do aluno:** `app/components/Header.tsx` não exibe mais a seta ao lado do nome e o bloco de identificação deixou de ter semântica de botão enquanto não existir menu associado.
 - **Resultado:** o subtítulo de `/meus-simulados/[id]/resultado` usa exatamente `Tentativa concluída`.
-- **Ajuda da Coruja:** nos formulários de criação e edição, o campo de limite e a sugestão ficam dentro do mesmo card do toggle, em uma área interna discreta. Regra, validação e persistência permanecem as descritas na seção da Ajuda da Coruja.
+- **Ajuda da Coruja:** nos formulários de criação e edição, o campo de limite e a sugestão ficam dentro do mesmo card do toggle, em uma área interna discreta. O `PremiumInput` usa o modo opcional `premiumStepper`, que remove os controles numéricos nativos do navegador e oferece setas próprias integradas, acessíveis e coerentes com o tema escuro. Regra, validação e persistência permanecem as descritas na seção da Ajuda da Coruja.
 - **Central de e-mails do aluno:** o modal **Reenvio de E-mails** em `/admin/alunos/[id]` possui as abas **E-mails** e **Histórico**. A linha do tempo é montada no Server Component, após `requireAdminPage`, usando registros reais de `student_activity_log`, `admin_audit_logs` e timestamps persistidos em `students`, `student_jornadas` e `student_jornada_simulados`, em ordem cronológica do primeiro envio ao mais recente. Registros consolidados não são contados como múltiplos e-mails. O histórico indica envio/tentativa registrada pelo sistema, não abertura pelo destinatário; nenhuma consulta direta ao Resend foi adicionada.
+
+## 24. APRESENTAÇÃO INICIAL DOS RECURSOS DA PROVA — 2026-07-18
+
+- **Tela:** `app/meus-simulados/[id]/page-client.tsx`, componente local `SimuladoResourcesIntroModal`.
+- Após a criação confirmada de uma nova tentativa, a execução abre um modal bloqueante e responsivo com o título **Antes de começar: conheça seus recursos**. A composição reproduz a tela da prova em HTML/CSS e indica, com hotspots numerados e linhas vetoriais, onde ficam Tesoura, Ajuda da Coruja e Caderno.
+- Os textos explicam que a Tesoura elimina alternativas apenas visualmente, que a Ajuda da Coruja aparece quando disponível e que o Caderno registra observações, dúvidas e estratégias. A Ajuda da Coruja permanece apresentada mesmo quando estiver desabilitada naquele simulado, sem prometer disponibilidade.
+- O exemplo da Tesoura reproduz os dois estados reais da alternativa: controle circular exibido antes da letra durante hover/foco e alternativa já eliminada com tesoura vermelha e texto riscado. A orientação informa que o aluno deve posicionar o mouse antes da letra e clicar na tesoura que aparecer.
+- Os três callouts usam curvas SVG sólidas com gradiente, contorno branco, glow discreto e ponta de seta; cada trajetória termina diretamente na tesoura, na coruja ou no ícone do Caderno. A entrada do modal usa uma sequência de aproximação central com overshoot controlado e clarão laranja, desativada por `prefers-reduced-motion`.
+- O modal não fecha por clique no fundo nem por Escape. O foco inicial vai para **Entendi, iniciar simulado**, e a preferência `prefers-reduced-motion` é respeitada.
+- A exibição é controlada por tentativa no `sessionStorage`, com a chave `estudotop:simulado:{simuladoId}:attempt:{attemptId}:resources-intro-seen`. A chave é gravada somente ao confirmar o início. Retomadas na mesma sessão do navegador não reabrem a apresentação; como não há persistência no servidor, uma nova sessão pode apresentar novamente o tutorial de uma tentativa ainda em andamento.
+- O cronômetro oficial não é pausado: a tentativa e seu `expires_at` já existem no servidor quando o modal aparece, portanto a contagem local permanece sincronizada com a fonte de verdade. O tempo de resposta da primeira questão e a chamada de 10 segundos da Coruja começam após o fechamento do modal.
+- Não foram alterados banco, migrations, APIs, submit, respostas, timer oficial, anti-cheat, TopCoins, resultado, regras funcionais da Tesoura/Coruja/Caderno ou regras de Jornada.

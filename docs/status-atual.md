@@ -393,6 +393,8 @@ Escopo previsto:
 - [x] Sinais comportamentais entram depois do parecer-base e respeitam o limite de até 2 sinais positivos e até 2 pontos de atenção.
 - [x] Eventos de inatividade superiores a 60 segundos passam a ser registrados durante a execução do simulado.
 - [x] Uso da tesourinha passa a ser registrado por questão durante a execução do simulado.
+- [x] Anti-cheat detecta outra janela/aplicativo por `window.blur`, com tolerância contínua de 10 segundos, preservando registro imediato para troca de guia/minimização e evitando duplicidade entre eventos.
+- [x] Durante o `window.blur`, a prova exibe contagem regressiva central de 10 a 1; voltar ao simulado remove o alerta instantaneamente, e chegar ao fim registra a ocorrência pela API já existente.
 - [x] API de resultado passa a retornar métricas comportamentais para alimentar o Parecer da Coruja.
 - [x] Detalhe administrativo do simulado passa a exibir tempo médio de resolução junto da nota média.
 - [x] Índice atualizado para apontar `docs/Sprint-resultados.md` como fonte oficial da Sprint Resultados.
@@ -742,7 +744,7 @@ Escopo previsto:
 
 ### Refinamentos de interface e histórico de e-mails — 2026-07-18
 
-- O limite da Ajuda da Coruja passou a aparecer dentro do próprio card de habilitação, com campo numérico compacto e sugestão discreta.
+- O limite da Ajuda da Coruja passou a aparecer dentro do próprio card de habilitação, com campo numérico compacto, sugestão discreta e setas premium integradas no lugar do spinner branco nativo do navegador.
 - O login ganhou revelação de senha por botão acessível; após 10 segundos a senha volta automaticamente a ficar mascarada.
 - O header do aluno não exibe mais a seta de dropdown nem trata o nome como botão enquanto não existir menu associado.
 - O resultado do simulado preserva o texto `Tentativa concluída`.
@@ -824,7 +826,23 @@ Escopo previsto:
 
 - O header desktop da Área do Aluno deixou de quebrar em duas linhas em notebooks: a partir de `xl` (1280px) ele usa uma única linha compacta de 92px (logo, menu, TopCoins, usuário e Sair reduzidos proporcionalmente); a composição de duas linhas ficou restrita a 1024–1279px; em `2xl+` nada mudou.
 - O `AppShell` acompanha as novas alturas (88/136/92/112px) no `min-h` do conteúdo do aluno.
-- A tela de execução do simulado ganhou densidade de notebook via classes `et-laptop-exam-*` no bloco de banda 1024–1366px do `globals.css`: header da prova com 96px (antes 124px), escudo 56px, título 24px, cards de tempo/progresso com 58px, e coluna lateral 310px → 284px (fora do modo foco), dando mais protagonismo à questão.
+- A tela de execução do simulado ganhou densidade de notebook via classes `et-laptop-exam-*` no bloco de banda 1024–1366px do `globals.css`: header da prova com 96px (antes 124px), escudo 56px, título 20px com quebra natural, cards de tempo/progresso com 58px em uma única faixa horizontal, e coluna lateral 310px → 284px (fora do modo foco), dando mais protagonismo à questão.
+- O título deixou de usar `truncate` e adota escala menor de 21–26px fora da banda; os cards usam `nowrap` e larguras compactas para não deixar Progresso isolado em uma segunda linha.
 - Sem zoom/transform; escala tipográfica oficial, mobile, tablet e telas ≥1536px preservados; nenhuma regra de negócio, API ou fluxo alterado.
 - Ver seção 1.2 do `docs/INDICE_FUNCOES_SISTEMA.md`.
 - Nenhuma migration foi criada ou alterada.
+
+### Apresentação inicial dos recursos da prova — 2026-07-18
+
+- Novas tentativas em `/meus-simulados/[id]` apresentam um modal premium e responsivo antes da primeira interação, explicando Tesoura, Ajuda da Coruja e Caderno com uma recriação HTML/CSS da tela, hotspots numerados e linhas vetoriais.
+- Os callouts foram refinados com curvas sólidas, gradiente, contorno, glow e pontas alinhadas aos controles. O mock da Tesoura reproduz sua posição real antes da letra, seus estados de hover/eliminação e traz instrução explícita sobre como fazê-la aparecer.
+- A entrada do modal usa aproximação central com overshoot e clarão laranja para ganhar destaque, preservando abertura direta quando `prefers-reduced-motion` estiver ativo.
+- A confirmação é registrada por tentativa no `sessionStorage`; retomadas na mesma sessão do navegador não reapresentam o tutorial, enquanto uma nova sessão pode apresentá-lo novamente. O modal é bloqueante, acessível, não fecha por backdrop/Escape e respeita movimento reduzido.
+- O timer oficial continua sincronizado com o `expires_at` do servidor. O tempo de resposta da primeira questão e a espera de 10 segundos da Coruja começam após a confirmação do tutorial.
+- Nenhuma migration, API, dependência ou regra funcional da prova foi alterada.
+
+### Coruja selecionada e relógio recolhível no Modo Foco — 2026-07-19
+
+- O selo **Eliminada pela Coruja** permanece visível quando a alternativa afetada já estava selecionada.
+- O Modo Foco inicia com o timer recolhido em uma torre-relógio; clicar revela o tempo por 5 segundos e depois restaura automaticamente o ícone no mesmo local.
+- Timer oficial, respostas, persistência da Coruja, APIs e regras de tentativa permanecem inalterados.

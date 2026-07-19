@@ -1006,7 +1006,7 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
           </div>
         </div>
         <button type="button" onClick={onGoToReview} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-[12px] border border-orange-200 bg-white/90 px-5 text-sm font-extrabold text-[#FF5A00] shadow-[0_8px_18px_rgba(255,122,0,0.08)] transition duration-200 hover:-translate-y-px hover:bg-orange-50">
-          Ir para a Revisão Geral <ChevronRight size={16} />
+          Revisar Questões <ChevronRight size={16} />
         </button>
       </section>
     </div>
