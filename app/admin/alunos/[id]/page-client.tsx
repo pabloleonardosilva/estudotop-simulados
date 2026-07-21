@@ -2332,7 +2332,7 @@ export default function AlunoAdminDetalheClient({
               </button>
             </div>
             <p className="mt-4 text-sm leading-6 text-white/50">
-              A senha atual de <span className="font-semibold text-white/80">{student.name}</span> deixará de funcionar. O aluno receberá um e-mail avisando sobre o reset e um link válido por 24 horas para criar uma nova senha.
+              A senha atual de <span className="font-semibold text-white/80">{student.name}</span> deixará de funcionar. O aluno receberá um e-mail avisando sobre o reset e um link válido por 72 horas para criar uma nova senha.
             </p>
             <div className="mt-4 rounded-2xl border border-orange-400/15 bg-orange-500/[0.06] px-4 py-3 text-xs leading-5 text-orange-100/65">
               O status da conta não será alterado. Alunos bloqueados ou inativos continuarão sem acesso até uma ação administrativa específica.

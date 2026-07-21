@@ -9,7 +9,7 @@ export function studentWelcomeTemplate({
   studentName,
   email,
   firstAccessUrl,
-  expiresInHours = 24,
+  expiresInHours = 72,
 }: StudentWelcomeEmailProps) {
   return `
   <!doctype html>

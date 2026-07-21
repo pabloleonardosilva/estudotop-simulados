@@ -5,7 +5,7 @@ import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/secur
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <noreply@estudotop.com.br>";
-const FIRST_ACCESS_EXPIRATION_HOURS = 24;
+const FIRST_ACCESS_EXPIRATION_HOURS = 72;
 
 export async function sendFirstAccessEmail(studentId: string) {
   const resendApiKey = process.env.RESEND_API_KEY;

@@ -15,7 +15,7 @@ import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornad
 import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { validateStudentAccountIntegrity } from "@/lib/server/studentAccountService";
 
-const FIRST_ACCESS_EXPIRATION_HOURS = 24;
+const FIRST_ACCESS_EXPIRATION_HOURS = 72;
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);

@@ -134,7 +134,7 @@ export default function NovoAlunoAdminPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-white">Cadastrar aluno</h1>
             <p className="mt-2 text-sm text-white/45">
-              Cadastre o aluno e envie um link de confirmação válido por 24 horas.
+              Cadastre o aluno e envie um link de confirmação válido por 72 horas.
             </p>
           </div>
           <Link href="/admin/alunos">

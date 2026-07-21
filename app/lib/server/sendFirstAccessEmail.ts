@@ -5,7 +5,7 @@ import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
-const FIRST_ACCESS_EXPIRATION_HOURS = 24;
+const FIRST_ACCESS_EXPIRATION_HOURS = 72;
 
 export async function sendFirstAccessEmail(
   studentId: string,
