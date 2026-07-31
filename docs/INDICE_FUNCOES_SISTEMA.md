@@ -652,6 +652,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 - Frase `Imagem associada para resolução da questão` deve destacar a questão como requer imagem.
 - Botões de seleção devem seguir o mesmo padrão visual dos demais fluxos.
 - **Órgão detectado automaticamente (2026-06-02):** o importador extrai `Órgão:` / `Orgao:` do texto bruto, preenche `orgao` no card, permite edição manual antes do envio e salva o valor em `questions.orgao`. As questões antigas podem permanecer com `orgao` nulo.
+- **Tópicos avaliados sem sugestão de IA (2026-07-31):** `analyze/route.ts` e `analyze-batch/route.ts` deixaram de pedir `evaluated_topics` ao modelo (prompt e schema JSON não citam mais o campo) e sempre retornam `evaluated_topics: []` para cada questão analisada. O campo continua existindo no card de importação e deve ser preenchido manualmente pelo admin em `EvaluatedTopicsInput` (com autocomplete pelo catálogo de `/api/admin/topics`, sem chamada de IA); a validação que bloqueia o envio para revisão sem tópico preenchido (`missingTopics` em `page-client.tsx`) permanece inalterada. A detecção por IA de tópicos avaliados para questões já existentes (`api/admin/questions/[id]/detect-evaluated-topics/route.ts`, usada fora do importador) não foi alterada.
 
 ---
 

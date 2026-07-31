@@ -869,3 +869,11 @@ Escopo previsto:
 - Em 1366px, os cards passam a ocupar duas colunas, preservando três colunas somente a partir de 1536px.
 - Nomes de assunto deixam de usar limite de duas linhas e tópicos extensos passam a quebrar em chips de altura flexível, mantendo todo o texto visível.
 - Cálculos, agrupamentos, consolidação semântica e origem dos tópicos permanecem inalterados.
+
+### Remoção da sugestão de IA para Tópicos avaliados no Importador — 2026-07-31
+
+- `app/api/admin/questions/import/analyze/route.ts` e `app/api/admin/questions/import/analyze-batch/route.ts` deixaram de pedir `evaluated_topics` ao modelo (prompt e schema JSON) e passam a retornar sempre `evaluated_topics: []` por questão analisada, para não gastar tokens em um recurso considerado pouco assertivo pela IA.
+- O campo **Tópicos avaliados** continua existindo no card de importação (`EvaluatedTopicsInput`) e passa a exigir preenchimento manual do admin; a validação que bloqueia o envio para revisão sem tópico informado não foi alterada.
+- Nenhuma outra rota que usa IA no sistema foi alterada, incluindo a detecção de tópicos avaliados para questões já existentes (`api/admin/questions/[id]/detect-evaluated-topics/route.ts`), usada fora do fluxo de importação.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+- `npx tsc --noEmit` e `npm run build` executados sem erros após a alteração.

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
 
 function extractJson(text: string) {
@@ -86,7 +85,6 @@ Regras:
   - orgao: órgão do concurso/prova, se aparecer em "Órgão:" ou "Orgao:"; se não aparecer, deixe vazio
   - discipline_name: disciplina, se aparecer; se não aparecer, deixe vazio
   - subject_name: assunto, se aparecer; se não aparecer, deixe vazio
-  - evaluated_topics: lista com 1 a 4 tópicos específicos efetivamente avaliados; não repita o assunto genérico se houver tópico mais específico
   - difficulty_level: número de 1 a 5 se for possível inferir; se não, null
   - year: ano da questão se aparecer; se não aparecer, null
 - Se houver gabarito, marque a alternativa correta.
@@ -108,7 +106,6 @@ Formato obrigatório:
       "orgao": "",
       "discipline_name": "",
       "subject_name": "",
-      "evaluated_topics": ["Tópico específico"],
       "difficulty_level": null,
       "year": null,
       "explanation_text": "",
@@ -211,7 +208,7 @@ ${rawText}`;
         orgao: clean(extractAgencyNameFromText(rawText) || question.orgao || question.agency_name || ""),
         discipline_name: String(question.discipline_name || "").trim(),
         subject_name: String(question.subject_name || "").trim(),
-        evaluated_topics: normalizeEvaluatedTopics(question.evaluated_topics),
+        evaluated_topics: [] as string[],
         difficulty_level: question.difficulty_level ? Number(question.difficulty_level) : null,
         year: question.year ? Number(question.year) : new Date().getFullYear(),
         explanation_text: String(question.explanation_text || "").trim(),

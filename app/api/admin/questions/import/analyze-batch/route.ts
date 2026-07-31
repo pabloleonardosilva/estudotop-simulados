@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { calculateDuplicateScore, jaccardSimilarity } from "@/lib/questions/duplicate-service";
-import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
 
 function clean(value?: string | null) {
@@ -1157,7 +1156,6 @@ Extraia as questÃµes e retorne JSON vÃ¡lido no formato:
       "board_name": "CESPE / CEBRASPE",
       "orgao": "PC-RR",
       "question_type": "multiple_choice",
-      "evaluated_topics": ["Tópico específico"],
       "difficulty_level": null,
       "explanation_text": "",
       "alternatives": [
@@ -1218,13 +1216,6 @@ Campos obrigatÃ³rios:
 - difficulty_level
 - explanation_text
 - alternatives
-- evaluated_topics
-
-Regras para evaluated_topics:
-- Identifique os tópicos específicos efetivamente avaliados na questão.
-- Não repita o assunto genérico se houver tópico mais específico.
-- Use nomes curtos e objetivos, de 1 a 4 tópicos.
-- Não invente tópicos que não estejam diretamente relacionados ao enunciado.
 
 Regras para orgao:
 - Extraia o órgão quando aparecer em padrões como "Órgão: PC-RR", "Orgao: PC-SP" ou em linha de metadados do QConcursos.
@@ -1351,7 +1342,7 @@ ${text}
         difficulty_level: question.difficulty_level
           ? Number(question.difficulty_level)
           : null,
-        evaluated_topics: normalizeEvaluatedTopics(question.evaluated_topics),
+        evaluated_topics: [] as string[],
         explanation_text: clean(question.explanation_text),
         alternatives,
         is_duplicate: Boolean(duplicateInfo) && duplicateInfo?.duplicate_type !== "possible",
