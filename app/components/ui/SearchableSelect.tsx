@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 export type SearchableSelectOption = {
@@ -30,8 +30,10 @@ export default function SearchableSelect({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = `searchable-select-listbox-${useId()}`;
 
   const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
   const filtered = search.trim()
@@ -53,6 +55,7 @@ export default function SearchableSelect({
   function handleOpen() {
     setOpen(true);
     setSearch("");
+    setHighlightedIndex(-1);
     setTimeout(() => inputRef.current?.focus(), 50);
   }
 
@@ -60,6 +63,31 @@ export default function SearchableSelect({
     onChange(opt.value);
     setOpen(false);
     setSearch("");
+    setHighlightedIndex(-1);
+  }
+
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (filtered.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return filtered.length - 1;
+        if (next >= filtered.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+      e.preventDefault();
+      handleSelect(filtered[highlightedIndex]);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+    }
   }
 
   // ─── Dark theme (QuestionEditor, raio-x) ───────────────────────────────────
@@ -96,18 +124,24 @@ export default function SearchableSelect({
                 <input
                   ref={inputRef}
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+                  onKeyDown={handleSearchKeyDown}
                   placeholder="Buscar..."
                   className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/80 outline-none placeholder:text-white/25"
+                  role="combobox"
+                  aria-expanded={filtered.length > 0}
+                  aria-controls={listboxId}
+                  aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
                 />
               </div>
             </div>
-            <div className="max-h-60 overflow-y-auto p-2">
+            <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto p-2">
               {filtered.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-white/30">Nenhum resultado</p>
               ) : (
                 filtered.map((opt, idx) => {
                   const selected = opt.value === value;
+                  const highlighted = idx === highlightedIndex;
                   const showGroupHeader = !!opt.group && opt.group !== filtered[idx - 1]?.group;
                   return (
                     <div key={opt.value}>
@@ -120,11 +154,17 @@ export default function SearchableSelect({
                       )}
                       <button
                         type="button"
+                        id={`${listboxId}-option-${idx}`}
+                        role="option"
+                        aria-selected={highlighted}
                         onClick={() => handleSelect(opt)}
+                        onMouseEnter={() => setHighlightedIndex(idx)}
                         className={
                           selected
                             ? "flex w-full items-center justify-between rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-2.5 text-left text-sm font-semibold text-orange-100"
-                            : "flex w-full items-center rounded-xl border border-transparent px-4 py-2.5 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"
+                            : highlighted
+                              ? "flex w-full items-center rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-2.5 text-left text-sm font-semibold text-white/85"
+                              : "flex w-full items-center rounded-xl border border-transparent px-4 py-2.5 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"
                         }
                       >
                         <span className="flex-1 text-left">{opt.label}</span>
@@ -168,27 +208,39 @@ export default function SearchableSelect({
               <input
                 ref={inputRef}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Buscar..."
                 className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
+                role="combobox"
+                aria-expanded={filtered.length > 0}
+                aria-controls={listboxId}
+                aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
               />
             </div>
           </div>
-          <div className="max-h-60 overflow-y-auto p-2">
+          <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto p-2">
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-slate-400">Nenhum resultado</p>
             ) : (
-              filtered.map((opt) => {
+              filtered.map((opt, idx) => {
                 const selected = opt.value === value;
+                const highlighted = idx === highlightedIndex;
                 return (
                   <button
                     key={opt.value}
+                    id={`${listboxId}-option-${idx}`}
+                    role="option"
+                    aria-selected={highlighted}
                     type="button"
                     onClick={() => handleSelect(opt)}
+                    onMouseEnter={() => setHighlightedIndex(idx)}
                     className={
                       selected
                         ? "flex w-full items-center justify-between rounded-xl bg-orange-50 px-3 py-2 text-left text-sm font-semibold text-orange-700"
-                        : "flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                        : highlighted
+                          ? "flex w-full items-center rounded-xl bg-slate-100 px-3 py-2 text-left text-sm font-semibold text-slate-800"
+                          : "flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-800"
                     }
                   >
                     <span className="flex-1 truncate text-left">{opt.label}</span>

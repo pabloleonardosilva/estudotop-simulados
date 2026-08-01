@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 
@@ -60,8 +60,10 @@ export default function SubjectMultiSelect({
   const [createdSubjects, setCreatedSubjects] = useState<SubjectOption[]>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = `subject-multiselect-listbox-${useId()}`;
 
   const allSubjects = useMemo(
     () => uniqueById([...(subjects || []), ...createdSubjects]),
@@ -75,6 +77,7 @@ export default function SubjectMultiSelect({
   );
   const exactMatch = allSubjects.some((s) => comparableName(s.name) === comparableName(normalizedSearch));
   const canOfferCreate = allowCreate && normalizedSearch.length >= 2 && !exactMatch;
+  const navigableCount = filtered.length + (canOfferCreate ? 1 : 0);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -115,6 +118,7 @@ export default function SubjectMultiSelect({
   function openDropdown() {
     setOpen(true);
     setCreateError("");
+    setHighlightedIndex(-1);
     focusSearchSoon();
   }
 
@@ -127,7 +131,40 @@ export default function SubjectMultiSelect({
     setSearch("");
     setCreateError("");
     setOpen(true);
+    setHighlightedIndex(-1);
     focusSearchSoon();
+  }
+
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (navigableCount > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return navigableCount - 1;
+        if (next >= navigableCount) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter") {
+      if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+        e.preventDefault();
+        toggle(filtered[highlightedIndex].id);
+        return;
+      }
+
+      if (canOfferCreate && (highlightedIndex === filtered.length || highlightedIndex === -1)) {
+        e.preventDefault();
+        void createSubject();
+      }
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+    }
   }
 
   function remove(id: string) {
@@ -234,38 +271,47 @@ export default function SubjectMultiSelect({
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setCreateError("");
+                  setHighlightedIndex(-1);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && canOfferCreate) {
-                    e.preventDefault();
-                    void createSubject();
-                  }
-                }}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Buscar ou cadastrar assunto..."
                 className={inputClass}
                 onClick={(e) => e.stopPropagation()}
+                role="combobox"
+                aria-expanded={navigableCount > 0}
+                aria-controls={listboxId}
+                aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
               />
             </div>
 
-            <div className="max-h-56 space-y-0.5 overflow-y-auto">
+            <div id={listboxId} role="listbox" className="max-h-56 space-y-0.5 overflow-y-auto">
               {filtered.length === 0 && !canOfferCreate ? (
                 <p className={`px-3 py-2 text-xs ${dark ? "text-white/30" : "text-slate-400"}`}>Nenhum assunto encontrado.</p>
               ) : (
-                filtered.map((subject) => {
+                filtered.map((subject, index) => {
                   const isSelected = selectedIds.includes(subject.id);
+                  const isHighlighted = index === highlightedIndex;
                   return (
                     <button
                       key={subject.id}
+                      id={`${listboxId}-option-${index}`}
                       type="button"
+                      role="option"
+                      aria-selected={isHighlighted}
                       onClick={() => toggle(subject.id)}
+                      onMouseEnter={() => setHighlightedIndex(index)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition duration-150 ${
                         isSelected
                           ? dark
                             ? "bg-orange-500/[0.12] text-orange-300 ring-1 ring-orange-500/20"
                             : "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
-                          : dark
-                            ? "text-white/60 hover:bg-white/[0.06] hover:text-white/90"
-                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          : isHighlighted
+                            ? dark
+                              ? "bg-white/[0.10] text-white/90"
+                              : "bg-slate-100 text-slate-900"
+                            : dark
+                              ? "text-white/60 hover:bg-white/[0.06] hover:text-white/90"
+                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                       }`}
                     >
                       <span className="flex-1 leading-snug">{subject.name}</span>
@@ -280,12 +326,14 @@ export default function SubjectMultiSelect({
               {canOfferCreate && (
                 <button
                   type="button"
+                  id={`${listboxId}-option-${filtered.length}`}
                   onClick={() => void createSubject()}
+                  onMouseEnter={() => setHighlightedIndex(filtered.length)}
                   disabled={creating}
                   className={`mt-1 flex w-full items-center gap-2.5 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-semibold transition ${
                     dark
-                      ? "border-orange-400/30 bg-orange-500/[0.08] text-orange-200 hover:bg-orange-500/[0.12] disabled:opacity-60"
-                      : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-60"
+                      ? `border-orange-400/30 bg-orange-500/[0.08] text-orange-200 hover:bg-orange-500/[0.12] disabled:opacity-60 ${highlightedIndex === filtered.length ? "bg-orange-500/[0.16]" : ""}`
+                      : `border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-60 ${highlightedIndex === filtered.length ? "bg-orange-100" : ""}`
                   }`}
                 >
                   {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}

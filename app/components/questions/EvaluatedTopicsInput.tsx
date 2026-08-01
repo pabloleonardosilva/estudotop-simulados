@@ -19,6 +19,31 @@ type EvaluatedTopicsInputProps = {
 
 type TopicSuggestion = { id: string; name: string };
 
+const topicCatalogCache = new Map<string, TopicSuggestion[]>();
+const topicCatalogRequests = new Map<string, Promise<TopicSuggestion[]>>();
+
+function loadTopicCatalog(subjectId: string) {
+  const cached = topicCatalogCache.get(subjectId);
+  if (cached) return Promise.resolve(cached);
+
+  const pending = topicCatalogRequests.get(subjectId);
+  if (pending) return pending;
+
+  const request = adminFetch(`/api/admin/topics?subject_id=${encodeURIComponent(subjectId)}&active=true`)
+    .then(async (response) => {
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || "Não foi possível carregar os tópicos.");
+
+      const topics = (result.topics || []).map((topic: TopicSuggestion) => ({ id: topic.id, name: topic.name }));
+      topicCatalogCache.set(subjectId, topics);
+      return topics;
+    })
+    .finally(() => topicCatalogRequests.delete(subjectId));
+
+  topicCatalogRequests.set(subjectId, request);
+  return request;
+}
+
 export default function EvaluatedTopicsInput({
   value,
   onChange,
@@ -32,6 +57,9 @@ export default function EvaluatedTopicsInput({
   const [draft, setDraft] = useState("");
   const [catalog, setCatalog] = useState<TopicSuggestion[]>([]);
   const [catalogSubjectId, setCatalogSubjectId] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [retryCatalog, setRetryCatalog] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const topics = normalizeEvaluatedTopics(value);
   const showError = error || (required && topics.length === 0 ? "Informe pelo menos um tópico avaliado." : null);
@@ -40,20 +68,33 @@ export default function EvaluatedTopicsInput({
   useEffect(() => {
     if (!subjectId) return;
 
-    const controller = new AbortController();
-    adminFetch(`/api/admin/topics?subject_id=${encodeURIComponent(subjectId)}&active=true`, { signal: controller.signal })
-      .then((response) => response.json())
-      .then((result) => {
-        if (!result.ok) return;
-        setCatalog((result.topics || []).map((topic: TopicSuggestion) => ({ id: topic.id, name: topic.name })));
+    let active = true;
+    Promise.resolve()
+      .then(() => {
+        if (!active) return;
+        setCatalogLoading(true);
+        setCatalogError(null);
+        return loadTopicCatalog(subjectId);
+      })
+      .then((topics) => {
+        if (!active || !topics) return;
+        setCatalog(topics);
         setCatalogSubjectId(subjectId);
       })
       .catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") return;
+        if (!active) return;
+        setCatalog([]);
+        setCatalogSubjectId(null);
+        setCatalogError(error instanceof Error ? error.message : "Não foi possível carregar os tópicos.");
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
       });
 
-    return () => controller.abort();
-  }, [subjectId]);
+    return () => {
+      active = false;
+    };
+  }, [retryCatalog, subjectId]);
 
   const suggestions = useMemo(() => {
     const term = normalizeTopicComparableName(draft);
@@ -63,6 +104,13 @@ export default function EvaluatedTopicsInput({
     return catalog
       .filter((topic) => !selectedKeys.has(normalizeTopicComparableName(topic.name)))
       .filter((topic) => normalizeTopicComparableName(topic.name).includes(term))
+      .sort((left, right) => {
+        const leftName = normalizeTopicComparableName(left.name);
+        const rightName = normalizeTopicComparableName(right.name);
+        const leftRank = leftName === term ? 0 : leftName.startsWith(term) ? 1 : 2;
+        const rightRank = rightName === term ? 0 : rightName.startsWith(term) ? 1 : 2;
+        return leftRank - rightRank || leftName.localeCompare(rightName, "pt-BR");
+      })
       .slice(0, 6);
   }, [catalog, catalogSubjectId, draft, subjectId, topics]);
 
@@ -190,6 +238,20 @@ export default function EvaluatedTopicsInput({
             <Plus size={14} /> Adicionar
           </button>
         </div>
+        {subjectId && catalogLoading && <p className={dark ? "mt-2 text-xs font-semibold text-slate-400" : "mt-2 text-xs font-semibold text-slate-500"}>Carregando sugestões...</p>}
+        {subjectId && catalogError && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className={dark ? "text-xs font-semibold text-amber-300" : "text-xs font-semibold text-amber-700"}>{catalogError}</p>
+            <button
+              type="button"
+              onClick={() => setRetryCatalog((current) => current + 1)}
+              disabled={disabled || catalogLoading}
+              className={dark ? "text-xs font-black text-orange-300 underline underline-offset-2 disabled:opacity-40" : "text-xs font-black text-orange-700 underline underline-offset-2 disabled:opacity-40"}
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
       </div>
       {showError && <p className={dark ? "text-xs font-semibold text-red-300" : "text-xs font-semibold text-red-600"}>{showError}</p>}
     </div>

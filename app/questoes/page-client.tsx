@@ -1,7 +1,7 @@
 "use client";
 
-import type { ChangeEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -3503,6 +3503,8 @@ function BoardFilterDropdown({
   const [open, setOpen] = useState(false);
   const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `board-filter-listbox-${useId()}`;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3533,6 +3535,37 @@ function BoardFilterDropdown({
     });
   }
 
+  const visibleBoards = search.trim()
+    ? boards.filter((b) => b.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : boards;
+
+  function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (visibleBoards.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return visibleBoards.length - 1;
+        if (next >= visibleBoards.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < visibleBoards.length) {
+      e.preventDefault();
+      toggleBoard(visibleBoards[highlightedIndex].id);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    e.stopPropagation();
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
@@ -3540,7 +3573,7 @@ function BoardFilterDropdown({
       </label>
       <button
         type="button"
-        onClick={() => { setDraftIds(selectedIds); setSearch(""); setOpen((o) => !o); }}
+        onClick={() => { setDraftIds(selectedIds); setSearch(""); setHighlightedIndex(-1); setOpen((o) => !o); }}
         className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15]"
       >
         <span className="truncate">{getLabel()}</span>
@@ -3561,32 +3594,35 @@ function BoardFilterDropdown({
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
               placeholder="Buscar banca..."
               className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 text-sm text-white/70 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+              role="combobox"
+              aria-expanded={visibleBoards.length > 0}
+              aria-controls={listboxId}
             />
           </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-            {(() => {
-              const visible = search.trim()
-                ? boards.filter((b) => b.name.toLowerCase().includes(search.trim().toLowerCase()))
-                : boards;
-              if (visible.length === 0) return (
-                <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
-                  Nenhum resultado para &ldquo;{search}&rdquo;.
-                </p>
-              );
-              return visible.map((board) => {
+          <div id={listboxId} role="listbox" className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {visibleBoards.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum resultado para &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleBoards.map((board, index) => {
                 const selected = draftIds.includes(board.id);
+                const highlighted = index === highlightedIndex;
                 return (
                   <button
                     key={board.id}
                     type="button"
                     onClick={() => toggleBoard(board.id)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
                     className={selected
                       ? "flex w-full items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-3 text-left text-sm font-semibold text-orange-100"
-                      : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}
+                      : highlighted
+                        ? "flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white/85"
+                        : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}
                   >
                     <span className={selected ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-500 text-white" : "h-5 w-5 shrink-0 rounded-md border border-white/[0.15] bg-white/[0.04]"}>
                       {selected && <Check size={13} strokeWidth={3} />}
@@ -3597,8 +3633,8 @@ function BoardFilterDropdown({
                     </span>
                   </button>
                 );
-              });
-            })()}
+              })
+            )}
           </div>
           <div className="mt-3 flex gap-2 border-t border-white/[0.07] pt-3">
             <button type="button" onClick={() => { setDraftIds([]); onChange([]); setOpen(false); }} className="flex-1 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/50 hover:bg-white/[0.08] hover:text-white/70">
@@ -3628,6 +3664,8 @@ function OrgaoFilterDropdown({
   const [open, setOpen] = useState(false);
   const [draftOrgaos, setDraftOrgaos] = useState<string[]>(selectedOrgaos);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `orgao-filter-listbox-${useId()}`;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3653,6 +3691,37 @@ function OrgaoFilterDropdown({
     );
   }
 
+  const visibleOrgaos = search.trim()
+    ? orgaos.filter((orgao) => orgao.toLowerCase().includes(search.trim().toLowerCase()))
+    : orgaos;
+
+  function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (visibleOrgaos.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return visibleOrgaos.length - 1;
+        if (next >= visibleOrgaos.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < visibleOrgaos.length) {
+      e.preventDefault();
+      toggleOrgao(visibleOrgaos[highlightedIndex]);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    e.stopPropagation();
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
@@ -3660,7 +3729,7 @@ function OrgaoFilterDropdown({
       </label>
       <button
         type="button"
-        onClick={() => { setDraftOrgaos(selectedOrgaos); setSearch(""); setOpen((o) => !o); }}
+        onClick={() => { setDraftOrgaos(selectedOrgaos); setSearch(""); setHighlightedIndex(-1); setOpen((o) => !o); }}
         className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15]"
       >
         <span className="truncate">{getLabel()}</span>
@@ -3681,32 +3750,35 @@ function OrgaoFilterDropdown({
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
               placeholder="Buscar órgão..."
               className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 text-sm text-white/70 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+              role="combobox"
+              aria-expanded={visibleOrgaos.length > 0}
+              aria-controls={listboxId}
             />
           </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-            {(() => {
-              const visible = search.trim()
-                ? orgaos.filter((orgao) => orgao.toLowerCase().includes(search.trim().toLowerCase()))
-                : orgaos;
-              if (visible.length === 0) return (
-                <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
-                  Nenhum resultado para &ldquo;{search}&rdquo;.
-                </p>
-              );
-              return visible.map((orgao) => {
+          <div id={listboxId} role="listbox" className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {visibleOrgaos.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum resultado para &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleOrgaos.map((orgao, index) => {
                 const selected = draftOrgaos.includes(orgao);
+                const highlighted = index === highlightedIndex;
                 return (
                   <button
                     key={orgao}
                     type="button"
                     onClick={() => toggleOrgao(orgao)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
                     className={selected
                       ? "flex w-full items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-3 text-left text-sm font-semibold text-orange-100"
-                      : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}
+                      : highlighted
+                        ? "flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white/85"
+                        : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}
                   >
                     <span className={selected ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-500 text-white" : "h-5 w-5 shrink-0 rounded-md border border-white/[0.15] bg-white/[0.04]"}>
                       {selected && <Check size={13} strokeWidth={3} />}
@@ -3717,8 +3789,8 @@ function OrgaoFilterDropdown({
                     </span>
                   </button>
                 );
-              });
-            })()}
+              })
+            )}
           </div>
           <div className="mt-3 flex gap-2 border-t border-white/[0.07] pt-3">
             <button type="button" onClick={() => { setDraftOrgaos([]); onChange([]); setOpen(false); }} className="flex-1 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/50 hover:bg-white/[0.08] hover:text-white/70">
@@ -3852,6 +3924,8 @@ function SubjectFilterDropdown({
   const [open, setOpen] = useState(false);
   const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
   const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `subject-filter-listbox-${useId()}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedSubjects = subjects.filter((subject) => selectedIds.includes(subject.id));
 
@@ -3880,6 +3954,37 @@ function SubjectFilterDropdown({
     );
   }
 
+  const visibleSubjects = search.trim()
+    ? subjects.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : subjects;
+
+  function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (visibleSubjects.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return visibleSubjects.length - 1;
+        if (next >= visibleSubjects.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < visibleSubjects.length) {
+      e.preventDefault();
+      toggleSubject(visibleSubjects[highlightedIndex].id);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    e.stopPropagation();
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
@@ -3891,6 +3996,7 @@ function SubjectFilterDropdown({
         onClick={() => {
           setDraftIds(selectedIds);
           setSearch("");
+          setHighlightedIndex(-1);
           setOpen((current) => !current);
         }}
         className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15]"
@@ -3918,38 +4024,41 @@ function SubjectFilterDropdown({
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
               placeholder="Buscar assunto..."
               className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 text-sm text-white/70 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+              role="combobox"
+              aria-expanded={visibleSubjects.length > 0}
+              aria-controls={listboxId}
             />
           </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+          <div id={listboxId} role="listbox" className="max-h-64 space-y-1 overflow-y-auto pr-1">
             {subjects.length === 0 ? (
               <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
                 Nenhum assunto disponível.
               </p>
-            ) : (() => {
-              const visible = search.trim()
-                ? subjects.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
-                : subjects;
-              if (visible.length === 0) return (
-                <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
-                  Nenhum resultado para &ldquo;{search}&rdquo;.
-                </p>
-              );
-              return visible.map((subject) => {
+            ) : visibleSubjects.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum resultado para &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleSubjects.map((subject, index) => {
                 const selected = draftIds.includes(subject.id);
+                const highlighted = index === highlightedIndex;
 
                 return (
                   <button
                     key={subject.id}
                     type="button"
                     onClick={() => toggleSubject(subject.id)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
                     className={
                       selected
                         ? "flex w-full items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-3 text-left text-sm font-semibold text-orange-100"
-                        : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"
+                        : highlighted
+                          ? "flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white/85"
+                          : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"
                     }
                   >
                     <span
@@ -3967,8 +4076,8 @@ function SubjectFilterDropdown({
                     </span>
                   </button>
                 );
-              });
-            })()}
+              })
+            )}
           </div>
 
           <div className="mt-3 flex gap-2 border-t border-white/[0.07] pt-3">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type KeyboardEvent, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, ChevronDown, FileSearch, Layers3, Loader2, Plus, Search, Sparkles, Target, Trash2, X } from "lucide-react";
 import type { RaioXAnalysis } from "./types";
@@ -254,6 +254,8 @@ export default function RaioXProvasClient({ analyses: initialAnalyses, filterOpt
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `filter-select-listbox-${useId()}`;
 
   const suggestions = useMemo(() => {
     const term = value.toLowerCase().trim();
@@ -263,6 +265,32 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 
   if (!options.length) return null;
 
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (suggestions.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return suggestions.length - 1;
+        if (next >= suggestions.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
+      e.preventDefault();
+      onChange(suggestions[highlightedIndex]);
+      setOpen(false);
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+    }
+  }
+
   return (
     <div className="relative">
       <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</label>
@@ -271,11 +299,15 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
       }`}>
         <input
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => { onChange(e.target.value); setHighlightedIndex(-1); }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={handleKeyDown}
           placeholder="Todos"
           className="flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-white/30"
+          role="combobox"
+          aria-expanded={open && suggestions.length > 0}
+          aria-controls={listboxId}
         />
         {value ? (
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(""); setOpen(false); }} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white/50 hover:text-white/80">
@@ -287,12 +319,14 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
       </div>
 
       {open && suggestions.length > 0 && (
-        <div className="absolute left-0 top-[3.5rem] z-[9999] min-w-full rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-1.5 shadow-2xl shadow-black/50">
-          {suggestions.map((opt) => (
-            <button key={opt} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(opt); setOpen(false); }}
-              className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-white/[0.07] ${
-                value === opt ? "text-orange-200" : "text-white/60 hover:text-white/80"
-              }`}>
+        <div id={listboxId} role="listbox" className="absolute left-0 top-[3.5rem] z-[9999] min-w-full rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-1.5 shadow-2xl shadow-black/50">
+          {suggestions.map((opt, index) => (
+            <button key={opt} type="button" onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(opt); setOpen(false); setHighlightedIndex(-1); }}
+              onMouseEnter={() => setHighlightedIndex(index)}
+              className={`flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+                index === highlightedIndex ? "bg-white/[0.09] text-white" : "hover:bg-white/[0.07]"
+              } ${value === opt ? "text-orange-200" : index === highlightedIndex ? "" : "text-white/60 hover:text-white/80"}`}>
               {opt}
             </button>
           ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Bot, Check, CheckCircle2, FileSearch, FileText, Layers3, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
@@ -549,6 +549,8 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
 }) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `entity-search-listbox-${useId()}`;
 
   const filtered = useMemo(() => {
     const s = normalizeComparable(search);
@@ -558,6 +560,7 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
 
   const exactMatch = search.trim() && options.some((o) => normalizeComparable(o.name) === normalizeComparable(search));
   const visible = filtered.filter((o) => o.id !== selectedId);
+  const navigableCount = visible.length + (search.trim() && !exactMatch ? 1 : 0);
 
   async function create() {
     const name = search.trim();
@@ -584,6 +587,40 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
     }
   }
 
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (navigableCount > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return navigableCount - 1;
+        if (next >= navigableCount) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter") {
+      if (highlightedIndex >= 0 && highlightedIndex < visible.length) {
+        e.preventDefault();
+        onSelect(visible[highlightedIndex]);
+        setHighlightedIndex(-1);
+        return;
+      }
+
+      if (highlightedIndex === visible.length && search.trim() && !exactMatch) {
+        e.preventDefault();
+        void create();
+        setHighlightedIndex(-1);
+      }
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+    }
+  }
+
   return (
     <div>
       <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">{label}</span>
@@ -592,9 +629,13 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
           <Search size={16} className="shrink-0 text-slate-500" />
           <input
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => { onSearchChange(e.target.value); setHighlightedIndex(-1); }}
+            onKeyDown={handleSearchKeyDown}
             placeholder={placeholder}
             className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-600"
+            role="combobox"
+            aria-expanded={navigableCount > 0}
+            aria-controls={listboxId}
           />
           {search && (
             <button type="button" onClick={() => { onSearchChange(""); onSelect({ id: "", name: "" }); }} className="text-slate-500 hover:text-white">
@@ -610,12 +651,13 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
         )}
 
         {search.trim() && (visible.length > 0 || !exactMatch) && (
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2">
+          <div id={listboxId} role="listbox" className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2">
             {visible.length > 0 && (
               <div className="max-h-44 space-y-1 overflow-auto pr-1">
-                {visible.map((item) => (
+                {visible.map((item, index) => (
                   <button key={item.id} type="button" onClick={() => onSelect(item)}
-                    className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-bold text-slate-300 transition hover:bg-white/[0.07] hover:text-white">
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-bold transition ${index === highlightedIndex ? "bg-white/[0.09] text-white" : "text-slate-300 hover:bg-white/[0.07] hover:text-white"}`}>
                     {item.name}
                   </button>
                 ))}
@@ -626,7 +668,8 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
             )}
             {search.trim() && !exactMatch && (
               <button type="button" onClick={create} disabled={creating}
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/25 bg-orange-400/10 px-4 py-2.5 text-sm font-black text-orange-100 transition hover:bg-orange-400/15 disabled:opacity-60">
+                onMouseEnter={() => setHighlightedIndex(visible.length)}
+                className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/25 px-4 py-2.5 text-sm font-black text-orange-100 transition disabled:opacity-60 ${highlightedIndex === visible.length ? "bg-orange-400/20" : "bg-orange-400/10 hover:bg-orange-400/15"}`}>
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                 {creating ? "Cadastrando..." : `Cadastrar "${search.trim()}"`}
               </button>
@@ -654,6 +697,43 @@ function BoardSearch({ boards, boardSearch, selectedBoardId, selectedBoardName, 
 }) {
   const exactMatch = boardSearch.trim() && boards.some((board) => normalizeComparable(board.name) === normalizeComparable(boardSearch));
   const visibleBoards = boards.filter((board) => board.id !== selectedBoardId);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `board-search-listbox-${useId()}`;
+  const navigableCount = visibleBoards.length + (boardSearch.trim() && !exactMatch ? 1 : 0);
+
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (navigableCount > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return navigableCount - 1;
+        if (next >= navigableCount) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter") {
+      if (highlightedIndex >= 0 && highlightedIndex < visibleBoards.length) {
+        e.preventDefault();
+        onSelect(visibleBoards[highlightedIndex]);
+        setHighlightedIndex(-1);
+        return;
+      }
+
+      if (highlightedIndex === visibleBoards.length && boardSearch.trim() && !exactMatch) {
+        e.preventDefault();
+        onCreate();
+        setHighlightedIndex(-1);
+      }
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+    }
+  }
 
   return (
     <div>
@@ -661,7 +741,16 @@ function BoardSearch({ boards, boardSearch, selectedBoardId, selectedBoardName, 
       <div className="space-y-2">
         <div className="flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-[#07111F] px-3 py-3">
           <Search size={16} className="text-slate-500" />
-          <input value={boardSearch} onChange={(event) => onSearchChange(event.target.value)} placeholder="Pesquise uma banca cadastrada" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-600" />
+          <input
+            value={boardSearch}
+            onChange={(event) => { onSearchChange(event.target.value); setHighlightedIndex(-1); }}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Pesquise uma banca cadastrada"
+            className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-600"
+            role="combobox"
+            aria-expanded={navigableCount > 0}
+            aria-controls={listboxId}
+          />
         </div>
 
         {selectedBoardName && (
@@ -671,11 +760,13 @@ function BoardSearch({ boards, boardSearch, selectedBoardId, selectedBoardName, 
         )}
 
         {boardSearch.trim() && (visibleBoards.length > 0 || !exactMatch) && (
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2">
+          <div id={listboxId} role="listbox" className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-2">
             {visibleBoards.length > 0 && (
               <div className="max-h-44 space-y-1 overflow-auto pr-1">
-                {visibleBoards.map((board) => (
-                  <button key={board.id} type="button" onClick={() => onSelect(board)} className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-bold text-slate-300 transition hover:bg-white/[0.07] hover:text-white">
+                {visibleBoards.map((board, index) => (
+                  <button key={board.id} type="button" onClick={() => onSelect(board)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-bold transition ${index === highlightedIndex ? "bg-white/[0.09] text-white" : "text-slate-300 hover:bg-white/[0.07] hover:text-white"}`}>
                     <span>{board.name}</span>
                   </button>
                 ))}
@@ -689,7 +780,9 @@ function BoardSearch({ boards, boardSearch, selectedBoardId, selectedBoardName, 
             )}
 
             {boardSearch.trim() && !exactMatch && (
-              <button type="button" onClick={onCreate} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/25 bg-orange-400/10 px-4 py-2.5 text-sm font-black text-orange-100 transition hover:bg-orange-400/15">
+              <button type="button" onClick={onCreate}
+                onMouseEnter={() => setHighlightedIndex(visibleBoards.length)}
+                className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-orange-300/25 px-4 py-2.5 text-sm font-black text-orange-100 transition ${highlightedIndex === visibleBoards.length ? "bg-orange-400/20" : "bg-orange-400/10 hover:bg-orange-400/15"}`}>
                 <Plus size={16} /> Cadastrar “{boardSearch.trim()}” como nova banca
               </button>
             )}

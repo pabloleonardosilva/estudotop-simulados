@@ -2935,6 +2935,36 @@ Ao alterar `app/components/ui/SearchableSelect.tsx`:
 - [ ] Verificar que click-outside fecha o dropdown
 - [ ] Verificar que busca filtra em tempo real
 - [ ] Verificar que seleção fecha dropdown e atualiza o valor
+- [ ] Verificar navegação por teclado (ver 19.21)
+
+### 19.21 Navegação por teclado nos seletores de busca (combobox) — 2026-08-01
+
+**Problema corrigido:** em todos os seletores do padrão "digite para filtrar + lista de sugestões abaixo", o teclado só servia para digitar no campo de busca — a lista de resultados só podia ser percorrida e selecionada com o mouse (setas do teclado não navegavam pelos itens).
+
+**Padrão de referência (já existia, sem alteração):** `app/components/questions/EvaluatedTopicsInput.tsx` já implementava `ArrowDown`/`ArrowUp` para mover um `highlightedIndex`, `Enter` para confirmar o item destacado e `Escape` para limpar o destaque. Esse padrão foi replicado em todos os seletores abaixo.
+
+**Componentes corrigidos (todos ganharam `highlightedIndex` local, `ArrowDown`/`ArrowUp`/`Enter`/`Escape` no `onKeyDown` do campo de busca, destaque visual + `onMouseEnter` nos itens, e `role="combobox"`/`role="listbox"`/`role="option"`/`aria-controls`/`aria-activedescendant` quando aplicável):**
+
+- `app/components/questions/SubjectMultiSelect.tsx` — seletor de assuntos (multi-select). Usa `useId()` para gerar um `id` de listbox único por instância, pois o componente é renderizado várias vezes na mesma tela (um por questão em `/questoes/importar`).
+- `app/components/ui/SearchableSelect.tsx` — variantes dark e light. Também usa `useId()` pela mesma razão (múltiplas instâncias simultâneas em `QuestionEditor`: Tipo, Disciplina, Banca).
+- `app/admin/raio-x-provas/nova/page-client.tsx` — `EntitySearch` (Órgão, Cargo) e `BoardSearch` (Banca). `useId()` aplicado pois `EntitySearch` é instanciado duas vezes na mesma tela.
+- `app/admin/raio-x-provas/page-client.tsx` — `FilterSelect` (filtros Concurso/Cargo/Banca/Ano da listagem, 4 instâncias simultâneas — `useId()` aplicado).
+- `app/questoes/page-client.tsx` — `BoardFilterDropdown`, `OrgaoFilterDropdown`, `SubjectFilterDropdown` (filtros do Banco de Questões).
+- `app/questoes/revisar/page-client.tsx` — `BoardFilterDropdown`, `OrgaoFilterDropdown`, `FilterSubjectDropdown` (mesmos filtros, cópia local duplicada nesta tela).
+- `app/questoes/importar/page-client.tsx` — busca de Banca por questão (dois blocos JSX que compartilham o mesmo estado: barra de metadados compacta e seção "Detalhes" expandida). Usa um novo estado `boardHighlightIndex: Record<string, number>` (um índice destacado por questão) e a função `handleBoardSearchKeyDown`.
+
+**Fora do escopo desta correção (decisão do usuário):** `SimpleSelectDropdown` (cópias em `questoes/page-client.tsx`, `questoes/revisar/page-client.tsx`, `simulados/page-client.tsx`, `topicos/page-client.tsx`) — é um botão que abre uma lista fixa **sem campo de busca**, um padrão de UI diferente do "digite e filtre". `YearFilterDropdown` (`questoes/page-client.tsx` e `questoes/revisar/page-client.tsx`) — mesma situação, sem campo de busca.
+
+**Achado registrado, não corrigido:** `FieldSearch` em `app/admin/raio-x-provas/nova/page-client.tsx` está definida mas não é usada em nenhum lugar do arquivo (código morto). Não foi alterada nem removida por estar fora do escopo desta tarefa.
+
+**Regra para novos seletores de busca:** todo novo componente no padrão "campo de texto filtra uma lista de sugestões abaixo" deve implementar navegação por teclado (`ArrowUp`/`ArrowDown`/`Enter`/`Escape`) seguindo o padrão de `EvaluatedTopicsInput.tsx`. Se o componente puder ter mais de uma instância montada simultaneamente na mesma tela, os `id`s de listbox/opções devem ser únicos por instância (via `useId()` ou por uma chave de negócio já disponível, como `question.temp_id` no importador).
+
+### 19.22 Sugestões confiáveis de tópicos avaliados no Importador — 2026-08-01
+
+- `app/components/questions/EvaluatedTopicsInput.tsx` mantém em cache, por assunto, o catálogo retornado por `GET /api/admin/topics?subject_id=...&active=true` e compartilha requisições simultâneas entre os cards de questões. Isso evita consultas repetidas e interrupções do carregamento quando existem várias questões no importador.
+- O campo informa enquanto as sugestões estão carregando e, em caso de falha, exibe o erro sanitizado da API com a ação **Tentar novamente**; o admin ainda pode informar um tópico manualmente.
+- A busca continua ignorando acentos e diferenças entre maiúsculas/minúsculas, mas agora ordena primeiro a correspondência exata, depois nomes iniciados pelo termo e por fim ocorrências internas. O limite visual permanece em seis sugestões.
+- A API administrativa, a autenticação, a associação tópico-assunto, a validação obrigatória e o salvamento das questões permanecem inalterados.
 
 ### 19.20 Importar com IA — preservação do assunto padrão na análise em lote (2026-06-01)
 

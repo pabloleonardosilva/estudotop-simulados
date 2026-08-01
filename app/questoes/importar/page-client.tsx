@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
@@ -515,6 +515,7 @@ export default function ImportarQuestoesClient({
   const [boards, setBoards] = useState(initialBoards || []);
   const [boardSearches, setBoardSearches] = useState<Record<string, string>>({});
   const [boardSuggestions, setBoardSuggestions] = useState<Record<string, any[]>>({});
+  const [boardHighlightIndex, setBoardHighlightIndex] = useState<Record<string, number>>({});
   const [subjectSearches, setSubjectSearches] = useState<Record<string, string>>({});
   const [eliminatedAltKeys, setEliminatedAltKeys] = useState<Set<string>>(new Set());
 
@@ -1282,6 +1283,44 @@ export default function ImportarQuestoesClient({
       });
     } finally {
       setCreatingBoardQuestionId(null);
+    }
+  }
+
+  function handleBoardSearchKeyDown(
+    questionId: string,
+    suggestions: BoardOption[],
+    canCreate: boolean,
+    event: KeyboardEvent<HTMLInputElement>,
+  ) {
+    const navigableCount = suggestions.length + (canCreate ? 1 : 0);
+    const currentIndex = boardHighlightIndex[questionId] ?? -1;
+
+    if (navigableCount > 0 && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const next = ((currentIndex + direction) % navigableCount + navigableCount) % navigableCount;
+      setBoardHighlightIndex((current) => ({ ...current, [questionId]: next }));
+      return;
+    }
+
+    if (event.key === "Enter") {
+      if (currentIndex >= 0 && currentIndex < suggestions.length) {
+        event.preventDefault();
+        applyBoardToQuestion(questionId, suggestions[currentIndex]);
+        setBoardHighlightIndex((current) => ({ ...current, [questionId]: -1 }));
+        return;
+      }
+
+      if (canCreate && currentIndex === suggestions.length) {
+        event.preventDefault();
+        void createBoardForQuestion(questionId);
+        setBoardHighlightIndex((current) => ({ ...current, [questionId]: -1 }));
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && currentIndex >= 0) {
+      setBoardHighlightIndex((current) => ({ ...current, [questionId]: -1 }));
     }
   }
 
@@ -2069,6 +2108,11 @@ export default function ImportarQuestoesClient({
                     boardSuggestions[question.temp_id] || [];
                   const isCreatingThisBoard =
                     creatingBoardQuestionId === question.temp_id;
+                  const canCreateBoardForQuestion =
+                    !question.exam_board_id &&
+                    !boardExists(boardSearches[question.temp_id] || "") &&
+                    Boolean((boardSearches[question.temp_id] || "").trim());
+                  const boardHighlightForQuestion = boardHighlightIndex[question.temp_id] ?? -1;
 
                   const isAnnulledInImport = annulledTempIds.includes(question.temp_id);
 
@@ -2237,25 +2281,33 @@ export default function ImportarQuestoesClient({
                               onChange={(event) =>
                                 searchBoardForQuestion(question.temp_id, event.target.value)
                               }
+                              onKeyDown={(event) =>
+                                handleBoardSearchKeyDown(question.temp_id, boardSuggestionsForQuestion, canCreateBoardForQuestion, event)
+                              }
                               placeholder="Buscar banca"
                               className="h-10 w-full rounded-xl border border-white/10 bg-white/95 px-3 text-sm font-semibold text-slate-900 outline-none transition focus:ring-4 focus:ring-orange-400/30"
+                              role="combobox"
+                              aria-expanded={boardSuggestionsForQuestion.length > 0}
+                              aria-controls={`board-listbox-${question.temp_id}`}
                             />
                             {boardSuggestionsForQuestion.length > 0 && (
-                              <div className="absolute left-0 right-0 top-[3.8rem] z-30 grid max-h-56 gap-1 overflow-auto rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl">
-                                {boardSuggestionsForQuestion.map((board) => (
+                              <div id={`board-listbox-${question.temp_id}`} role="listbox" className="absolute left-0 right-0 top-[3.8rem] z-30 grid max-h-56 gap-1 overflow-auto rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl">
+                                {boardSuggestionsForQuestion.map((board, boardIndex) => (
                                   <button key={board.id} type="button"
                                     onClick={() => applyBoardToQuestion(question.temp_id, board)}
-                                    className="rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-orange-50 hover:text-orange-700">
+                                    onMouseEnter={() => setBoardHighlightIndex((current) => ({ ...current, [question.temp_id]: boardIndex }))}
+                                    className={`rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${boardIndex === boardHighlightForQuestion ? "bg-orange-50 text-orange-700" : "text-slate-700 hover:bg-orange-50 hover:text-orange-700"}`}>
                                     {board.name}
                                   </button>
                                 ))}
                               </div>
                             )}
-                            {!question.exam_board_id && !boardExists(boardSearches[question.temp_id] || "") && (boardSearches[question.temp_id] || "").trim() && (
+                            {canCreateBoardForQuestion && (
                               <button type="button"
                                 onClick={() => createBoardForQuestion(question.temp_id)}
+                                onMouseEnter={() => setBoardHighlightIndex((current) => ({ ...current, [question.temp_id]: boardSuggestionsForQuestion.length }))}
                                 disabled={Boolean(creatingBoardQuestionId)}
-                                className="mt-1 inline-flex w-fit items-center gap-1 rounded-full border border-orange-200 bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-orange-700 transition hover:bg-orange-50 disabled:opacity-60">
+                                className={`mt-1 inline-flex w-fit items-center gap-1 rounded-full border border-orange-200 px-2.5 py-1 text-[10px] font-semibold text-orange-700 transition disabled:opacity-60 ${boardHighlightForQuestion === boardSuggestionsForQuestion.length ? "bg-orange-50" : "bg-white/95 hover:bg-orange-50"}`}>
                                 {isCreatingThisBoard ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
                                 {isCreatingThisBoard ? "Cadastrando" : "Cadastrar"}
                               </button>
@@ -2377,14 +2429,21 @@ export default function ImportarQuestoesClient({
                                       .value,
                                   )
                                 }
+                                onKeyDown={(event: KeyboardEvent<HTMLInputElement>) =>
+                                  handleBoardSearchKeyDown(question.temp_id, boardSuggestionsForQuestion, canCreateBoardForQuestion, event)
+                                }
+                                role="combobox"
+                                aria-expanded={boardSuggestionsForQuestion.length > 0}
+                                aria-controls={`board-listbox-expanded-${question.temp_id}`}
                               />
 
                               {boardSuggestionsForQuestion.length >
                                 0 && (
-                                <div className="mt-3 grid gap-2">
+                                <div id={`board-listbox-expanded-${question.temp_id}`} role="listbox" className="mt-3 grid gap-2">
                                   {boardSuggestionsForQuestion.map(
                                     (
                                       board,
+                                      boardIndex,
                                     ) => (
                                       <button
                                         key={
@@ -2397,7 +2456,8 @@ export default function ImportarQuestoesClient({
                                             board,
                                           )
                                         }
-                                        className="rounded-2xl border border-slate-200 px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50"
+                                        onMouseEnter={() => setBoardHighlightIndex((current) => ({ ...current, [question.temp_id]: boardIndex }))}
+                                        className={`rounded-2xl border px-4 py-2 text-left text-sm font-semibold transition ${boardIndex === boardHighlightForQuestion ? "border-orange-300 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-700 hover:border-orange-300 hover:bg-orange-50"}`}
                                       >
                                         {
                                           board.name
@@ -2408,19 +2468,7 @@ export default function ImportarQuestoesClient({
                                 </div>
                               )}
 
-                              {!question.exam_board_id &&
-                                !boardExists(
-                                boardSearches[
-                                  question
-                                    .temp_id
-                                ] || "",
-                              ) &&
-                                (
-                                  boardSearches[
-                                    question
-                                      .temp_id
-                                  ] || ""
-                                ).trim() && (
+                              {canCreateBoardForQuestion && (
                                   <div className="mt-3">
                                     <PremiumButton
                                       variant="secondary"
@@ -2437,6 +2485,7 @@ export default function ImportarQuestoesClient({
                                         )
                                       }
                                       disabled={Boolean(creatingBoardQuestionId)}
+                                      className={boardHighlightForQuestion === boardSuggestionsForQuestion.length ? "ring-4 ring-orange-100" : ""}
                                     >
                                       {isCreatingThisBoard
                                         ? "Cadastrando..."

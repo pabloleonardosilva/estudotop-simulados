@@ -877,3 +877,20 @@ Escopo previsto:
 - Nenhuma outra rota que usa IA no sistema foi alterada, incluindo a detecção de tópicos avaliados para questões já existentes (`api/admin/questions/[id]/detect-evaluated-topics/route.ts`), usada fora do fluxo de importação.
 - Nenhuma migration foi criada ou alterada nesta atualização.
 - `npx tsc --noEmit` e `npm run build` executados sem erros após a alteração.
+
+### Navegação por teclado nos seletores de busca (combobox) — 2026-08-01
+
+- Identificado que o seletor de assuntos (`SubjectMultiSelect`) e outros seletores no mesmo padrão ("digite para filtrar" + lista de sugestões) só permitiam selecionar um item com o mouse; as setas do teclado não navegavam pela lista aberta.
+- Corrigidos com navegação por teclado (`ArrowUp`/`ArrowDown` para destacar, `Enter` para confirmar, `Escape` para limpar o destaque), seguindo o padrão já existente em `EvaluatedTopicsInput.tsx`: `SubjectMultiSelect.tsx`, `SearchableSelect.tsx` (dark e light), `EntitySearch`/`BoardSearch` em `raio-x-provas/nova`, `FilterSelect` em `raio-x-provas` (listagem), `BoardFilterDropdown`/`OrgaoFilterDropdown`/`SubjectFilterDropdown` em `questoes/page-client.tsx` e suas cópias locais em `questoes/revisar/page-client.tsx`, e a busca de banca por questão em `questoes/importar/page-client.tsx`.
+- Componentes com mais de uma instância simultânea na mesma tela (`SubjectMultiSelect`, `SearchableSelect`, `EntitySearch`, `FilterSelect`) passaram a gerar `id`s de listbox únicos via `useId()` para não colidir no DOM.
+- Deixado fora do escopo por decisão do usuário: `SimpleSelectDropdown` e `YearFilterDropdown` (botão que abre lista fixa, sem campo de busca — situação diferente da relatada).
+- Achado registrado sem correção: `FieldSearch` em `raio-x-provas/nova/page-client.tsx` é código morto (definida, nunca usada).
+- Nenhuma migration foi criada ou alterada nesta atualização.
+- `npx tsc --noEmit` e `npm run build` executados sem erros; `npx eslint` nos 7 arquivos alterados sem nenhum erro/warning novo em relação à base antes da alteração (contagem idêntica arquivo a arquivo).
+
+### Sugestões confiáveis de tópicos avaliados no Importador — 2026-08-01
+
+- O catálogo de tópicos ativos passou a ser armazenado em cache por assunto e requisições simultâneas são compartilhadas entre os cards do importador, evitando carregamentos repetidos e sugestões ocasionalmente indisponíveis.
+- `EvaluatedTopicsInput` agora mostra o carregamento, informa falhas sanitizadas e oferece **Tentar novamente** sem impedir o preenchimento manual.
+- Correspondências exatas e nomes iniciados pelo termo digitado ganharam prioridade na lista de até seis sugestões.
+- API, banco, autenticação, validação e salvamento permaneceram inalterados. Nenhuma migration foi criada ou alterada nesta atualização.
