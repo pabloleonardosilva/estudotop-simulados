@@ -524,10 +524,14 @@ Escopo previsto:
 - [x] Correção: nomes de canal únicos por instância via `useId()`. Os breakpoints de navegação já eram complementares (`lg`) — nenhum ajuste de responsividade foi necessário; o botão/menu sempre esteve presente em 800px.
 
 ### Pendências conhecidas
+- [x] Importador: sugestões de tópicos avaliados permanecem acima do card seguinte, e a inclusão do primeiro tópico seleciona automaticamente a questão não duplicada.
+- [x] Nova questão: o `RichTextEditor` compartilhado passa a receber sua variante dark, alinhando toolbar e controles ao fundo escuro sem alterar colagem, HTML ou formatação.
 - [x] Quatro `fetch` sem Bearer corrigidos com `adminFetch`: carregamento geral dos logs e atividades da sessão em `app/admin/logs/page-client.tsx`, upload de imagem em `app/questoes/nova/page-client.tsx` e geração em `app/questoes/[id]/variacoes/page-client.tsx`.
-- [ ] `/api/admin/upload-image` não possui rota implementada no projeto atual; apesar do Bearer corrigido no cliente, o upload permanece indisponível até Sprint específica definir storage, validação e autorização.
+- [x] `/api/admin/upload-image` implementada com `requireAdmin`, validação de MIME, assinatura binária e limite de 5 MB; upload server-side para o bucket público `question-images` com nome imprevisível e erros sanitizados.
+- [x] `supabase/migrations/20260801150000_create_question_images_bucket.sql` aplicada no ambiente pelo responsável em 2026-08-01; consulta somente-leitura confirmou o bucket público `question-images`, limite de 5 MB e MIME types JPEG/PNG/WebP. A execução não foi realizada pelo Codex.
 - [ ] `NEXT_PUBLIC_APP_URL` duplicada no `.env.local` (limpar) e definir o domínio público oficial quando existir.
-- [ ] Dívidas já registradas: lint pré-existente (`any`, setState-in-effect), duplicação `lib/` × `app/lib/`.
+- [x] Lint pré-existente de `app/questoes/nova/page-client.tsx` corrigido pontualmente, sem alteração do fluxo de colagem ou upload de imagens.
+- [ ] Dívida já registrada: duplicação `lib/` × `app/lib/`.
 ## Integridade de contas de alunos — implementação local em 2026-07-13
 
 - Criado `lib/server/studentAccountService.ts` para criação/reconciliação, rollback compensatório, validação de `auth.users + profiles + students`, sincronização de e-mail e erros sanitizados.

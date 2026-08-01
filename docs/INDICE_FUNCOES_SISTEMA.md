@@ -577,6 +577,8 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 
 **Composição visual da criação manual (atualizada 2026-07-12):** `/questoes/nova` usa integralmente o tema dark premium e replica a linguagem do editor inline (`QuestionEditor.tsx`): fundo `#03070D`, card `#081321`, filtros pesquisáveis dark na ordem Tipo → Disciplina → Assuntos → Banca → Ano, linha de Dificuldade e Status, editor rico escuro, alternativas com estados dark, `Tópicos avaliados` em bloco azul e ação de salvar em rodapé sticky laranja. A antiga linha visual de pontuação fixa foi removida. As regras de validação, rascunho, duplicidade, geração de explicação e salvamento permanecem inalteradas.
 
+**Correção visual 2026-08-01:** os editores de enunciado, alternativas e explicação em `/questoes/nova` continuam usando o `RichTextEditor` compartilhado e agora recebem explicitamente `dark`, garantindo contraste coerente da toolbar e de seus controles sobre o card escuro.
+
 **Arquivos principais:**
 
 - `app/questoes/nova/page-client.tsx`
@@ -653,6 +655,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 - Botões de seleção devem seguir o mesmo padrão visual dos demais fluxos.
 - **Órgão detectado automaticamente (2026-06-02):** o importador extrai `Órgão:` / `Orgao:` do texto bruto, preenche `orgao` no card, permite edição manual antes do envio e salva o valor em `questions.orgao`. As questões antigas podem permanecer com `orgao` nulo.
 - **Tópicos avaliados sem sugestão de IA (2026-07-31):** `analyze/route.ts` e `analyze-batch/route.ts` deixaram de pedir `evaluated_topics` ao modelo (prompt e schema JSON não citam mais o campo) e sempre retornam `evaluated_topics: []` para cada questão analisada. O campo continua existindo no card de importação e deve ser preenchido manualmente pelo admin em `EvaluatedTopicsInput` (com autocomplete pelo catálogo de `/api/admin/topics`, sem chamada de IA); a validação que bloqueia o envio para revisão sem tópico preenchido (`missingTopics` em `page-client.tsx`) permanece inalterada. A detecção por IA de tópicos avaliados para questões já existentes (`api/admin/questions/[id]/detect-evaluated-topics/route.ts`, usada fora do importador) não foi alterada.
+- **Seleção e sobreposição dos tópicos (2026-08-01):** ao adicionar pelo menos um tópico avaliado, o card não duplicado é selecionado automaticamente para envio; remover tópicos não desmarca uma seleção existente. O card com foco recebe prioridade de empilhamento para que o autocomplete fique visível acima da questão seguinte.
 
 ---
 
@@ -2971,7 +2974,16 @@ Ao alterar `app/components/ui/SearchableSelect.tsx`:
 - Quatro chamadas cliente destinadas à área administrativa passaram de `fetch` direto para `adminFetch`: carregamento geral dos logs e atividades de uma sessão em `app/admin/logs/page-client.tsx`, upload de imagem em `app/questoes/nova/page-client.tsx` e geração de variações em `app/questoes/[id]/variacoes/page-client.tsx`.
 - `adminFetch` obtém a sessão Supabase no navegador, preserva os headers existentes e acrescenta `Authorization: Bearer <access_token>` sem expor o token no código ou nos logs.
 - Payloads, respostas, tratamento de erros, regras de negócio e endpoints permanecem inalterados.
-- `GET /api/admin/logs/activity` e `POST /api/admin/questions/[id]/variations` validam o Bearer no servidor. O destino legado `/api/admin/upload-image` não possui rota implementada no projeto atual; o envio do token foi corrigido, mas o upload permanece como pendência funcional separada e não deve receber uma nova API sem Sprint própria para storage e segurança.
+- `GET /api/admin/logs/activity`, `POST /api/admin/questions/[id]/variations` e `POST /api/admin/upload-image` validam o Bearer e a autorização administrativa no servidor.
+
+### 19.24 Upload administrativo de imagens de questões — 2026-08-01
+
+- `POST /api/admin/upload-image` recebe o campo multipart `file`, exige administrador ativo via `requireAdmin`, aceita somente JPEG/PNG/WebP entre 1 byte e 5 MB e confere a assinatura binária correspondente ao MIME declarado.
+- O arquivo recebe caminho imprevisível `admin_id/ano/uuid.ext` e é gravado exclusivamente no servidor, com service role, no bucket público `question-images`. Clientes não recebem permissão de escrita direta no Storage.
+- A resposta de sucesso mantém o contrato `{ ok: true, message, url }` esperado por `ImageUrlEditor` em `/questoes/nova`; erros são sanitizados e não expõem detalhes do Storage.
+- `app/questoes/nova/page-client.tsx` preserva a colagem por `Ctrl+V` e a inserção manual de URL, acrescentando somente carregamento e erro visíveis durante o envio.
+- O paste de imagens dentro de `RichTextEditor` e o `ImageUrlEditor` compartilhado de `QuestionEditor` continuam usando Data URL local e não foram alterados.
+- Bucket definido por `supabase/migrations/20260801150000_create_question_images_bucket.sql`, aplicada no ambiente pelo responsável em 2026-08-01 e confirmada por consulta somente-leitura (público, 5 MB, JPEG/PNG/WebP); a execução não foi realizada pelo Codex.
 
 ### 19.20 Importar com IA — preservação do assunto padrão na análise em lote (2026-06-01)
 

@@ -2124,7 +2124,7 @@ export default function ImportarQuestoesClient({
                           question.temp_id
                         ] = element;
                       }}
-                      className={`relative import-question-card motion-safe:animate-[importCardIn_220ms_ease-out] rounded-[2rem] border p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${
+                      className={`relative import-question-card motion-safe:animate-[importCardIn_220ms_ease-out] rounded-[2rem] border p-5 shadow-sm transition-all duration-300 focus-within:z-30 hover:-translate-y-0.5 hover:shadow-xl ${
                         isAnnulledInImport
                           ? "border-red-300 bg-red-50/80 shadow-red-950/5"
                           : question.is_duplicate
@@ -2585,7 +2585,12 @@ export default function ImportarQuestoesClient({
                             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
                             <EvaluatedTopicsInput
                               value={question.evaluated_topics}
-                              onChange={(topics) => updateQuestion(question.temp_id, "evaluated_topics", topics)}
+                              onChange={(topics) => {
+                                updateQuestion(question.temp_id, "evaluated_topics", topics);
+                                if (topics.length > 0 && !question.is_duplicate) {
+                                  setSelectedIds((current) => current.includes(question.temp_id) ? current : [...current, question.temp_id]);
+                                }
+                              }}
                               subjectId={questionOwnSubjectIds(question)[0] || null}
                               required
                               variant="light"

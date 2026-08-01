@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -55,6 +55,25 @@ type Board = {
   is_active?: boolean;
 };
 
+type Discipline = {
+  id: string;
+  name: string;
+  is_active?: boolean;
+};
+
+type Subject = {
+  id: string;
+  name: string;
+  discipline_id: string;
+  is_active?: boolean;
+};
+
+type PossibleDuplicate = {
+  similarity?: number;
+  status?: string;
+  statement?: string;
+};
+
 type Feedback =
   | {
       type: "success" | "error";
@@ -93,10 +112,6 @@ const trueFalseAlternatives: Alternative[] = [
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 const CURRENT_YEAR = new Date().getFullYear();
-
-function isWrongTrueFalseAlternative(questionType: "multiple_choice" | "true_false", alternative: Alternative) {
-  return questionType === "true_false" && alternative.is_correct && (alternative.label === "E" || alternative.text.trim().toLowerCase() === "errado");
-}
 
 function relabelAlternatives(items: Alternative[]) {
   return items.map((alt, index) => ({
@@ -160,8 +175,8 @@ export default function NovaQuestaoClient({
   boards,
   modelQuestions,
 }: {
-  disciplines: any[];
-  subjects: any[];
+  disciplines: Discipline[];
+  subjects: Subject[];
   boards: Board[];
   modelQuestions: TemplateQuestion[];
 }) {
@@ -186,8 +201,8 @@ export default function NovaQuestaoClient({
   const [generatingAI, setGeneratingAI] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [actionModal, setActionModal] = useState<QuestionActionModalState>(null);
-  const [possibleDuplicate, setPossibleDuplicate] = useState<any>(null);
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [possibleDuplicate, setPossibleDuplicate] = useState<PossibleDuplicate | null>(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(() => searchParams.get("modelo") === "1");
   const [templateLoaded, setTemplateLoaded] = useState(false);
   const [templateAdjusted, setTemplateAdjusted] = useState(false);
 
@@ -277,17 +292,6 @@ export default function NovaQuestaoClient({
     onRestore: restoreDraft,
   });
 
-  useEffect(() => {
-    if (templateLoaded) return;
-    setAlternatives(questionType === "true_false" ? trueFalseAlternatives : defaultAlternatives);
-  }, [questionType, templateLoaded]);
-
-  useEffect(() => {
-    if (searchParams.get("modelo") === "1") {
-      setShowTemplatePicker(true);
-    }
-  }, [searchParams]);
-
   function markTemplateEdited() {
     if (!templateLoaded || templateAdjusted) return;
 
@@ -346,7 +350,6 @@ export default function NovaQuestaoClient({
 
   useEffect(() => {
     if (statement.trim().length < 40 || !boardId) {
-      setPossibleDuplicate(null);
       return;
     }
 
@@ -778,7 +781,11 @@ export default function NovaQuestaoClient({
         <div className="grid gap-3 border-b border-white/[0.06] bg-white/[0.02] px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
           <SearchableSelect label="Tipo" value={questionType} onChange={(value) => {
             markTemplateEdited();
-            setQuestionType(value as "multiple_choice" | "true_false");
+            const nextType = value as "multiple_choice" | "true_false";
+            setQuestionType(nextType);
+            if (!templateLoaded) {
+              setAlternatives(nextType === "true_false" ? trueFalseAlternatives : defaultAlternatives);
+            }
           }} options={[{ value: "multiple_choice", label: "Alternativas" }, { value: "true_false", label: "Assertivas" }]} dark />
 
           <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
@@ -794,6 +801,7 @@ export default function NovaQuestaoClient({
 
           <SearchableSelect label="Banca" value={boardId} onChange={(value) => {
             markTemplateEdited();
+            setPossibleDuplicate(null);
             setBoardId(value);
           }} options={[{ value: "", label: "Selecione" }, ...boardOptions.map((board) => ({ value: board.id, label: board.name }))]} dark />
 
@@ -811,9 +819,9 @@ export default function NovaQuestaoClient({
             markTemplateEdited();
             setDifficulty(value);
           }} />
-          <PremiumSelect label="Status" variant="jornada" value={status} onChange={(event: any) => {
+          <PremiumSelect label="Status" variant="jornada" value={status} onChange={(event: ChangeEvent<HTMLSelectElement>) => {
             markTemplateEdited();
-            setStatus(event.target.value);
+            setStatus(event.target.value as "pending_review" | "published" | "archived");
           }}>
             <option value="pending_review">Pendente revisão</option>
             <option value="published">Publicada</option>
@@ -834,6 +842,7 @@ export default function NovaQuestaoClient({
             value={statement}
             onChange={(value) => {
               markTemplateEdited();
+              setPossibleDuplicate(null);
               setStatement(value);
             }}
             placeholder={
@@ -1132,6 +1141,9 @@ function ImageUrlEditor({
   onChange: (value: string) => void;
   label: string;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
   return (
     <div className="rounded-2xl bg-white p-4 shadow-sm">
       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
@@ -1143,6 +1155,7 @@ function ImageUrlEditor({
         onChange={(event) => onChange(event.target.value)}
         placeholder="Cole a imagem aqui com CTRL + V ou insira URL..."
         className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm text-slate-700 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+        disabled={uploading}
         onPaste={async (event) => {
           const items = event.clipboardData?.items || [];
 
@@ -1156,19 +1169,28 @@ function ImageUrlEditor({
 
               const formData = new FormData();
               formData.append("file", file);
+              setUploading(true);
+              setUploadError("");
 
-              const response = await adminFetch(
-                "/api/admin/upload-image",
-                {
-                  method: "POST",
-                  body: formData,
+              try {
+                const response = await adminFetch(
+                  "/api/admin/upload-image",
+                  {
+                    method: "POST",
+                    body: formData,
+                  }
+                );
+
+                const result = await response.json();
+                if (!response.ok || !result.ok || !result.url) {
+                  throw new Error(result.message || "Não foi possível enviar a imagem.");
                 }
-              );
 
-              const result = await response.json();
-
-              if (result.ok && result.url) {
                 onChange(result.url);
+              } catch (error) {
+                setUploadError(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+              } finally {
+                setUploading(false);
               }
 
               return;
@@ -1177,8 +1199,13 @@ function ImageUrlEditor({
         }}
       />
 
+      {uploading && <p className="mt-2 text-xs font-semibold text-slate-500">Enviando imagem...</p>}
+      {uploadError && <p className="mt-2 text-xs font-semibold text-red-600">{uploadError}</p>}
+
       {value && (
         <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-3">
+          {/* A URL pode ser data:, blob: ou externa, portanto o preview precisa aceitar fontes não configuradas no Next Image. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
             alt="Preview"
@@ -1216,6 +1243,7 @@ function RichTextarea({
       className={className}
       minRows={Math.max(minRows, 3)}
       compact={compact}
+      dark
     />
   );
 }
