@@ -524,7 +524,8 @@ Escopo previsto:
 - [x] Correção: nomes de canal únicos por instância via `useId()`. Os breakpoints de navegação já eram complementares (`lg`) — nenhum ajuste de responsividade foi necessário; o botão/menu sempre esteve presente em 800px.
 
 ### Pendências conhecidas
-- [ ] `fetch` sem Bearer em: `app/admin/logs/page-client.tsx:403`, `app/questoes/nova/page-client.tsx:1232` (upload-image), `app/questoes/[id]/variacoes/page-client.tsx:298` — mesma classe do bug do importador; corrigir com autorização.
+- [x] Quatro `fetch` sem Bearer corrigidos com `adminFetch`: carregamento geral dos logs e atividades da sessão em `app/admin/logs/page-client.tsx`, upload de imagem em `app/questoes/nova/page-client.tsx` e geração em `app/questoes/[id]/variacoes/page-client.tsx`.
+- [ ] `/api/admin/upload-image` não possui rota implementada no projeto atual; apesar do Bearer corrigido no cliente, o upload permanece indisponível até Sprint específica definir storage, validação e autorização.
 - [ ] `NEXT_PUBLIC_APP_URL` duplicada no `.env.local` (limpar) e definir o domínio público oficial quando existir.
 - [ ] Dívidas já registradas: lint pré-existente (`any`, setState-in-effect), duplicação `lib/` × `app/lib/`.
 ## Integridade de contas de alunos — implementação local em 2026-07-13

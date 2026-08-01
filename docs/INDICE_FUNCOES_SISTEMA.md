@@ -2966,6 +2966,13 @@ Ao alterar `app/components/ui/SearchableSelect.tsx`:
 - A busca continua ignorando acentos e diferenças entre maiúsculas/minúsculas, mas agora ordena primeiro a correspondência exata, depois nomes iniciados pelo termo e por fim ocorrências internas. O limite visual permanece em seis sugestões.
 - A API administrativa, a autenticação, a associação tópico-assunto, a validação obrigatória e o salvamento das questões permanecem inalterados.
 
+### 19.23 Bearer token nas chamadas administrativas auditadas — 2026-08-01
+
+- Quatro chamadas cliente destinadas à área administrativa passaram de `fetch` direto para `adminFetch`: carregamento geral dos logs e atividades de uma sessão em `app/admin/logs/page-client.tsx`, upload de imagem em `app/questoes/nova/page-client.tsx` e geração de variações em `app/questoes/[id]/variacoes/page-client.tsx`.
+- `adminFetch` obtém a sessão Supabase no navegador, preserva os headers existentes e acrescenta `Authorization: Bearer <access_token>` sem expor o token no código ou nos logs.
+- Payloads, respostas, tratamento de erros, regras de negócio e endpoints permanecem inalterados.
+- `GET /api/admin/logs/activity` e `POST /api/admin/questions/[id]/variations` validam o Bearer no servidor. O destino legado `/api/admin/upload-image` não possui rota implementada no projeto atual; o envio do token foi corrigido, mas o upload permanece como pendência funcional separada e não deve receber uma nova API sem Sprint própria para storage e segurança.
+
 ### 19.20 Importar com IA — preservação do assunto padrão na análise em lote (2026-06-01)
 
 **Arquivo alterado:** `app/questoes/importar/page-client.tsx`

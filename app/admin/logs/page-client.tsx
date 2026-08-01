@@ -20,6 +20,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { adminFetch } from "@/app/lib/supabase/adminFetch";
 
 type TabKey = "realtime" | "activity" | "security" | "errors" | "sessions";
 
@@ -97,7 +98,7 @@ export default function LogsClient() {
       if (filters.route.trim()) params.set("route", filters.route.trim());
       if (filters.search.trim()) params.set("search", filters.search.trim());
 
-      const response = await fetch(`${TAB_ENDPOINTS[tab]}?${params.toString()}`, { cache: "no-store" });
+      const response = await adminFetch(`${TAB_ENDPOINTS[tab]}?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json()) as ApiResponse;
       if (!payload.ok) throw new Error(payload.message || "Falha ao carregar logs.");
       setRecords(payload.data || []);
@@ -400,7 +401,7 @@ function SessionTimeline({ record }: { record: LogRecord }) {
       }
       try {
         const params = new URLSearchParams({ actorId: record.actor_id, pageSize: "100" });
-        const response = await fetch(`/api/admin/logs/activity?${params.toString()}`, { cache: "no-store" });
+        const response = await adminFetch(`/api/admin/logs/activity?${params.toString()}`, { cache: "no-store" });
         const payload = (await response.json()) as ApiResponse;
         if (!payload.ok) throw new Error(payload.message || "Falha ao carregar atividades da sessão.");
         if (cancelled) return;

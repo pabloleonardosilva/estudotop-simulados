@@ -295,7 +295,7 @@ export default function GerarVariacoesQuestaoClient({
     setGenerating(true);
 
     try {
-      const response = await fetch(
+      const response = await adminFetch(
         `/api/admin/questions/${question.id}/variations`,
         {
           method: "POST",

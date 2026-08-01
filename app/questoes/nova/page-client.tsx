@@ -1157,7 +1157,7 @@ function ImageUrlEditor({
               const formData = new FormData();
               formData.append("file", file);
 
-              const response = await fetch(
+              const response = await adminFetch(
                 "/api/admin/upload-image",
                 {
                   method: "POST",
