@@ -906,6 +906,7 @@ Escopo previsto:
 - `/topicos` passa a paginar a leitura de todas as questões para calcular o uso sem o limite padrão de consulta do Supabase.
 - Nome e contagem do tópico abrem a lista completa das questões vinculadas, com código, status e acesso à edição; assim questões em revisão, prontas para publicação ou arquivadas deixam de parecer vínculos invisíveis.
 - A verificação administrativa de exclusão também percorre todas as páginas no servidor. Tópicos sem questões podem ser excluídos diretamente no modal; tópicos em uso continuam protegidos.
+- O popup de uso de `/topicos` mostra todas as questões vinculadas em sequência, já abertas no editor dark oficial. Cada salvamento atualiza localmente vínculos e contagens e remove da lista a questão que deixou de pertencer ao tópico; fechar o popup preserva disciplina, assunto e busca selecionados.
 - O editor e `PATCH /api/admin/questions/[id]` já impedem salvar uma questão sem ao menos um tópico avaliado e permanecem como a fronteira oficial dessa validação.
 - Nenhuma migration foi criada ou alterada nesta atualização.
 
@@ -916,3 +917,11 @@ Escopo previsto:
 - O trigger existente continua como garantia atômica do banco; a confirmação no Route Handler protege também ambientes em que esse trigger esteja ausente ou desatualizado.
 - Se os tópicos não puderem ser persistidos, a questão recém-criada é removida e o item retorna como falha, sem sucesso parcial.
 - Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Rascunho do importador sincronizado entre dispositivos — 2026-08-14
+
+- O rascunho local de `/questoes/importar` continua ativo e passa a ser sincronizado com o servidor após as edições.
+- Ao acessar em outro computador ou perfil de navegador com o mesmo administrador, o sistema oferece a retomada da versão remota; quando há versões local e remota, prevalece para oferta a mais recente pela data de salvamento.
+- A API `/api/admin/import-draft` deriva o proprietário da sessão administrativa, limita o payload a 5 MB e não aceita `admin_id` do cliente.
+- Limpar, descartar ou concluir todo o lote remove as cópias local e remota. Falha na sincronização remota mantém o funcionamento local.
+- Migration criada: `supabase/migrations/20260814180000_create_admin_drafts.sql`. Ela não foi executada nesta atualização.

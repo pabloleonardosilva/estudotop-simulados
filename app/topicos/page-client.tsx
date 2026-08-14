@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Check, ChevronDown, Eye, EyeOff, FileQuestion, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
 import PageBackground from "../components/ui/PageBackground";
@@ -244,6 +244,55 @@ export default function TopicosClient({
     return "Rascunho";
   }
 
+  const refreshQuestionTopicUsage = useCallback(async (questionId: string) => {
+    const response = await adminFetch(`/api/admin/questions/${questionId}`, { method: "GET" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.message || "Não foi possível atualizar a questão.");
+    const question = result.question as { id: string; code?: string | null; status?: string | null; subject_id?: string | null; evaluated_topics?: string[] | null };
+    const evaluatedTopics = Array.isArray(question.evaluated_topics) ? question.evaluated_topics : [];
+
+    setTopics((current) => current.map((topic) => {
+      const belongs = topic.subject_id === question.subject_id
+        && evaluatedTopics.some((name) => normalizeTopicComparableName(name) === normalizeTopicComparableName(topic.name));
+      const withoutQuestion = topic.questions.filter((item) => item.id !== questionId);
+      const questions = belongs
+        ? [...withoutQuestion, { id: questionId, code: question.code || questionId.slice(0, 8), status: question.status || "draft" }]
+          .sort((left, right) => left.code.localeCompare(right.code, "pt-BR", { numeric: true }))
+        : withoutQuestion;
+      return { ...topic, questions, usage_count: questions.length };
+    }));
+
+    setSelectedTopic((current) => {
+      if (!current) return null;
+      const belongs = current.subject_id === question.subject_id
+        && evaluatedTopics.some((name) => normalizeTopicComparableName(name) === normalizeTopicComparableName(current.name));
+      const withoutQuestion = current.questions.filter((item) => item.id !== questionId);
+      const questions = belongs
+        ? [...withoutQuestion, { id: questionId, code: question.code || questionId.slice(0, 8), status: question.status || "draft" }]
+          .sort((left, right) => left.code.localeCompare(right.code, "pt-BR", { numeric: true }))
+        : withoutQuestion;
+      return { ...current, questions, usage_count: questions.length };
+    });
+  }, []);
+
+  function closeTopicQuestions() {
+    setSelectedTopic(null);
+  }
+
+  useEffect(() => {
+    if (!selectedTopic) return;
+    function handleQuestionSaved(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.source !== "estudotop-question-popup" || event.data?.type !== "question-saved") return;
+      if (typeof event.data.questionId !== "string") return;
+      void refreshQuestionTopicUsage(event.data.questionId).catch((error) => {
+        setFeedback({ tone: "error", title: "Não foi possível atualizar", message: error instanceof Error ? error.message : "Erro inesperado." });
+      });
+    }
+    window.addEventListener("message", handleQuestionSaved);
+    return () => window.removeEventListener("message", handleQuestionSaved);
+  }, [selectedTopic, refreshQuestionTopicUsage]);
+
   return (
     <PageBackground variant="jornada">
       <PremiumLoadingOverlay show={saving} title="Processando..." message="Aguarde enquanto o sistema conclui esta ação." />
@@ -277,13 +326,14 @@ export default function TopicosClient({
 
       <PremiumModal
         open={Boolean(selectedTopic)}
+        size="wide"
         tone="info"
         title={selectedTopic?.name || "Questões do tópico"}
         message={selectedTopic ? `${selectedTopic.usage_count} ${selectedTopic.usage_count === 1 ? "questão vinculada" : "questões vinculadas"} a este tópico.` : undefined}
-        onClose={() => setSelectedTopic(null)}
+        onClose={closeTopicQuestions}
         actions={(
           <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <PremiumButton variant="dark" onClick={() => setSelectedTopic(null)}>Fechar</PremiumButton>
+            <PremiumButton variant="dark" onClick={closeTopicQuestions}>Fechar</PremiumButton>
             {selectedTopic?.usage_count === 0 && (
               <PremiumButton
                 variant="dark-danger"
@@ -300,21 +350,19 @@ export default function TopicosClient({
         )}
       >
         {selectedTopic && selectedTopic.questions.length > 0 ? (
-          <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+          <div className="max-h-[72vh] space-y-6 overflow-y-auto pr-2">
             {selectedTopic.questions.map((question) => (
-              <div key={question.id} className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
+              <div key={question.id} className="overflow-hidden rounded-3xl border border-white/[0.1] bg-[#07111F]">
+                <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-3">
                   <p className="font-semibold text-white">{question.code}</p>
-                  <p className="mt-1 text-xs font-medium text-white/45">{questionStatusLabel(question.status)}</p>
+                  <p className="text-xs font-medium text-white/45">{questionStatusLabel(question.status)}</p>
                 </div>
-                <PremiumButton
-                  href={`/questoes/${question.id}/editar`}
-                  variant="dark"
-                  className="shrink-0 px-3 py-2 text-xs"
-                  icon={<Pencil size={14} />}
-                >
-                  Editar questão
-                </PremiumButton>
+                <iframe
+                  src={`/questoes/${question.id}/editar?popup=1`}
+                  loading="lazy"
+                  className="h-[70vh] min-h-[640px] w-full bg-[#07111F]"
+                  title={`Editar questão ${question.code}`}
+                />
               </div>
             ))}
           </div>

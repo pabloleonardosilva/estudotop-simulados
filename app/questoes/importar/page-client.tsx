@@ -133,6 +133,11 @@ type ImportDraft = {
   failedBatches?: number;
 };
 
+type RemoteImportDraft = {
+  savedAt: string;
+  value: ImportDraft;
+};
+
 type BoardCreateModalState = {
   status: "processing" | "success" | "error";
   name: string;
@@ -647,13 +652,123 @@ export default function ImportarQuestoesClient({
     pendingDraft,
     restoreDraft: continueDraft,
     discardDraft,
-    clearDraft: clearStoredDraft,
+    clearDraft: clearLocalDraft,
   } = useLocalDraft({
     storageKey: "estudotop:draft:questoes:importar",
     draft,
     hasContent: hasDraftContent,
     onRestore: restoreSavedDraft,
   });
+
+  const [remotePendingDraft, setRemotePendingDraft] = useState<RemoteImportDraft | null>(null);
+  const [remoteDraftReady, setRemoteDraftReady] = useState(false);
+  const remoteSyncAbortRef = useRef<AbortController | null>(null);
+
+  const deleteRemoteDraft = useCallback(() => {
+    remoteSyncAbortRef.current?.abort();
+    remoteSyncAbortRef.current = null;
+    void (async () => {
+      try {
+        const response = await adminFetch("/api/admin/import-draft", { method: "DELETE" });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || "Falha ao remover rascunho sincronizado.");
+      } catch (error) {
+        setFeedback({
+          type: "warning",
+          message: error instanceof Error ? error.message : "O rascunho local foi removido, mas não foi possível remover a cópia sincronizada.",
+        });
+      }
+    })();
+  }, []);
+
+  const clearStoredDraft = useCallback(() => {
+    clearLocalDraft();
+    setRemotePendingDraft(null);
+    deleteRemoteDraft();
+  }, [clearLocalDraft, deleteRemoteDraft]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRemoteDraft() {
+      try {
+        const response = await adminFetch("/api/admin/import-draft", { method: "GET" });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || "Falha ao carregar rascunho sincronizado.");
+        if (!active || !result.draft?.payload || !hasDraftContent(result.draft.payload as ImportDraft)) return;
+
+        let localSavedAt = 0;
+        try {
+          const raw = window.localStorage.getItem("estudotop:draft:questoes:importar");
+          const parsed = raw ? JSON.parse(raw) as { savedAt?: string } : null;
+          localSavedAt = parsed?.savedAt ? new Date(parsed.savedAt).getTime() : 0;
+        } catch {
+          localSavedAt = 0;
+        }
+
+        const remoteSavedAt = new Date(result.draft.updated_at).getTime();
+        if (!localSavedAt || remoteSavedAt > localSavedAt) {
+          setRemotePendingDraft({ savedAt: result.draft.updated_at, value: result.draft.payload as ImportDraft });
+        }
+      } catch {
+        if (active) {
+          setFeedback({ type: "warning", message: "O rascunho local continua ativo, mas não foi possível consultar a sincronização entre dispositivos." });
+        }
+      } finally {
+        if (active) setRemoteDraftReady(true);
+      }
+    }
+
+    void loadRemoteDraft();
+    return () => { active = false; };
+  }, [hasDraftContent]);
+
+  useEffect(() => {
+    if (!remoteDraftReady || remotePendingDraft || !hasDraftContent(draft)) return;
+
+    const timer = window.setTimeout(() => {
+      remoteSyncAbortRef.current?.abort();
+      const controller = new AbortController();
+      remoteSyncAbortRef.current = controller;
+      void (async () => {
+        try {
+          const response = await adminFetch("/api/admin/import-draft", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload: draft }),
+            signal: controller.signal,
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.message || "Falha ao sincronizar rascunho.");
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setFeedback({
+            type: "warning",
+            message: error instanceof Error ? `${error.message} O rascunho local continua protegido.` : "Não foi possível sincronizar o rascunho; a cópia local continua protegida.",
+          });
+        }
+      })();
+    }, 1600);
+
+    return () => window.clearTimeout(timer);
+  }, [draft, hasDraftContent, remoteDraftReady, remotePendingDraft]);
+
+  function continueAvailableDraft() {
+    if (!remotePendingDraft) {
+      continueDraft();
+      return;
+    }
+
+    discardDraft();
+    restoreSavedDraft(remotePendingDraft.value);
+    setRemotePendingDraft(null);
+  }
+
+  function discardAvailableDraft() {
+    discardDraft();
+    setRemotePendingDraft(null);
+    deleteRemoteDraft();
+  }
 
   async function refreshBoards() {
     const response = await adminFetch("/api/admin/exam-boards/search");
@@ -1840,10 +1955,10 @@ export default function ImportarQuestoesClient({
     return (
     <PageBackground>
       <DraftRestoreModal
-        open={Boolean(pendingDraft)}
-        savedAt={pendingDraft?.savedAt}
-        onContinue={continueDraft}
-        onDiscard={discardDraft}
+        open={Boolean(remotePendingDraft || pendingDraft)}
+        savedAt={remotePendingDraft?.savedAt || pendingDraft?.savedAt}
+        onContinue={continueAvailableDraft}
+        onDiscard={discardAvailableDraft}
       />
 
       <PremiumLoadingOverlay

@@ -33,6 +33,7 @@ export default function PremiumModal({
   onClose,
   closeLabel = "Entendi",
   dismissible = true,
+  size = "default",
 }: {
   open: boolean;
   tone?: PremiumModalTone;
@@ -45,6 +46,7 @@ export default function PremiumModal({
   onClose: () => void;
   closeLabel?: string;
   dismissible?: boolean;
+  size?: "default" | "wide";
 }) {
   if (!open) return null;
 
@@ -100,7 +102,7 @@ export default function PremiumModal({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-orange-400/25 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 p-7 text-white shadow-2xl shadow-orange-950/40 animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200">
+      <div className={`relative w-full ${size === "wide" ? "max-w-7xl" : "max-w-lg"} overflow-hidden rounded-[2rem] border border-orange-400/25 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 p-7 text-white shadow-2xl shadow-orange-950/40 animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-400 to-yellow-300" />
         <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-orange-500/15 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />

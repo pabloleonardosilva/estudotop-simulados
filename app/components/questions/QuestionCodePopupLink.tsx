@@ -8,13 +8,15 @@ import { Loader2, X, ExternalLink } from "lucide-react";
 type Props = {
   questionId?: string | null;
   code?: string | null;
+  buttonLabel?: string;
+  nestedModal?: boolean;
   className?: string;
   // Chamado quando a questão é salva/publicada/arquivada dentro do popup.
   // Se omitido, a página é recarregada via router.refresh() como fallback.
   onSaved?: (questionId: string) => void;
 };
 
-export default function QuestionCodePopupLink({ questionId, code, className = "", onSaved }: Props) {
+export default function QuestionCodePopupLink({ questionId, code, buttonLabel, nestedModal = false, className = "", onSaved }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
@@ -75,11 +77,11 @@ export default function QuestionCodePopupLink({ questionId, code, className = ""
         className={className}
         title="Abrir questão no banco"
       >
-        {label}
+        {buttonLabel || label}
       </button>
 
       {open && mounted && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+        <div className={`fixed inset-0 ${nestedModal ? "z-[10001]" : "z-[9999]"} flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm`}>
           <div className="relative flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[2rem] border border-orange-300/25 bg-[#07111F] shadow-2xl shadow-slate-950/40">
             <div className="flex items-center justify-between border-b border-white/[0.08] bg-gradient-to-r from-slate-950 via-slate-900 to-orange-950 px-5 py-4 text-white">
               <div>
