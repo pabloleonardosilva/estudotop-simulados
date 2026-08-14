@@ -28,15 +28,26 @@ async function findDuplicate(name: string, subjectId: string, ignoreId?: string)
 
 async function findQuestionUsage(subjectId: string, topicName: string): Promise<TopicQuestionUsage[]> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("questions")
-    .select("id, code, evaluated_topics")
-    .eq("subject_id", subjectId);
+  const questions: Array<{ id: string; code: string | null; evaluated_topics: string[] | null }> = [];
+  const pageSize = 1000;
 
-  if (error) throw new Error("Não foi possível verificar o uso do tópico.");
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("questions")
+      .select("id, code, evaluated_topics")
+      .eq("subject_id", subjectId)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error("Não foi possível verificar o uso do tópico.");
+
+    const rows = data || [];
+    questions.push(...rows);
+    if (rows.length < pageSize) break;
+  }
 
   const comparable = normalizeTopicComparableName(topicName);
-  return (data || [])
+  return questions
     .filter((question) =>
       Array.isArray(question.evaluated_topics)
       && question.evaluated_topics.some((name) => normalizeTopicComparableName(name) === comparable),

@@ -21,6 +21,32 @@ type TopicSuggestion = { id: string; name: string };
 
 const topicCatalogCache = new Map<string, TopicSuggestion[]>();
 const topicCatalogRequests = new Map<string, Promise<TopicSuggestion[]>>();
+const transientTopicCatalog = new Map<string, TopicSuggestion[]>();
+const TRANSIENT_TOPIC_EVENT = "evaluated-topics:transient-topic-added";
+
+function mergeTopicCatalog(...catalogs: TopicSuggestion[][]) {
+  const merged = new Map<string, TopicSuggestion>();
+
+  for (const topic of catalogs.flat()) {
+    const comparable = normalizeTopicComparableName(topic.name);
+    if (comparable && !merged.has(comparable)) merged.set(comparable, topic);
+  }
+
+  return Array.from(merged.values());
+}
+
+function addTransientTopic(subjectId: string, name: string) {
+  const comparable = normalizeTopicComparableName(name);
+  if (!comparable) return;
+
+  const current = transientTopicCatalog.get(subjectId) || [];
+  if (current.some((topic) => normalizeTopicComparableName(topic.name) === comparable)) return;
+
+  const topic = { id: `transient:${subjectId}:${comparable}`, name };
+  transientTopicCatalog.set(subjectId, [...current, topic]);
+  topicCatalogCache.set(subjectId, mergeTopicCatalog(topicCatalogCache.get(subjectId) || [], [topic]));
+  window.dispatchEvent(new CustomEvent(TRANSIENT_TOPIC_EVENT, { detail: { subjectId, topic } }));
+}
 
 function loadTopicCatalog(subjectId: string) {
   const cached = topicCatalogCache.get(subjectId);
@@ -34,7 +60,8 @@ function loadTopicCatalog(subjectId: string) {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || "Não foi possível carregar os tópicos.");
 
-      const topics = (result.topics || []).map((topic: TopicSuggestion) => ({ id: topic.id, name: topic.name }));
+      const databaseTopics = (result.topics || []).map((topic: TopicSuggestion) => ({ id: topic.id, name: topic.name }));
+      const topics = mergeTopicCatalog(databaseTopics, transientTopicCatalog.get(subjectId) || []);
       topicCatalogCache.set(subjectId, topics);
       return topics;
     })
@@ -96,6 +123,19 @@ export default function EvaluatedTopicsInput({
     };
   }, [retryCatalog, subjectId]);
 
+  useEffect(() => {
+    function handleTransientTopic(event: Event) {
+      const detail = (event as CustomEvent<{ subjectId: string; topic: TopicSuggestion }>).detail;
+      if (detail.subjectId !== subjectId) return;
+
+      setCatalog((current) => mergeTopicCatalog(current, [detail.topic]));
+      setCatalogSubjectId(detail.subjectId);
+    }
+
+    window.addEventListener(TRANSIENT_TOPIC_EVENT, handleTransientTopic);
+    return () => window.removeEventListener(TRANSIENT_TOPIC_EVENT, handleTransientTopic);
+  }, [subjectId]);
+
   const suggestions = useMemo(() => {
     const term = normalizeTopicComparableName(draft);
     if (!term || catalogSubjectId !== subjectId) return [];
@@ -121,6 +161,12 @@ export default function EvaluatedTopicsInput({
       return catalog.find((topic) => normalizeTopicComparableName(topic.name) === comparable)?.name || typed;
     });
     const next = normalizeEvaluatedTopics([...topics, ...parts]);
+    if (subjectId) {
+      const existingKeys = new Set(catalog.map((topic) => normalizeTopicComparableName(topic.name)));
+      for (const topic of next) {
+        if (!existingKeys.has(normalizeTopicComparableName(topic))) addTransientTopic(subjectId, topic);
+      }
+    }
     onChange(next);
     setDraft("");
   }

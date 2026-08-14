@@ -11,7 +11,7 @@ import {
   syncQuestionSubjects,
 } from "@/lib/questions/question-subjects";
 import { EVALUATED_TOPICS_REQUIRED_MESSAGE, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
-import { normalizeBoardComparableName, normalizeBoardName } from "@/lib/utils/text";
+import { normalizeBoardComparableName, normalizeBoardName, normalizeTopicComparableName } from "@/lib/utils/text";
 import { questionFingerprint } from "@/lib/utils/textSimilarity";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
@@ -549,6 +549,37 @@ export async function POST(
                 });
                 continue;
               }
+            }
+
+            const { error: topicsError } = await supabase
+              .from("topics")
+              .upsert(
+                evaluatedTopics.map((topicName) => ({
+                  subject_id: questionSubjectId,
+                  name: topicName,
+                  normalized_name: normalizeTopicComparableName(topicName),
+                  is_active: true,
+                })),
+                { onConflict: "subject_id,normalized_name" },
+              );
+
+            if (topicsError) {
+              await supabase
+                .from("questions")
+                .delete()
+                .eq("id", inserted.id);
+
+              savedIds.splice(savedIds.indexOf(inserted.id), 1);
+              if (tempId) {
+                const tempIndex = savedTempIds.indexOf(tempId);
+                if (tempIndex >= 0) savedTempIds.splice(tempIndex, 1);
+              }
+
+              failedItems.push({
+                temp_id: tempId,
+                message: "Não foi possível cadastrar os tópicos da questão.",
+              });
+              continue;
             }
 
             savedCount++;

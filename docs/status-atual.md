@@ -897,5 +897,22 @@ Escopo previsto:
 
 - O catálogo de tópicos ativos passou a ser armazenado em cache por assunto e requisições simultâneas são compartilhadas entre os cards do importador, evitando carregamentos repetidos e sugestões ocasionalmente indisponíveis.
 - `EvaluatedTopicsInput` agora mostra o carregamento, informa falhas sanitizadas e oferece **Tentar novamente** sem impedir o preenchimento manual.
+- Tópicos digitados manualmente passam a integrar imediatamente o catálogo temporário compartilhado por assunto e ficam disponíveis nas sugestões dos outros cards da mesma tela antes do envio para revisão. O salvamento da questão e a sincronização existente com a tabela `topics` permanecem inalterados.
 - Correspondências exatas e nomes iniciados pelo termo digitado ganharam prioridade na lista de até seis sugestões.
 - API, banco, autenticação, validação e salvamento permaneceram inalterados. Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Contagem, questões vinculadas e exclusão de tópicos — 2026-08-14
+
+- `/topicos` passa a paginar a leitura de todas as questões para calcular o uso sem o limite padrão de consulta do Supabase.
+- Nome e contagem do tópico abrem a lista completa das questões vinculadas, com código, status e acesso à edição; assim questões em revisão, prontas para publicação ou arquivadas deixam de parecer vínculos invisíveis.
+- A verificação administrativa de exclusão também percorre todas as páginas no servidor. Tópicos sem questões podem ser excluídos diretamente no modal; tópicos em uso continuam protegidos.
+- O editor e `PATCH /api/admin/questions/[id]` já impedem salvar uma questão sem ao menos um tópico avaliado e permanecem como a fronteira oficial dessa validação.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Persistência de tópicos no envio para revisão — 2026-08-14
+
+- `POST /api/admin/questions/import/save` passa a confirmar explicitamente os tópicos na tabela `topics` assim que a questão é criada como `pending_review`, sem aguardar publicação.
+- A sincronização usa assunto + nome normalizado, não duplica tópicos existentes e reativa um tópico compatível que estivesse inativo.
+- O trigger existente continua como garantia atômica do banco; a confirmação no Route Handler protege também ambientes em que esse trigger esteja ausente ou desatualizado.
+- Se os tópicos não puderem ser persistidos, a questão recém-criada é removida e o item retorna como falha, sem sucesso parcial.
+- Nenhuma migration foi criada ou alterada nesta atualização.

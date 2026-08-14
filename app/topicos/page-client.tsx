@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Check, ChevronDown, Eye, EyeOff, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, FileQuestion, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
 import PageBackground from "../components/ui/PageBackground";
 import PageHeader from "../components/ui/PageHeader";
 import PremiumButton from "../components/ui/PremiumButton";
@@ -23,6 +23,7 @@ import { adminFetch } from "@/lib/supabase/adminFetch";
 
 type Discipline = { id: string; name: string; is_active: boolean };
 type Subject = { id: string; name: string; discipline_id: string | null; is_active: boolean };
+type TopicQuestion = { id: string; code: string; status: string };
 type Topic = {
   id: string;
   name: string;
@@ -32,6 +33,7 @@ type Topic = {
   created_at: string;
   updated_at: string;
   usage_count: number;
+  questions: TopicQuestion[];
 };
 type Feedback = { tone: "success" | "error" | "warning"; title: string; message: string } | null;
 type AffectedQuestion = { id: string; code: string };
@@ -63,6 +65,7 @@ export default function TopicosClient({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
 
   const subjects = useMemo(
     () => initialSubjects.filter((item) => item.discipline_id === disciplineId),
@@ -115,7 +118,7 @@ export default function TopicosClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: normalizedName, subject_id: subjectId }),
       });
-      setTopics((current) => [...current, { ...result.topic, usage_count: 0 }]);
+      setTopics((current) => [...current, { ...result.topic, usage_count: 0, questions: [] }]);
       setName("");
       setFeedback({ tone: "success", title: "Tópico cadastrado", message: result.message });
     } catch (error) {
@@ -232,6 +235,15 @@ export default function TopicosClient({
     changeStatus(confirmation.topic);
   }
 
+  function questionStatusLabel(status: string) {
+    if (status === "pending_review") return "Em revisão";
+    if (status === "ready_to_publish") return "Pronta para publicação";
+    if (status === "published" || status === "active") return "Publicada";
+    if (status === "archived") return "Arquivada";
+    if (status === "annulled") return "Anulada";
+    return "Rascunho";
+  }
+
   return (
     <PageBackground variant="jornada">
       <PremiumLoadingOverlay show={saving} title="Processando..." message="Aguarde enquanto o sistema conclui esta ação." />
@@ -262,6 +274,56 @@ export default function TopicosClient({
           </div>
         )}
       />
+
+      <PremiumModal
+        open={Boolean(selectedTopic)}
+        tone="info"
+        title={selectedTopic?.name || "Questões do tópico"}
+        message={selectedTopic ? `${selectedTopic.usage_count} ${selectedTopic.usage_count === 1 ? "questão vinculada" : "questões vinculadas"} a este tópico.` : undefined}
+        onClose={() => setSelectedTopic(null)}
+        actions={(
+          <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <PremiumButton variant="dark" onClick={() => setSelectedTopic(null)}>Fechar</PremiumButton>
+            {selectedTopic?.usage_count === 0 && (
+              <PremiumButton
+                variant="dark-danger"
+                icon={<Trash2 size={14} />}
+                onClick={() => {
+                  setConfirmation({ topic: selectedTopic, action: "delete" });
+                  setSelectedTopic(null);
+                }}
+              >
+                Excluir tópico
+              </PremiumButton>
+            )}
+          </div>
+        )}
+      >
+        {selectedTopic && selectedTopic.questions.length > 0 ? (
+          <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+            {selectedTopic.questions.map((question) => (
+              <div key={question.id} className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="font-semibold text-white">{question.code}</p>
+                  <p className="mt-1 text-xs font-medium text-white/45">{questionStatusLabel(question.status)}</p>
+                </div>
+                <PremiumButton
+                  href={`/questoes/${question.id}/editar`}
+                  variant="dark"
+                  className="shrink-0 px-3 py-2 text-xs"
+                  icon={<Pencil size={14} />}
+                >
+                  Editar questão
+                </PremiumButton>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-6 text-center text-sm font-semibold text-white/50">
+            Este tópico não está vinculado a nenhuma questão e pode ser excluído.
+          </div>
+        )}
+      </PremiumModal>
 
       <PageHeader
         variant="jornada"
@@ -343,7 +405,14 @@ export default function TopicosClient({
                           {editing ? (
                             <PremiumInput variant="jornada" value={editingName} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditingName(event.target.value)} />
                           ) : (
-                            <span className="font-semibold text-white/90">{topic.name}</span>
+                            <PremiumButton
+                              variant="dark"
+                              className="px-3 py-2 text-left text-xs"
+                              icon={<FileQuestion size={14} />}
+                              onClick={() => setSelectedTopic(topic)}
+                            >
+                              {topic.name}
+                            </PremiumButton>
                           )}
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada">
@@ -352,8 +421,9 @@ export default function TopicosClient({
                           </span>
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada">
-                          <span className="font-semibold text-white/70">{topic.usage_count}</span>
-                          <span className="ml-1 text-xs text-white/40">{topic.usage_count === 1 ? "questão" : "questões"}</span>
+                          <PremiumButton variant="dark" className="px-3 py-2 text-xs" onClick={() => setSelectedTopic(topic)}>
+                            {topic.usage_count} {topic.usage_count === 1 ? "questão" : "questões"}
+                          </PremiumButton>
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada" align="right">
                           <div className="flex justify-end gap-2">
