@@ -32,6 +32,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
+import CorrectionVideoPlayer from "./CorrectionVideoPlayer";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -168,55 +169,6 @@ function formatPercent(value: number): string {
   const safe = Number(value || 0);
   const fixed = safe.toFixed(2);
   return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",");
-}
-
-type CorrectionVideoEmbed =
-  | { kind: "html5"; src: string }
-  | { kind: "iframe"; src: string };
-
-function getCorrectionVideoEmbed(url?: string | null): CorrectionVideoEmbed | null {
-  const raw = String(url || "").trim();
-  if (!raw) return null;
-
-  const isDirectVideo = /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(raw);
-  if (isDirectVideo) return { kind: "html5", src: raw };
-
-  try {
-    const parsed = new URL(raw);
-    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
-
-    if (host === "youtu.be") {
-      const videoId = parsed.pathname.replace(/^\//, "").split("/")[0];
-      if (videoId) return { kind: "iframe", src: `https://www.youtube.com/embed/${videoId}` };
-    }
-
-    if (host.includes("youtube.com")) {
-      const fromQuery = parsed.searchParams.get("v");
-      const fromShorts = parsed.pathname.match(/\/shorts\/([^/?#]+)/i)?.[1];
-      const fromEmbed = parsed.pathname.match(/\/embed\/([^/?#]+)/i)?.[1];
-      const videoId = fromQuery || fromShorts || fromEmbed;
-      if (videoId) return { kind: "iframe", src: `https://www.youtube.com/embed/${videoId}` };
-    }
-
-    if (host.includes("vimeo.com")) {
-      const videoId = parsed.pathname.split("/").filter(Boolean)[0];
-      if (videoId) return { kind: "iframe", src: `https://player.vimeo.com/video/${videoId}` };
-    }
-
-    if (host.includes("loom.com")) {
-      const videoId = parsed.pathname.split("/").filter(Boolean).pop();
-      if (videoId) return { kind: "iframe", src: `https://www.loom.com/embed/${videoId}` };
-    }
-
-    if (host.includes("drive.google.com")) {
-      const fileId = parsed.pathname.match(/\/file\/d\/([^/]+)/i)?.[1] || parsed.searchParams.get("id");
-      if (fileId) return { kind: "iframe", src: `https://drive.google.com/file/d/${fileId}/preview` };
-    }
-
-    return { kind: "iframe", src: raw };
-  } catch {
-    return { kind: "iframe", src: raw };
-  }
 }
 
 function normalizeTextKey(value: string): string {
@@ -659,7 +611,7 @@ export default function ResultadoClient({
           {safeStep === 1 && <ResultExamXRay result={r} subjects={payload.subjects} simuladoTitle={payload.simulado.title} scoringModel={payload.simulado.scoring_model} finishedAt={r?.finished_at || payload.attempt.submitted_at} />}
           {safeStep === 2 && <ResultSubjects performance={performanceBySubject} subjects={payload.subjects} answerKeyVisible={payload.simulado.show_answer_key_on_finish} onGoToReview={() => setResultStep(reviewStepIndex)} />}
           {safeStep === 3 && <ResultBehavior result={r} metrics={payload.behavior_metrics} timeSpent={timeSpent} avgTime={avgTime} />}
-          {hasCorrectionVideo && safeStep === videoStepIndex && <ResultCorrectionVideo correctionVideoUrl={payload.simulado.correction_video_url!} />}
+          {hasCorrectionVideo && safeStep === videoStepIndex && <ResultCorrectionVideo simuladoId={payload.simulado.id} correctionVideoUrl={payload.simulado.correction_video_url!} />}
           {safeStep === reviewStepIndex && <ResultQuestions questions={payload.gabarito} showAnswerKey={payload.simulado.show_answer_key_on_finish} showTeacherComment={payload.simulado.show_teacher_comment} />}
           {safeStep === statsStepIndex && <ResultSimuladoPdf payload={payload} />}
         </section>
@@ -1231,10 +1183,7 @@ function behaviorToneStyles(tone: "emerald" | "amber" | "red" | "slate") {
   return { card: "border-slate-200/90 bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(255,255,255,0.96))]", icon: "bg-slate-100 text-slate-500", text: "text-slate-500", pill: "border-slate-200 bg-white text-slate-600" };
 }
 
-function ResultCorrectionVideo({ correctionVideoUrl }: { correctionVideoUrl: string }) {
-  const embed = getCorrectionVideoEmbed(correctionVideoUrl);
-  if (!embed) return <EmptyState text="O vídeo de correção desta tentativa ainda não está disponível." />;
-
+function ResultCorrectionVideo({ simuladoId, correctionVideoUrl }: { simuladoId: string; correctionVideoUrl: string }) {
   return (
     <div className="space-y-5">
       <section className="relative overflow-visible rounded-[24px] border border-slate-200/95 bg-[linear-gradient(135deg,#FFFFFF_0%,#FFFDF9_48%,#FFFFFF_100%)] px-5 pb-7 pt-8 shadow-[0_16px_42px_rgba(15,23,42,0.065)] md:px-7 md:pb-8 lg:min-h-[660px] lg:px-8 lg:pb-10 lg:pt-11 xl:min-h-[690px]">
@@ -1270,27 +1219,7 @@ function ResultCorrectionVideo({ correctionVideoUrl }: { correctionVideoUrl: str
             <div className="mt-7 max-w-[1060px] rounded-[24px] border border-slate-900/90 bg-[linear-gradient(180deg,#111827_0%,#020617_100%)] p-3 shadow-[0_28px_60px_rgba(2,6,23,0.28),0_12px_28px_rgba(255,90,0,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] md:p-3.5 xl:p-4">
               <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-[#0B1120] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
                 <div className="aspect-video w-full">
-                  {embed.kind === "html5" ? (
-                    <video
-                      controls
-                      playsInline
-                      preload="metadata"
-                      controlsList="nodownload noplaybackrate"
-                      className="h-full w-full bg-slate-950 object-contain"
-                    >
-                      <source src={embed.src} />
-                      Seu navegador não suporta a reprodução deste vídeo.
-                    </video>
-                  ) : (
-                    <iframe
-                      src={embed.src}
-                      title="Vídeo de correção do simulado"
-                      className="h-full w-full bg-slate-950"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
-                    />
-                  )}
+                  <CorrectionVideoPlayer simuladoId={simuladoId} correctionVideoUrl={correctionVideoUrl} />
                 </div>
               </div>
             </div>

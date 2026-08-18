@@ -1089,6 +1089,12 @@ function AssignedActivities({
                     <p className="truncate text-sm font-bold text-white/86">{String(item.order_number).padStart(2, "0")} · {item.title}</p>
                     <p className="mt-1 text-xs text-white/38">Prevista: {fmtDate(item.scheduled_release_at)} · Liberada: {fmtDateTime(item.released_at)}</p>
                     {(item.latest_attempt_started_at || item.latest_result_finished_at) && <p className="mt-1 text-xs text-white/38">Início: {fmtDateTime(item.latest_attempt_started_at)} · Conclusão: {fmtDateTime(item.latest_result_finished_at || item.completed_at)}</p>}
+                    <p className="mt-1 text-xs text-white/38">
+                      Vídeo de correção:{" "}
+                      <span className={item.correction_video_status === "watched" ? "font-bold text-emerald-300" : item.correction_video_status === "not_watched" ? "font-bold text-amber-300/80" : "text-white/32"}>
+                        {item.correction_video_status === "watched" ? "Assistiu" : item.correction_video_status === "not_watched" ? "Não assistiu" : "-"}
+                      </span>
+                    </p>
                   </div>
                   <div><span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${status.cls}`}>{status.label}</span></div>
                   <div className="text-xs text-white/45">

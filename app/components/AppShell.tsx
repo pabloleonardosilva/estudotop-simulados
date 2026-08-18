@@ -44,6 +44,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [unseenHelpReply, setUnseenHelpReply] = useState<UnseenHelpReply | null>(null);
   const [topCoinsBalance, setTopCoinsBalance] = useState<number | null>(null);
 
+  useEffect(() => {
+    const openHelpCenter = () => {
+      setFocusedHelpTicketId(null);
+      setHelpOpen(true);
+    };
+    window.addEventListener("estudotop:open-help-center", openHelpCenter);
+    return () => window.removeEventListener("estudotop:open-help-center", openHelpCenter);
+  }, []);
   const publicRoutes = ["/login", "/esqueci-senha", "/redefinir-senha", "/cadastro", "/primeiro-acesso"];
   const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith("/cadastro/confirmar");
   const isPublicViewRoute = pathname.startsWith("/r/");
@@ -114,6 +122,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       pathname.startsWith("/meus-simulados") ||
       pathname.startsWith("/minhas-anotacoes") ||
       pathname.startsWith("/meus-resultados") ||
+      pathname.startsWith("/meu-perfil") ||
       pathname.startsWith("/extrato-topcoins");
 
     if (user && profile?.role === "student" && !isChangePasswordRoute && !isAllowedStudentRoute) {

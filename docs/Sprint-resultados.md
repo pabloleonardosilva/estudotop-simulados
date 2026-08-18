@@ -722,6 +722,16 @@ A etapa **Vídeo de Correção** integra o fluxo principal da página `/meus-sim
 - nenhuma migration foi criada;
 - a alteração é exclusivamente de apresentação, fluxo visual e embed do vídeo.
 
+## Rastreamento do vídeo de correção — 2026-08-18
+
+- A etapa **Vídeo de Correção** preserva o desenho existente e passa a medir, sem indicador visual para o aluno, os intervalos efetivamente reproduzidos em vídeo HTML5 direto, YouTube e Vimeo.
+- Saltos maiores que dois segundos são tratados como seek e não entram na cobertura. Intervalos sobrepostos são unidos no servidor, portanto rever o mesmo trecho não aumenta artificialmente o progresso.
+- A cobertura é cumulativa entre acessos e tentativas do mesmo aluno. O status administrativo torna-se **Assistiu** exatamente ao atingir 20% da duração do vídeo atual e não regride depois disso.
+- A identidade normalizada distingue o conteúdo atual por provedor e identificador; trocar o vídeo invalida a evidência anterior para o novo conteúdo. Parâmetros transitórios de URLs diretas não integram a identidade.
+- Loom, Google Drive e iframe genérico continuam reproduzíveis, mas permanecem sem tracking por não oferecerem telemetria confiável na implementação atual.
+- O endpoint `POST /api/student/simulados/[id]/correction-video-progress` deriva o aluno do token validado, exige uma tentativa concluída do próprio aluno e calcula a cobertura no servidor a partir de intervalos validados.
+- A migration `supabase/migrations/20260818153000_create_correction_video_progress.sql` cria a persistência por aluno, simulado e identidade do vídeo. Em 2026-08-18, o responsável confirmou sua execução manual no Supabase operacional; nenhuma migration foi executada pelo agente durante a etapa de fechamento.
+
 ---
 
 ## Atualização 2026-07-16 — Resultado da tentativa atual vs resultado oficial

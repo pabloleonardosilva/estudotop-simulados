@@ -1000,3 +1000,19 @@ Escopo previsto:
 - Corrigida a causa do indicador ausente quando o admin respondia enquanto o aluno permanecia conectado: a consulta ocorria somente ao carregar sessão e perfil.
 - O `AppShell` agora atualiza respostas não vistas imediatamente, a cada 30 segundos, ao recuperar foco/visibilidade e em mudanças de rota.
 - Nenhuma alteração de API, banco, migration, autenticação ou autorização foi necessária.
+
+### Rastreamento do vídeo de correção preparado em 2026-08-18
+
+- A página de resultado passa a medir cobertura efetivamente reproduzida em HTML5, YouTube e Vimeo, acumulando intervalos distintos e desconsiderando seek.
+- O limiar administrativo é exatamente 20%. Sem vídeo, o perfil mostra `-`; com vídeo abaixo do limiar, `Não assistiu`; ao atingir o limiar para a identidade atual, `Assistiu`.
+- O perfil `/admin/alunos/[id]` consulta os progressos do aluno em lote, sem N+1, e preserva a regra existente do primeiro resultado oficial válido.
+- A API deriva o aluno da sessão autenticada, exige tentativa concluída e nunca aceita `student_id`, percentual pronto ou identidade do vídeo vindos do cliente.
+- Migration `supabase/migrations/20260818153000_create_correction_video_progress.sql` executada manualmente pelo responsável no Supabase operacional em 2026-08-18. A execução não foi realizada pelo agente.
+
+### Meu Perfil do aluno implementado em 2026-08-18
+
+- Criada a rota clean `/meu-perfil`, acessível pelo bloco de identidade do header desktop e pelo ícone de perfil no header compacto.
+- O aluno pode atualizar o próprio nome, telefone, foto e concursos de interesse; e-mail e CPF permanecem somente leitura. A API `/api/student/profile` deriva o UUID do token e ignora qualquer tentativa de indicar outro aluno.
+- A página mostra apenas métricas executivas de trajetória e Jornadas, com atalhos para `/meus-resultados` e `/minhas-jornadas`, sem duplicar dashboards.
+- Central de Ajuda, upload existente e recuperação de senha foram reutilizados. Não foram criados toggles sem persistência, troca direta de e-mail, exclusão automática nem URL fictícia de privacidade.
+- Nenhuma migration foi criada ou alterada para esta funcionalidade.

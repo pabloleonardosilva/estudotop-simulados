@@ -69,3 +69,25 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, message: "Foto atualizada com sucesso.", avatar_url: avatarUrl }, { status: 200 });
 }
+
+export async function DELETE(request: Request) {
+  const authHeader = request.headers.get("authorization") || request.headers.get("Authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  if (!token) return NextResponse.json({ ok: false, message: "Não autenticado." }, { status: 401 });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !userData.user) return NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 });
+
+  const { data: profile, error: loadError } = await supabase.from("profiles").select("avatar_url").eq("id", userData.user.id).single();
+  if (loadError) return NextResponse.json({ ok: false, message: "Não foi possível carregar sua foto." }, { status: 500 });
+
+  const { error: updateError } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userData.user.id);
+  if (updateError) return NextResponse.json({ ok: false, message: "Não foi possível remover sua foto." }, { status: 500 });
+
+  const marker = "/profile-avatars/";
+  const path = profile.avatar_url?.includes(marker) ? decodeURIComponent(profile.avatar_url.split(marker)[1]) : null;
+  if (path?.startsWith(`${userData.user.id}/`)) await supabase.storage.from("profile-avatars").remove([path]);
+
+  return NextResponse.json({ ok: true, message: "Foto removida com sucesso.", avatar_url: null }, { status: 200 });
+}

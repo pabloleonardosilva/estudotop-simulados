@@ -3457,3 +3457,22 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 **Indicadores e filtros (2026-08-18):** `Header.tsx` usa `hasUnseenHelpReply` para marcar o próprio ícone **Ajuda** quando o aluno possui resposta não vista. A API administrativa expõe `counts.new` para tickets `open` com `admin_seen_at = null`; o badge protegido em `Sidebar.tsx` usa essa contagem e é atualizado ao abrir um detalhe. Os filtros Motivo e Período de `/admin/ajuda` usam dropdowns dark premium em vez de `<select>` nativo.
 
 **Atualização automática do alerta (2026-08-18):** o `AppShell` consulta respostas não lidas na entrada, em mudanças de rota, a cada 30 segundos e quando a aba recupera foco ou visibilidade. Assim, uma resposta enviada enquanto o aluno está conectado atualiza o ícone **Ajuda** sem recarregar a página.
+
+## 23. Rastreamento do vídeo de correção
+
+- `lib/correction-video.ts`: fonte única do limiar de 20%, normalização da identidade do vídeo e união/cálculo dos intervalos assistidos.
+- `app/meus-simulados/[id]/resultado/CorrectionVideoPlayer.tsx`: telemetria invisível do player HTML5, YouTube e Vimeo; acumula somente reprodução contínua e envia lotes a cada 10 segundos, pausa ou saída.
+- `POST /api/student/simulados/[id]/correction-video-progress`: rota autenticada que valida aluno, simulado, tentativa concluída, duração e intervalos antes de persistir a cobertura do vídeo atual.
+- `student_correction_video_progress`: progresso cumulativo por `student_id + simulado_id + video_identity`; o marco `completed_threshold_at` é permanente para aquela identidade.
+- `/admin/alunos/[id]`: carrega todos os progressos do aluno em uma consulta única e exibe **Assistiu**, **Não assistiu** ou **-** em cada simulado de **Atividades atribuídas**.
+- Provedores rastreáveis: HTML5 direto, YouTube e Vimeo. Loom, Google Drive e iframe genérico são exibidos sem gerar evidência de visualização.
+- **Estado operacional:** a migration `20260818153000_create_correction_video_progress.sql` foi executada manualmente pelo responsável no Supabase operacional em 2026-08-18. A API limita o crédito inicial, compara novos segundos com o tempo transcorrido entre registros e rejeita frequência incompatível, reduzindo fabricação acelerada de cobertura.
+
+## 24. Meu Perfil do aluno
+
+- **Rota:** `/meu-perfil`, com `page.tsx` Server Component e interação isolada em `page-client.tsx`, integrada ao shell claro da área do aluno.
+- **Acesso:** o avatar/nome no header desktop e o ícone de perfil no header compacto levam à página. O header não expõe dados administrativos.
+- **Dados:** `GET/PATCH /api/student/profile` deriva o aluno exclusivamente do token, retorna identidade, catálogo ativo de concursos e resumos simples de trajetória/Jornadas, e permite alterar somente nome, telefone e interesses. E-mail e CPF permanecem somente leitura.
+- **Avatar:** reutiliza `POST /api/profile/avatar`; `DELETE` remove a referência do próprio perfil e tenta apagar somente o objeto cujo caminho pertence ao usuário autenticado.
+- **Conta e preferências:** a troca direta de e-mail não existe. Como o sistema não possui troca voluntária de senha nem preferências opcionais persistidas, a página encerra a sessão antes de encaminhar à recuperação segura de senha e apresenta apenas comunicações essenciais, sem toggles fictícios. Interesses históricos fora do catálogo ativo são preservados e só são removidos por desseleção explícita.
+- **Privacidade e ajuda:** solicitações de dados, correção e exclusão abrem a Central de Ajuda existente; nenhuma exclusão automática foi criada. A Política de Privacidade permanece sem link até existir rota pública oficial.

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
+import { getCorrectionVideoSource } from "@/lib/correction-video";
 import AlunoAdminDetalheClient from "./page-client";
 
 export type StudentDetail = {
@@ -111,6 +112,7 @@ export type StudentJornadaScheduleItem = {
   latest_result_time_spent_seconds: number | null;
   can_unrelease: boolean;
   manually_released: boolean;
+  correction_video_status: "watched" | "not_watched" | "unavailable";
 };
 
 export type StudentJornada = {
@@ -186,7 +188,7 @@ async function getData(id: string) {
           release_email_error,
           completed_at,
           status,
-          simulados:simulado_id(id, title, max_attempts)
+          simulados:simulado_id(id, title, max_attempts, correction_video_url)
         )
       `)
       .eq("student_id", id)
@@ -287,6 +289,21 @@ async function getData(id: string) {
     }
   }
 
+  const videoProgressKeys = new Set<string>();
+  if (simuladoIds.length > 0) {
+    const { data: videoProgress, error: videoProgressError } = await supabase
+      .from("student_correction_video_progress")
+      .select("simulado_id, video_identity, completed_threshold_at")
+      .eq("student_id", id)
+      .in("simulado_id", simuladoIds)
+      .not("completed_threshold_at", "is", null);
+
+    if (videoProgressError) throw new Error(videoProgressError.message);
+    for (const progress of videoProgress || []) {
+      videoProgressKeys.add(`${progress.simulado_id}:${progress.video_identity}`);
+    }
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -327,6 +344,12 @@ async function getData(id: string) {
           : item.status;
         const manuallyReleased = item.status === "available" && Boolean(item.released_at) && scheduledDate !== null && scheduledDate.getTime() > today.getTime();
         const canUnrelease = effectiveStatus === "available" && Boolean(item.released_at) && attemptsCounting === 0 && attemptsTotal === 0;
+        const correctionVideo = getCorrectionVideoSource(item.simulados?.correction_video_url);
+        const correctionVideoStatus = !correctionVideo
+          ? "unavailable"
+          : videoProgressKeys.has(`${item.simulado_id}:${correctionVideo.identity}`)
+            ? "watched"
+            : "not_watched";
 
         return {
           id: item.id,
@@ -357,6 +380,7 @@ async function getData(id: string) {
           latest_result_time_spent_seconds: latestResult?.time_spent_seconds ?? null,
           can_unrelease: canUnrelease,
           manually_released: manuallyReleased,
+          correction_video_status: correctionVideoStatus,
         };
       });
 

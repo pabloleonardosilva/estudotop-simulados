@@ -13,6 +13,7 @@ import {
   Map,
   Menu,
   NotebookText,
+  UserRound,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import TopCoinStack from "./gamification/TopCoinStack";
@@ -86,10 +87,18 @@ export default function Header({
               </Link>
             </div>
 
+            <Link
+              href="/meu-perfil"
+              aria-label="Abrir meu perfil"
+              className="ml-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/[0.14] text-slate-200 transition hover:bg-white/10 hover:text-white"
+            >
+              <UserRound size={19} />
+            </Link>
+
             <button
               type="button"
               onClick={handleSignOut}
-              className="ml-auto inline-flex h-11 shrink-0 items-center justify-center rounded-full border border-white/[0.14] bg-[#050A11] px-4 text-xs font-semibold text-white transition hover:bg-white/10"
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-full border border-white/[0.14] bg-[#050A11] px-4 text-xs font-semibold text-white transition hover:bg-white/10"
             >
               Sair
             </button>
@@ -178,7 +187,7 @@ export default function Header({
                 </button>
               )}
 
-              <div className="inline-flex h-[46px] shrink-0 items-center gap-[10px] px-2 text-[15px] font-extrabold text-white/[0.90] xl:h-[42px] xl:gap-2 xl:text-[13.5px] 2xl:h-[46px] 2xl:gap-[10px] 2xl:text-[15px]">
+              <Link href="/meu-perfil" aria-label="Abrir meu perfil" className="inline-flex h-[46px] shrink-0 items-center gap-[10px] rounded-xl px-2 text-[15px] font-extrabold text-white/[0.90] transition hover:bg-white/[0.055] hover:text-white xl:h-[42px] xl:gap-2 xl:text-[13.5px] 2xl:h-[46px] 2xl:gap-[10px] 2xl:text-[15px]">
                 {profile?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -192,7 +201,7 @@ export default function Header({
                   </span>
                 )}
                 <span className="max-w-[120px] truncate xl:max-w-[90px] 2xl:max-w-[120px]">{(profile?.full_name || "Aluno").split(/\s+/)[0]}</span>
-              </div>
+              </Link>
 
               <button
                 type="button"
