@@ -28,6 +28,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { supabase } from "../lib/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
+import { adminFetch } from "../lib/supabase/adminFetch";
 
 type AdminMenuGroup = "overview" | "management" | "questions" | "system" | "settings";
 
@@ -149,31 +150,22 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     let cancelled = false;
 
     async function loadOpenHelpMessagesCount() {
-      const { count, error } = await supabase
-        .from("student_help_messages")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "open");
-
-      if (cancelled || error) return;
-      setOpenHelpMessagesCount(count ?? 0);
+      const response = await adminFetch("/api/admin/help-messages?status=open&limit=1");
+      const json = await response.json().catch(() => ({}));
+      if (cancelled || !response.ok || !json.ok) return;
+      setOpenHelpMessagesCount(json.counts?.open ?? 0);
     }
 
     loadOpenHelpMessagesCount();
-
-    const channel = supabase
-      .channel(`sidebar-help-messages-count-${instanceId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "student_help_messages" },
-        loadOpenHelpMessagesCount,
-      )
-      .subscribe();
+    const interval = window.setInterval(loadOpenHelpMessagesCount, 30_000);
+    window.addEventListener("help-tickets:changed", loadOpenHelpMessagesCount);
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      window.clearInterval(interval);
+      window.removeEventListener("help-tickets:changed", loadOpenHelpMessagesCount);
     };
-  }, [isAdmin, instanceId]);
+  }, [isAdmin, pathname]);
 
   function toggleAdminGroup(group: AdminMenuGroup) {
     setOpenAdminGroup((current) => {
@@ -385,7 +377,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 badge={openHelpMessagesCount && openHelpMessagesCount > 0 ? openHelpMessagesCount : null}
                 onNavigate={onNavigate}
               >
-                Central de Ajuda
+                Tickets de Ajuda
               </NavLink>
 
               <NavLink href="/usuarios" active={isActive("/usuarios")} icon={<Users size={16} />} onNavigate={onNavigate}>

@@ -91,3 +91,17 @@ revoke all on table public.student_help_messages from anon, authenticated;
 ## Atualização 2026-07-16 — Acesso do aluno temporariamente oculto
 
 O item **Ajuda** do menu do aluno e o **sininho de notificações** do header foram temporariamente ocultos pela flag `SHOW_STUDENT_HELP_MENU = false` em `app/components/Header.tsx`, por decisão de produto. A funcionalidade não foi removida: `HelpCenterModal`, as APIs `help-messages` (aluno e admin) e o painel `/admin/ajuda` permanecem implementados e funcionais. Para reexibir os acessos, basta retornar a flag para `true`.
+
+## Atualização 2026-08-17 — Acesso Ajuda reexibido para o aluno
+
+O item **Ajuda** voltou a ser exibido no menu superior desktop da área do aluno por meio da implementação original: `DesktopNavItem` chama `onOpenHelp`, recebido do `AppShell`, que abre o `HelpCenterModal` sem navegação. A condição do item passou a usar `SHOW_STUDENT_HELP_MENU = true`. O sininho continua oculto por uma condição independente (`SHOW_STUDENT_HELP_NOTIFICATIONS = false`), sem alteração em notificações, tickets, APIs ou painel administrativo. Esta atualização restaura somente o acesso ao modal; não declara a Central de Ajuda integralmente validada.
+
+## Atualização 2026-08-17 — Reconciliação e proteção dos Tickets de Ajuda
+
+- A falha simultânea no envio, histórico, painel administrativo e badge foi diagnosticada no banco operacional como ausência de `public.student_help_messages` (`PGRST205`). A migration consolidada `supabase/migrations/20260817183516_reconcile_help_tickets.sql` prepara a criação idempotente da tabela ou a reconciliação de uma instalação anterior, sem atribuir motivo artificial aos tickets históricos.
+- Todo novo ticket exige um motivo estável: dúvida de uso, mau funcionamento ou elogio/sugestão. O texto permanece simples, limitado a 2.000 caracteres; a resposta administrativa permanece limitada a 5.000 caracteres.
+- O envio do aluno usa reCAPTCHA v3 com ação `help_ticket_submit`. O cliente usa `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`; a API valida o token com `RECAPTCHA_SECRET_KEY`, ação e pontuação antes de persistir.
+- O aluno continua autenticado por `getStudentFromRequest`, e a identidade é derivada no servidor. O admin continua protegido por `requireAdmin`; a resposta só altera ticket ainda aberto, registra o admin autenticado e não aceita identificadores de autoridade enviados pelo cliente.
+- O alerta do aluno passa a representar todas as respostas não vistas e oferece ações separadas para reconhecer/fechar ou abrir o histórico. O badge administrativo passa a consultar a API protegida, com atualização periódica e após resposta, sem leitura direta da tabela pelo navegador.
+- A tela administrativa usa o título **Tickets de Ajuda**, mantém as abas existentes e acrescenta filtro e identificação visual por motivo.
+- A migration foi executada pelo responsável em 2026-08-18, conforme confirmação registrada no fechamento. As duas variáveis de reCAPTCHA foram configuradas nos ambientes local e Vercel Production; a homologação online do fluxo completo permanece como etapa pós-push.

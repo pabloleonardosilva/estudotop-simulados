@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 import { Plus, X } from "lucide-react";
 import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
@@ -88,6 +88,8 @@ export default function EvaluatedTopicsInput({
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [retryCatalog, setRetryCatalog] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const listboxId = useId();
   const topics = normalizeEvaluatedTopics(value);
   const showError = error || (required && topics.length === 0 ? "Informe pelo menos um tópico avaliado." : null);
   const dark = variant === "dark";
@@ -138,20 +140,19 @@ export default function EvaluatedTopicsInput({
 
   const suggestions = useMemo(() => {
     const term = normalizeTopicComparableName(draft);
-    if (!term || catalogSubjectId !== subjectId) return [];
+    if (catalogSubjectId !== subjectId) return [];
 
     const selectedKeys = new Set(topics.map(normalizeTopicComparableName));
     return catalog
       .filter((topic) => !selectedKeys.has(normalizeTopicComparableName(topic.name)))
-      .filter((topic) => normalizeTopicComparableName(topic.name).includes(term))
+      .filter((topic) => !term || normalizeTopicComparableName(topic.name).includes(term))
       .sort((left, right) => {
         const leftName = normalizeTopicComparableName(left.name);
         const rightName = normalizeTopicComparableName(right.name);
         const leftRank = leftName === term ? 0 : leftName.startsWith(term) ? 1 : 2;
         const rightRank = rightName === term ? 0 : rightName.startsWith(term) ? 1 : 2;
         return leftRank - rightRank || leftName.localeCompare(rightName, "pt-BR");
-      })
-      .slice(0, 6);
+      });
   }, [catalog, catalogSubjectId, draft, subjectId, topics]);
 
   function commitDraft(raw = draft) {
@@ -178,6 +179,7 @@ export default function EvaluatedTopicsInput({
   function handleDraftChange(nextDraft: string) {
     setDraft(nextDraft);
     setHighlightedIndex(-1);
+    setSuggestionsOpen(true);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -201,8 +203,9 @@ export default function EvaluatedTopicsInput({
       return;
     }
 
-    if (event.key === "Escape" && highlightedIndex >= 0) {
+    if (event.key === "Escape") {
       setHighlightedIndex(-1);
+      setSuggestionsOpen(false);
     }
   }
 
@@ -237,17 +240,19 @@ export default function EvaluatedTopicsInput({
               value={draft}
               onChange={(event) => handleDraftChange(event.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => setSuggestionsOpen(true)}
+              onBlur={() => setSuggestionsOpen(false)}
               disabled={disabled}
               placeholder={placeholder}
               className={`${inputClass} w-full`}
               autoComplete="off"
               role="combobox"
-              aria-expanded={suggestions.length > 0}
-              aria-controls="evaluated-topics-listbox"
-              aria-activedescendant={highlightedIndex >= 0 ? `evaluated-topic-suggestion-${highlightedIndex}` : undefined}
+              aria-expanded={suggestionsOpen && suggestions.length > 0}
+              aria-controls={listboxId}
+              aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
             />
-            {suggestions.length > 0 && (
-              <div id="evaluated-topics-listbox" role="listbox" className={dark ? "absolute inset-x-0 top-11 z-30 overflow-hidden rounded-xl border border-white/10 bg-slate-950 shadow-2xl" : "absolute inset-x-0 top-11 z-30 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"}>
+            {suggestionsOpen && suggestions.length > 0 && (
+              <div id={listboxId} role="listbox" className={dark ? "absolute inset-x-0 top-11 z-30 max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-slate-950 shadow-2xl" : "absolute inset-x-0 top-11 z-30 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"}>
                 {suggestions.map((suggestion, index) => {
                   const highlighted = index === highlightedIndex;
                   const base = dark
@@ -259,7 +264,7 @@ export default function EvaluatedTopicsInput({
                   return (
                     <button
                       key={suggestion.id}
-                      id={`evaluated-topic-suggestion-${index}`}
+                      id={`${listboxId}-option-${index}`}
                       type="button"
                       role="option"
                       aria-selected={highlighted}

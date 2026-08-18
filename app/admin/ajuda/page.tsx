@@ -10,6 +10,7 @@ async function getHelpMessages(): Promise<HelpMessageRow[]> {
     .select(
       `
         id,
+        contact_reason,
         message,
         status,
         admin_reply,

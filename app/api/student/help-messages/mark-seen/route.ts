@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { logSystemError } from "@/app/lib/server/auditLogger";
+import { logStudentActivity, logSystemError } from "@/app/lib/server/auditLogger";
 
 export async function POST(request: Request) {
   const student = await getStudentFromRequest(request);
@@ -21,6 +21,14 @@ export async function POST(request: Request) {
     void logSystemError({ source: "api.student.help_messages.mark_seen", error, request });
     return NextResponse.json({ ok: false, message: "Não foi possível atualizar suas mensagens." }, { status: 500 });
   }
+
+  void logStudentActivity({
+    studentId: student.id,
+    action: "student.help_ticket.reply_seen",
+    description: "Respostas de tickets de ajuda reconhecidas",
+    entityType: "student_help_message",
+    request,
+  });
 
   return NextResponse.json({ ok: true, message: "Mensagens marcadas como vistas." });
 }

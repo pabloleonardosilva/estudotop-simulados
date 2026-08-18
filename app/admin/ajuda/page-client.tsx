@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { LifeBuoy, Loader2, Send, Sparkles } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
+import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import { getHelpContactReasonLabel, HELP_CONTACT_REASONS, type HelpContactReason } from "@/lib/help-tickets";
 
 type StudentRef = { name: string | null; email: string | null };
 
 export type HelpMessageRow = {
   id: string;
+  contact_reason: HelpContactReason | null;
   message: string;
   status: "open" | "answered";
   admin_reply: string | null;
@@ -18,6 +21,7 @@ export type HelpMessageRow = {
 };
 
 type TabKey = "open" | "answered" | "all";
+type TicketCounts = Record<TabKey, number>;
 
 function studentRef(value: HelpMessageRow["students"]): StudentRef | null {
   if (Array.isArray(value)) return value[0] || null;
@@ -35,6 +39,12 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
   const [error, setError] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [contactReason, setContactReason] = useState<HelpContactReason | "">("");
+  const [counts, setCounts] = useState<TicketCounts>({
+    open: initialMessages.filter((item) => item.status === "open").length,
+    answered: initialMessages.filter((item) => item.status === "answered").length,
+    all: initialMessages.length,
+  });
 
   const load = useCallback(async (tab: TabKey) => {
     setLoading(true);
@@ -42,6 +52,7 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
 
     const params = new URLSearchParams();
     if (tab !== "all") params.set("status", tab);
+    if (contactReason) params.set("contact_reason", contactReason);
 
     const res = await adminFetch(`/api/admin/help-messages?${params.toString()}`);
     const json = await res.json().catch(() => ({}));
@@ -53,21 +64,14 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
     }
 
     setMessages(json.items || []);
+    if (json.counts) setCounts(json.counts);
     setLoading(false);
-  }, []);
+  }, [contactReason]);
 
   useEffect(() => {
-    load(activeTab);
+    const timeout = window.setTimeout(() => void load(activeTab), 0);
+    return () => window.clearTimeout(timeout);
   }, [activeTab, load]);
-
-  const counts = useMemo(
-    () => ({
-      open: messages.filter((item) => item.status === "open").length,
-      answered: messages.filter((item) => item.status === "answered").length,
-      all: messages.length,
-    }),
-    [messages],
-  );
 
   async function handleReply(id: string) {
     const text = (replyDrafts[id] || "").trim();
@@ -95,6 +99,7 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
       return next;
     });
     setSendingId(null);
+    window.dispatchEvent(new Event("help-tickets:changed"));
     await load(activeTab);
   }
 
@@ -114,18 +119,28 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
       <div className="relative z-10 mx-auto max-w-5xl">
         <section className="overflow-hidden rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-6 shadow-2xl shadow-black/30 backdrop-blur-xl md:p-8">
           <p className="inline-flex items-center gap-2 rounded-full border border-orange-400/20 bg-orange-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-orange-200">
-            <Sparkles size={13} /> Central de Ajuda
+            <Sparkles size={13} /> Atendimento ao aluno
           </p>
           <h1 className="mt-5 flex items-center gap-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">
             <LifeBuoy className="text-orange-300" size={26} />
-            Mensagens dos alunos
+            Tickets de Ajuda
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-            Veja e responda as mensagens enviadas pelos alunos pelo botão &quot;Ajuda&quot; do menu superior.
+            Consulte, classifique e responda os tickets enviados pelos alunos.
           </p>
         </section>
 
         <section className="mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-2 shadow-xl shadow-black/20 backdrop-blur-sm">
+          <PremiumSelect
+            variant="jornada"
+            label="Motivo do contato"
+            value={contactReason}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => setContactReason(event.target.value as HelpContactReason | "")}
+            className="mb-3 bg-[#0B111C]"
+          >
+            <option value="">Todos os motivos</option>
+            {HELP_CONTACT_REASONS.map((reason) => <option key={reason.value} value={reason.value}>{reason.label}</option>)}
+          </PremiumSelect>
           <div className="grid gap-2 md:grid-cols-3">
             {tabs.map((tab) => (
               <button
@@ -182,6 +197,7 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
                   <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-200">
                     {item.message}
                   </p>
+                  <p className="mt-3 text-xs font-bold text-orange-200">{getHelpContactReasonLabel(item.contact_reason)}</p>
 
                   {item.admin_reply ? (
                     <div className="mt-3 rounded-2xl border border-orange-400/20 bg-orange-500/[0.06] p-4">
@@ -199,6 +215,7 @@ export default function AjudaAdminClient({ initialMessages }: { initialMessages:
                         }
                         placeholder="Escreva sua resposta..."
                         rows={3}
+                        maxLength={5000}
                         className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-orange-300/60 focus:ring-4 focus:ring-orange-500/10"
                       />
                       <div className="mt-3 flex justify-end">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -17,9 +17,7 @@ import {
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PageBackground from "../components/ui/PageBackground";
-import PageHeader from "../components/ui/PageHeader";
 import PremiumButton from "../components/ui/PremiumButton";
-import PremiumCard from "../components/ui/PremiumCard";
 import PremiumInput from "../components/ui/PremiumInput";
 import PremiumSelect from "../components/ui/PremiumSelect";
 import PremiumLoadingOverlay from "../components/ui/PremiumLoadingOverlay";
@@ -263,20 +261,38 @@ export default function AssuntosClient({
 
       {confirm && <PremiumConfirm {...confirm} onCancel={() => setConfirm(null)} />}
 
-      <PageHeader variant="jornada" title="Assuntos" description="Cadastre assuntos dentro de cada disciplina para organizar o banco de questões." />
-
       {feedback && <PremiumFeedback feedback={feedback} />}
 
-      <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-        <PremiumCard variant="jornada" title="Novo assunto" description="O sistema verifica duplicidade enquanto você digita." icon={<Plus size={18} />}>
-          <div className="space-y-4">
-            <PremiumSelect variant="jornada" label="Disciplina" value={selectedDisciplineId} onChange={(event: any) => setSelectedDisciplineId(event.target.value)}>
+      <section className="relative mb-8 min-h-[170px] overflow-hidden rounded-[2rem] border border-white/[0.08] bg-[linear-gradient(115deg,rgba(255,122,0,0.11)_0%,rgba(12,30,52,0.94)_48%,rgba(2,8,23,0.98)_100%)] px-6 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.08)] sm:px-8 lg:px-10">
+        <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-blue-500/[0.10] blur-3xl" />
+        <div className="pointer-events-none absolute -left-20 bottom-[-8rem] h-64 w-64 rounded-full bg-orange-500/[0.12] blur-3xl" />
+        <div className="relative flex min-h-[106px] items-center justify-between gap-8">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-400">EstudoTOP Simulados</p>
+            <h1 className="mt-3 text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-[40px]">Assuntos</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">Cadastre assuntos dentro de cada disciplina para organizar o banco de questões.</p>
+          </div>
+          <div className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-[1.6rem] border border-orange-400/25 bg-orange-500/[0.10] text-orange-300 shadow-[0_0_48px_rgba(249,115,22,0.16)] sm:flex">
+            <BookOpen size={34} strokeWidth={1.7} />
+          </div>
+        </div>
+      </section>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="relative isolate rounded-[1.75rem] border border-white/[0.08] bg-[#0C1E34]/70 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.30)] backdrop-blur-xl sm:p-7">
+          <div className="pointer-events-none absolute -inset-0.5 -z-10 rounded-[1.9rem] bg-gradient-to-b from-orange-400/[0.08] via-white/[0.02] to-transparent blur-2xl" />
+          <div className="mb-7 flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/[0.10] text-orange-300"><Plus size={20} strokeWidth={2.4} /></div>
+            <div><h2 className="text-lg font-bold tracking-tight text-white">Novo assunto</h2><p className="mt-1.5 text-[13px] leading-5 text-slate-400">O sistema verifica duplicidade enquanto você digita.</p></div>
+          </div>
+          <div className="space-y-5">
+            <PremiumSelect variant="jornada" label="Disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
               {activeDisciplines.length === 0 ? <option value="">Nenhuma disciplina ativa</option> : activeDisciplines.map((discipline) => (
                 <option key={discipline.id} value={discipline.id}>{discipline.name}</option>
               ))}
             </PremiumSelect>
 
-            <PremiumInput variant="jornada" label="Nome do assunto" value={name} onChange={(event: any) => setName(event.target.value)} placeholder="Ex.: Microsoft Windows" />
+            <PremiumInput variant="jornada" label="Nome do assunto" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Microsoft Windows" />
 
             {existingSubjectWhileTyping && (
               <div className="rounded-2xl border border-red-400/20 bg-red-500/[0.08] p-4 text-sm font-medium text-red-200">
@@ -293,31 +309,39 @@ export default function AssuntosClient({
               </div>
             )}
 
-            <PremiumButton onClick={handleCreate} full disabled={saving || !selectedDisciplineId || Boolean(existingSubjectWhileTyping)}>
+            <PremiumButton
+              onClick={handleCreate}
+              full
+              variant="dark"
+              icon={<span className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/20 bg-white/15 shadow-inner shadow-white/10"><Plus size={15} strokeWidth={2.6} /></span>}
+              className="relative h-[52px] overflow-hidden rounded-2xl border-orange-300/30 bg-[linear-gradient(135deg,#f97316_0%,#fb923c_52%,#f59e0b_100%)] text-sm font-extrabold text-white shadow-[0_16px_36px_rgba(249,115,22,0.28),inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/10 transition-all duration-300 after:pointer-events-none after:absolute after:inset-y-0 after:-left-1/3 after:w-1/4 after:-skew-x-12 after:bg-white/20 after:opacity-0 after:blur-sm after:transition-all after:duration-700 hover:-translate-y-0.5 hover:border-orange-200/50 hover:text-white hover:shadow-[0_20px_42px_rgba(249,115,22,0.36),inset_0_1px_0_rgba(255,255,255,0.30)] hover:after:left-[115%] hover:after:opacity-100 active:translate-y-0 active:scale-[0.99] disabled:after:hidden"
+              disabled={saving || !selectedDisciplineId || Boolean(existingSubjectWhileTyping)}
+            >
               Cadastrar assunto
             </PremiumButton>
           </div>
-        </PremiumCard>
+        </section>
 
-        <PremiumCard
-          variant="jornada"
-          title="Assuntos cadastrados"
-          description={selectedDiscipline ? `Disciplina selecionada: ${selectedDiscipline.name}` : "Selecione uma disciplina."}
-          icon={<BookOpen size={18} />}
-        >
-          <div className="mb-5 grid gap-4 md:grid-cols-[1fr_1.2fr]">
-            <PremiumSelect variant="jornada" label="Filtrar por disciplina" value={selectedDisciplineId} onChange={(event: any) => setSelectedDisciplineId(event.target.value)}>
+        <section className="overflow-hidden rounded-[1.75rem] border border-white/[0.08] bg-[#0C1E34]/65 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-7">
+          <div className="mb-7 flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/[0.10] text-orange-300"><BookOpen size={20} strokeWidth={2.2} /></div>
+            <div className="min-w-0"><h2 className="text-lg font-bold tracking-tight text-white">Assuntos cadastrados</h2><p className="mt-1.5 truncate text-[13px] leading-5 text-slate-400">{selectedDiscipline ? `Disciplina selecionada: ${selectedDiscipline.name}` : "Selecione uma disciplina."}</p></div>
+          </div>
+          <div className="mb-6 grid gap-4 rounded-[1.25rem] border border-white/[0.06] bg-[#020817]/25 p-4 md:grid-cols-[1fr_1.2fr]">
+            <PremiumSelect variant="jornada" label="Filtrar por disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
               {initialDisciplines.map((discipline) => (
                 <option key={discipline.id} value={discipline.id}>{discipline.name}{!discipline.is_active ? " (inativa)" : ""}</option>
               ))}
             </PremiumSelect>
 
-            <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: any) => setSearch(event.target.value)} placeholder="Pesquisar assunto..." />
+            <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Pesquisar assunto..." />
           </div>
 
           {filteredSubjects.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/[0.10] bg-white/[0.03] p-8 text-center text-sm text-white/45">
-              Nenhum assunto encontrado para esta disciplina.
+            <div className="rounded-[1.25rem] border border-dashed border-slate-400/20 bg-white/[0.025] p-9 text-center">
+              <BookOpen className="mx-auto text-slate-500" size={38} strokeWidth={1.5} />
+              <p className="mt-4 text-base font-bold text-white">Nenhum assunto encontrado</p>
+              <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-400">Cadastre um novo assunto ou ajuste os filtros para visualizar os registros.</p>
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -333,7 +357,7 @@ export default function AssuntosClient({
                     <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)} className="flex w-full items-center justify-between gap-4 p-5 text-left">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-lg font-semibold text-white" style={{ textTransform: "none" }} title={displayName}>{displayName}</p>
+                          <p className="truncate text-lg font-semibold text-white" title={displayName}>{displayName}</p>
                           <span className={item.is_active ? "rounded-full border border-emerald-400/25 bg-emerald-400/[0.12] px-3 py-1 text-xs font-semibold text-emerald-200" : "rounded-full border border-white/[0.10] bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/50"}>
                             {item.is_active ? "Ativo" : "Inativo"}
                           </span>
@@ -349,7 +373,7 @@ export default function AssuntosClient({
                       <div className="border-t border-white/[0.07] bg-black/15 p-5">
                         {editing ? (
                           <div className="space-y-4">
-                            <PremiumInput variant="jornada" label="Nome" value={editingName} onChange={(event: any) => setEditingName(event.target.value)} />
+                            <PremiumInput variant="jornada" label="Nome" value={editingName} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditingName(event.target.value)} />
                             <div className="grid gap-2">
                               <PremiumButton onClick={() => saveEdit(item)} full disabled={saving}>Salvar alterações</PremiumButton>
                               <PremiumButton variant="secondary" onClick={cancelEdit} full disabled={saving}>Cancelar edição</PremiumButton>
@@ -372,7 +396,7 @@ export default function AssuntosClient({
               })}
             </div>
           )}
-        </PremiumCard>
+        </section>
       </div>
     </PageBackground>
   );

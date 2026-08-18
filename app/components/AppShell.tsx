@@ -10,15 +10,22 @@ import MobileSidebar from "./MobileSidebar";
 import HelpCenterModal from "./HelpCenterModal";
 import StudentJourneyExplainerModal from "./StudentJourneyExplainerModal";
 import PremiumModal from "./ui/PremiumModal";
+import PremiumButton from "./ui/PremiumButton";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase/client";
+import { getHelpContactReasonLabel, type HelpContactReason } from "@/lib/help-tickets";
 
 const openSans = Open_Sans({
   subsets: ["latin"],
   display: "swap",
 });
 
-type UnseenHelpReply = { id: string; admin_reply: string };
+type UnseenHelpReply = {
+  id: string;
+  admin_reply: string;
+  contact_reason: HelpContactReason | null;
+  count: number;
+};
 
 const JOURNEY_EXPLAINER_AUTO_COUNT_LIMIT = 10;
 const JOURNEY_EXPLAINER_COUNT_PREFIX = "estudotop:journey-explainer:auto-open-count";
@@ -182,13 +189,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const json = await res.json().catch(() => ({}));
       if (cancelled || !res.ok || !json.ok) return;
 
-      const unseen = (json.messages || []).find(
+      const unseenItems = (json.messages || []).filter(
         (item: { status: string; admin_reply: string | null; student_seen_reply_at: string | null }) =>
           item.status === "answered" && item.admin_reply && !item.student_seen_reply_at,
       );
+      const unseen = unseenItems[0] as { id: string; admin_reply: string; contact_reason: HelpContactReason | null } | undefined;
 
       if (unseen) {
-        setUnseenHelpReply({ id: unseen.id, admin_reply: unseen.admin_reply });
+        setUnseenHelpReply({ ...unseen, count: unseenItems.length });
       }
     }
 
@@ -226,18 +234,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [loading, user?.id, profile?.role, pathname]);
 
-  async function acknowledgeHelpReply() {
+  async function acknowledgeHelpReply(openHelp: boolean) {
     setUnseenHelpReply(null);
 
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!session) {
+      if (openHelp) setHelpOpen(true);
+      return;
+    }
 
     await fetch("/api/student/help-messages/mark-seen", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.access_token}` },
     }).catch(() => undefined);
+
+    if (openHelp) setHelpOpen(true);
   }
 
   if (isPopupRoute || isPublicRoute || isStudentExamPage || isFocusRoute || isPublicViewRoute) {
@@ -279,14 +292,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           open={Boolean(unseenHelpReply)}
           theme="dark"
           tone="success"
-          title="Sua mensagem foi respondida!"
-          message={unseenHelpReply?.admin_reply}
-          closeLabel="Ver resposta"
-          onClose={() => {
-            acknowledgeHelpReply();
-            setHelpOpen(true);
-          }}
-        />
+          title={unseenHelpReply?.count === 1 ? "Você recebeu uma resposta" : `Você recebeu ${unseenHelpReply?.count || 0} novas respostas`}
+          message="Nossa equipe respondeu ao seu ticket na Central de Ajuda."
+          onClose={() => acknowledgeHelpReply(false)}
+          actions={
+            <>
+              <PremiumButton variant="dark" onClick={() => acknowledgeHelpReply(false)}>Fechar</PremiumButton>
+              <PremiumButton variant="dark-primary" onClick={() => acknowledgeHelpReply(true)}>Ver resposta</PremiumButton>
+            </>
+          }
+        >
+          {unseenHelpReply && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-300">
+                {getHelpContactReasonLabel(unseenHelpReply.contact_reason)}
+              </p>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">{unseenHelpReply.admin_reply}</p>
+            </div>
+          )}
+        </PremiumModal>
 
         <div className="relative flex min-h-[calc(100dvh-88px)] flex-col lg:min-h-[calc(100dvh-136px)] xl:min-h-[calc(100dvh-92px)] 2xl:min-h-[calc(100dvh-112px)]">
           <button

@@ -1,12 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import Script from "next/script";
 import { LifeBuoy, Loader2, Send, X } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
 import PremiumButton from "@/app/components/ui/PremiumButton";
+import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import {
+  getHelpContactReasonLabel,
+  HELP_CONTACT_REASONS,
+  type HelpContactReason,
+} from "@/lib/help-tickets";
+
+const MAX_MESSAGE_LENGTH = 2000;
+const RECAPTCHA_ACTION = "help_ticket_submit";
+
+declare global {
+  interface Window {
+    grecaptcha?: {
+      ready(callback: () => void): void;
+      execute(siteKey: string, options: { action: string }): Promise<string>;
+    };
+  }
+}
 
 type HelpMessage = {
   id: string;
+  contact_reason: HelpContactReason | null;
   message: string;
   status: "open" | "answered";
   admin_reply: string | null;
@@ -23,8 +43,12 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [contactReason, setContactReason] = useState<HelpContactReason | "">("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  const [captchaReady, setCaptchaReady] = useState(false);
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,15 +80,29 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
   }, []);
 
   useEffect(() => {
-    if (open) load();
+    if (!open) return;
+    const timeout = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timeout);
   }, [open, load]);
 
   async function handleSend() {
     const text = draft.trim();
-    if (!text) return;
+    if (!contactReason) {
+      setSendError("Selecione o motivo do contato.");
+      return;
+    }
+    if (!text) {
+      setSendError("Digite sua mensagem antes de enviar.");
+      return;
+    }
+    if (!recaptchaSiteKey || !captchaReady || !window.grecaptcha) {
+      setSendError("Não foi possível validar o envio. Tente novamente.");
+      return;
+    }
 
     setSending(true);
     setSendError(null);
+    setSendSuccess(null);
 
     const {
       data: { session },
@@ -76,20 +114,31 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
       return;
     }
 
+    let captchaToken = "";
+    try {
+      captchaToken = await window.grecaptcha.execute(recaptchaSiteKey, { action: RECAPTCHA_ACTION });
+    } catch {
+      setSendError("Não foi possível validar o envio. Tente novamente.");
+      setSending(false);
+      return;
+    }
+
     const res = await fetch("/api/student/help-messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ contact_reason: contactReason, message: text, captcha_token: captchaToken }),
     });
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok || !json.ok) {
-      setSendError(json.message || "Não foi possível enviar sua mensagem.");
+      setSendError(json.message || "Não foi possível enviar sua mensagem agora. Tente novamente em instantes.");
       setSending(false);
       return;
     }
 
     setDraft("");
+    setContactReason("");
+    setSendSuccess(json.message || "Mensagem enviada com sucesso. Nossa equipe já recebeu o seu ticket.");
     setSending(false);
     await load();
   }
@@ -97,8 +146,17 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
-      <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#0B111C] shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/60 px-3 py-4 backdrop-blur-sm sm:px-4">
+      {recaptchaSiteKey && (
+        <Script
+          id="student-help-recaptcha"
+          src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
+          strategy="afterInteractive"
+          onReady={() => setCaptchaReady(true)}
+          onError={() => setCaptchaReady(false)}
+        />
+      )}
+      <div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#0B111C] shadow-2xl sm:max-h-[90dvh]">
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-500/10 text-orange-300">
@@ -119,31 +177,68 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
           </button>
         </div>
 
-        <div className="border-b border-white/10 px-6 py-5">
+        <div className="border-b border-white/10 px-5 py-5 sm:px-6">
+          <PremiumSelect
+            variant="jornada"
+            label="MOTIVO DO CONTATO"
+            value={contactReason}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+              setContactReason(event.target.value as HelpContactReason | "");
+              setSendError(null);
+              setSendSuccess(null);
+            }}
+            aria-required="true"
+          >
+            <option value="">Selecione uma opção</option>
+            {HELP_CONTACT_REASONS.map((reason) => (
+              <option key={reason.value} value={reason.value}>{reason.label}</option>
+            ))}
+          </PremiumSelect>
+          <label htmlFor="student-help-message" className="mb-2 mt-4 block text-sm font-medium text-slate-300">
+            SUA MENSAGEM
+          </label>
           <textarea
+            id="student-help-message"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Escreva sua dúvida ou mensagem..."
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setSendError(null);
+              setSendSuccess(null);
+            }}
+            placeholder="Atenção: este recurso não deve ser usado para tirar dúvidas sobre as questões do simulado."
             rows={3}
-            maxLength={2000}
+            maxLength={MAX_MESSAGE_LENGTH}
+            aria-required="true"
+            aria-describedby="student-help-message-feedback"
             className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-orange-300/60 focus:ring-4 focus:ring-orange-500/10"
           />
-          {sendError ? <p className="mt-2 text-xs font-semibold text-red-300">{sendError}</p> : null}
-          <div className="mt-3 flex justify-end">
-            <PremiumButton variant="dark-primary" onClick={handleSend} disabled={sending || !draft.trim()}>
+          <div className="mt-2 flex items-start justify-between gap-3">
+            <div id="student-help-message-feedback" aria-live="polite">
+              {sendError ? <p className="text-xs font-semibold text-red-300">{sendError}</p> : null}
+              {sendSuccess ? <p className="text-xs font-semibold text-emerald-300">{sendSuccess}</p> : null}
+              {!recaptchaSiteKey ? <p className="text-xs font-semibold text-amber-300">Proteção anti-spam ainda não configurada.</p> : null}
+            </div>
+            <span className="shrink-0 text-xs font-semibold text-slate-500">{draft.length}/{MAX_MESSAGE_LENGTH}</span>
+          </div>
+          <div className="mt-3 flex flex-col items-end gap-2">
+            <p className="text-[10px] leading-4 text-slate-500">Este site é protegido pelo reCAPTCHA.</p>
+            <PremiumButton variant="dark-primary" onClick={handleSend} disabled={sending}>
               {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              Enviar mensagem
+              {sending ? "Enviando..." : "Enviar mensagem"}
             </PremiumButton>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
           <p className="mb-3 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Histórico</p>
 
           {loading ? (
             <p className="py-8 text-center text-sm text-slate-400">Carregando...</p>
           ) : error ? (
-            <p className="py-8 text-center text-sm text-red-300">{error}</p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-red-300">{error}</p>
+              <PremiumButton variant="dark" className="mt-4" onClick={load}>Tentar novamente</PremiumButton>
+            </div>
           ) : messages.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">Você ainda não enviou nenhuma mensagem.</p>
           ) : (
@@ -151,15 +246,18 @@ export default function HelpCenterModal({ open, onClose }: { open: boolean; onCl
               {messages.map((item) => (
                 <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span
-                      className={
-                        item.status === "answered"
-                          ? "inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-3 py-1 text-[11px] font-bold text-emerald-300"
-                          : "inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/[0.08] px-3 py-1 text-[11px] font-bold text-amber-300"
-                      }
-                    >
-                      {item.status === "answered" ? "Respondida" : "Aguardando resposta"}
-                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-orange-200">{getHelpContactReasonLabel(item.contact_reason)}</p>
+                      <span
+                        className={
+                          item.status === "answered"
+                            ? "mt-2 inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-3 py-1 text-[11px] font-bold text-emerald-300"
+                            : "mt-2 inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/[0.08] px-3 py-1 text-[11px] font-bold text-amber-300"
+                        }
+                      >
+                        {item.status === "answered" ? "Respondido" : "Aguardando resposta"}
+                      </span>
+                    </div>
                     <span className="text-xs text-slate-500">{formatDate(item.created_at)}</span>
                   </div>
 

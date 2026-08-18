@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Check, ChevronDown, Eye, EyeOff, FileQuestion, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, FileQuestion, ListTree, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
 import PageBackground from "../components/ui/PageBackground";
-import PageHeader from "../components/ui/PageHeader";
 import PremiumButton from "../components/ui/PremiumButton";
-import PremiumCard from "../components/ui/PremiumCard";
 import PremiumInput from "../components/ui/PremiumInput";
 import PremiumLoadingOverlay from "../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../components/ui/PremiumModal";
@@ -299,6 +297,7 @@ export default function TopicosClient({
 
       <PremiumModal
         open={Boolean(feedback)}
+        theme="dark"
         tone={feedback?.tone || "info"}
         title={feedback?.title || "Aviso"}
         message={feedback?.message}
@@ -307,6 +306,7 @@ export default function TopicosClient({
 
       <PremiumModal
         open={Boolean(confirmation)}
+        theme="dark"
         tone={confirmation?.action === "delete" || confirmation?.action === "rename" ? "warning" : "info"}
         title={confirmationTitle()}
         message={confirmationMessage()}
@@ -326,6 +326,7 @@ export default function TopicosClient({
 
       <PremiumModal
         open={Boolean(selectedTopic)}
+        theme="dark"
         size="wide"
         tone="info"
         title={selectedTopic?.name || "Questões do tópico"}
@@ -373,15 +374,37 @@ export default function TopicosClient({
         )}
       </PremiumModal>
 
-      <PageHeader
-        variant="jornada"
-        title="Tópicos"
-        description="Organize os tópicos específicos dentro de cada assunto do banco de questões."
-      />
+      <section className="relative mb-8 min-h-[170px] overflow-hidden rounded-[2rem] border border-white/[0.08] bg-[linear-gradient(115deg,rgba(255,122,0,0.11)_0%,rgba(12,30,52,0.94)_48%,rgba(2,8,23,0.98)_100%)] px-6 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.08)] sm:px-8 lg:px-10">
+        <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-blue-500/[0.10] blur-3xl" />
+        <div className="pointer-events-none absolute -left-20 bottom-[-8rem] h-64 w-64 rounded-full bg-orange-500/[0.12] blur-3xl" />
+        <div className="relative flex min-h-[106px] items-center justify-between gap-8">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-400">EstudoTOP Simulados</p>
+            <h1 className="mt-3 text-[34px] font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-[40px]">Tópicos</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+              Organize os tópicos específicos dentro de cada assunto do banco de questões.
+            </p>
+          </div>
+          <div className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-[1.6rem] border border-orange-400/25 bg-orange-500/[0.10] text-orange-300 shadow-[0_0_48px_rgba(249,115,22,0.16)] sm:flex">
+            <ListTree size={34} strokeWidth={1.7} />
+          </div>
+        </div>
+      </section>
 
-      <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <PremiumCard variant="jornada" title="Novo tópico" description="Os nomes são normalizados e verificados dentro do assunto." icon={<Plus size={18} />}>
-          <div className="space-y-4">
+      <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="relative isolate rounded-[1.75rem] border border-white/[0.08] bg-[#0C1E34]/70 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.30)] backdrop-blur-xl sm:p-7">
+          <div className="pointer-events-none absolute -inset-0.5 -z-10 rounded-[1.9rem] bg-gradient-to-b from-orange-400/[0.08] via-white/[0.02] to-transparent blur-2xl" />
+          <div className="mb-7 flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/[0.10] text-orange-300">
+              <Plus size={20} strokeWidth={2.4} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold tracking-tight text-white">Novo tópico</h2>
+              <p className="mt-1.5 text-[13px] leading-5 text-slate-400">Os nomes são normalizados e verificados dentro do assunto.</p>
+            </div>
+          </div>
+
+          <div className="space-y-5">
             <SimpleSelectDropdown
               label="Disciplina"
               value={disciplineId}
@@ -398,7 +421,7 @@ export default function TopicosClient({
                 : subjects.map((subject) => ({ value: subject.id, label: `${subject.name}${!subject.is_active ? " (inativo)" : ""}` }))}
             />
 
-            <PremiumInput variant="jornada" label="Nome do tópico" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Barra de tarefas" />
+            <PremiumInput variant="jornada" label="Nome do tópico" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Barra de tarefas" className="border-white/[0.08] bg-[#020817]/55 focus:border-orange-400/55" />
 
             {duplicate && (
               <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.08] p-4 text-sm font-medium text-amber-100">
@@ -406,32 +429,47 @@ export default function TopicosClient({
               </div>
             )}
 
-            <PremiumButton full icon={<Plus size={17} />} onClick={createTopic} disabled={saving || !subjectId || Boolean(duplicate)}>
+            <PremiumButton
+              full
+              variant="dark"
+              icon={<span className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/20 bg-white/15 shadow-inner shadow-white/10"><Plus size={15} strokeWidth={2.6} /></span>}
+              className="relative h-[52px] overflow-hidden rounded-2xl border-orange-300/30 bg-[linear-gradient(135deg,#f97316_0%,#fb923c_52%,#f59e0b_100%)] text-sm font-extrabold text-white shadow-[0_16px_36px_rgba(249,115,22,0.28),inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/10 transition-all duration-300 after:pointer-events-none after:absolute after:inset-y-0 after:-left-1/3 after:w-1/4 after:-skew-x-12 after:bg-white/20 after:opacity-0 after:blur-sm after:transition-all after:duration-700 hover:-translate-y-0.5 hover:border-orange-200/50 hover:text-white hover:shadow-[0_20px_42px_rgba(249,115,22,0.36),inset_0_1px_0_rgba(255,255,255,0.30)] hover:after:left-[115%] hover:after:opacity-100 active:translate-y-0 active:scale-[0.99] disabled:after:hidden"
+              onClick={createTopic}
+              disabled={saving || !subjectId || Boolean(duplicate)}
+            >
               Cadastrar tópico
             </PremiumButton>
           </div>
-        </PremiumCard>
+        </section>
 
-        <PremiumCard
-          variant="jornada"
-          title="Tópicos cadastrados"
-          description={selectedSubject ? `${selectedDiscipline?.name || "Disciplina"} · ${selectedSubject.name}` : "Selecione um assunto."}
-          icon={<Tags size={18} />}
-        >
-          <div className="mb-5 grid gap-4 md:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+        <section className="overflow-hidden rounded-[1.75rem] border border-white/[0.08] bg-[#0C1E34]/65 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-7">
+          <div className="mb-7 flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-400/25 bg-orange-500/[0.10] text-orange-300">
+              <Tags size={20} strokeWidth={2.2} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold tracking-tight text-white">Tópicos cadastrados</h2>
+              <p className="mt-1.5 truncate text-[13px] leading-5 text-slate-400">
+                {selectedSubject ? `${selectedDiscipline?.name || "Disciplina"} · ${selectedSubject.name}` : "Selecione uma disciplina e um assunto para visualizar os tópicos."}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-6 grid gap-4 rounded-[1.25rem] border border-white/[0.06] bg-[#020817]/25 p-4 md:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
             <SimpleSelectDropdown
               label="Filtrar por assunto"
               value={subjectId}
               onChange={setSubjectId}
               options={subjects.map((subject) => ({ value: subject.id, label: subject.name }))}
             />
-            <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Pesquisar tópico..." />
+            <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Pesquisar tópico..." className="border-white/[0.08] bg-[#020817]/55 focus:border-orange-400/55" />
           </div>
 
           {filteredTopics.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-9 text-center">
-              <Tags className="mx-auto text-white/25" size={30} />
-              <p className="mt-3 text-sm font-semibold text-white/50">Nenhum tópico encontrado neste assunto.</p>
+            <div className="rounded-[1.25rem] border border-dashed border-slate-400/20 bg-white/[0.025] p-9 text-center">
+              <Tags className="mx-auto text-slate-500" size={38} strokeWidth={1.5} />
+              <p className="mt-4 text-base font-bold text-white">Nenhum tópico encontrado</p>
+              <p className="mx-auto mt-2 max-w-md text-[13px] leading-5 text-slate-400">Cadastre um novo tópico ou ajuste os filtros para visualizar os registros.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl [&_table]:min-w-[760px]">
@@ -451,30 +489,31 @@ export default function TopicosClient({
                       <PremiumTableRow key={topic.id} index={index} variant="jornada">
                         <PremiumTableCell variant="jornada">
                           {editing ? (
-                            <PremiumInput variant="jornada" value={editingName} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditingName(event.target.value)} />
+                            <PremiumInput variant="jornada" aria-label={`Editar ${topic.name}`} value={editingName} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditingName(event.target.value)} className="bg-[#020817]/55" />
                           ) : (
-                            <PremiumButton
-                              variant="dark"
-                              className="px-3 py-2 text-left text-xs"
-                              icon={<FileQuestion size={14} />}
+                            <button
+                              type="button"
                               onClick={() => setSelectedTopic(topic)}
+                              className="inline-flex max-w-[310px] items-center gap-2.5 py-2 text-left text-[13px] font-bold leading-5 text-slate-50 transition-colors duration-200 hover:text-orange-200 focus:rounded-lg focus:outline-none focus:ring-4 focus:ring-orange-500/10"
                             >
-                              {topic.name}
-                            </PremiumButton>
+                              <FileQuestion size={14} className="shrink-0 text-slate-400" />
+                              <span className="line-clamp-2">{topic.name}</span>
+                            </button>
                           )}
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada">
-                          <span className={topic.is_active ? "inline-flex rounded-full border border-emerald-500/25 bg-emerald-500/[0.12] px-2.5 py-1 text-xs font-semibold text-emerald-300" : "inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-white/40"}>
+                          <span className={topic.is_active ? "inline-flex rounded-full border border-emerald-500/25 bg-emerald-500/[0.12] px-3 py-1.5 text-xs font-extrabold text-emerald-300" : "inline-flex rounded-full border border-red-500/25 bg-red-500/[0.10] px-3 py-1.5 text-xs font-extrabold text-red-300"}>
                             {topic.is_active ? "Ativo" : "Inativo"}
                           </span>
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada">
-                          <PremiumButton variant="dark" className="px-3 py-2 text-xs" onClick={() => setSelectedTopic(topic)}>
-                            {topic.usage_count} {topic.usage_count === 1 ? "questão" : "questões"}
-                          </PremiumButton>
+                          <button type="button" onClick={() => setSelectedTopic(topic)} className="group min-w-16 py-2 text-left focus:rounded-lg focus:outline-none focus:ring-4 focus:ring-orange-500/10">
+                            <span className="block text-sm font-extrabold text-white transition-colors duration-200 group-hover:text-orange-200">{topic.usage_count}</span>
+                            <span className="block text-[11px] font-semibold text-slate-400 transition-colors duration-200 group-hover:text-orange-300/70">{topic.usage_count === 1 ? "questão" : "questões"}</span>
+                          </button>
                         </PremiumTableCell>
                         <PremiumTableCell variant="jornada" align="right">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-nowrap justify-end gap-2">
                             {editing ? (
                               <>
                                 <PremiumButton variant="dark" className="px-3 py-2 text-xs" onClick={() => { setEditingId(null); setEditingName(""); }}>Cancelar</PremiumButton>
@@ -482,11 +521,11 @@ export default function TopicosClient({
                               </>
                             ) : (
                               <>
-                                <PremiumButton variant="dark" className="px-3 py-2 text-xs" icon={<Pencil size={14} />} onClick={() => { setEditingId(topic.id); setEditingName(topic.name); }}>Editar</PremiumButton>
-                                <PremiumButton variant="dark-warning" className="px-3 py-2 text-xs" icon={topic.is_active ? <EyeOff size={14} /> : <Eye size={14} />} onClick={() => setConfirmation({ topic, action: "status" })}>
+                                <PremiumButton variant="dark" className="h-10 rounded-[14px] px-3.5 text-xs transition-all duration-200 hover:-translate-y-px" icon={<Pencil size={14} />} onClick={() => { setEditingId(topic.id); setEditingName(topic.name); }}>Editar</PremiumButton>
+                                <PremiumButton variant={topic.is_active ? "dark-warning" : "dark-success"} className="h-10 rounded-[14px] px-3.5 text-xs transition-all duration-200 hover:-translate-y-px" icon={topic.is_active ? <EyeOff size={14} /> : <Eye size={14} />} onClick={() => setConfirmation({ topic, action: "status" })}>
                                   {topic.is_active ? "Inativar" : "Ativar"}
                                 </PremiumButton>
-                                <PremiumButton variant="dark-danger" className="px-3 py-2 text-xs" icon={<Trash2 size={14} />} onClick={() => setConfirmation({ topic, action: "delete" })}>Excluir</PremiumButton>
+                                <PremiumButton variant="dark-danger" className="h-10 rounded-[14px] px-3.5 text-xs transition-all duration-200 hover:-translate-y-px" icon={<Trash2 size={14} />} onClick={() => setConfirmation({ topic, action: "delete" })}>Excluir</PremiumButton>
                               </>
                             )}
                           </div>
@@ -498,7 +537,7 @@ export default function TopicosClient({
               </PremiumTable>
             </div>
           )}
-        </PremiumCard>
+        </section>
       </div>
     </PageBackground>
   );
@@ -534,13 +573,13 @@ function SimpleSelectDropdown({
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+      <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-300/65">
         {label}
       </label>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15]"
+        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-slate-400/[0.18] bg-[#0B1828] px-4 text-left text-sm font-semibold text-slate-200 outline-none transition-all duration-200 hover:border-orange-400/35 focus:border-orange-400/55 focus:ring-4 focus:ring-orange-500/10"
       >
         <span className={`truncate ${isFiltered ? "text-white/90" : ""}`}>{currentLabel}</span>
         <span className="flex items-center gap-2">

@@ -18,6 +18,7 @@ type InitialFilters = {
 // pending_review is managed in /questoes/revisar — not shown by default
 // ready_to_publish is accessible via ?status=ready_to_publish URL param (sidebar link) but hidden from dropdown
 const QUESTION_STATUSES = ["draft", "published", "active", "archived", "ready_to_publish"];
+const QUESTION_DASHBOARD_STATUSES = [...QUESTION_STATUSES, "pending_review"];
 
 async function getData(initialFilters: InitialFilters) {
   const supabase = createSupabaseAdminClient();
@@ -152,7 +153,7 @@ async function getData(initialFilters: InitialFilters) {
 
   statusCounts.all = allVisibleStatusCount || 0;
 
-  for (const itemStatus of QUESTION_STATUSES) {
+  for (const itemStatus of QUESTION_DASHBOARD_STATUSES) {
     const { count } = await supabase
       .from("questions")
       .select("id", { count: "exact", head: true })

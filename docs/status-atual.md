@@ -918,6 +918,35 @@ Escopo previsto:
 - Se os tópicos não puderem ser persistidos, a questão recém-criada é removida e o item retorna como falha, sem sucesso parcial.
 - Nenhuma migration foi criada ou alterada nesta atualização.
 
+### Lista completa de tópicos ao focar o seletor — 2026-08-16
+
+- O campo compartilhado de **Tópicos avaliados** passa a abrir, ao receber foco, todos os tópicos ativos ainda não selecionados para o assunto da questão, sem exigir digitação inicial.
+- Conforme o administrador digita, a lista é filtrada em tempo real. A lista completa possui rolagem e preserva seleção por mouse, navegação por teclado, preenchimento manual, cache por assunto e variantes clara/escura.
+- A alteração vale para todos os fluxos que usam `EvaluatedTopicsInput`, incluindo importação, criação, edição, revisão, banco de questões, geração por IA e criação de questão em simulado.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Redesign dark premium da gestão de Tópicos — 2026-08-16
+
+- `/topicos` passa a usar hero institucional dark, formulário lateral de criação e painel principal de gestão em glassmorphism, com filtros agrupados, tabela refinada, chips de nome, badges de status, mini-card de uso e ações compactas.
+- O estado vazio e a composição responsiva foram ajustados para desktop, notebook, tablet e mobile, preservando o overflow horizontal controlado da tabela quando necessário.
+- Criação, listagem, busca, filtros, edição inline, ativação/inativação, exclusão protegida, mensagens, popup de questões vinculadas, API, autenticação e regras de negócio permanecem inalterados.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Padronização dark premium de Tópicos, Assuntos e Disciplinas — 2026-08-16
+
+- `/assuntos` e `/disciplinas` passam a usar a mesma linguagem visual de `/topicos`: hero institucional, formulário lateral compacto, painel principal glass, filtros agrupados, botão laranja com microinteração, estados vazios e cards internos dark responsivos.
+- Os modais de feedback, confirmação, ativação/inativação e exclusão de `/topicos` declaram o tema black explicitamente; as confirmações de `/assuntos` permanecem no padrão black oficial e as de `/disciplinas` deixam o tema light para usar `PremiumModal theme="dark"` com ações dark.
+- Criação, edição, busca, filtros, status, contagens, vínculos, validações, APIs administrativas, autenticação e regras de exclusão foram preservados.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Padronização dark premium de Bancas — 2026-08-16
+
+- `/bancas` passa a compartilhar a linguagem visual de Tópicos, Assuntos e Disciplinas: hero institucional com ação de nova banca, painel lateral compacto de busca/contagem, painel principal glass, cards dark responsivos e estado vazio premium.
+- `/bancas/importar` passa a usar o mesmo fundo, hero, painel glass, campo multilinha dark, alerta âmbar de equivalências, ação primária com gradiente laranja e modal black para feedback de sucesso ou erro.
+- Os modais de feedback e exclusão declaram `PremiumModal theme="dark"`; cancelar e excluir usam as variantes dark oficiais.
+- Busca, acesso às questões, importação de bancas, exclusão com movimentação segura para a banca `ANÔNIMA`, API administrativa, autenticação e regras de negócio permanecem inalterados.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
 ### Rascunho do importador sincronizado entre dispositivos — 2026-08-14
 
 - O rascunho local de `/questoes/importar` continua ativo e passa a ser sincronizado com o servidor após as edições.
@@ -925,3 +954,27 @@ Escopo previsto:
 - A API `/api/admin/import-draft` deriva o proprietário da sessão administrativa, limita o payload a 5 MB e não aceita `admin_id` do cliente.
 - Limpar, descartar ou concluir todo o lote remove as cópias local e remota. Falha na sincronização remota mantém o funcionamento local.
 - Migration criada: `supabase/migrations/20260814180000_create_admin_drafts.sql`. Ela não foi executada nesta atualização.
+
+### Correção da contagem Aguardando revisão no Banco de Questões — 2026-08-17
+
+- O dashboard de `/questoes` passa a consultar também a contagem exata de `pending_review`, eliminando a divergência em que o badge **Revisar** da sidebar mostrava questões pendentes e o card **Aguardando revisão** permanecia em zero.
+- A listagem padrão continua excluindo `pending_review` e `ready_to_publish`; o fluxo de revisão permanece exclusivamente em `/questoes/revisar`.
+- Sidebar, APIs, banco, migrations, filtros e regras de status não foram alterados.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Acesso Ajuda reexibido no menu superior do aluno — 2026-08-17
+
+- O item **Ajuda** voltou a aparecer no menu superior desktop da área do aluno usando o botão, ícone, estilo e integração já existentes em `Header.tsx`.
+- O clique continua acionando `onOpenHelp` no `AppShell` para abrir `HelpCenterModal` sem navegação; fechar preserva a rota atual.
+- O sininho de notificações permanece oculto por condição independente. Central, APIs, tickets, notificações, painel administrativo, autenticação e autorização não foram alterados.
+- A Sprint restaura somente o acesso ao modal e não declara os demais problemas conhecidos da Central de Ajuda como resolvidos.
+- Nenhuma migration foi criada ou alterada nesta atualização.
+
+### Tickets de Ajuda — reconciliação aplicada em 2026-08-18
+
+- O banco operacional respondeu `PGRST205` para `public.student_help_messages`; essa ausência explica conjuntamente as falhas de envio, histórico, painel administrativo e badge.
+- A migration consolidada `supabase/migrations/20260817183516_reconcile_help_tickets.sql` foi executada pelo responsável em 2026-08-18, conforme confirmação registrada no fechamento. Ela cria/reconcilia a tabela, preserva registros históricos e acrescenta o motivo do contato.
+- O modal do aluno exige motivo e mensagem, usa reCAPTCHA v3 no envio e apresenta erros específicos. As variáveis esperadas são `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` e `RECAPTCHA_SECRET_KEY`.
+- O painel administrativo passa a se chamar **Tickets de Ajuda**, filtra por motivo e mantém os fluxos de resposta. O badge usa a API administrativa protegida, sem acesso direto à tabela pelo browser.
+- Autenticação, autorização e ownership permanecem derivados no servidor. A resposta do admin só atualiza ticket aberto; a leitura e o reconhecimento do aluno continuam restritos ao próprio aluno.
+- Estado: migration aplicada e variáveis de reCAPTCHA configuradas nos ambientes local e Vercel Production, conforme confirmação do responsável em 2026-08-18. Permanece pendente a homologação funcional ponta a ponta após o push antes de declarar a Central de Ajuda operacional em produção.

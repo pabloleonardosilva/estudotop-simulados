@@ -28,10 +28,8 @@ function getInitials(name: string | null | undefined): string {
     .join("");
 }
 
-// Sininho de notificações e item "Ajuda" ocultos temporariamente do menu do
-// aluno (2026-07-16). A Central de Ajuda continua implementada; para reativar,
-// basta voltar esta flag para true.
-const SHOW_STUDENT_HELP_MENU = false;
+const SHOW_STUDENT_HELP_MENU = true;
+const SHOW_STUDENT_HELP_NOTIFICATIONS = false;
 
 export default function Header({
   onOpenMobileMenu,
@@ -155,7 +153,7 @@ export default function Header({
                 {topCoinsBalance ?? 0}
               </Link>
 
-              {SHOW_STUDENT_HELP_MENU && (
+              {SHOW_STUDENT_HELP_NOTIFICATIONS && (
                 <button
                   type="button"
                   onClick={onOpenHelp}
