@@ -105,3 +105,12 @@ O item **Ajuda** voltou a ser exibido no menu superior desktop da área do aluno
 - O alerta do aluno passa a representar todas as respostas não vistas e oferece ações separadas para reconhecer/fechar ou abrir o histórico. O badge administrativo passa a consultar a API protegida, com atualização periódica e após resposta, sem leitura direta da tabela pelo navegador.
 - A tela administrativa usa o título **Tickets de Ajuda**, mantém as abas existentes e acrescenta filtro e identificação visual por motivo.
 - A migration foi executada pelo responsável em 2026-08-18, conforme confirmação registrada no fechamento. As duas variáveis de reCAPTCHA foram configuradas nos ambientes local e Vercel Production; a homologação online do fluxo completo permanece como etapa pós-push.
+
+## Atualização 2026-08-18 — Refinamento completo dos tickets
+
+- O cabeçalho `student_help_messages` passa a representar o ticket e recebe número permanente `AJ-AAAA-NNNNNN`, status `open|answered|closed`, leitura administrativa, fechamento, nota interna e contexto técnico mínimo. As mensagens cronológicas ficam em `student_help_ticket_messages`; a linha do tempo operacional fica em `student_help_ticket_events`.
+- O histórico existente é preservado por backfill. A nova migration `supabase/migrations/20260818071017_evolve_student_help_tickets.sql` foi criada, mas não foi executada nesta Sprint.
+- O modal do aluno adota visual claro premium, lista compacta e detalhe no mesmo modal. O aluno pode continuar um ticket respondido sem novo reCAPTCHA; tickets encerrados permanecem somente para leitura. Novo assunto sempre cria outro ticket e exige o reCAPTCHA já existente.
+- `/admin/ajuda` passa a carregar resumos paginados em lotes de 25, com abas Abertos/Respondidos/Encerrados/Todos, busca e filtros. O detalhe sob demanda reúne conversa, nota interna, contexto técnico, eventos e resumo do aluno.
+- Somente mensagens administrativas podem ser editadas. Edição registra `edited_at`, `edited_by` e o evento/auditoria `admin.help_ticket.reply_edited`, sem gerar nova notificação ao aluno. Fechamento e reabertura são exclusivos do admin.
+- O alerta do aluno identifica o número do ticket e abre diretamente a conversa correspondente. `student_seen_reply_at` e `admin_seen_at` continuam independentes; o badge administrativo permanece a contagem de tickets `open`.

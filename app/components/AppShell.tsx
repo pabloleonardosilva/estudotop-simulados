@@ -22,7 +22,8 @@ const openSans = Open_Sans({
 
 type UnseenHelpReply = {
   id: string;
-  admin_reply: string;
+  ticket_number: string;
+  latest_message: { message: string };
   contact_reason: HelpContactReason | null;
   count: number;
 };
@@ -38,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [focusedHelpTicketId, setFocusedHelpTicketId] = useState<string | null>(null);
   const [journeyExplainerOpen, setJourneyExplainerOpen] = useState(false);
   const [unseenHelpReply, setUnseenHelpReply] = useState<UnseenHelpReply | null>(null);
   const [topCoinsBalance, setTopCoinsBalance] = useState<number | null>(null);
@@ -190,10 +192,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       if (cancelled || !res.ok || !json.ok) return;
 
       const unseenItems = (json.messages || []).filter(
-        (item: { status: string; admin_reply: string | null; student_seen_reply_at: string | null }) =>
-          item.status === "answered" && item.admin_reply && !item.student_seen_reply_at,
+        (item: { status: string; latest_message: { author_type: string; message: string } | null; student_seen_reply_at: string | null }) =>
+          item.status === "answered" && item.latest_message?.author_type === "admin" && !item.student_seen_reply_at,
       );
-      const unseen = unseenItems[0] as { id: string; admin_reply: string; contact_reason: HelpContactReason | null } | undefined;
+      const unseen = unseenItems[0] as Omit<UnseenHelpReply, "count"> | undefined;
 
       if (unseen) {
         setUnseenHelpReply({ ...unseen, count: unseenItems.length });
@@ -235,7 +237,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [loading, user?.id, profile?.role, pathname]);
 
   async function acknowledgeHelpReply(openHelp: boolean) {
+    const ticketId = unseenHelpReply?.id || null;
     setUnseenHelpReply(null);
+
+    if (openHelp && ticketId) {
+      setFocusedHelpTicketId(ticketId);
+      setHelpOpen(true);
+      return;
+    }
 
     const {
       data: { session },
@@ -245,12 +254,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    await fetch("/api/student/help-messages/mark-seen", {
+    if (ticketId) await fetch("/api/student/help-messages/mark-seen", {
       method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ ticket_id: ticketId }),
     }).catch(() => undefined);
-
-    if (openHelp) setHelpOpen(true);
   }
 
   if (isPopupRoute || isPublicRoute || isStudentExamPage || isFocusRoute || isPublicViewRoute) {
@@ -278,14 +286,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className={`student-theme student-dark-shell min-h-dvh ${openSans.className}`}>
         <Header
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onOpenHelp={() => setHelpOpen(true)}
+          onOpenHelp={() => { setFocusedHelpTicketId(unseenHelpReply?.id || null); setHelpOpen(true); }}
           hasUnseenHelpReply={Boolean(unseenHelpReply)}
           topCoinsBalance={topCoinsBalance}
         />
 
         <MobileSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
 
-        <HelpCenterModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+        <HelpCenterModal open={helpOpen} initialTicketId={focusedHelpTicketId} onClose={() => { setHelpOpen(false); setFocusedHelpTicketId(null); }} />
         <StudentJourneyExplainerModal open={journeyExplainerOpen} onClose={() => setJourneyExplainerOpen(false)} />
 
         <PremiumModal
@@ -305,9 +313,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {unseenHelpReply && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-300">
-                {getHelpContactReasonLabel(unseenHelpReply.contact_reason)}
+                {unseenHelpReply.ticket_number} · {getHelpContactReasonLabel(unseenHelpReply.contact_reason)}
               </p>
-              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">{unseenHelpReply.admin_reply}</p>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">{unseenHelpReply.latest_message.message}</p>
             </div>
           )}
         </PremiumModal>

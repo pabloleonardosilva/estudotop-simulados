@@ -1,242 +1,114 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
-import { LifeBuoy, Loader2, Send, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Clock3, Edit3, ExternalLink, LifeBuoy, Loader2, Search, Send, User, X } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
+import PremiumButton from "@/app/components/ui/PremiumButton";
+import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import { getHelpContactReasonLabel, HELP_CONTACT_REASONS, type HelpContactReason } from "@/lib/help-tickets";
 
-type StudentRef = { name: string | null; email: string | null };
+type TicketStatus = "open" | "answered" | "closed";
+type StudentRef = { id?: string; name: string | null; email: string | null; phone?: string | null; status?: string | null; created_at?: string; last_login_at?: string | null };
+type TicketRow = { id: string; ticket_number: string; contact_reason: HelpContactReason | null; status: TicketStatus; admin_seen_at: string | null; created_at: string; updated_at: string; student_id: string; students: StudentRef | StudentRef[] | null; latest_message: { message: string; author_type: string; created_at: string } | null };
+type TicketDetail = TicketRow & { internal_note: string | null; technical_context: Record<string, unknown> | null; closed_at: string | null; messages: Array<{ id: string; author_type: "student" | "admin"; message: string; created_at: string; edited_at: string | null }>; events: Array<{ id: string; event_type: string; actor_type: string; created_at: string }>; student_summary: { active_journeys: Array<{ id: string; jornadas: { title: string } | Array<{ title: string }> | null }>; completed_simulados: number } };
+type TabKey = TicketStatus | "all";
+type Counts = Record<TabKey, number>;
 
-export type HelpMessageRow = {
-  id: string;
-  contact_reason: HelpContactReason | null;
-  message: string;
-  status: "open" | "answered";
-  admin_reply: string | null;
-  replied_at: string | null;
-  created_at: string;
-  student_id: string;
-  students: StudentRef | StudentRef[] | null;
-};
+const EVENT_LABELS: Record<string, string> = { created: "Ticket criado", admin_viewed: "Visualizado pelo admin", admin_replied: "Resposta enviada", student_viewed: "Resposta vista pelo aluno", student_replied: "Aluno respondeu", reply_edited: "Resposta editada", closed: "Ticket encerrado", reopened: "Ticket reaberto" };
+function formatDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) }
+function studentRef(value: TicketRow["students"]) { return Array.isArray(value) ? value[0] || null : value || null }
+function statusLabel(status: TicketStatus) { return status === "open" ? "Aberto" : status === "answered" ? "Respondido" : "Encerrado" }
 
-type TabKey = "open" | "answered" | "all";
-type TicketCounts = Record<TabKey, number>;
-
-function studentRef(value: HelpMessageRow["students"]): StudentRef | null {
-  if (Array.isArray(value)) return value[0] || null;
-  return value || null;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
-}
-
-export default function AjudaAdminClient({ initialMessages }: { initialMessages: HelpMessageRow[] }) {
-  const [messages, setMessages] = useState<HelpMessageRow[]>(initialMessages);
-  const [activeTab, setActiveTab] = useState<TabKey>("open");
-  const [loading, setLoading] = useState(false);
+export default function AjudaAdminClient() {
+  const [rows, setRows] = useState<TicketRow[]>([]);
+  const [counts, setCounts] = useState<Counts>({ open: 0, answered: 0, closed: 0, all: 0 });
+  const [tab, setTab] = useState<TabKey>("open");
+  const [reason, setReason] = useState<HelpContactReason | "">("");
+  const [period, setPeriod] = useState("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  const [contactReason, setContactReason] = useState<HelpContactReason | "">("");
-  const [counts, setCounts] = useState<TicketCounts>({
-    open: initialMessages.filter((item) => item.status === "open").length,
-    answered: initialMessages.filter((item) => item.status === "answered").length,
-    all: initialMessages.length,
-  });
+  const [detail, setDetail] = useState<TicketDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [reply, setReply] = useState("");
+  const [note, setNote] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [studentOpen, setStudentOpen] = useState(false);
 
-  const load = useCallback(async (tab: TabKey) => {
-    setLoading(true);
-    setError(null);
-
-    const params = new URLSearchParams();
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    const params = new URLSearchParams({ page: String(page), period });
     if (tab !== "all") params.set("status", tab);
-    if (contactReason) params.set("contact_reason", contactReason);
-
-    const res = await adminFetch(`/api/admin/help-messages?${params.toString()}`);
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok || !json.ok) {
-      setError(json.message || "Não foi possível carregar as mensagens.");
-      setLoading(false);
-      return;
-    }
-
-    setMessages(json.items || []);
-    if (json.counts) setCounts(json.counts);
+    if (reason) params.set("contact_reason", reason);
+    if (search.trim()) params.set("search", search.trim());
+    const response = await adminFetch(`/api/admin/help-messages?${params}`);
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.ok) setError(json.message || "Não foi possível carregar os tickets.");
+    else { setRows(json.items || []); if (json.counts) setCounts(json.counts); setTotal(json.total || 0) }
     setLoading(false);
-  }, [contactReason]);
+  }, [page, period, tab, reason, search]);
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => void load(activeTab), 0);
-    return () => window.clearTimeout(timeout);
-  }, [activeTab, load]);
+  useEffect(() => { const timeout = window.setTimeout(() => void load(), search ? 350 : 0); return () => window.clearTimeout(timeout) }, [load, search]);
 
-  async function handleReply(id: string) {
-    const text = (replyDrafts[id] || "").trim();
-    if (!text) return;
+  const openDetail = useCallback(async (id: string) => {
+    setDetailLoading(true); setError(null);
+    const response = await adminFetch(`/api/admin/help-messages/${id}`);
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.ok) setError(json.message || "Não foi possível carregar o ticket.");
+    else { setDetail(json.ticket); setNote(json.ticket.internal_note || ""); setReply("") }
+    setDetailLoading(false); await load();
+  }, [load]);
 
-    setSendingId(id);
-    setError(null);
-
-    const res = await adminFetch(`/api/admin/help-messages/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ admin_reply: text }),
-    });
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok || !json.ok) {
-      setError(json.message || "Não foi possível enviar a resposta.");
-      setSendingId(null);
-      return;
-    }
-
-    setReplyDrafts((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-    setSendingId(null);
-    window.dispatchEvent(new Event("help-tickets:changed"));
-    await load(activeTab);
+  async function ticketAction(action: "reply" | "close" | "reopen" | "internal_note") {
+    if (!detail) return;
+    if ((action === "close" || action === "reopen") && !window.confirm(action === "close" ? `Encerrar ${detail.ticket_number}?` : `Reabrir ${detail.ticket_number}?`)) return;
+    setSaving(true); setError(null);
+    const body = action === "reply" ? { action, message: reply } : action === "internal_note" ? { action, internal_note: note } : { action };
+    const response = await adminFetch(`/api/admin/help-messages/${detail.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const json = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok || !json.ok) return setError(json.message || "Não foi possível atualizar o ticket.");
+    window.dispatchEvent(new Event("help-tickets:changed")); await openDetail(detail.id);
   }
 
-  const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: "open", label: `Abertas (${counts.open})` },
-    { key: "answered", label: `Respondidas (${counts.answered})` },
-    { key: "all", label: `Todas (${counts.all})` },
-  ];
+  async function saveEdit(messageId: string) {
+    if (!detail || !editingText.trim()) return;
+    setSaving(true);
+    const response = await adminFetch(`/api/admin/help-messages/${detail.id}/messages/${messageId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: editingText }) });
+    const json = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok || !json.ok) return setError(json.message || "Não foi possível editar a resposta.");
+    setEditingId(null); setEditingText(""); await openDetail(detail.id);
+  }
+
+  const tabs: Array<{ key: TabKey; label: string }> = [{ key: "open", label: "Abertos" }, { key: "answered", label: "Respondidos" }, { key: "closed", label: "Encerrados" }, { key: "all", label: "Todos" }];
+  const totalPages = Math.max(1, Math.ceil(total / 25));
+  const selectedStudent = detail ? studentRef(detail.students) : null;
 
   return (
     <main className="min-h-screen bg-[#07111F] px-4 pb-20 pt-6 text-white md:px-8 md:pt-10">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-10%] h-96 w-96 rounded-full bg-orange-500/10 blur-3xl" />
-        <div className="absolute right-[-10%] top-[20%] h-[28rem] w-[28rem] rounded-full bg-blue-500/10 blur-3xl" />
+      <div className="mx-auto max-w-7xl">
+        <section className="rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-6 shadow-2xl shadow-black/30 md:p-8"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-300">Atendimento ao aluno</p><h1 className="mt-4 flex items-center gap-3 text-2xl font-semibold md:text-3xl"><LifeBuoy className="text-orange-300" /> Tickets de Ajuda</h1><p className="mt-2 text-sm text-slate-400">Fila compacta, conversa completa e histórico operacional em um único lugar.</p></section>
+        <section className="mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_230px_170px]"><PremiumInput label="Buscar" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Ticket, aluno, e-mail ou mensagem" icon={<Search size={16} />} /><PremiumSelect variant="jornada" label="Motivo" value={reason} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setReason(event.target.value as HelpContactReason | ""); setPage(1) }}><option value="">Todos os motivos</option>{HELP_CONTACT_REASONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</PremiumSelect><PremiumSelect variant="jornada" label="Período" value={period} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setPeriod(event.target.value); setPage(1) }}><option value="all">Todo período</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></PremiumSelect></div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-4">{tabs.map((item) => <button key={item.key} type="button" onClick={() => { setTab(item.key); setPage(1) }} className={`rounded-xl px-3 py-2.5 text-sm font-bold transition ${tab === item.key ? "bg-gradient-to-r from-orange-500 to-amber-400 text-slate-950" : "bg-white/[0.03] text-slate-400 hover:bg-white/[0.07] hover:text-white"}`}>{item.label} ({counts[item.key]})</button>)}</div>
+        </section>
+        <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03]">
+          <div className="hidden grid-cols-[140px_1fr_190px_160px_150px] gap-4 border-b border-white/[0.07] px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 lg:grid"><span>Ticket</span><span>Aluno / resumo</span><span>Motivo</span><span>Status</span><span>Atualização</span></div>
+          {loading ? <div className="flex justify-center py-16 text-orange-300"><Loader2 className="animate-spin" /></div> : error ? <div className="p-8 text-center text-sm text-red-300">{error}</div> : rows.length === 0 ? <div className="p-12 text-center text-sm text-slate-400">Nenhum ticket encontrado.</div> : rows.map((row) => { const student = studentRef(row.students); return <button key={row.id} type="button" onClick={() => openDetail(row.id)} className="grid w-full gap-3 border-b border-white/[0.06] px-5 py-4 text-left transition last:border-0 hover:bg-white/[0.04] lg:grid-cols-[140px_1fr_190px_160px_150px] lg:items-center lg:gap-4"><span className="flex items-center gap-2 text-sm font-black text-white">{!row.admin_seen_at && <span className="h-2 w-2 rounded-full bg-orange-400" />} {row.ticket_number}</span><span className="min-w-0"><span className="block text-sm font-bold text-slate-200">{student?.name || "Aluno"} <span className="font-normal text-slate-500">· {student?.email || "—"}</span></span><span className="mt-1 block truncate text-xs text-slate-500">{row.latest_message?.message || "Sem mensagem"}</span></span><span className="text-xs font-semibold text-orange-200">{getHelpContactReasonLabel(row.contact_reason)}</span><span className={`w-fit rounded-full px-3 py-1 text-[11px] font-bold ${row.status === "open" ? "bg-amber-500/10 text-amber-300" : row.status === "answered" ? "bg-emerald-500/10 text-emerald-300" : "bg-slate-500/10 text-slate-400"}`}>{statusLabel(row.status)}</span><span className="text-xs text-slate-500">{formatDate(row.updated_at)}</span></button> })}
+        </section>
+        <div className="mt-4 flex items-center justify-between text-xs text-slate-500"><span>{total} ticket(s)</span><div className="flex items-center gap-2"><PremiumButton variant="dark" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1}><ChevronLeft size={15} /></PremiumButton><span>Página {page} de {totalPages}</span><PremiumButton variant="dark" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages}><ChevronRight size={15} /></PremiumButton></div></div>
       </div>
 
-      <div className="relative z-10 mx-auto max-w-5xl">
-        <section className="overflow-hidden rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-6 shadow-2xl shadow-black/30 backdrop-blur-xl md:p-8">
-          <p className="inline-flex items-center gap-2 rounded-full border border-orange-400/20 bg-orange-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-orange-200">
-            <Sparkles size={13} /> Atendimento ao aluno
-          </p>
-          <h1 className="mt-5 flex items-center gap-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">
-            <LifeBuoy className="text-orange-300" size={26} />
-            Tickets de Ajuda
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-            Consulte, classifique e responda os tickets enviados pelos alunos.
-          </p>
-        </section>
+      {(detailLoading || detail) && <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm"><div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#0B1422] shadow-2xl">{detailLoading && !detail ? <div className="flex justify-center p-20 text-orange-300"><Loader2 className="animate-spin" /></div> : detail && <><header className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">{detail.ticket_number}</p><h2 className="mt-1 text-xl font-black">{getHelpContactReasonLabel(detail.contact_reason)}</h2></div><button type="button" aria-label="Fechar" onClick={() => { setDetail(null); setStudentOpen(false) }} className="rounded-full border border-white/10 p-2 text-slate-400 hover:bg-white/10 hover:text-white"><X size={17} /></button></header><div className="grid flex-1 overflow-y-auto lg:grid-cols-[1fr_320px]"><section className="p-5 sm:p-6"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={() => setStudentOpen(true)} className="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-orange-300"><User size={16} />{selectedStudent?.name || "Aluno"}</button><div className="flex gap-2"><PremiumButton variant="dark" onClick={() => ticketAction(detail.status === "closed" ? "reopen" : "close")} disabled={saving}>{detail.status === "closed" ? "Reabrir" : "Encerrar"}</PremiumButton></div></div><div className="space-y-3">{detail.messages.map((message) => <div key={message.id} className={`flex ${message.author_type === "admin" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-2xl border px-4 py-3 ${message.author_type === "admin" ? "border-orange-400/20 bg-orange-500/10" : "border-white/10 bg-white/[0.04]"}`}>{editingId === message.id ? <div><textarea value={editingText} onChange={(event) => setEditingText(event.target.value)} rows={3} maxLength={5000} className="w-full rounded-xl border border-white/10 bg-[#07111F] p-3 text-sm outline-none focus:border-orange-400" /><div className="mt-2 flex justify-end gap-2"><PremiumButton variant="dark" onClick={() => setEditingId(null)}>Cancelar</PremiumButton><PremiumButton onClick={() => saveEdit(message.id)} disabled={saving}>Salvar</PremiumButton></div></div> : <><p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{message.message}</p><div className="mt-2 flex items-center justify-between gap-3"><span className="text-[10px] text-slate-500">{formatDate(message.created_at)}{message.edited_at ? " · editada" : ""}</span>{message.author_type === "admin" && <button type="button" onClick={() => { setEditingId(message.id); setEditingText(message.message) }} className="text-slate-500 hover:text-orange-300" aria-label="Editar resposta"><Edit3 size={13} /></button>}</div></>}</div></div>)}</div>{detail.status === "open" && <div className="mt-5"><textarea value={reply} onChange={(event) => setReply(event.target.value)} rows={4} maxLength={5000} placeholder="Responder ao aluno..." className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400" /><div className="mt-3 flex justify-end"><PremiumButton onClick={() => ticketAction("reply")} disabled={saving || !reply.trim()}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Enviar resposta</PremiumButton></div></div>}{detail.status === "answered" && <p className="mt-5 rounded-2xl bg-emerald-500/10 p-4 text-sm text-emerald-200">Resposta enviada. Aguarde uma nova mensagem do aluno ou encerre o atendimento.</p>}{detail.status === "closed" && <p className="mt-5 rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-400">Ticket encerrado. Reabra antes de responder.</p>}{error && <p className="mt-4 text-sm text-red-300">{error}</p>}</section><aside className="border-t border-white/10 bg-white/[0.02] p-5 lg:border-l lg:border-t-0"><label className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Nota interna</label><textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} maxLength={5000} className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-[#07111F] p-3 text-sm outline-none focus:border-orange-400" placeholder="Visível apenas para administradores" /><PremiumButton variant="dark" className="mt-2 w-full" onClick={() => ticketAction("internal_note")} disabled={saving}>Salvar nota</PremiumButton>{detail.technical_context && <details className="mt-5 rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer text-sm font-bold text-slate-300">Contexto técnico</summary><dl className="mt-3 space-y-2 text-xs text-slate-500">{Object.entries(detail.technical_context).map(([key, value]) => value !== null && <div key={key}><dt className="font-bold text-slate-400">{key}</dt><dd className="break-all">{String(value)}</dd></div>)}</dl></details>}<details className="mt-5 rounded-2xl border border-white/10 p-4"><summary className="cursor-pointer text-sm font-bold text-slate-300">Linha do tempo ({detail.events.length})</summary><div className="mt-3 space-y-3">{detail.events.map((event) => <div key={event.id} className="flex gap-2 text-xs"><Clock3 size={13} className="mt-0.5 shrink-0 text-orange-300" /><div><p className="text-slate-300">{EVENT_LABELS[event.event_type] || event.event_type}</p><p className="text-slate-600">{formatDate(event.created_at)}</p></div></div>)}</div></details></aside></div></>}</div></div>}
 
-        <section className="mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-2 shadow-xl shadow-black/20 backdrop-blur-sm">
-          <PremiumSelect
-            variant="jornada"
-            label="Motivo do contato"
-            value={contactReason}
-            onChange={(event: ChangeEvent<HTMLSelectElement>) => setContactReason(event.target.value as HelpContactReason | "")}
-            className="mb-3 bg-[#0B111C]"
-          >
-            <option value="">Todos os motivos</option>
-            {HELP_CONTACT_REASONS.map((reason) => <option key={reason.value} value={reason.value}>{reason.label}</option>)}
-          </PremiumSelect>
-          <div className="grid gap-2 md:grid-cols-3">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                  activeTab === tab.key
-                    ? "bg-gradient-to-r from-orange-500 to-amber-400 text-slate-950 shadow-lg shadow-orange-500/20"
-                    : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-5 space-y-4">
-          {loading ? (
-            <div className="rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-10 text-center text-sm text-slate-400">
-              Carregando mensagens...
-            </div>
-          ) : error ? (
-            <div className="rounded-[1.75rem] border border-red-400/20 bg-red-500/10 p-6 text-sm text-red-200">{error}</div>
-          ) : messages.length === 0 ? (
-            <div className="rounded-[1.75rem] border border-dashed border-white/15 bg-white/[0.03] p-10 text-center text-sm text-slate-400">
-              Nenhuma mensagem nesta categoria.
-            </div>
-          ) : (
-            messages.map((item) => {
-              const student = studentRef(item.students);
-              return (
-                <article key={item.id} className="rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-5 shadow-xl shadow-black/20">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-black text-white">{student?.name || "Aluno"}</p>
-                      <p className="text-xs text-slate-500">{student?.email || "—"}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={
-                          item.status === "answered"
-                            ? "inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-3 py-1 text-[11px] font-bold text-emerald-300"
-                            : "inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/[0.08] px-3 py-1 text-[11px] font-bold text-amber-300"
-                        }
-                      >
-                        {item.status === "answered" ? "Respondida" : "Aguardando resposta"}
-                      </span>
-                      <span className="text-xs text-slate-500">{formatDate(item.created_at)}</span>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-200">
-                    {item.message}
-                  </p>
-                  <p className="mt-3 text-xs font-bold text-orange-200">{getHelpContactReasonLabel(item.contact_reason)}</p>
-
-                  {item.admin_reply ? (
-                    <div className="mt-3 rounded-2xl border border-orange-400/20 bg-orange-500/[0.06] p-4">
-                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-orange-300">
-                        Sua resposta{item.replied_at ? ` · ${formatDate(item.replied_at)}` : ""}
-                      </p>
-                      <p className="mt-1 text-sm leading-6 text-slate-200">{item.admin_reply}</p>
-                    </div>
-                  ) : (
-                    <div className="mt-4">
-                      <textarea
-                        value={replyDrafts[item.id] || ""}
-                        onChange={(event) =>
-                          setReplyDrafts((current) => ({ ...current, [item.id]: event.target.value }))
-                        }
-                        placeholder="Escreva sua resposta..."
-                        rows={3}
-                        maxLength={5000}
-                        className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-orange-300/60 focus:ring-4 focus:ring-orange-500/10"
-                      />
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleReply(item.id)}
-                          disabled={sendingId === item.id || !(replyDrafts[item.id] || "").trim()}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-orange-500/20 transition disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {sendingId === item.id ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                          Enviar resposta
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })
-          )}
-        </section>
-      </div>
+      {studentOpen && detail && selectedStudent && <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-slate-950/70 p-4"><div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-[#0B1422] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-300">Dados do aluno</p><h3 className="mt-2 text-xl font-black">{selectedStudent.name || "Aluno"}</h3></div><button type="button" onClick={() => setStudentOpen(false)} className="text-slate-400 hover:text-white"><X size={18} /></button></div><dl className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><dt className="text-xs text-slate-500">E-mail</dt><dd className="mt-1 break-all text-slate-200">{selectedStudent.email || "—"}</dd></div><div><dt className="text-xs text-slate-500">Telefone</dt><dd className="mt-1 text-slate-200">{selectedStudent.phone || "—"}</dd></div><div><dt className="text-xs text-slate-500">Status</dt><dd className="mt-1 text-slate-200">{selectedStudent.status || "—"}</dd></div><div><dt className="text-xs text-slate-500">Cadastro</dt><dd className="mt-1 text-slate-200">{selectedStudent.created_at ? formatDate(selectedStudent.created_at) : "—"}</dd></div><div><dt className="text-xs text-slate-500">Último acesso</dt><dd className="mt-1 text-slate-200">{selectedStudent.last_login_at ? formatDate(selectedStudent.last_login_at) : "Sem registro"}</dd></div><div><dt className="text-xs text-slate-500">Simulados concluídos</dt><dd className="mt-1 text-slate-200">{detail.student_summary.completed_simulados}</dd></div><div className="col-span-2"><dt className="text-xs text-slate-500">Jornadas ativas</dt><dd className="mt-1 text-slate-200">{detail.student_summary.active_journeys.length || "Nenhuma"}</dd></div></dl><Link href={`/admin/alunos/${detail.student_id}`} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-4 py-3 text-sm font-black text-slate-950"><ExternalLink size={16} /> Abrir perfil completo</Link></div></div>}
     </main>
   );
 }

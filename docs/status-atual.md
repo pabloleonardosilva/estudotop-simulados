@@ -978,3 +978,12 @@ Escopo previsto:
 - O painel administrativo passa a se chamar **Tickets de Ajuda**, filtra por motivo e mantém os fluxos de resposta. O badge usa a API administrativa protegida, sem acesso direto à tabela pelo browser.
 - Autenticação, autorização e ownership permanecem derivados no servidor. A resposta do admin só atualiza ticket aberto; a leitura e o reconhecimento do aluno continuam restritos ao próprio aluno.
 - Estado: migration aplicada e variáveis de reCAPTCHA configuradas nos ambientes local e Vercel Production, conforme confirmação do responsável em 2026-08-18. Permanece pendente a homologação funcional ponta a ponta após o push antes de declarar a Central de Ajuda operacional em produção.
+
+### Tickets de Ajuda — refinamento completo preparado em 2026-08-18
+
+- Criada, sem execução, a migration `supabase/migrations/20260818071017_evolve_student_help_tickets.sql`: número permanente concorrente, conversa multi-turno, status encerrado, leitura separada aluno/admin, nota interna, contexto técnico e timeline operacional, com backfill dos tickets existentes.
+- O aluno passa a ver uma Central de Ajuda clara e compacta, abrir detalhes no mesmo modal, continuar conversas respondidas e consultar tickets encerrados. Novo atendimento mantém reCAPTCHA; continuação não solicita novo desafio.
+- O painel admin passa a usar fila compacta paginada, busca, filtros, quatro abas e detalhe sob demanda. Respostas administrativas podem ser editadas com auditoria; encerrar/reabrir permanece ação administrativa confirmada.
+- O alerta identifica e abre o ticket exato. O badge administrativo continua contando tickets abertos, enquanto o indicador de novidade usa `admin_seen_at`.
+- Autenticação, autorização, ownership e autoria continuam validados no servidor. Nenhuma regra administrativa foi exposta ao cliente.
+- Pendente: aplicar manualmente a nova migration e então homologar os fluxos aluno/admin e a responsividade em ambiente integrado.
