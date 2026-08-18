@@ -199,15 +199,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       if (unseen) {
         setUnseenHelpReply({ ...unseen, count: unseenItems.length });
+      } else {
+        setUnseenHelpReply(null);
       }
     }
 
-    checkUnseenReply();
+    void checkUnseenReply();
+    const interval = window.setInterval(() => void checkUnseenReply(), 30_000);
+    const handleFocus = () => void checkUnseenReply();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void checkUnseenReply();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [loading, user?.id, profile?.role]);
+  }, [loading, user?.id, profile?.role, pathname]);
 
   useEffect(() => {
     if (loading || !user?.id || profile?.role !== "student") return;

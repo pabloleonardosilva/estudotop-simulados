@@ -994,3 +994,9 @@ Escopo previsto:
 - O badge administrativo passa a representar tickets novos para o admin, e não todos os tickets abertos. A fonte é `counts.new`, calculada por `status = open` e `admin_seen_at = null`.
 - Motivo e Período em `/admin/ajuda` passam a usar dropdowns dark premium consistentes com os demais módulos administrativos.
 - Nenhuma alteração de banco, migration, autenticação ou autorização foi necessária.
+
+### Central de Ajuda — alerta do aluno atualizado em tempo de sessão em 2026-08-18
+
+- Corrigida a causa do indicador ausente quando o admin respondia enquanto o aluno permanecia conectado: a consulta ocorria somente ao carregar sessão e perfil.
+- O `AppShell` agora atualiza respostas não vistas imediatamente, a cada 30 segundos, ao recuperar foco/visibilidade e em mudanças de rota.
+- Nenhuma alteração de API, banco, migration, autenticação ou autorização foi necessária.

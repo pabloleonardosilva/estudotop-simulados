@@ -120,3 +120,9 @@ O item **Ajuda** voltou a ser exibido no menu superior desktop da área do aluno
 - O ícone **Ajuda** no menu superior do aluno exibe um ponto laranja enquanto existir resposta administrativa ainda não reconhecida (`student_seen_reply_at = null`).
 - O badge **Tickets de Ajuda** da sidebar administrativa passa a contar somente tickets abertos ainda não vistos pelo admin (`admin_seen_at = null`); a abertura do detalhe atualiza o indicador imediatamente.
 - Os filtros Motivo e Período de `/admin/ajuda` deixam de usar o menu nativo do navegador e passam a usar dropdown dark premium, com fechamento por clique externo e tecla Escape.
+
+## Atualização 2026-08-18 — Atualização automática do alerta do aluno
+
+- O `AppShell` passa a verificar respostas não lidas imediatamente, a cada 30 segundos, ao recuperar foco/visibilidade da aba e durante a navegação do aluno.
+- O ponto laranja no ícone **Ajuda** surge sem exigir novo login ou recarregamento quando o admin responde enquanto o aluno permanece conectado.
+- Quando a resposta é reconhecida em outra aba ou dispositivo e a próxima consulta não encontra pendências, o indicador local é removido.

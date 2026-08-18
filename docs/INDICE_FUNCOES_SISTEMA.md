@@ -3455,3 +3455,5 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - A migration desta evolução não foi executada pelo agente durante a Sprint. Em 2026-08-18, a estrutura correspondente já estava disponível no banco operacional; permanece necessária a homologação ponta a ponta.
 
 **Indicadores e filtros (2026-08-18):** `Header.tsx` usa `hasUnseenHelpReply` para marcar o próprio ícone **Ajuda** quando o aluno possui resposta não vista. A API administrativa expõe `counts.new` para tickets `open` com `admin_seen_at = null`; o badge protegido em `Sidebar.tsx` usa essa contagem e é atualizado ao abrir um detalhe. Os filtros Motivo e Período de `/admin/ajuda` usam dropdowns dark premium em vez de `<select>` nativo.
+
+**Atualização automática do alerta (2026-08-18):** o `AppShell` consulta respostas não lidas na entrada, em mudanças de rota, a cada 30 segundos e quando a aba recupera foco ou visibilidade. Assim, uma resposta enviada enquanto o aluno está conectado atualiza o ícone **Ajuda** sem recarregar a página.
