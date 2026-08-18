@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Clock3, Edit3, ExternalLink, LifeBuoy, Loader2, Search, Send, User, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Edit3, ExternalLink, LifeBuoy, Loader2, Search, Send, User, X } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
-import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import { getHelpContactReasonLabel, HELP_CONTACT_REASONS, type HelpContactReason } from "@/lib/help-tickets";
 
 type TicketStatus = "open" | "answered" | "closed";
@@ -20,6 +19,21 @@ const EVENT_LABELS: Record<string, string> = { created: "Ticket criado", admin_v
 function formatDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) }
 function studentRef(value: TicketRow["students"]) { return Array.isArray(value) ? value[0] || null : value || null }
 function statusLabel(status: TicketStatus) { return status === "open" ? "Aberto" : status === "answered" ? "Respondido" : "Encerrado" }
+
+function PremiumFilterDropdown({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = (event: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false) };
+    const handleEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false) };
+    document.addEventListener("mousedown", handleOutside); document.addEventListener("keydown", handleEscape);
+    return () => { document.removeEventListener("mousedown", handleOutside); document.removeEventListener("keydown", handleEscape) };
+  }, [open]);
+  const currentLabel = options.find((option) => option.value === value)?.label ?? options[0]?.label ?? label;
+  const isFiltered = value !== "" && value !== "all";
+  return <div ref={containerRef} className="relative"><label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-300/65">{label}</label><button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)} className="group flex h-12 w-full items-center justify-between rounded-2xl border border-slate-400/[0.18] bg-[#0B1828] px-4 text-left text-sm font-semibold text-slate-200 outline-none transition-all duration-200 hover:border-orange-400/35 focus:border-orange-400/55 focus:ring-4 focus:ring-orange-500/10"><span className={`truncate ${isFiltered ? "text-white/90" : ""}`}>{currentLabel}</span><span className="flex items-center gap-2">{isFiltered && <span className="h-2 w-2 rounded-full bg-orange-500" />}<ChevronDown size={16} className={`text-white/30 transition duration-200 group-hover:text-orange-400 ${open ? "rotate-180 text-orange-400" : ""}`} /></span></button>{open && <div role="listbox" className="absolute left-0 top-full z-[9999] mt-2 w-full rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-2 shadow-2xl shadow-black/50 backdrop-blur-xl"><div className="max-h-72 space-y-0.5 overflow-y-auto">{options.map((option) => { const selected = option.value === value; return <button key={option.value} type="button" role="option" aria-selected={selected} onClick={() => { onChange(option.value); setOpen(false) }} className={selected ? "flex w-full items-center justify-between rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-2.5 text-left text-sm font-semibold text-orange-100" : "flex w-full items-center rounded-xl border border-transparent px-4 py-2.5 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}><span className="flex-1 text-left">{option.label}</span>{selected && <Check size={14} className="shrink-0 text-orange-400" strokeWidth={3} />}</button> })}</div></div>}</div>;
+}
 
 export default function AjudaAdminClient() {
   const [rows, setRows] = useState<TicketRow[]>([]);
@@ -61,7 +75,7 @@ export default function AjudaAdminClient() {
     const response = await adminFetch(`/api/admin/help-messages/${id}`);
     const json = await response.json().catch(() => ({}));
     if (!response.ok || !json.ok) setError(json.message || "Não foi possível carregar o ticket.");
-    else { setDetail(json.ticket); setNote(json.ticket.internal_note || ""); setReply("") }
+    else { setDetail(json.ticket); setNote(json.ticket.internal_note || ""); setReply(""); window.dispatchEvent(new Event("help-tickets:changed")) }
     setDetailLoading(false); await load();
   }, [load]);
 
@@ -96,7 +110,7 @@ export default function AjudaAdminClient() {
       <div className="mx-auto max-w-7xl">
         <section className="rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-6 shadow-2xl shadow-black/30 md:p-8"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-300">Atendimento ao aluno</p><h1 className="mt-4 flex items-center gap-3 text-2xl font-semibold md:text-3xl"><LifeBuoy className="text-orange-300" /> Tickets de Ajuda</h1><p className="mt-2 text-sm text-slate-400">Fila compacta, conversa completa e histórico operacional em um único lugar.</p></section>
         <section className="mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_230px_170px]"><PremiumInput label="Buscar" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Ticket, aluno, e-mail ou mensagem" icon={<Search size={16} />} /><PremiumSelect variant="jornada" label="Motivo" value={reason} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setReason(event.target.value as HelpContactReason | ""); setPage(1) }}><option value="">Todos os motivos</option>{HELP_CONTACT_REASONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</PremiumSelect><PremiumSelect variant="jornada" label="Período" value={period} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setPeriod(event.target.value); setPage(1) }}><option value="all">Todo período</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></PremiumSelect></div>
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_230px_170px]"><PremiumInput label="Buscar" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Ticket, aluno, e-mail ou mensagem" icon={<Search size={16} />} /><PremiumFilterDropdown label="Motivo" value={reason} onChange={(nextValue) => { setReason(nextValue as HelpContactReason | ""); setPage(1) }} options={[{ value: "", label: "Todos os motivos" }, ...HELP_CONTACT_REASONS]} /><PremiumFilterDropdown label="Período" value={period} onChange={(nextValue) => { setPeriod(nextValue); setPage(1) }} options={[{ value: "all", label: "Todo período" }, { value: "7", label: "Últimos 7 dias" }, { value: "30", label: "Últimos 30 dias" }, { value: "90", label: "Últimos 90 dias" }]} /></div>
           <div className="mt-4 grid gap-2 sm:grid-cols-4">{tabs.map((item) => <button key={item.key} type="button" onClick={() => { setTab(item.key); setPage(1) }} className={`rounded-xl px-3 py-2.5 text-sm font-bold transition ${tab === item.key ? "bg-gradient-to-r from-orange-500 to-amber-400 text-slate-950" : "bg-white/[0.03] text-slate-400 hover:bg-white/[0.07] hover:text-white"}`}>{item.label} ({counts[item.key]})</button>)}</div>
         </section>
         <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03]">

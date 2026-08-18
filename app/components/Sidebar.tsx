@@ -153,7 +153,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       const response = await adminFetch("/api/admin/help-messages?status=open&limit=1");
       const json = await response.json().catch(() => ({}));
       if (cancelled || !response.ok || !json.ok) return;
-      setOpenHelpMessagesCount(json.counts?.open ?? 0);
+      setOpenHelpMessagesCount(json.counts?.new ?? 0);
     }
 
     loadOpenHelpMessagesCount();

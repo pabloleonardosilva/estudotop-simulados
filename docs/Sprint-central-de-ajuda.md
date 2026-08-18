@@ -114,3 +114,9 @@ O item **Ajuda** voltou a ser exibido no menu superior desktop da área do aluno
 - `/admin/ajuda` passa a carregar resumos paginados em lotes de 25, com abas Abertos/Respondidos/Encerrados/Todos, busca e filtros. O detalhe sob demanda reúne conversa, nota interna, contexto técnico, eventos e resumo do aluno.
 - Somente mensagens administrativas podem ser editadas. Edição registra `edited_at`, `edited_by` e o evento/auditoria `admin.help_ticket.reply_edited`, sem gerar nova notificação ao aluno. Fechamento e reabertura são exclusivos do admin.
 - O alerta do aluno identifica o número do ticket e abre diretamente a conversa correspondente. `student_seen_reply_at` e `admin_seen_at` continuam independentes; o badge administrativo permanece a contagem de tickets `open`.
+
+## Atualização 2026-08-18 — Indicadores de novidade e filtros premium
+
+- O ícone **Ajuda** no menu superior do aluno exibe um ponto laranja enquanto existir resposta administrativa ainda não reconhecida (`student_seen_reply_at = null`).
+- O badge **Tickets de Ajuda** da sidebar administrativa passa a contar somente tickets abertos ainda não vistos pelo admin (`admin_seen_at = null`); a abertura do detalhe atualiza o indicador imediatamente.
+- Os filtros Motivo e Período de `/admin/ajuda` deixam de usar o menu nativo do navegador e passam a usar dropdown dark premium, com fechamento por clique externo e tecla Escape.

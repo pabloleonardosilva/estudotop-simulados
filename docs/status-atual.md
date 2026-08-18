@@ -986,4 +986,11 @@ Escopo previsto:
 - O painel admin passa a usar fila compacta paginada, busca, filtros, quatro abas e detalhe sob demanda. Respostas administrativas podem ser editadas com auditoria; encerrar/reabrir permanece ação administrativa confirmada.
 - O alerta identifica e abre o ticket exato. O badge administrativo continua contando tickets abertos, enquanto o indicador de novidade usa `admin_seen_at`.
 - Autenticação, autorização, ownership e autoria continuam validados no servidor. Nenhuma regra administrativa foi exposta ao cliente.
-- Pendente: aplicar manualmente a nova migration e então homologar os fluxos aluno/admin e a responsividade em ambiente integrado.
+- Em 2026-08-18, a estrutura da nova migration foi confirmada como disponível no banco operacional por consulta somente leitura. Permanece pendente homologar os fluxos aluno/admin e a responsividade em ambiente integrado.
+
+### Central de Ajuda — indicadores de novidade e filtros premium em 2026-08-18
+
+- O item **Ajuda** do header do aluno passa a sinalizar respostas ainda não vistas com ponto laranja no próprio ícone.
+- O badge administrativo passa a representar tickets novos para o admin, e não todos os tickets abertos. A fonte é `counts.new`, calculada por `status = open` e `admin_seen_at = null`.
+- Motivo e Período em `/admin/ajuda` passam a usar dropdowns dark premium consistentes com os demais módulos administrativos.
+- Nenhuma alteração de banco, migration, autenticação ou autorização foi necessária.

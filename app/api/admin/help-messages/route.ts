@@ -56,14 +56,15 @@ export async function GET(request: Request) {
     if (matchingTicketIds?.length) conditions.push(`id.in.(${matchingTicketIds.join(",")})`);
     query = query.or(conditions.join(","));
   }
-  const [itemsResult, openCountResult, answeredCountResult, closedCountResult, allCountResult] = await Promise.all([
+  const [itemsResult, openCountResult, answeredCountResult, closedCountResult, allCountResult, newCountResult] = await Promise.all([
     query.order("updated_at", { ascending: false }),
     supabase.from("student_help_messages").select("id", { count: "exact", head: true }).eq("status", "open"),
     supabase.from("student_help_messages").select("id", { count: "exact", head: true }).eq("status", "answered"),
     supabase.from("student_help_messages").select("id", { count: "exact", head: true }).eq("status", "closed"),
     supabase.from("student_help_messages").select("id", { count: "exact", head: true }),
+    supabase.from("student_help_messages").select("id", { count: "exact", head: true }).eq("status", "open").is("admin_seen_at", null),
   ]);
-  const error = itemsResult.error || openCountResult.error || answeredCountResult.error || closedCountResult.error || allCountResult.error;
+  const error = itemsResult.error || openCountResult.error || answeredCountResult.error || closedCountResult.error || allCountResult.error || newCountResult.error;
   if (error) {
     void logSystemError({ source: "api.admin.help_messages.list", error, request });
     return NextResponse.json({ ok: false, message: "Não foi possível carregar os tickets." }, { status: 500 });
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
   const pageItems = sorted.slice(from, from + PAGE_SIZE).map((item) => ({ ...item, latest_message: latestByTicket.get(item.id) || null }));
   return NextResponse.json({
     ok: true, message: "Tickets carregados com sucesso.", items: pageItems,
-    counts: { open: openCountResult.count ?? 0, answered: answeredCountResult.count ?? 0, closed: closedCountResult.count ?? 0, all: allCountResult.count ?? 0 },
+    counts: { open: openCountResult.count ?? 0, answered: answeredCountResult.count ?? 0, closed: closedCountResult.count ?? 0, all: allCountResult.count ?? 0, new: newCountResult.count ?? 0 },
     page, limit: PAGE_SIZE, total: sorted.length, hasMore: from + PAGE_SIZE < sorted.length,
   });
 }

@@ -286,7 +286,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className={`student-theme student-dark-shell min-h-dvh ${openSans.className}`}>
         <Header
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onOpenHelp={() => { setFocusedHelpTicketId(unseenHelpReply?.id || null); setHelpOpen(true); }}
+          onOpenHelp={() => { setFocusedHelpTicketId(unseenHelpReply?.id || null); setUnseenHelpReply(null); setHelpOpen(true); }}
           hasUnseenHelpReply={Boolean(unseenHelpReply)}
           topCoinsBalance={topCoinsBalance}
         />

@@ -135,7 +135,15 @@ export default function Header({
               </DesktopNavItem>
               {SHOW_STUDENT_HELP_MENU && (
                 <DesktopNavItem active={false} onClick={onOpenHelp}>
-                  <LifeBuoy size={21} strokeWidth={2.2} />
+                  <span className="relative inline-flex">
+                    <LifeBuoy size={21} strokeWidth={2.2} />
+                    {hasUnseenHelpReply && (
+                      <span
+                        aria-hidden
+                        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#000610] bg-orange-500 shadow-[0_0_10px_rgba(255,138,0,0.85)]"
+                      />
+                    )}
+                  </span>
                   <span>Ajuda</span>
                 </DesktopNavItem>
               )}
