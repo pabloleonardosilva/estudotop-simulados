@@ -5,6 +5,11 @@ const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_AVATAR_IDS = new Set(Array.from({ length: 128 }, (_, index) => `avatar-${String(index + 1).padStart(3, "0")}`));
 
+function isMissingAvatarColumnError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return error.code === "42703" || error.message?.includes("avatar_url") || error.message?.includes("schema cache");
+}
+
 function extensionFor(type: string) {
   if (type === "image/png") return "png";
   if (type === "image/webp") return "webp";
@@ -87,8 +92,17 @@ export async function PATCH(request: Request) {
   }
 
   const avatarUrl = `/images/profile-avatars/${avatarId}.webp`;
-  const { error: updateError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", userData.user.id);
-  if (updateError) {
+  const { data: currentStudent, error: loadStudentError } = await supabase.from("students").select("avatar_url").eq("id", userData.user.id).single();
+  if (loadStudentError || !currentStudent) {
+    return NextResponse.json({ ok: false, message: "Não foi possível atualizar seu avatar." }, { status: 500 });
+  }
+
+  const { error: studentError } = await supabase.from("students").update({ avatar_url: avatarUrl }).eq("id", userData.user.id);
+  if (studentError) return NextResponse.json({ ok: false, message: "Não foi possível atualizar seu avatar." }, { status: 500 });
+
+  const { error: profileError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", userData.user.id);
+  if (profileError && !isMissingAvatarColumnError(profileError)) {
+    await supabase.from("students").update({ avatar_url: currentStudent.avatar_url }).eq("id", userData.user.id);
     return NextResponse.json({ ok: false, message: "Não foi possível atualizar seu avatar." }, { status: 500 });
   }
 
@@ -104,14 +118,20 @@ export async function DELETE(request: Request) {
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData.user) return NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 });
 
-  const { data: profile, error: loadError } = await supabase.from("profiles").select("avatar_url").eq("id", userData.user.id).single();
-  if (loadError) return NextResponse.json({ ok: false, message: "Não foi possível carregar sua foto." }, { status: 500 });
+  const { data: student, error: loadError } = await supabase.from("students").select("avatar_url").eq("id", userData.user.id).single();
+  if (loadError || !student) return NextResponse.json({ ok: false, message: "Não foi possível carregar sua foto." }, { status: 500 });
 
-  const { error: updateError } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userData.user.id);
-  if (updateError) return NextResponse.json({ ok: false, message: "Não foi possível remover sua foto." }, { status: 500 });
+  const { error: studentUpdateError } = await supabase.from("students").update({ avatar_url: null }).eq("id", userData.user.id);
+  if (studentUpdateError) return NextResponse.json({ ok: false, message: "Não foi possível remover sua foto." }, { status: 500 });
+
+  const { error: profileUpdateError } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userData.user.id);
+  if (profileUpdateError && !isMissingAvatarColumnError(profileUpdateError)) {
+    await supabase.from("students").update({ avatar_url: student.avatar_url }).eq("id", userData.user.id);
+    return NextResponse.json({ ok: false, message: "Não foi possível remover sua foto." }, { status: 500 });
+  }
 
   const marker = "/profile-avatars/";
-  const path = profile.avatar_url?.includes(marker) ? decodeURIComponent(profile.avatar_url.split(marker)[1]) : null;
+  const path = student.avatar_url?.includes(marker) ? decodeURIComponent(student.avatar_url.split(marker)[1]) : null;
   if (path?.startsWith(`${userData.user.id}/`)) await supabase.storage.from("profile-avatars").remove([path]);
 
   return NextResponse.json({ ok: true, message: "Foto removida com sucesso.", avatar_url: null }, { status: 200 });

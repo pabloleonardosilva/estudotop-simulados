@@ -57,7 +57,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setProfile({ ...(fallbackData as Omit<Profile, "avatar_url">), avatar_url: null });
+      let avatarUrl: string | null = null;
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session?.user.id === userId) {
+        const response = await fetch("/api/student/profile", {
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+        });
+        const payload = await response.json().catch(() => null) as { ok?: boolean; profile?: { avatar_url?: string | null } } | null;
+        if (response.ok && payload?.ok) avatarUrl = payload.profile?.avatar_url || null;
+      }
+
+      setProfile({ ...(fallbackData as Omit<Profile, "avatar_url">), avatar_url: avatarUrl });
       return;
     }
 
