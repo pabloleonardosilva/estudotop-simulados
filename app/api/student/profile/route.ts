@@ -31,16 +31,20 @@ export async function GET(request: Request) {
 
   const supabase = createSupabaseAdminClient();
   const [studentResult, profileResult, contestsResult, attemptsResult, jornadasResult] = await Promise.all([
-    supabase.from("students").select("name,email,phone,cpf,desired_contests,last_login_at,created_at").eq("id", student.id).single(),
+    supabase.from("students").select("name,email,phone,cpf,avatar_url,desired_contests,last_login_at,created_at").eq("id", student.id).single(),
     supabase.from("profiles").select("avatar_url").eq("id", student.id).single(),
     supabase.from("exam_contests").select("id,name").eq("is_active", true).order("name"),
     supabase.from("simulado_attempts").select("simulado_id,answered_count,status,counts_toward_limit").eq("student_id", student.id),
     supabase.from("student_jornadas").select("status,expires_at").eq("student_id", student.id).neq("status", "cancelled"),
   ]);
 
-  if (studentResult.error || !studentResult.data || profileResult.error) {
-    void logSystemError({ source: "api.student.profile.load", error: studentResult.error || profileResult.error, request });
+  if (studentResult.error || !studentResult.data) {
+    void logSystemError({ source: "api.student.profile.load", error: studentResult.error, request });
     return NextResponse.json({ ok: false, message: "Não foi possível carregar seu perfil." }, { status: 500 });
+  }
+
+  if (profileResult.error) {
+    void logSystemError({ source: "api.student.profile.avatar_fallback", error: profileResult.error, request });
   }
 
   const attempts = attemptsResult.error ? null : attemptsResult.data || [];
@@ -71,7 +75,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    profile: { ...studentResult.data, avatar_url: profileResult.data?.avatar_url || null },
+    profile: { ...studentResult.data, avatar_url: profileResult.data?.avatar_url || studentResult.data.avatar_url || null },
     interests: { saved_names: savedNames, selected_contest_ids: selectedContestIds, catalog: [...legacyInterests, ...contests] },
     trajectory: { completed_simulados: completedSimulados, answered_questions: answeredQuestions },
     journeys: { active: activeJornadas, completed: completedJornadas },

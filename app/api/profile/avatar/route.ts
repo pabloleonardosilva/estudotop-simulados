@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_AVATAR_IDS = new Set(Array.from({ length: 128 }, (_, index) => `avatar-${String(index + 1).padStart(3, "0")}`));
 
 function extensionFor(type: string) {
   if (type === "image/png") return "png";
@@ -68,6 +69,30 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, message: "Foto atualizada com sucesso.", avatar_url: avatarUrl }, { status: 200 });
+}
+
+export async function PATCH(request: Request) {
+  const authHeader = request.headers.get("authorization") || request.headers.get("Authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  if (!token) return NextResponse.json({ ok: false, message: "Não autenticado." }, { status: 401 });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !userData.user) return NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 });
+
+  const body = await request.json().catch(() => null);
+  const avatarId = typeof body?.avatar_id === "string" ? body.avatar_id : "";
+  if (!ALLOWED_AVATAR_IDS.has(avatarId)) {
+    return NextResponse.json({ ok: false, message: "Avatar inválido." }, { status: 400 });
+  }
+
+  const avatarUrl = `/images/profile-avatars/${avatarId}.webp`;
+  const { error: updateError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", userData.user.id);
+  if (updateError) {
+    return NextResponse.json({ ok: false, message: "Não foi possível atualizar seu avatar." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, message: "Avatar atualizado com sucesso.", avatar_url: avatarUrl }, { status: 200 });
 }
 
 export async function DELETE(request: Request) {

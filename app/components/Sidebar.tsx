@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Trophy,
   Tags,
+  UserRound,
   Users,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -431,6 +432,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <nav className="space-y-1.5 text-sm">
             <NavLink href="/aluno" active={isActive("/aluno")} icon={<Home size={17} />} onNavigate={onNavigate} student>
               Painel
+            </NavLink>
+            <NavLink href="/meu-perfil" active={isActive("/meu-perfil")} icon={<UserRound size={17} />} onNavigate={onNavigate} student>
+              Meu Perfil
             </NavLink>
             <NavLink href="/minhas-jornadas" active={isActive("/minhas-jornadas")} icon={<MapPin size={17} />} onNavigate={onNavigate} student>
               Minhas Jornadas

@@ -1011,8 +1011,9 @@ Escopo previsto:
 
 ### Meu Perfil do aluno implementado em 2026-08-18
 
-- Criada a rota clean `/meu-perfil`, acessível pelo bloco de identidade do header desktop e pelo ícone de perfil no header compacto.
+- Criada a rota clean `/meu-perfil`, acessível pelo bloco de identidade do header desktop, pelo ícone de perfil no header compacto e pela opção **Meu Perfil** no menu lateral expansível do aluno.
 - O aluno pode atualizar o próprio nome, telefone, foto e concursos de interesse; e-mail e CPF permanecem somente leitura. A API `/api/student/profile` deriva o UUID do token e ignora qualquer tentativa de indicar outro aluno.
 - A página mostra apenas métricas executivas de trajetória e Jornadas, com atalhos para `/meus-resultados` e `/minhas-jornadas`, sem duplicar dashboards.
 - Central de Ajuda, upload existente e recuperação de senha foram reutilizados. Não foram criados toggles sem persistência, troca direta de e-mail, exclusão automática nem URL fictícia de privacidade.
+- Em `/meu-perfil`, a ação **Alterar avatar** abre um catálogo responsivo com 128 ilustrações originais: primeiro 90 corujas EstudoTOP estilizadas e, depois, 38 pessoas diversas. A seleção é validada no servidor por identificador fechado; URLs arbitrárias enviadas pelo cliente são rejeitadas. O upload legado permanece inalterado nos demais pontos que ainda o utilizam.
 - Nenhuma migration foi criada ou alterada para esta funcionalidade.

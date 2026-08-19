@@ -3471,8 +3471,8 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 ## 24. Meu Perfil do aluno
 
 - **Rota:** `/meu-perfil`, com `page.tsx` Server Component e interação isolada em `page-client.tsx`, integrada ao shell claro da área do aluno.
-- **Acesso:** o avatar/nome no header desktop e o ícone de perfil no header compacto levam à página. O header não expõe dados administrativos.
+- **Acesso:** o avatar/nome no header desktop, o ícone de perfil no header compacto e a opção **Meu Perfil** no menu lateral expansível do aluno levam à página. Nenhum desses acessos expõe dados administrativos.
 - **Dados:** `GET/PATCH /api/student/profile` deriva o aluno exclusivamente do token, retorna identidade, catálogo ativo de concursos e resumos simples de trajetória/Jornadas, e permite alterar somente nome, telefone e interesses. E-mail e CPF permanecem somente leitura.
-- **Avatar:** reutiliza `POST /api/profile/avatar`; `DELETE` remove a referência do próprio perfil e tenta apagar somente o objeto cujo caminho pertence ao usuário autenticado.
+- **Avatar:** `/meu-perfil` oferece um catálogo local com 128 ilustrações, ordenado com 90 corujas EstudoTOP estilizadas e 38 pessoas diversas; `PATCH /api/profile/avatar` aceita somente identificadores da lista controlada pelo servidor. O `POST` de upload existente permanece disponível para os pontos legados, e `DELETE` remove a referência do próprio perfil e tenta apagar somente objetos cujo caminho pertence ao usuário autenticado.
 - **Conta e preferências:** a troca direta de e-mail não existe. Como o sistema não possui troca voluntária de senha nem preferências opcionais persistidas, a página encerra a sessão antes de encaminhar à recuperação segura de senha e apresenta apenas comunicações essenciais, sem toggles fictícios. Interesses históricos fora do catálogo ativo são preservados e só são removidos por desseleção explícita.
 - **Privacidade e ajuda:** solicitações de dados, correção e exclusão abrem a Central de Ajuda existente; nenhuma exclusão automática foi criada. A Política de Privacidade permanece sem link até existir rota pública oficial.
