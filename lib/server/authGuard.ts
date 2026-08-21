@@ -7,6 +7,7 @@ import { logSecurityEvent } from "@/app/lib/server/auditLogger";
 export type AuthAdmin = {
   id: string;
   full_name: string | null;
+  email: string | null;
 };
 
 export type AuthProfessor = {
@@ -61,6 +62,7 @@ export async function requireAdmin(request: Request): Promise<AuthAdmin | NextRe
   return {
     id: profile.id as string,
     full_name: profile.full_name as string | null,
+    email: userData.user.email ?? null,
   };
 }
 

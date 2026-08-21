@@ -34,3 +34,7 @@ Execução do serviço educacional e legítimo interesse para segurança são hi
 ## Direitos e solicitações
 
 Solicitações de acesso, correção, exportação, oposição ou exclusão exigem validação de identidade, registro interno, revisão do escopo e entrega segura. Prazo legal e exceções devem ser confirmados por orientação jurídica aplicável.
+
+## Exclusão definitiva de aluno (2026-08-21)
+
+Além da exclusão comum (bloqueada quando há histórico), existe uma exceção controlada — `POST /api/admin/students/[id]/hard-delete` — que remove definitivamente o aluno e seu patrimônio pedagógico mesmo com histórico, mediante reautenticação da senha do Admin e confirmação textual explícita. Logs de segurança/sistema (IP, user-agent, ator) não são apagados nessa operação, por não pertencerem à conta do titular e por estarem sob a política de retenção de `SEGURANCA_LOGS_AUDITORIA.md`. Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção de gestão de Alunos, para o detalhamento técnico completo.

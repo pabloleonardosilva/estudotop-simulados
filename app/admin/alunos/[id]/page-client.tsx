@@ -11,6 +11,7 @@ import {
   BarChart3,
   Ban,
   CalendarCheck,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -41,6 +42,7 @@ import {
   Trash2,
   TrendingUp,
   Trophy,
+  UserPlus,
   UserRound,
   UserX,
   X,
@@ -50,7 +52,8 @@ import PremiumLoadingOverlay from "@/app/components/ui/PremiumLoadingOverlay";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { formatCpf } from "@/lib/utils/cpf";
-import type { ActivityLog, AvailableJornada, StudentDetail, StudentEmailHistoryItem, StudentJornada, StudentJornadaScheduleItem, StudentSystemActivity, StudentUsageSession } from "./page";
+import { eventStatusLabel } from "@/lib/ui/eventStatus";
+import type { ActivityLog, AvailableEvent, AvailableJornada, StudentDetail, StudentEmailHistoryItem, StudentEventParticipation, StudentJornada, StudentJornadaScheduleItem, StudentSystemActivity, StudentUsageSession } from "./page";
 
 // ── Formatadores ─────────────────────────────────────────────────────────────
 
@@ -89,6 +92,13 @@ function fmtSeconds(s: number | undefined): string {
 function fmtCpf(value: string | null): string {
   if (!value) return "—";
   return formatCpf(value);
+}
+
+function maskCpf(value: string | null): string {
+  if (!value) return "—";
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 11) return fmtCpf(value);
+  return `${digits.slice(0, 3)}.***.**${digits.slice(9, 10)}-${digits.slice(10)}`;
 }
 
 function statusLabel(status: string): string {
@@ -574,6 +584,7 @@ function AlunoActivityPanel({
   usageSessions,
   systemActivities,
   jornadas,
+  events,
   onAssign,
   onOpenSchedule,
 }: {
@@ -582,7 +593,8 @@ function AlunoActivityPanel({
   usageSessions: StudentUsageSession[];
   systemActivities: StudentSystemActivity[];
   jornadas: StudentJornada[];
-  onAssign: () => void;
+  events: StudentEventParticipation[];
+  onAssign: (tab?: "jornadas" | "eventos") => void;
   onOpenSchedule: (jornada: StudentJornada) => void;
 }) {
   const [tab, setTab] = useState<ActivityTab>("resumo");
@@ -766,12 +778,17 @@ function AlunoActivityPanel({
         )}
 
         {tab === "atividades" && (
-          <AssignedActivities
-            jornadas={jornadas}
-            items={filteredAssignedItems}
-            onAssign={onAssign}
-            onOpenSchedule={onOpenSchedule}
-          />
+          <div className="space-y-6">
+            <AssignedEvents events={events} />
+            <AssignedActivities
+              jornadas={jornadas}
+              items={filteredAssignedItems}
+              onOpenSchedule={onOpenSchedule}
+            />
+            <div className="flex justify-end">
+              <PremiumButton icon={<PlusCircle size={14} />} onClick={() => onAssign()}>Gerenciar Atividades</PremiumButton>
+            </div>
+          </div>
         )}
 
         {tab === "historico" && (
@@ -1034,12 +1051,10 @@ function SessionList({ sessions }: { sessions: DisplayUsageSession[] }) {
 function AssignedActivities({
   jornadas,
   items,
-  onAssign,
   onOpenSchedule,
 }: {
   jornadas: StudentJornada[];
   items: Array<{ jornada: StudentJornada; item: StudentJornadaScheduleItem; status: { label: string; cls: string } }>;
-  onAssign: () => void;
   onOpenSchedule: (jornada: StudentJornada) => void;
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -1054,19 +1069,16 @@ function AssignedActivities({
 
   if (jornadas.length === 0) {
     return (
-      <div className="flex min-h-44 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.08] bg-white/[0.025] text-center">
-        <Layers size={26} className="mb-3 text-white/30" />
-        <p className="text-sm font-semibold text-white/55">Nenhuma atividade atribuída.</p>
-        <PremiumButton className="mt-4" icon={<PlusCircle size={14} />} onClick={onAssign}>Gerenciar Atividades</PremiumButton>
+      <div className="flex min-h-32 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.08] bg-white/[0.025] text-center">
+        <Layers size={22} className="mb-2 text-white/30" />
+        <p className="text-sm font-semibold text-white/55">Nenhuma Jornada atribuída.</p>
       </div>
     );
   }
   const grouped = jornadas.map((jornada) => ({ jornada, items: items.filter(({ jornada: j }) => j.id === jornada.id) }));
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <PremiumButton variant="secondary" icon={<PlusCircle size={14} />} className="!py-1.5 !px-3 !text-xs" onClick={onAssign}>Gerenciar Atividades</PremiumButton>
-      </div>
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/40">Jornadas</p>
       {grouped.map(({ jornada, items: jornadaItems }) => {
         const title = jornada.jornadas?.title || "Jornada";
         const completed = jornada.schedule.filter((item) => item.status === "completed" || item.latest_result_finished_at || item.completed_at).length;
@@ -1130,6 +1142,48 @@ function AssignedActivities({
                 ))}
               </div>
             )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssignedEvents({ events }: { events: StudentEventParticipation[] }) {
+  if (events.length === 0) {
+    return (
+      <div className="flex min-h-32 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.08] bg-white/[0.025] text-center">
+        <CalendarClock size={22} className="mb-2 text-white/30" />
+        <p className="text-sm font-semibold text-white/55">Nenhum Evento atribuído.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/40">Eventos</p>
+      {events.map((se) => {
+        const event = se.simulado_events;
+        const situacao = se.attempts_count === 0
+          ? "Sem tentativa registrada"
+          : se.result_released_at
+            ? "Resultado disponível"
+            : "Aguardando liberação de resultado";
+        return (
+          <div key={se.id} className="rounded-[1.55rem] border border-white/[0.08] bg-gradient-to-br from-white/[0.045] to-orange-500/[0.025] p-4 shadow-lg shadow-black/10">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-base font-black text-white">{event?.name || "Evento"}</p>
+                <p className="mt-1 text-xs text-white/40">Entrada: {fmtDateTime(se.joined_at)}{event ? ` · Evento: ${fmtDateTime(event.starts_at)} — ${fmtDateTime(event.ends_at)}` : ""}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{event ? eventStatusLabel(event.effective_status) : "—"}</span>
+                <Link href={`/admin/eventos/${se.event_id}`}><PremiumButton variant="secondary" icon={<CalendarClock size={13} />} className="!py-1.5 !px-3 !text-xs">Ver Evento</PremiumButton></Link>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <SysMini label="Sua situação" value={situacao} />
+              <SysMini label="Tentativas" value={String(se.attempts_count)} />
+            </div>
           </div>
         );
       })}
@@ -1385,6 +1439,8 @@ export default function AlunoAdminDetalheClient({
   jornadas,
   availableJornadas,
   emailHistory,
+  studentEvents,
+  availableEvents,
 }: {
   student: StudentDetail;
   activityLog: ActivityLog[];
@@ -1393,6 +1449,8 @@ export default function AlunoAdminDetalheClient({
   jornadas: StudentJornada[];
   availableJornadas: AvailableJornada[];
   emailHistory: StudentEmailHistoryItem[];
+  studentEvents: StudentEventParticipation[];
+  availableEvents: AvailableEvent[];
 }) {
   const router = useRouter();
 
@@ -1431,6 +1489,12 @@ export default function AlunoAdminDetalheClient({
   const [selectedResendOption, setSelectedResendOption] = useState("");
   const [sendingResendEmail, setSendingResendEmail] = useState(false);
   const [localJornadas, setLocalJornadas] = useState<StudentJornada[]>(jornadas);
+  const [activitiesTab, setActivitiesTab] = useState<"jornadas" | "eventos">("jornadas");
+  const [localEvents, setLocalEvents] = useState<StudentEventParticipation[]>(studentEvents);
+  const [eventSearch, setEventSearch] = useState("");
+  const [addingEventId, setAddingEventId] = useState<string | null>(null);
+  const [removeEventTarget, setRemoveEventTarget] = useState<StudentEventParticipation | null>(null);
+  const [removingEvent, setRemovingEvent] = useState(false);
   const [deactivateModal, setDeactivateModal] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
   const [resetPasswordModal, setResetPasswordModal] = useState(false);
@@ -1440,6 +1504,11 @@ export default function AlunoAdminDetalheClient({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteDependencies, setDeleteDependencies] = useState<Array<{ type: string; count: number }> | null>(null);
+  const [hardDeleteModal, setHardDeleteModal] = useState(false);
+  const [hardDeletePassword, setHardDeletePassword] = useState("");
+  const [hardDeleteConfirmText, setHardDeleteConfirmText] = useState("");
+  const [hardDeleting, setHardDeleting] = useState(false);
+  const [hardDeleteError, setHardDeleteError] = useState<string | null>(null);
   const [approveModal, setApproveModal] = useState(false);
   const [approving, setApproving] = useState(false);
   const [reactivateModal, setReactivateModal] = useState(false);
@@ -1452,6 +1521,67 @@ export default function AlunoAdminDetalheClient({
       return jornadas.find((sj) => sj.id === current.id) ?? current;
     });
   }, [jornadas]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mesmo padrão já usado acima para sincronizar localJornadas após router.refresh()
+    setLocalEvents(studentEvents);
+  }, [studentEvents]);
+
+  const activeEventIds = new Set(localEvents.map((se) => se.event_id));
+  const assignableEvents = availableEvents.filter((event) =>
+    !activeEventIds.has(event.id) && (event.effective_status === "scheduled" || event.effective_status === "active"),
+  );
+  const filteredAssignableEvents = (() => {
+    const term = eventSearch.toLowerCase().trim();
+    if (!term) return assignableEvents;
+    return assignableEvents.filter((event) => event.name.toLowerCase().includes(term));
+  })();
+
+  async function handleAssignEvent(eventId: string) {
+    setAddingEventId(eventId);
+    setFeedback(null);
+    try {
+      const res = await adminFetch(`/api/admin/events/${eventId}/participants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: student.id }),
+      });
+      const data = (await res.json()) as { ok: boolean; message: string };
+      if (!data.ok) throw new Error(data.message || "Erro ao adicionar aluno ao Evento.");
+      setFeedback({ type: "success", message: data.message || "Aluno adicionado ao Evento com sucesso." });
+      setEventSearch("");
+      router.refresh();
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "Erro inesperado ao adicionar aluno ao Evento.",
+      });
+    } finally {
+      setAddingEventId(null);
+    }
+  }
+
+  async function handleRemoveEvent() {
+    if (!removeEventTarget) return;
+    setRemovingEvent(true);
+    setFeedback(null);
+    try {
+      const res = await adminFetch(`/api/admin/events/${removeEventTarget.event_id}/participants/${student.id}`, { method: "DELETE" });
+      const data = (await res.json()) as { ok: boolean; message: string };
+      if (!data.ok) throw new Error(data.message || "Erro ao remover aluno do Evento.");
+      setLocalEvents((current) => current.filter((se) => se.id !== removeEventTarget.id));
+      setFeedback({ type: "success", message: data.message || "A participação do aluno foi atualizada." });
+      setRemoveEventTarget(null);
+      router.refresh();
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "Erro inesperado ao remover aluno do Evento.",
+      });
+    } finally {
+      setRemovingEvent(false);
+    }
+  }
 
   const releasedSimuladoEmailOptions = localJornadas.flatMap((sj) =>
     sj.schedule
@@ -1656,6 +1786,32 @@ export default function AlunoAdminDetalheClient({
     }
   }
 
+  async function handleHardDelete() {
+    if (hardDeleteConfirmText.trim() !== "EXCLUIR" || !hardDeletePassword || hardDeleting) return;
+    setHardDeleting(true);
+    setHardDeleteError(null);
+    try {
+      const res = await adminFetch(`/api/admin/students/${student.id}/hard-delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: hardDeletePassword, confirmation: hardDeleteConfirmText.trim() }),
+      });
+      const data = (await res.json()) as { ok: boolean; message: string };
+      setHardDeletePassword("");
+      if (!data.ok) {
+        setHardDeleteError(data.message || "Não foi possível excluir o aluno definitivamente.");
+        return;
+      }
+      setHardDeleteModal(false);
+      router.push("/admin/alunos");
+      router.refresh();
+    } catch {
+      setHardDeletePassword("");
+      setHardDeleteError("Erro inesperado ao excluir o aluno definitivamente. Tente novamente.");
+    } finally {
+      setHardDeleting(false);
+    }
+  }
 
   async function handleSendResendEmail() {
     if (!selectedResendOption) {
@@ -2075,7 +2231,8 @@ export default function AlunoAdminDetalheClient({
               usageSessions={usageSessions}
               systemActivities={systemActivities}
               jornadas={localJornadas}
-              onAssign={() => setAssignModal(true)}
+              events={localEvents}
+              onAssign={(tab) => { setActivitiesTab(tab || "jornadas"); setAssignModal(true); }}
               onOpenSchedule={(sj) => {
                 setScheduleModalJornada(sj);
                 setAttemptDrafts(Object.fromEntries(sj.schedule.map((item) => [item.id, String(item.attempts_counting)])));
@@ -2174,7 +2331,7 @@ export default function AlunoAdminDetalheClient({
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Atividades</p>
                 <h2 className="mt-1 text-xl font-semibold text-white">Gerenciar Atividades do aluno</h2>
                 <p className="mt-1 text-sm text-white/40">
-                  Veja onde {student.name} está inserido, remova matrículas com confirmação ou inclua em novas Jornadas publicadas.
+                  Veja onde {student.name} está inserido, remova participações com confirmação ou inclua em novas Jornadas e Eventos.
                 </p>
               </div>
               <button
@@ -2186,6 +2343,24 @@ export default function AlunoAdminDetalheClient({
               </button>
             </div>
 
+            <div className="mb-5 flex gap-2 rounded-2xl border border-white/[0.07] bg-black/15 p-1.5">
+              <button
+                type="button"
+                onClick={() => setActivitiesTab("jornadas")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition ${activitiesTab === "jornadas" ? "bg-orange-500/15 text-orange-200" : "text-white/40 hover:text-white/70"}`}
+              >
+                <MapPin size={15} />Jornadas
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivitiesTab("eventos")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition ${activitiesTab === "eventos" ? "bg-orange-500/15 text-orange-200" : "text-white/40 hover:text-white/70"}`}
+              >
+                <CalendarClock size={15} />Eventos
+              </button>
+            </div>
+
+            {activitiesTab === "jornadas" && (
             <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
               <section className="rounded-[1.5rem] border border-white/[0.07] bg-white/[0.025] p-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -2305,6 +2480,141 @@ export default function AlunoAdminDetalheClient({
                 </div>
               </section>
             </div>
+            )}
+
+            {activitiesTab === "eventos" && (
+            <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+              <section className="rounded-[1.5rem] border border-white/[0.07] bg-white/[0.025] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Eventos atuais</h3>
+                    <p className="mt-1 text-xs text-white/35">Participações deste aluno em Eventos de Simulado.</p>
+                  </div>
+                  <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{localEvents.length}</span>
+                </div>
+
+                {localEvents.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/[0.08] bg-black/10 p-5 text-center text-sm text-white/38">
+                    Este aluno ainda não participa de nenhum Evento.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {localEvents.map((se) => {
+                      const event = se.simulado_events;
+                      const hasHistory = se.attempts_count > 0;
+                      return (
+                        <div key={se.id} className="rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-white">{event?.name || "Evento"}</p>
+                              <p className="mt-1 text-xs text-white/38">Entrada: {fmtDateTime(se.joined_at)}</p>
+                              {event && <p className="mt-1 text-xs text-white/32">Evento: {fmtDateTime(event.starts_at)} — {fmtDateTime(event.ends_at)}</p>}
+                            </div>
+                            <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{event ? eventStatusLabel(event.effective_status) : "—"}</span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <Link href={`/admin/eventos/${se.event_id}`}>
+                              <PremiumButton variant="secondary" icon={<CalendarClock size={13} />} className="!px-3 !py-1.5 !text-xs">Ver Evento</PremiumButton>
+                            </Link>
+                            {hasHistory ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-1.5 text-xs font-bold text-emerald-300"><ShieldCheck size={13} />Histórico preservado</span>
+                            ) : (
+                              <PremiumButton
+                                variant="danger"
+                                icon={<Ban size={13} />}
+                                className="!px-3 !py-1.5 !text-xs"
+                                onClick={() => setRemoveEventTarget(se)}
+                              >
+                                Remover
+                              </PremiumButton>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-[1.5rem] border border-orange-500/15 bg-orange-500/[0.035] p-4">
+                <div className="mb-4">
+                  <h3 className="text-sm font-bold text-white">Adicionar Evento</h3>
+                  <p className="mt-1 text-xs text-orange-200/55">Apenas Eventos agendados ou em andamento aceitam novos participantes.</p>
+                </div>
+
+                <div className="relative mb-3">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/25" />
+                  <input
+                    type="text"
+                    value={eventSearch}
+                    onChange={(e) => setEventSearch(e.target.value)}
+                    placeholder="Buscar Evento por nome..."
+                    className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] pl-9 pr-3 text-sm text-white outline-none transition duration-200 hover:border-white/[0.14] focus:border-orange-500/50"
+                  />
+                </div>
+
+                {filteredAssignableEvents.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.03] p-6 text-center text-sm text-white/40">
+                    Não há Evento elegível disponível para este aluno.
+                  </div>
+                ) : (
+                  <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                    {filteredAssignableEvents.map((event) => (
+                      <div key={event.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/15 p-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-white">{event.name}</p>
+                          <p className="mt-0.5 text-xs text-white/40">{eventStatusLabel(event.effective_status)} · {fmtDateTime(event.starts_at)}</p>
+                        </div>
+                        <PremiumButton
+                          icon={<UserPlus size={13} />}
+                          className="!shrink-0 !px-3 !py-1.5 !text-xs"
+                          disabled={addingEventId === event.id}
+                          onClick={() => void handleAssignEvent(event.id)}
+                        >
+                          {addingEventId === event.id ? "Adicionando…" : "Adicionar"}
+                        </PremiumButton>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-5">
+                  <PremiumButton variant="secondary" full onClick={() => setAssignModal(false)}>
+                    Fechar
+                  </PremiumButton>
+                </div>
+              </section>
+            </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Confirmar remoção de Evento */}
+      {removeEventTarget && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.10] to-transparent blur-[20px]" />
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">Confirmar remoção</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Remover aluno deste Evento?</h2>
+                <p className="mt-2 text-sm leading-6 text-white/45">
+                  {student.name} perderá o acesso ao Evento <span className="font-semibold text-white/75">{removeEventTarget.simulado_events?.name || "Evento"}</span>. Nenhum histórico pedagógico foi registrado por ele aqui — a remoção é segura.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => setRemoveEventTarget(null)} disabled={removingEvent}>
+                Voltar
+              </PremiumButton>
+              <PremiumButton variant="danger" full icon={<Ban size={15} />} onClick={handleRemoveEvent} disabled={removingEvent}>
+                {removingEvent ? "Removendo…" : "Remover do Evento"}
+              </PremiumButton>
+            </div>
           </div>
         </div>
       )}
@@ -2422,7 +2732,10 @@ export default function AlunoAdminDetalheClient({
               <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3.5">
                 <p className="flex items-center gap-2 text-sm font-semibold text-amber-300">
                   <AlertTriangle size={15} />
-                  Este aluno possui histórico e não pode ser excluído
+                  Este aluno possui histórico no sistema
+                </p>
+                <p className="mt-2 text-xs leading-5 text-amber-200/70">
+                  A exclusão convencional foi bloqueada para evitar perda acidental de dados.
                 </p>
                 <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-200/80">
                   {deleteDependencies.map((dep) => (
@@ -2432,7 +2745,7 @@ export default function AlunoAdminDetalheClient({
                   ))}
                 </ul>
                 <p className="mt-2 text-xs leading-5 text-amber-200/60">
-                  Nenhum dado foi alterado. Desative a conta para suspender o acesso preservando todo o histórico.
+                  Nenhum dado foi alterado. Desative a conta para suspender o acesso preservando todo o histórico, ou, se realmente desejar remover definitivamente este aluno, é possível excluir também todo o histórico associado à conta — esta operação é irreversível.
                 </p>
                 <PremiumButton
                   variant="secondary"
@@ -2443,6 +2756,15 @@ export default function AlunoAdminDetalheClient({
                   className="mt-3 !border-amber-400/30 !text-amber-200 hover:!border-amber-400/50 hover:!bg-amber-500/[0.10]"
                 >
                   {student.status === "inactive" ? "Aluno já desativado" : "Desativar em vez disso"}
+                </PremiumButton>
+                <PremiumButton
+                  variant="danger"
+                  full
+                  icon={<Trash2 size={15} />}
+                  onClick={() => { setDeleteModal(false); setHardDeletePassword(""); setHardDeleteConfirmText(""); setHardDeleteError(null); setHardDeleteModal(true); }}
+                  className="mt-2"
+                >
+                  Excluir aluno e todo o histórico
                 </PremiumButton>
               </div>
             )}
@@ -2486,6 +2808,104 @@ export default function AlunoAdminDetalheClient({
                   {deleting ? "Excluindo…" : "Excluir definitivamente"}
                 </PremiumButton>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Excluir aluno e todo o histórico (exclusão definitiva com dados) */}
+      {hardDeleteModal && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
+          <div className="relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/35 bg-[#0B1929] p-7 shadow-2xl">
+            <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.16] to-transparent blur-[20px]" />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/[0.14] text-red-300">
+                  <AlertTriangle size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">Ação irreversível e definitiva</p>
+                  <h2 className="mt-1 text-xl font-semibold text-white">Excluir aluno e todo o histórico</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!hardDeleting) { setHardDeleteModal(false); setHardDeletePassword(""); } }}
+                disabled={hardDeleting}
+                className="rounded-xl p-2 text-white/30 transition hover:bg-white/[0.06] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-4 text-sm leading-6 text-white/50">
+              Você está prestes a excluir permanentemente <span className="font-semibold text-white/80">{student.name}</span> e todos os dados relacionados a ele. Depois da confirmação, esta operação não poderá ser desfeita.
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-xs leading-5 text-white/50">
+              <p><span className="text-white/35">Nome:</span> {student.name}</p>
+              <p><span className="text-white/35">E-mail:</span> {student.email}</p>
+              <p><span className="text-white/35">CPF:</span> {maskCpf(student.cpf)}</p>
+            </div>
+
+            <ul className="mt-4 space-y-1.5 rounded-2xl border border-red-500/15 bg-red-500/[0.05] px-4 py-3 text-xs leading-5 text-red-200/75">
+              <li>• Esta exclusão removerá: cadastro, Jornadas, participações em Eventos, tentativas, respostas, resultados, TopCoins e demais dados associados.</li>
+              <li>• O usuário será removido do Supabase Auth — o e-mail poderá ser usado em um novo cadastro depois.</li>
+              <li>• Registros de auditoria e segurança do sistema (não pertencentes à conta) são preservados conforme a política de retenção.</li>
+            </ul>
+
+            {hardDeleteError && (
+              <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {hardDeleteError}
+              </div>
+            )}
+
+            <div className="mt-5">
+              <label htmlFor="hard-delete-password-input" className="text-xs font-semibold uppercase tracking-widest text-white/35">
+                Sua senha de administrador
+              </label>
+              <input
+                id="hard-delete-password-input"
+                type="password"
+                value={hardDeletePassword}
+                onChange={(event) => setHardDeletePassword(event.target.value)}
+                disabled={hardDeleting}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-red-400/60 disabled:opacity-50"
+              />
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="hard-delete-confirm-input" className="text-xs font-semibold uppercase tracking-widest text-white/35">
+                Digite <span className="text-red-300">EXCLUIR</span> para habilitar o botão final
+              </label>
+              <input
+                id="hard-delete-confirm-input"
+                type="text"
+                value={hardDeleteConfirmText}
+                onChange={(event) => setHardDeleteConfirmText(event.target.value)}
+                disabled={hardDeleting}
+                placeholder="EXCLUIR"
+                autoComplete="off"
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-red-400/60 disabled:opacity-50"
+              />
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="secondary" full onClick={() => { setHardDeleteModal(false); setHardDeletePassword(""); }} disabled={hardDeleting}>
+                Cancelar
+              </PremiumButton>
+              <PremiumButton
+                variant="danger"
+                full
+                icon={<Trash2 size={15} />}
+                onClick={handleHardDelete}
+                disabled={hardDeleting || hardDeleteConfirmText.trim() !== "EXCLUIR" || !hardDeletePassword}
+              >
+                {hardDeleting ? "Excluindo…" : "Excluir definitivamente"}
+              </PremiumButton>
             </div>
           </div>
         </div>

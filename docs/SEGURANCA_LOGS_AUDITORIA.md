@@ -58,6 +58,10 @@ Sistema: falhas críticas nas rotas instrumentadas, cron, envio de e-mail do cro
 
 IP, user-agent, identificadores e rotas são dados técnicos vinculáveis a pessoas. Recomenda-se retenção inicial de 180 dias para segurança/admin/sistema e alinhamento da atividade pedagógica à política do histórico do aluno. A retenção definitiva exige validação jurídica e operacional. Acesso deve permanecer restrito a administradores; exportações devem ser minimizadas e protegidas.
 
+## Exclusão definitiva de aluno (2026-08-21)
+
+`POST /api/admin/students/[id]/hard-delete` registra `student_hard_deleted` em `system_activity_logs` (sucesso) e `admin.hard_delete_wrong_password` em `security_event_logs` (senha do Admin incorreta). Os próprios logs de segurança/sistema/sessão do aluno excluído (`security_event_logs`, `system_activity_logs`, `system_error_logs`, `user_sessions`) **não são removidos** por essa operação — não possuem FK para `students`/`profiles` e permanecem sob a retenção de 180 dias já recomendada acima, referenciando um `actor_id` de conta já removida.
+
 ## Eventos deliberadamente não instrumentados
 
 - Cada resposta, clique, filtro ou navegação de interface.

@@ -1,8 +1,8 @@
 "use client";
 
-import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Archive, ArrowLeft, CalendarClock, CheckCircle2, ClipboardCopy, Copy, Loader2, Pencil, PlayCircle, RotateCcw, Save, Square, Unlock, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, Ban, CalendarClock, CheckCircle2, ClipboardCopy, Copy, Loader2, Pencil, PlayCircle, RotateCcw, Save, Search, ShieldCheck, Square, Unlock, UserPlus, X } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
@@ -28,6 +28,17 @@ type EventData = {
 
 type Simulado = { id: string; title: string };
 type Professor = { id: string; name: string; email: string; status: string };
+type Participant = {
+  id: string;
+  student_id: string;
+  joined_at: string;
+  source: string;
+  representative_attempt_id: string | null;
+  result_released_at: string | null;
+  attempts_count: number;
+  students: { id: string; name: string; email: string; status: string } | null;
+};
+type EligibleStudent = { id: string; name: string; email: string; status: string };
 
 type EditForm = {
   name: string;
@@ -80,6 +91,22 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
 
+  const [participants, setParticipants] = useState<Participant[] | null>(null);
+  const [eligibleStudents, setEligibleStudents] = useState<EligibleStudent[]>([]);
+  const [participantSearch, setParticipantSearch] = useState("");
+  const [addingParticipantId, setAddingParticipantId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Participant | null>(null);
+  const [removingParticipant, setRemovingParticipant] = useState(false);
+
+  const loadParticipants = useCallback(async () => {
+    const response = await adminFetch(`/api/admin/events/${id}/participants`);
+    const json = await response.json();
+    if (json.ok) {
+      setParticipants(json.participants || []);
+      setEligibleStudents(json.eligible_students || []);
+    }
+  }, [id]);
+
   const load = useCallback(async () => {
     const [eventResponse, simuladoResponse, professorResponse] = await Promise.all([
       adminFetch(`/api/admin/events/${id}`),
@@ -101,9 +128,48 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
+    const timer = window.setTimeout(() => { void load(); void loadParticipants(); }, 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [load, loadParticipants]);
+
+  const filteredEligibleStudents = useMemo(() => {
+    const term = participantSearch.toLowerCase().trim();
+    if (!term) return eligibleStudents;
+    return eligibleStudents.filter((student) => student.name.toLowerCase().includes(term) || student.email.toLowerCase().includes(term));
+  }, [eligibleStudents, participantSearch]);
+
+  async function addParticipant(studentId: string) {
+    setAddingParticipantId(studentId);
+    setMessage("");
+    try {
+      const response = await adminFetch(`/api/admin/events/${id}/participants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: studentId }),
+      });
+      const json = await response.json();
+      setMessage(json.message);
+      setIsError(!json.ok);
+      if (json.ok) { await Promise.all([load(), loadParticipants()]); setParticipantSearch(""); }
+    } finally {
+      setAddingParticipantId(null);
+    }
+  }
+
+  async function removeParticipant() {
+    if (!removeTarget) return;
+    setRemovingParticipant(true);
+    setMessage("");
+    try {
+      const response = await adminFetch(`/api/admin/events/${id}/participants/${removeTarget.student_id}`, { method: "DELETE" });
+      const json = await response.json();
+      setMessage(json.message);
+      setIsError(!json.ok);
+      if (json.ok) { await Promise.all([load(), loadParticipants()]); setRemoveTarget(null); }
+    } finally {
+      setRemovingParticipant(false);
+    }
+  }
 
   function updateForm<K extends keyof EditForm>(key: K, value: EditForm[K]) {
     setForm((current) => current ? { ...current, [key]: value } : current);
@@ -283,10 +349,108 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
         )}
 
         <section className="mt-8 rounded-[1.7rem] border border-white/10 bg-white/[0.05] p-6">
-          <div className="flex items-center gap-3"><CalendarClock className="text-orange-400" /><h2 className="text-xl font-black">Participantes</h2></div>
-          <p className="mt-3 text-slate-400">{event.simulado_event_participants.length} inscritos · {pending} resultados pendentes</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3"><CalendarClock className="text-orange-400" /><h2 className="text-xl font-black">Participantes</h2></div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-slate-300">{participants?.length ?? event.simulado_event_participants.length} inscritos · {pending} resultados pendentes</span>
+          </div>
+
+          <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4">
+              <h3 className="text-sm font-bold text-white">Participantes atuais</h3>
+              {!participants ? (
+                <p className="mt-4 text-sm text-slate-500">Carregando...</p>
+              ) : participants.length === 0 ? (
+                <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-500">Nenhum aluno participa deste Evento ainda.</p>
+              ) : (
+                <div className="mt-4 max-h-[420px] space-y-2.5 overflow-y-auto pr-1">
+                  {participants.map((participant) => {
+                    const hasHistory = participant.attempts_count > 0;
+                    return (
+                      <div key={participant.id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-white">{participant.students?.name || "Aluno"}</p>
+                            <p className="truncate text-xs text-slate-500">{participant.students?.email}</p>
+                            <p className="mt-1 text-[11px] text-slate-600">Entrou em {new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(participant.joined_at))} · {participant.source === "admin" ? "adicionado pelo Admin" : "link público"}</p>
+                          </div>
+                          {hasHistory ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-300"><ShieldCheck size={12} />Histórico preservado</span>
+                          ) : (
+                            <PremiumButton variant="danger" icon={<Ban size={13} />} className="!px-3 !py-1.5 !text-xs" onClick={() => setRemoveTarget(participant)}>Remover</PremiumButton>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-orange-500/15 bg-orange-500/[0.035] p-4">
+              <h3 className="text-sm font-bold text-white">Adicionar participante</h3>
+              <p className="mt-1 text-xs text-orange-200/55">Somente alunos ativos que ainda não participam deste Evento.</p>
+              <div className="relative mt-3">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={participantSearch}
+                  onChange={(event) => setParticipantSearch(event.target.value)}
+                  placeholder="Buscar por nome ou e-mail..."
+                  className="h-11 w-full rounded-xl border border-white/10 bg-black/20 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/50"
+                />
+              </div>
+              <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                {filteredEligibleStudents.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-center text-sm text-slate-500">Nenhum aluno disponível encontrado.</p>
+                ) : (
+                  filteredEligibleStudents.slice(0, 50).map((student) => (
+                    <div key={student.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/15 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-white">{student.name}</p>
+                        <p className="truncate text-xs text-slate-500">{student.email}</p>
+                      </div>
+                      <PremiumButton
+                        variant="dark-primary"
+                        icon={<UserPlus size={13} />}
+                        className="!shrink-0 !px-3 !py-1.5 !text-xs"
+                        disabled={addingParticipantId === student.id}
+                        onClick={() => void addParticipant(student.id)}
+                      >
+                        {addingParticipantId === student.id ? "Adicionando..." : "Adicionar"}
+                      </PremiumButton>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </section>
       </div>
+
+      {removeTarget && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 bg-[#0b1422] p-7 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">Confirmar remoção</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Remover aluno deste Evento?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  {removeTarget.students?.name} perderá o acesso a este Evento. Nenhum histórico pedagógico foi registrado por ele aqui — a remoção é segura.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="dark" full onClick={() => setRemoveTarget(null)} disabled={removingParticipant}>Voltar</PremiumButton>
+              <PremiumButton variant="danger" full icon={<Ban size={15} />} onClick={() => void removeParticipant()} disabled={removingParticipant}>
+                {removingParticipant ? "Removendo..." : "Remover do Evento"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

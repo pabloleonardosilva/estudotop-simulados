@@ -2078,4 +2078,19 @@ Aluno com `students.origin_event_id` preenchido e nenhuma `student_jornadas` ati
 
 ---
 
+# 78. Extensão — gerenciamento administrativo de alunos em Eventos (2026-08-21)
+
+O Admin passa a poder gerenciar participação em Evento pelos dois caminhos já usados para Jornada, sobre a mesma relação oficial (`simulado_event_participants`, sem tabela/coluna nova):
+
+- **Dentro do Evento** (`/admin/eventos/[id]`, seção Participantes): buscar aluno ativo, adicionar, listar participantes atuais, remover quando seguro.
+- **Dentro do perfil do aluno** (`/admin/alunos/[id]`, modal "Gerenciar Atividades", agora com abas Jornadas/Eventos): buscar Evento elegível, adicionar, listar Eventos atuais, remover quando seguro. A aba "Atividades atribuídas" do painel "Acompanhamento do aluno" também passou a listar os Eventos do aluno, ao lado das Jornadas.
+- Ambos os caminhos chamam a mesma API (`POST`/`DELETE /api/admin/events/[id]/participants[/studentId]`) — nenhuma regra duplicada.
+- Evento `scheduled` ou `active` (dentro da janela) aceita novo participante; `closed`/`archived` rejeita; reaberto volta a aceitar — reaproveita `effectiveEventStatus()`, a mesma função já usada pelo ingresso público.
+- Só aluno com `status = 'active'` pode ser adicionado administrativamente — sem aprovação automática de cadastro pendente, diferente da regra de Jornada (decisão explícita desta extensão).
+- Idempotente: nunca duplica participação, mesmo se o aluno for adicionado pelo Admin e depois abrir o link público.
+- Histórico pedagógico nunca é apagado: remoção só é permitida quando o participante não possui nenhuma `simulado_attempts` vinculada (`event_participant_id`, protegida por `ON DELETE RESTRICT` desde a criação da tabela). Com tentativa registrada, a remoção é bloqueada e a participação permanece.
+- **Pendência registrada, não implementada:** não existe hoje um estado de "participação cancelada com histórico preservado" para o aluno que já tem tentativa — a única ação disponível é manter a participação. Adicionar essa capacidade exigiria uma coluna nova em `simulado_event_participants`; não foi criada por não haver autorização explícita nesta entrega.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*

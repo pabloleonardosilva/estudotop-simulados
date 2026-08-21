@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
 import { getCorrectionVideoSource } from "@/lib/correction-video";
+import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import AlunoAdminDetalheClient from "./page-client";
 
 export type StudentDetail = {
@@ -141,6 +142,37 @@ export type AvailableJornada = {
   exam_date: string | null;
 };
 
+export type StudentEventParticipation = {
+  id: string;
+  event_id: string;
+  joined_at: string;
+  source: string;
+  representative_attempt_id: string | null;
+  result_released_at: string | null;
+  attempts_count: number;
+  simulado_events: {
+    id: string;
+    name: string;
+    status: string;
+    effective_status: string;
+    starts_at: string;
+    ends_at: string;
+    started_at: string | null;
+    simulado_id: string | null;
+  } | null;
+};
+
+export type AvailableEvent = {
+  id: string;
+  name: string;
+  status: string;
+  effective_status: string;
+  starts_at: string;
+  ends_at: string;
+  started_at: string | null;
+  simulado_id: string | null;
+};
+
 async function getData(id: string) {
   const supabase = createSupabaseAdminClient();
 
@@ -154,6 +186,8 @@ async function getData(id: string) {
     emailActivitiesRes,
     directEmailAuditsRes,
     relatedEmailAuditsRes,
+    eventParticipationsRes,
+    availableEventsRes,
   ] = await Promise.all([
     supabase
       .from("students")
@@ -238,6 +272,15 @@ async function getData(id: string) {
       .eq("action", "admin.student.simulado_release_email_resent")
       .contains("metadata", { student_id: id })
       .order("created_at", { ascending: false }),
+    supabase
+      .from("simulado_event_participants")
+      .select("id, event_id, joined_at, source, representative_attempt_id, result_released_at, simulado_events:event_id(id, name, status, starts_at, ends_at, started_at, simulado_id)")
+      .eq("student_id", id)
+      .order("joined_at", { ascending: false }),
+    supabase
+      .from("simulado_events")
+      .select("id, name, status, starts_at, ends_at, started_at, simulado_id")
+      .order("starts_at", { ascending: false }),
   ]);
 
   if (studentRes.error) throw new Error(studentRes.error.message);
@@ -250,6 +293,41 @@ async function getData(id: string) {
   const emailActivities = emailActivitiesRes.error ? [] : ((emailActivitiesRes.data || []) as ActivityLog[]);
   const directEmailAudits = directEmailAuditsRes.error ? [] : ((directEmailAuditsRes.data || []) as AdminEmailAudit[]);
   const relatedEmailAudits = relatedEmailAuditsRes.error ? [] : ((relatedEmailAuditsRes.data || []) as AdminEmailAudit[]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawEventParticipations = (eventParticipationsRes.data || []) as any[];
+  const participationIds = rawEventParticipations.map((row) => row.id);
+  const attemptsByParticipant = new Map<string, number>();
+  if (participationIds.length > 0) {
+    const { data: eventAttempts, error: eventAttemptsError } = await supabase
+      .from("simulado_attempts")
+      .select("id, event_participant_id")
+      .in("event_participant_id", participationIds);
+    if (eventAttemptsError) throw new Error(eventAttemptsError.message);
+    for (const attempt of eventAttempts || []) {
+      const key = String((attempt as { event_participant_id: string }).event_participant_id);
+      attemptsByParticipant.set(key, (attemptsByParticipant.get(key) || 0) + 1);
+    }
+  }
+
+  const studentEvents: StudentEventParticipation[] = rawEventParticipations.map((row) => {
+    const rawEvent = Array.isArray(row.simulado_events) ? row.simulado_events[0] : row.simulado_events;
+    return {
+      id: row.id,
+      event_id: row.event_id,
+      joined_at: row.joined_at,
+      source: row.source,
+      representative_attempt_id: row.representative_attempt_id,
+      result_released_at: row.result_released_at,
+      attempts_count: attemptsByParticipant.get(row.id) || 0,
+      simulado_events: rawEvent ? { ...rawEvent, effective_status: effectiveEventStatus(rawEvent) } : null,
+    };
+  });
+
+  const availableEvents: AvailableEvent[] = ((availableEventsRes.data || []) as Omit<AvailableEvent, "effective_status">[]).map((event) => ({
+    ...event,
+    effective_status: effectiveEventStatus(event),
+  }));
 
   const rawJornadas = (jornadasRes.data || []) as any[];
   const simuladoIds = Array.from(new Set(
@@ -548,7 +626,7 @@ async function getData(id: string) {
 
   emailHistory.sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
 
-  return { student, activityLog, jornadas, availableJornadas, usageSessions, systemActivities, emailHistory };
+  return { student, activityLog, jornadas, availableJornadas, usageSessions, systemActivities, emailHistory, studentEvents, availableEvents };
 }
 
 export default async function AlunoAdminDetalhePage({
@@ -571,6 +649,8 @@ export default async function AlunoAdminDetalhePage({
       jornadas={data.jornadas}
       availableJornadas={data.availableJornadas}
       emailHistory={data.emailHistory}
+      studentEvents={data.studentEvents}
+      availableEvents={data.availableEvents}
     />
   );
 }
