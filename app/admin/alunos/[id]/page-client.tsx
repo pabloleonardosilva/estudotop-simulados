@@ -13,6 +13,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   Clock3,
   Edit3,
   Eye,
@@ -1041,18 +1042,31 @@ function AssignedActivities({
   onAssign: () => void;
   onOpenSchedule: (jornada: StudentJornada) => void;
 }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  function toggleExpanded(jornadaId: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(jornadaId)) next.delete(jornadaId);
+      else next.add(jornadaId);
+      return next;
+    });
+  }
+
   if (jornadas.length === 0) {
     return (
       <div className="flex min-h-44 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.08] bg-white/[0.025] text-center">
         <Layers size={26} className="mb-3 text-white/30" />
         <p className="text-sm font-semibold text-white/55">Nenhuma atividade atribuída.</p>
-        <PremiumButton className="mt-4" icon={<PlusCircle size={14} />} onClick={onAssign}>Gerenciar Jornadas</PremiumButton>
+        <PremiumButton className="mt-4" icon={<PlusCircle size={14} />} onClick={onAssign}>Gerenciar Atividades</PremiumButton>
       </div>
     );
   }
   const grouped = jornadas.map((jornada) => ({ jornada, items: items.filter(({ jornada: j }) => j.id === jornada.id) }));
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <PremiumButton variant="secondary" icon={<PlusCircle size={14} />} className="!py-1.5 !px-3 !text-xs" onClick={onAssign}>Gerenciar Atividades</PremiumButton>
+      </div>
       {grouped.map(({ jornada, items: jornadaItems }) => {
         const title = jornada.jornadas?.title || "Jornada";
         const completed = jornada.schedule.filter((item) => item.status === "completed" || item.latest_result_finished_at || item.completed_at).length;
@@ -1062,6 +1076,7 @@ function AssignedActivities({
         const blocked = jornada.schedule.filter((item) => assignedStatus(item, jornada.status).label === "Bloqueado").length;
         const pct = jornada.schedule.length ? Math.round((completed / jornada.schedule.length) * 100) : 0;
         const jCfg = JORNADA_STATUS_CFG[jornada.status] ?? JORNADA_STATUS_CFG.cancelled;
+        const expanded = expandedIds.has(jornada.id);
         return (
           <div key={jornada.id} className="rounded-[1.55rem] border border-white/[0.08] bg-gradient-to-br from-white/[0.045] to-blue-500/[0.025] p-4 shadow-lg shadow-black/10">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1073,6 +1088,14 @@ function AssignedActivities({
                 <span className={`rounded-full border px-3 py-1 text-xs font-bold ${jCfg.cls}`}>{jCfg.label}</span>
                 <PremiumButton variant="secondary" icon={<ListChecks size={13} />} className="!py-1.5 !px-3 !text-xs" onClick={() => onOpenSchedule(jornada)}>Cronograma</PremiumButton>
                 <Link href={`/admin/jornadas/${jornada.jornada_id}`}><PremiumButton variant="secondary" icon={<MapPin size={13} />} className="!py-1.5 !px-3 !text-xs">Ver Jornada</PremiumButton></Link>
+                <PremiumButton
+                  variant="secondary"
+                  icon={expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  className="!py-1.5 !px-3 !text-xs"
+                  onClick={() => toggleExpanded(jornada.id)}
+                >
+                  {expanded ? "Recolher" : "Expandir"}
+                </PremiumButton>
               </div>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-5">
@@ -1082,29 +1105,31 @@ function AssignedActivities({
               <SysMini label="Bloqueados" value={String(blocked)} />
               <SysMini label="Progresso" value={`${pct}%`} />
             </div>
-            <div className="mt-4 space-y-2">
-              {jornadaItems.length === 0 ? <p className="text-xs text-white/35">Nenhum simulado encontrado com os filtros selecionados.</p> : jornadaItems.map(({ item, status }) => (
-                <div key={item.id} className="grid gap-3 rounded-[1.1rem] border border-white/[0.065] bg-black/10 p-3 md:grid-cols-[minmax(0,1fr)_180px_190px]">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-white/86">{String(item.order_number).padStart(2, "0")} · {item.title}</p>
-                    <p className="mt-1 text-xs text-white/38">Prevista: {fmtDate(item.scheduled_release_at)} · Liberada: {fmtDateTime(item.released_at)}</p>
-                    {(item.latest_attempt_started_at || item.latest_result_finished_at) && <p className="mt-1 text-xs text-white/38">Início: {fmtDateTime(item.latest_attempt_started_at)} · Conclusão: {fmtDateTime(item.latest_result_finished_at || item.completed_at)}</p>}
-                    <p className="mt-1 text-xs text-white/38">
-                      Vídeo de correção:{" "}
-                      <span className={item.correction_video_status === "watched" ? "font-bold text-emerald-300" : item.correction_video_status === "not_watched" ? "font-bold text-amber-300/80" : "text-white/32"}>
-                        {item.correction_video_status === "watched" ? "Assistiu" : item.correction_video_status === "not_watched" ? "Não assistiu" : "-"}
-                      </span>
-                    </p>
+            {expanded && (
+              <div className="mt-4 space-y-2">
+                {jornadaItems.length === 0 ? <p className="text-xs text-white/35">Nenhum simulado encontrado com os filtros selecionados.</p> : jornadaItems.map(({ item, status }) => (
+                  <div key={item.id} className="grid gap-3 rounded-[1.1rem] border border-white/[0.065] bg-black/10 p-3 md:grid-cols-[minmax(0,1fr)_180px_190px]">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white/86">{String(item.order_number).padStart(2, "0")} · {item.title}</p>
+                      <p className="mt-1 text-xs text-white/38">Prevista: {fmtDate(item.scheduled_release_at)} · Liberada: {fmtDateTime(item.released_at)}</p>
+                      {(item.latest_attempt_started_at || item.latest_result_finished_at) && <p className="mt-1 text-xs text-white/38">Início: {fmtDateTime(item.latest_attempt_started_at)} · Conclusão: {fmtDateTime(item.latest_result_finished_at || item.completed_at)}</p>}
+                      <p className="mt-1 text-xs text-white/38">
+                        Vídeo de correção:{" "}
+                        <span className={item.correction_video_status === "watched" ? "font-bold text-emerald-300" : item.correction_video_status === "not_watched" ? "font-bold text-amber-300/80" : "text-white/32"}>
+                          {item.correction_video_status === "watched" ? "Assistiu" : item.correction_video_status === "not_watched" ? "Não assistiu" : "-"}
+                        </span>
+                      </p>
+                    </div>
+                    <div><span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${status.cls}`}>{status.label}</span></div>
+                    <div className="text-xs text-white/45">
+                      {item.latest_result_percentage !== null ? <p>Nota: <strong className="text-emerald-300">{Math.round(item.latest_result_percentage)}%</strong></p> : <p>Nota: —</p>}
+                      <p>Tempo: {fmtSeconds(Number(item.latest_result_time_spent_seconds || 0))}</p>
+                      {item.latest_attempt_answered_count !== null && <p>Respostas: {item.latest_attempt_answered_count}/{item.latest_attempt_total_questions ?? "—"}</p>}
+                    </div>
                   </div>
-                  <div><span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${status.cls}`}>{status.label}</span></div>
-                  <div className="text-xs text-white/45">
-                    {item.latest_result_percentage !== null ? <p>Nota: <strong className="text-emerald-300">{Math.round(item.latest_result_percentage)}%</strong></p> : <p>Nota: —</p>}
-                    <p>Tempo: {fmtSeconds(Number(item.latest_result_time_spent_seconds || 0))}</p>
-                    {item.latest_attempt_answered_count !== null && <p>Respostas: {item.latest_attempt_answered_count}/{item.latest_attempt_total_questions ?? "—"}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -1912,7 +1937,7 @@ export default function AlunoAdminDetalheClient({
                 icon={<MapPin size={16} />}
                 onClick={() => { setAssignModal(true); setFeedback(null); }}
               >
-                Gerenciar Jornadas
+                Gerenciar Atividades
               </PremiumButton>
               <PremiumButton
                 className="!h-[46px] !rounded-[14px] !border-blue-300/30 !bg-[linear-gradient(180deg,rgba(18,35,57,0.96),rgba(10,24,42,0.96))] !px-[22px] !text-[13px] !font-bold !text-slate-100 !shadow-[0_10px_26px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] hover:!border-blue-200/45"
@@ -2138,7 +2163,7 @@ export default function AlunoAdminDetalheClient({
         </div>
       </div>
 
-      {/* Modal — Gerenciar Jornadas */}
+      {/* Modal — Gerenciar Atividades */}
       {assignModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
           <div className="relative isolate max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/[0.09] bg-[#0B1929] p-7 shadow-2xl">
@@ -2146,8 +2171,8 @@ export default function AlunoAdminDetalheClient({
 
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Jornadas</p>
-                <h2 className="mt-1 text-xl font-semibold text-white">Gerenciar Jornadas do aluno</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Atividades</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Gerenciar Atividades do aluno</h2>
                 <p className="mt-1 text-sm text-white/40">
                   Veja onde {student.name} está inserido, remova matrículas com confirmação ou inclua em novas Jornadas publicadas.
                 </p>

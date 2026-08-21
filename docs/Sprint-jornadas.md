@@ -826,3 +826,13 @@ A mudança é exclusivamente visual/UX em `app/minhas-jornadas/[id]/page-client.
 - Não são copiados: alunos matriculados, matrículas, cronogramas individuais, progresso, liberações, resultados ou qualquer registro de `student_jornadas`/`student_jornada_simulados`.
 - API criada: `POST /api/admin/jornadas/duplicate`.
 - Nenhuma migration é necessária.
+
+---
+
+## Correção — busca de aluno na Jornada e organização de Atividades atribuídas — 2026-08-21
+
+- Confirmado que o gerenciamento de Jornadas do aluno (modal, cancelamento com preservação de histórico, reinserção de matrícula cancelada) já estava implementado conforme documentado; não foi criado nenhum sistema paralelo.
+- Corrigida a apresentação da busca de aluno em `/admin/jornadas/[id]`: a filtragem já era correta, mas alimentava um `<select>` fechado sem retorno visual; passou a ser uma lista de resultados com ação por linha.
+- Adicionado toggle Expandir/Recolher por Jornada na aba "Atividades atribuídas" do perfil do aluno, para não exibir o cronograma completo de todas as Jornadas simultaneamente.
+- Renomeado "Gerenciar Jornadas" para "Gerenciar Atividades" no perfil do aluno (rótulo e cabeçalho do modal), mesma lógica e mesma API.
+- Nenhuma migration foi criada ou alterada.

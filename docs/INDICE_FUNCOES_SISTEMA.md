@@ -1553,6 +1553,7 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Simulados disponíveis no momento da matrícula são cobertos pelo e-mail consolidado e não geram avisos separados. Apenas liberações posteriores continuam enviando o e-mail individual de novo simulado.
 - Matrícula cancelada não bloqueia nova inserção: alunos com `student_jornadas.status = "cancelled"` voltam a aparecer nos fluxos de atribuição da mesma Jornada, e o `POST /api/admin/jornadas/[id]/students` deve reativar/recriar o cronograma dessa matrícula cancelada em vez de retornar duplicidade.
 - Perfil do aluno deve permitir gerenciar Jornadas em modal único: visualizar matrículas atuais, remover/cancelar matrícula com confirmação e inserir/reinserir o aluno em Jornadas publicadas disponíveis.
+- Em `/admin/jornadas/[id]`, a busca de aluno para atribuição usa filtragem client-side (case-insensitive, nome ou e-mail) exibida como lista de resultados com ação "Adicionar"/"Reinserir" por linha (2026-08-21) — não usa mais `<select>` nativo.
 - Perfil do aluno deve ter aba/seção de Jornadas.
 - Dentro da Jornada do aluno, deve exibir:
   - data de entrada;
@@ -1840,7 +1841,8 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 - Edição de dados cadastrais (nome, e-mail de acesso, telefone, CPF, concursos, observações)
 - Visualização e alteração de status de acesso (pending/active/blocked/inactive)
 - Jornadas inscritas com barra de progresso
-- Modal "Gerenciar Jornadas" com visualização das matrículas atuais, remoção/cancelamento com confirmação e inserção/reinserção em Jornadas publicadas
+- Modal "Gerenciar Atividades" (renomeado de "Gerenciar Jornadas" em 2026-08-21, mesma lógica) com visualização das matrículas atuais, remoção/cancelamento com confirmação e inserção/reinserção em Jornadas publicadas
+- Aba "Atividades atribuídas": cada Jornada em bloco próprio com toggle Expandir/Recolher para o cronograma completo (2026-08-21); botão "Gerenciar Atividades" fica visível mesmo quando o aluno já possui Jornadas
 - Histórico de atividades com timeline dark
 - Informações do sistema (último acesso, datas, status de e-mail de boas-vindas)
 
@@ -3501,7 +3503,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - **Tempo:** estado efetivo é derivado por `starts_at`, `ends_at`, `started_at` e status persistido, sempre apresentado como horário de Brasília. Não depende de cron para abrir ou encerrar efetivamente.
 - **Operação:** a migration foi executada manualmente pelo responsável no banco operacional em 2026-08-20.
 - **Duas camadas de rota pública:** além da lista de rotas públicas do `app/components/AppShell.tsx` (cliente), o `proxy.ts` (raiz do projeto, equivalente ao `middleware.ts` desta versão do Next.js) mantém sua própria lista e roda antes de qualquer página. `/evento/` foi adicionada a `proxy.ts` em 2026-08-21 — uma rota só é efetivamente pública quando presente nas duas listas.
-- **Cadastro por Evento com dois e-mails:** o aluno novo recebe apenas o e-mail de continuação (`eventContinueRegistrationTemplate`, `lib/email/studentRegistrationTemplates.ts`) e o e-mail de código (`publicRegistrationCodeTemplate`), ambos no mesmo shell escuro reutilizado das Jornadas. Não existe mais um terceiro e-mail de criação de senha para este fluxo.
+- **Cadastro por Evento com dois e-mails:** o aluno novo recebe apenas o e-mail de continuação (`eventContinueRegistrationTemplate`, `lib/email/studentRegistrationTemplates.ts`) e o e-mail de código (`publicRegistrationCodeTemplate`), ambos construídos com o `shell()` oficial exportado de `app/lib/email/jornadaEmailTemplates.ts` — o mesmo usado pela matrícula/liberação de Jornada (fundo claro, cabeçalho navy, eyebrow laranja). Não existe mais um terceiro e-mail de criação de senha para este fluxo.
 - **Senha na própria tela:** após o código correto, `POST /api/auth/confirm-registration` cria um token de `student_registration_confirmations` (`purpose: "first_access"`) e devolve o token bruto direto na resposta, sem enviar e-mail. `/cadastro` mostra a etapa "Crie sua senha" e envia esse token para `POST /api/auth/first-access` (endpoint já existente, reaproveitado sem alteração), aplicando a mesma `lib/auth/passwordPolicy.ts` de todo o sistema.
 - **Recuperação garantida:** `students.approved_at` é preenchido no momento da criação da conta por Evento, para que `POST /api/auth/forgot-password` funcione mesmo que o aluno feche o navegador antes de criar a senha inicial.
 - **Tela pós-e-mail clara:** `/evento/[slug]` alterna para um cartão de fundo claro depois do envio do e-mail de continuação, com e-mail parcialmente mascarado (`m***@dominio.com`), aviso sobre Spam/Promoções e ações de reenviar/trocar e-mail — mantendo o restante da página no visual escuro premium.

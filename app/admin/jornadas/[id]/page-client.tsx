@@ -34,7 +34,6 @@ import PremiumInput from "../../../components/ui/PremiumInput";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import PremiumLoadingOverlay from "../../../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../../../components/ui/PremiumModal";
-import PremiumSelect from "../../../components/ui/PremiumSelect";
 import type { AvailableStudent, Jornada, JornadaSimulado, StudentJornada } from "../types";
 import {
   calcReleaseSchedule,
@@ -82,7 +81,7 @@ export default function JornadaDetailClient({
   const [studentSearch, setStudentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [progressFilter, setProgressFilter] = useState<ProgressFilter>("all");
-  const [assigning, setAssigning] = useState(false);
+  const [assigningStudentId, setAssigningStudentId] = useState<string | null>(null);
 
   const [cancelTarget, setCancelTarget] = useState<StudentJornada | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -93,6 +92,11 @@ export default function JornadaDetailClient({
 
   const enrolledStudentIds = useMemo(
     () => new Set(studentJornadas.filter((sj) => sj.status !== "cancelled").map((sj) => sj.student_id)),
+    [studentJornadas],
+  );
+
+  const cancelledStudentIds = useMemo(
+    () => new Set(studentJornadas.filter((sj) => sj.status === "cancelled").map((sj) => sj.student_id)),
     [studentJornadas],
   );
 
@@ -170,17 +174,13 @@ export default function JornadaDetailClient({
     }
   }
 
-  async function handleAssign() {
-    if (!assignForm.student_id) {
-      setFeedback({ tone: "error", title: "Aluno obrigatório", message: "Selecione o aluno." });
-      return;
-    }
-    setAssigning(true);
+  async function handleAssign(studentId: string) {
+    setAssigningStudentId(studentId);
     try {
       const res = await adminFetch(`/api/admin/jornadas/${jornada.id}/students`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(assignForm),
+        body: JSON.stringify({ student_id: studentId, started_at: assignForm.started_at }),
       });
       const result = await res.json();
       if (!result.ok) throw new Error(result.message);
@@ -192,7 +192,7 @@ export default function JornadaDetailClient({
     } catch (err) {
       setFeedback({ tone: "error", title: "Erro ao atribuir", message: err instanceof Error ? err.message : "Erro inesperado." });
     } finally {
-      setAssigning(false);
+      setAssigningStudentId(null);
     }
   }
 
@@ -376,29 +376,46 @@ export default function JornadaDetailClient({
                 placeholder="Digite nome ou email…"
                 value={assignStudentSearch}
                 onChange={(e: any) => setAssignStudentSearch(e.target.value)}
+                autoFocus
               />
-              <PremiumSelect
-                label="Aluno"
-                value={assignForm.student_id}
-                onChange={(e: any) => setAssignForm((p) => ({ ...p, student_id: e.target.value }))}
-              >
-                <option value="">Selecione o aluno…</option>
-                {filteredAvailableStudents.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} — {s.email}</option>
-                ))}
-              </PremiumSelect>
               <PremiumInput
                 label="Data de início"
                 type="date"
                 value={assignForm.started_at}
                 onChange={(e: any) => setAssignForm((p) => ({ ...p, started_at: e.target.value }))}
               />
+
+              <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-white/[0.075] bg-white/[0.022] p-2">
+                {filteredAvailableStudents.length === 0 ? (
+                  <p className="px-3 py-6 text-center text-sm text-slate-500">
+                    {assignStudentSearch.trim() ? "Nenhum aluno encontrado para essa busca." : "Nenhum aluno disponível para atribuir."}
+                  </p>
+                ) : (
+                  filteredAvailableStudents.map((s) => {
+                    const reinsert = cancelledStudentIds.has(s.id);
+                    const isAssigning = assigningStudentId === s.id;
+                    return (
+                      <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-white">{s.name}</p>
+                          <p className="truncate text-xs text-slate-500">{s.email}{reinsert ? " · Matrícula cancelada — reinserir" : ""}</p>
+                        </div>
+                        <PremiumButton
+                          className="!shrink-0 !px-3 !py-1.5 !text-xs"
+                          icon={<UserPlus size={13} />}
+                          onClick={() => handleAssign(s.id)}
+                          disabled={assigningStudentId !== null}
+                        >
+                          {isAssigning ? "Adicionando…" : reinsert ? "Reinserir" : "Adicionar"}
+                        </PremiumButton>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            <div className="mt-7 flex gap-3">
-              <PremiumButton variant="secondary" full onClick={() => setAssignModal(false)}>Cancelar</PremiumButton>
-              <PremiumButton full icon={<CheckCircle2 size={16} />} onClick={handleAssign} disabled={assigning}>
-                {assigning ? "Incluindo…" : "Atribuir aluno"}
-              </PremiumButton>
+            <div className="mt-7">
+              <PremiumButton variant="secondary" full onClick={() => setAssignModal(false)}>Fechar</PremiumButton>
             </div>
           </div>
         </DarkOverlay>

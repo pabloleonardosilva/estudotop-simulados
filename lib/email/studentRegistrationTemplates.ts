@@ -1,3 +1,5 @@
+import { shell } from "@/app/lib/email/jornadaEmailTemplates";
+
 type PublicRegistrationCodeEmailProps = {
   studentName: string;
   code: string;
@@ -62,27 +64,20 @@ export function publicRegistrationCodeTemplate({
   code,
   expiresInMinutes,
 }: PublicRegistrationCodeEmailProps) {
-  return `${shellStart}
-                <h1 style="font-size:28px;line-height:1.25;margin:0;color:#ffffff;">Confirme seu cadastro</h1>
-                <p style="font-size:15px;line-height:1.7;color:#b8c2d8;margin:16px 0 0;">
-                  Olá, <strong style="color:#ffffff;">${studentName}</strong>. Use o código abaixo para confirmar seu cadastro na plataforma EstudoTOP Simulados.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:20px 34px;">
-                <div style="background:linear-gradient(135deg,rgba(247,199,107,0.14),rgba(255,107,0,0.08));border:1px solid rgba(247,199,107,0.30);border-radius:20px;padding:26px;text-align:center;">
-                  <p style="font-size:12px;color:#f7c76b;font-weight:800;margin:0 0 12px;letter-spacing:2px;text-transform:uppercase;">Código de confirmação</p>
-                  <div style="font-size:40px;letter-spacing:10px;font-weight:900;color:#ffffff;">${code}</div>
-                  <p style="font-size:13px;color:#aeb9d2;margin:16px 0 0;">Este código expira em ${expiresInMinutes} minutos. Não compartilhe este código com ninguém.</p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 34px 34px;">
-                <p style="font-size:14px;line-height:1.7;color:#b8c2d8;margin:0;">
-                  Depois da confirmação, seu cadastro ficará registrado para análise da equipe EstudoTOP.
-                </p>${shellEnd}`;
+  return shell(
+    "Confirme seu cadastro",
+    `Use o código abaixo para confirmar seu cadastro no EstudoTOP.`,
+    `
+    <p style="margin:0 0 18px;font-size:16px;line-height:1.65;">Olá, <strong>${escapeHtml(studentName)}</strong>!</p>
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">Use o código abaixo para confirmar seu cadastro na plataforma EstudoTOP Simulados.</p>
+    <div style="margin:22px 0;padding:22px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;text-align:center;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.16em;color:#ea580c;font-weight:800;">Código de confirmação</div>
+      <div style="margin:10px 0 0;font-size:36px;letter-spacing:8px;font-weight:900;color:#0f172a;">${code}</div>
+    </div>
+    <p style="margin:0;font-size:14px;line-height:1.7;color:#64748b;">Este código expira em ${expiresInMinutes} minutos. Não compartilhe este código com ninguém.</p>
+    <p style="margin:18px 0 0;font-size:15px;line-height:1.7;color:#334155;">Depois da confirmação, seu cadastro ficará registrado para análise da equipe EstudoTOP.</p>
+    `,
+  );
 }
 
 export function adminInviteConfirmationTemplate({
@@ -122,26 +117,18 @@ export function adminInviteConfirmationTemplate({
 
 export function eventContinueRegistrationTemplate({ eventName, continueUrl }: EventContinueRegistrationEmailProps) {
   const safeEventName = escapeHtml(eventName);
-  return `${shellStart}
-                <h1 style="font-size:28px;line-height:1.25;margin:0;color:#ffffff;">Continue sua inscrição no Evento</h1>
-                <p style="font-size:15px;line-height:1.7;color:#b8c2d8;margin:16px 0 0;">
-                  Recebemos uma solicitação para participar do Evento <strong style="color:#ffffff;">${safeEventName}</strong>. Clique no botão abaixo para continuar seu cadastro no EstudoTOP.
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:22px 34px 8px;">
-                <a href="${continueUrl}" style="display:inline-block;background:linear-gradient(135deg,#f7c76b,#ff6b00);color:#111827;text-decoration:none;font-weight:900;font-size:15px;padding:15px 28px;border-radius:999px;box-shadow:0 12px 30px rgba(247,199,107,0.25);">
-                  Continuar cadastro
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:8px 34px 34px;">
-                <p style="font-size:12px;line-height:1.6;color:#7f8aa3;margin:0;">
-                  Por segurança, este link possui validade limitada. Se o botão não funcionar, copie e cole este endereço no navegador:<br />
-                  <span style="color:#aeb9d2;word-break:break-all;">${continueUrl}</span>
-                </p>${shellEnd}`;
+  return shell(
+    "Continue sua inscrição no Evento",
+    `Continue sua inscrição no Evento ${eventName}.`,
+    `
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">Recebemos uma solicitação para participar do Evento <strong style="color:#0f172a;">${safeEventName}</strong>.</p>
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#334155;">Clique no botão abaixo para continuar seu cadastro no EstudoTOP.</p>
+    <div style="text-align:center;">
+      <a href="${continueUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Continuar cadastro</a>
+    </div>
+    <p style="margin:22px 0 0;font-size:13px;line-height:1.6;color:#64748b;">Por segurança, este link possui validade limitada. Se o botão não funcionar, copie e cole este endereço no navegador:<br /><span style="word-break:break-all;">${continueUrl}</span></p>
+    `,
+  );
 }
 
 export function eventContinueRegistrationPlainText({ eventName, continueUrl }: EventContinueRegistrationEmailProps) {

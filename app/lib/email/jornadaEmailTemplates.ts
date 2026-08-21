@@ -211,7 +211,7 @@ function statusLabel(status: string): string {
   return status || "—";
 }
 
-function shell(title: string, preheader: string, body: string): string {
+export function shell(title: string, preheader: string, body: string): string {
   return `
   <div style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>

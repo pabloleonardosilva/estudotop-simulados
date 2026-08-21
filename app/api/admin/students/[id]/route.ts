@@ -362,6 +362,21 @@ export async function DELETE(
       await supabase.from("student_registration_confirmations").delete().eq("email", studentEmail);
     }
 
+    // 1b. Participações em Evento sem tentativa real. simulado_event_participants.student_id
+    //     usa "on delete restrict" no banco; a verificação de tentativas acima já garante
+    //     que não existe tentativa real associada a este aluno, então é seguro remover.
+    const { error: eventParticipantsError } = await supabase
+      .from("simulado_event_participants")
+      .delete()
+      .eq("student_id", id)
+      .is("representative_attempt_id", null);
+    if (eventParticipantsError) {
+      return NextResponse.json(
+        { ok: false, message: "Falha ao limpar participações em Evento sem tentativa real. Nada essencial foi excluído." },
+        { status: 500 }
+      );
+    }
+
     // 2. Supabase Auth primeiro: se falhar, students/profiles permanecem intactos
     //    e visíveis no Admin (nunca produz conta invisível). Repetir a operação
     //    é seguro: cada camada trata "já não existe" como etapa concluída.
