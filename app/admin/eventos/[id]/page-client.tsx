@@ -44,6 +44,14 @@ function toDateTimeLocal(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatDurationHours(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours <= 0) return `${remainder}min`;
+  if (remainder === 0) return `${hours}h`;
+  return `${hours}h ${remainder}min`;
+}
+
 function formFromEvent(event: EventData): EditForm {
   return {
     name: event.name,
@@ -261,7 +269,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <SearchableSelect dark label="Simulado" value={form.simuladoId} onChange={(value) => updateForm("simuladoId", value)} options={simulados.map((item) => ({ value: item.id, label: item.title }))} placeholder="Selecione um simulado" />
               <PremiumInput variant="jornada" label="Início — horário de Brasília" type="datetime-local" value={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleStartChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={form.endsAt} min={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleEndChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
-              <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={form.durationMinutes} onChange={(change: ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(change.target.value))} premiumStepper onStep={handleDurationChange} required />
+              <PremiumInput variant="jornada" label={`Duração em minutos (${formatDurationHours(form.durationMinutes)})`} type="number" min={1} step={1} value={form.durationMinutes} onChange={(change: ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(change.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={form.resultPolicy} onChange={(change: ChangeEvent<HTMLSelectElement>) => updateForm("resultPolicy", change.target.value as EditForm["resultPolicy"])}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>

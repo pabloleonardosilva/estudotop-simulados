@@ -2,6 +2,16 @@ import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { shell } from "@/app/lib/email/jornadaEmailTemplates";
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
@@ -57,7 +67,7 @@ export async function sendFirstAccessEmail(
   }
 
   const passBlock = temporaryPassword
-    ? `<div style="margin:18px 0;padding:16px;border-radius:14px;background:#fff7ed;border:1px solid #fed7aa"><p style="margin:0 0 6px;font-size:13px;color:#9a3412;font-weight:700">Senha temporária</p><p style="margin:0;font-size:22px;letter-spacing:1px;font-weight:800;color:#111827">${temporaryPassword}</p><p style="margin:8px 0 0;font-size:12px;color:#9a3412">O aluno deverá trocar essa senha no próximo acesso.</p></div>`
+    ? `<div style="margin:0 0 18px;padding:16px 18px;border-radius:14px;background:#fff7ed;border:1px solid #fed7aa;"><p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#ea580c;font-weight:800;">Senha temporária</p><p style="margin:0;font-size:19px;letter-spacing:1px;font-weight:800;color:#0f172a;">${escapeHtml(temporaryPassword)}</p><p style="margin:8px 0 0;font-size:12px;color:#9a3412;">O aluno deverá trocar essa senha no próximo acesso.</p></div>`
     : "";
 
   const resend = new Resend(resendApiKey);
@@ -73,16 +83,18 @@ export async function sendFirstAccessEmail(
     subject: options?.preserveAccountStatus
       ? `Redefinição de senha solicitada em ${resetRequestedAt}`
       : "Acesso ao EstudoTOP Simulados — defina sua senha",
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;padding:28px;color:#111827">
-        <p style="font-size:12px;letter-spacing:3px;text-transform:uppercase;color:#f97316;font-weight:800">EstudoTOP Simulados</p>
-        <h1 style="margin:8px 0 12px;font-size:26px">Olá, ${student.name || "aluno"}.</h1>
-        <p style="font-size:15px;line-height:1.6;color:#475569">Seu acesso foi atualizado. Use o botão abaixo para definir uma nova senha pessoal.</p>
+    html: shell(
+      "Defina sua senha",
+      "Seu acesso ao EstudoTOP Simulados foi atualizado.",
+      `
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">Olá, <strong style="color:#0f172a;">${escapeHtml(student.name || "aluno")}</strong>. Seu acesso foi atualizado. Use o botão abaixo para definir uma nova senha pessoal.</p>
         ${passBlock}
-        <p style="margin:24px 0"><a href="${firstAccessUrl}" style="display:inline-block;background:#f97316;color:#111827;text-decoration:none;font-weight:800;padding:14px 20px;border-radius:14px">Definir nova senha</a></p>
-        <p style="font-size:12px;line-height:1.5;color:#64748b">Este link expira em ${FIRST_ACCESS_EXPIRATION_HOURS} horas. Se você não solicitou essa alteração, ignore este e-mail.</p>
-      </div>
-    `,
+        <div style="text-align:center;">
+          <a href="${firstAccessUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Definir nova senha</a>
+        </div>
+        <p style="margin:22px 0 0;font-size:12px;line-height:1.6;color:#64748b;">Este link expira em ${FIRST_ACCESS_EXPIRATION_HOURS} horas. Se você não solicitou essa alteração, ignore este e-mail.</p>
+      `,
+    ),
   });
 
   if (emailError) {

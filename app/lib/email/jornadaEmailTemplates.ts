@@ -5,116 +5,31 @@ type JornadaEnrollmentParams = {
 };
 
 export function jornadaEnrollmentTemplate({ studentName, jornadaTitle, studentAreaUrl }: JornadaEnrollmentParams): string {
-  const greeting = studentName ? `Olá, ${studentName}!` : "Olá!";
+  const greeting = studentName ? `Olá, ${escapeHtml(studentName)}!` : "Olá!";
 
   const ctaButton = studentAreaUrl
-    ? `
-                  <div style="margin:28px 0 0;text-align:center;">
-                    <a href="${studentAreaUrl}" style="display:inline-block;background:linear-gradient(90deg,#f97316,#facc15);color:#111827;text-decoration:none;font-weight:900;font-size:15px;padding:15px 28px;border-radius:999px;box-shadow:0 12px 30px rgba(249,115,22,0.25);">
-                      Acessar minha área do aluno
-                    </a>
-                  </div>`
+    ? `<div style="margin:28px 0 0;text-align:center;"><a href="${studentAreaUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Acessar minha área do aluno</a></div>`
     : "";
 
-  return `
-  <!doctype html>
-  <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>🦉 Você foi inserido(a) em uma Jornada de Simulados!</title>
-    </head>
-    <body style="margin:0;padding:0;background:#f6f8fc;font-family:Arial,Helvetica,sans-serif;color:#172033;-webkit-font-smoothing:antialiased;">
-      <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-        Você foi inserido(a) na Jornada ${jornadaTitle}. Acesse a plataforma e acompanhe sua evolução.
+  return shell(
+    "Temos uma ótima notícia!",
+    `Você foi inserido(a) na Jornada ${jornadaTitle}. Acesse a plataforma e acompanhe sua evolução.`,
+    `
+      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;">${greeting}</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Você acaba de ser inserido(a) na jornada:</p>
+      <div style="margin:0 0 22px;padding:20px;border-radius:18px;background:#0f172a;color:#fff;text-align:center;">
+        <p style="margin:0;font-size:19px;font-weight:900;">🎯 ${escapeHtml(jornadaTitle)}</p>
       </div>
-
-      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f8fc;padding:34px 14px;">
-        <tr>
-          <td align="center">
-            <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border:1px solid #e6edf6;border-radius:28px;overflow:hidden;box-shadow:0 22px 70px rgba(15,23,42,0.10);">
-              <tr>
-                <td style="height:7px;background:linear-gradient(90deg,#f97316,#facc15,#f97316);"></td>
-              </tr>
-
-              <tr>
-                <td style="padding:42px 40px 28px;text-align:center;background:#ffffff;">
-                  <div style="display:inline-block;margin-bottom:18px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;padding:9px 16px;font-size:11px;line-height:1;letter-spacing:3px;text-transform:uppercase;color:#c2410c;font-weight:800;">
-                    EstudoTOP Simulados
-                  </div>
-
-                  <h1 style="margin:0;font-size:34px;line-height:1.18;color:#0f172a;font-weight:900;letter-spacing:-0.8px;">
-                    🦉 Temos uma ótima notícia!
-                  </h1>
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:0 40px 42px;background:#ffffff;">
-                  <div style="height:1px;background:#eef2f7;margin:0 0 30px;"></div>
-
-                  <p style="margin:0 0 20px;font-size:17px;line-height:1.85;color:#111827;font-weight:800;">
-                    ${greeting}
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Você acaba de ser inserido(a) na jornada:
-                  </p>
-
-                  <div style="margin:0 0 28px;border-radius:20px;background:#fff7ed;border:1px solid #fed7aa;padding:21px 23px;text-align:center;">
-                    <p style="margin:0;font-size:19px;line-height:1.5;color:#0f172a;font-weight:900;">
-                      🎯 ${jornadaTitle}
-                    </p>
-                  </div>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    A partir de agora, você já pode acessar a plataforma <strong style="color:#0f172a;">EstudoTOP Simulados</strong> e acompanhar sua evolução dentro dessa jornada.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:17px;line-height:1.85;color:#111827;font-weight:800;">
-                    Mas afinal, o que é uma Jornada de Simulados?
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Uma jornada é um programa de treinamento composto por diversos simulados organizados de forma estratégica ao longo do tempo. Conforme a programação definida para a jornada, novos simulados serão liberados gradualmente para que você possa acompanhar seu desempenho, identificar oportunidades de melhoria e evoluir de forma consistente até a sua prova.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    📌 Todas as informações sobre sua jornada, simulados disponíveis, datas de liberação, resultados e relatórios de desempenho estão disponíveis dentro da plataforma.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Agora é só acessar sua área do aluno e iniciar sua preparação.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Desejamos muito sucesso nesta nova etapa da sua caminhada rumo à aprovação!
-                  </p>
-
-                  <p style="margin:0 0 6px;font-size:16px;line-height:1.85;color:#334155;">
-                    Conte conosco.
-                  </p>
-
-                  <p style="margin:0 0 4px;font-size:16px;line-height:1.85;color:#0f172a;font-weight:900;">
-                    Equipe EstudoTOP
-                  </p>
-
-                  <p style="margin:0;font-size:14px;line-height:1.85;color:#64748b;">
-                    www.estudotop.com.br
-                  </p>
-                  ${ctaButton}
-                </td>
-              </tr>
-            </table>
-
-            <p style="max-width:620px;margin:22px auto 0;font-size:12px;line-height:1.7;color:#94a3b8;text-align:center;">
-              EstudoTOP Simulados — Plataforma de preparação para concursos públicos.
-            </p>
-          </td>
-        </tr>
-      </table>
-    </body>
-  </html>`;
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">A partir de agora, você já pode acessar a plataforma <strong style="color:#0f172a;">EstudoTOP Simulados</strong> e acompanhar sua evolução dentro dessa jornada.</p>
+      <h2 style="font-size:18px;margin:26px 0 10px;color:#0f172a;">Mas afinal, o que é uma Jornada de Simulados?</h2>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Uma jornada é um programa de treinamento composto por diversos simulados organizados de forma estratégica ao longo do tempo. Conforme a programação definida para a jornada, novos simulados serão liberados gradualmente para que você possa acompanhar seu desempenho, identificar oportunidades de melhoria e evoluir de forma consistente até a sua prova.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">📌 Todas as informações sobre sua jornada, simulados disponíveis, datas de liberação, resultados e relatórios de desempenho estão disponíveis dentro da plataforma.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Agora é só acessar sua área do aluno e iniciar sua preparação.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Desejamos muito sucesso nesta nova etapa da sua caminhada rumo à aprovação!</p>
+      <p style="margin:0;font-size:15px;line-height:1.7;color:#334155;">Conte conosco.<br /><strong style="color:#0f172a;">Equipe EstudoTOP</strong></p>
+      ${ctaButton}
+    `,
+  );
 }
 
 export function jornadaEnrollmentPlainText(studentName: string, jornadaTitle: string): string {
@@ -468,138 +383,37 @@ export function simuladoReleasedTemplate(params: ReleasedParams): string {
   const greeting = params.studentName ? `Olá, ${escapeHtml(params.studentName)}!` : "Olá!";
 
   const scheduleSection = params.schedule?.length
-    ? `
-                  <div style="margin:30px 0 0;">
-                    <p style="margin:0 0 14px;font-size:17px;line-height:1.6;color:#111827;font-weight:900;">
-                      Cronograma da sua jornada
-                    </p>
-                    ${scheduleTable(params.schedule)}
-                  </div>`
+    ? `<h2 style="font-size:18px;margin:26px 0 12px;color:#0f172a;">Cronograma da sua jornada</h2>${scheduleTable(params.schedule)}`
     : "";
 
-  return `
-  <!doctype html>
-  <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>🎯 Novo simulado liberado!</title>
-    </head>
-    <body style="margin:0;padding:0;background:#f6f8fc;font-family:Arial,Helvetica,sans-serif;color:#172033;-webkit-font-smoothing:antialiased;">
-      <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-        O simulado ${escapeHtml(params.simuladoTitle)} foi liberado na Jornada ${escapeHtml(params.jornadaTitle)}.
+  return shell(
+    "Novo simulado disponível!",
+    `O simulado ${params.simuladoTitle} foi liberado na Jornada ${params.jornadaTitle}.`,
+    `
+      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;">${greeting}</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Temos uma novidade para você! 🎯</p>
+      <p style="margin:0 0 10px;font-size:15px;line-height:1.7;color:#334155;">O simulado:</p>
+      <div style="margin:0 0 18px;padding:18px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;text-align:center;">
+        <p style="margin:0;font-size:18px;font-weight:900;color:#0f172a;">📚 ${escapeHtml(params.simuladoTitle)}</p>
+        <p style="margin:6px 0 0;color:#64748b;font-size:13px;">Simulado ${params.position} de ${params.total || params.position}</p>
       </div>
-
-      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f6f8fc;padding:34px 14px;">
-        <tr>
-          <td align="center">
-            <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#ffffff;border:1px solid #e6edf6;border-radius:28px;overflow:hidden;box-shadow:0 22px 70px rgba(15,23,42,0.10);">
-              <tr>
-                <td style="height:7px;background:linear-gradient(90deg,#f97316,#facc15,#f97316);"></td>
-              </tr>
-
-              <tr>
-                <td style="padding:42px 40px 28px;text-align:center;background:#ffffff;">
-                  <div style="display:inline-block;margin-bottom:18px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;padding:9px 16px;font-size:11px;line-height:1;letter-spacing:3px;text-transform:uppercase;color:#c2410c;font-weight:800;">
-                    EstudoTOP Simulados
-                  </div>
-
-                  <h1 style="margin:0;font-size:34px;line-height:1.18;color:#0f172a;font-weight:900;letter-spacing:-0.8px;">
-                    🎯 Novo simulado liberado!
-                  </h1>
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:0 40px 42px;background:#ffffff;">
-                  <div style="height:1px;background:#eef2f7;margin:0 0 30px;"></div>
-
-                  <p style="margin:0 0 20px;font-size:17px;line-height:1.85;color:#111827;font-weight:800;">
-                    ${greeting}
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Temos uma novidade para você! 🎯
-                  </p>
-
-                  <p style="margin:0 0 12px;font-size:16px;line-height:1.85;color:#334155;">
-                    O simulado:
-                  </p>
-
-                  <div style="margin:0 0 24px;border-radius:20px;background:#fff7ed;border:1px solid #fed7aa;padding:20px 23px;text-align:center;">
-                    <p style="margin:0;font-size:19px;line-height:1.5;color:#0f172a;font-weight:900;">
-                      📚 ${escapeHtml(params.simuladoTitle)}
-                    </p>
-                    <p style="margin:7px 0 0;color:#64748b;font-size:14px;line-height:1.6;">
-                      Simulado ${params.position} de ${params.total || params.position}
-                    </p>
-                  </div>
-
-                  <p style="margin:0 0 12px;font-size:16px;line-height:1.85;color:#334155;">
-                    pertencente à jornada:
-                  </p>
-
-                  <div style="margin:0 0 24px;border-radius:20px;background:#f8fafc;border:1px solid #e2e8f0;padding:20px 23px;text-align:center;">
-                    <p style="margin:0;font-size:19px;line-height:1.5;color:#0f172a;font-weight:900;">
-                      🚀 ${escapeHtml(params.jornadaTitle)}
-                    </p>
-                  </div>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    acaba de ser liberado em sua área do aluno.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Este é mais um passo importante dentro da sua preparação e uma excelente oportunidade para testar seus conhecimentos, identificar pontos de melhoria e acompanhar sua evolução.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Lembre-se de que os simulados fazem parte de um planejamento pensado para ajudá-lo(a) a chegar cada vez mais preparado(a) ao dia da prova.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    📌 Todas as informações sobre sua jornada, simulados disponíveis, cronograma, resultados e relatórios de desempenho podem ser consultadas diretamente na plataforma.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Acesse sua área do aluno e confira o novo conteúdo liberado para você.
-                  </p>
-
-                  <p style="margin:0 0 20px;font-size:16px;line-height:1.85;color:#334155;">
-                    Desejamos uma excelente prova e muito sucesso em sua preparação!
-                  </p>
-
-                  <p style="margin:0 0 6px;font-size:16px;line-height:1.85;color:#334155;">
-                    Conte sempre conosco.
-                  </p>
-
-                  <p style="margin:0 0 4px;font-size:16px;line-height:1.85;color:#0f172a;font-weight:900;">
-                    Equipe EstudoTOP
-                  </p>
-
-                  <div style="margin:30px 0 0;text-align:center;">
-                    <a href="${params.simuladoUrl}" style="display:inline-block;background:linear-gradient(90deg,#f97316,#facc15);color:#111827;text-decoration:none;font-weight:900;font-size:15px;padding:15px 28px;border-radius:999px;box-shadow:0 12px 30px rgba(249,115,22,0.25);">
-                      Acessar simulado liberado
-                    </a>
-                  </div>
-
-                  <div style="margin:22px 0 0;padding:15px 18px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:14px;line-height:1.7;text-align:center;">
-                    Acesso à Jornada até: <strong style="color:#0f172a;">${formatDate(params.expiresAt)}</strong>
-                  </div>
-
-                  ${scheduleSection}
-                </td>
-              </tr>
-            </table>
-
-            <p style="max-width:620px;margin:22px auto 0;font-size:12px;line-height:1.7;color:#94a3b8;text-align:center;">
-              EstudoTOP Simulados — Plataforma de preparação para concursos públicos.
-            </p>
-          </td>
-        </tr>
-      </table>
-    </body>
-  </html>`;
+      <p style="margin:0 0 10px;font-size:15px;line-height:1.7;color:#334155;">pertencente à jornada:</p>
+      <div style="margin:0 0 18px;padding:18px;border-radius:18px;background:#0f172a;color:#fff;text-align:center;">
+        <p style="margin:0;font-size:18px;font-weight:900;">🚀 ${escapeHtml(params.jornadaTitle)}</p>
+      </div>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">acaba de ser liberado em sua área do aluno.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Este é mais um passo importante dentro da sua preparação e uma excelente oportunidade para testar seus conhecimentos, identificar pontos de melhoria e acompanhar sua evolução.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">Lembre-se de que os simulados fazem parte de um planejamento pensado para ajudá-lo(a) a chegar cada vez mais preparado(a) ao dia da prova.</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#334155;">📌 Todas as informações sobre sua jornada, simulados disponíveis, cronograma, resultados e relatórios de desempenho podem ser consultadas diretamente na plataforma.</p>
+      <div style="margin-top:24px;text-align:center;">
+        <a href="${params.simuladoUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Acessar simulado liberado</a>
+      </div>
+      <div style="margin:22px 0 0;padding:14px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:13px;text-align:center;">
+        Acesso à Jornada até: <strong style="color:#0f172a;">${formatDate(params.expiresAt)}</strong>
+      </div>
+      ${scheduleSection}
+    `,
+  );
 }
 
 export function simuladoReleasedPlainText(params: ReleasedParams): string {

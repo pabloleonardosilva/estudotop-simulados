@@ -8,11 +8,30 @@ import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
 
-type EventRow = { id: string; name: string; public_slug: string; registration_url: string | null; effective_status: string; starts_at: string; ends_at: string; result_policy: string; simulados?: { title?: string } | null };
+type EventRow = { id: string; name: string; public_slug: string; registration_url: string | null; effective_status: string; starts_at: string; ends_at: string; duration_minutes: number; result_policy: string; simulados?: { title?: string } | null };
 type Simulado = { id: string; title: string };
 type Professor = { id: string; name: string; email: string; status: string };
 
 const DEFAULT_DURATION_MINUTES = 120;
+
+const eventStatusBadge: Record<string, { label: string; className: string }> = {
+  scheduled: { label: "Agendado", className: "border-blue-500/20 bg-blue-500/10 text-blue-300" },
+  active: { label: "Em andamento", className: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" },
+  closed: { label: "Encerrado", className: "border-amber-500/20 bg-amber-500/10 text-amber-300" },
+  archived: { label: "Arquivado", className: "border-slate-500/20 bg-slate-500/10 text-slate-300" },
+};
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatDurationHours(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours <= 0) return `${remainder}min`;
+  if (remainder === 0) return `${hours}h`;
+  return `${hours}h ${remainder}min`;
+}
 
 function toDateTimeLocal(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -200,7 +219,7 @@ export default function EventosAdminClient() {
         )}
 
         <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {events.map((event) => <article key={event.id} className="rounded-[1.7rem] border border-white/10 bg-white/[0.05] p-6"><CalendarClock className="text-orange-400" /><h2 className="mt-4 text-xl font-black">{event.name}</h2><p className="mt-2 text-sm text-slate-400">{event.simulados?.title || "Sem Simulado"} · {event.effective_status}</p>{!event.simulados && <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">Configuração incompleta: vincule um Simulado antes de iniciar.</div>}<div className="mt-5 flex items-center gap-2"><PremiumButton href={`/admin/eventos/${event.id}`} variant="dark-primary">Gerenciar</PremiumButton><PremiumButton variant="dark" onClick={() => void copyRegistrationLink(event.registration_url)} className="h-10 w-10 !rounded-xl !p-0" icon={<Link2 size={17} />}><span className="sr-only">Copiar link de cadastro pro evento</span></PremiumButton></div></article>)}
+          {events.map((event) => { const badge = eventStatusBadge[event.effective_status] || { label: event.effective_status, className: "border-slate-500/20 bg-slate-500/10 text-slate-300" }; return <article key={event.id} className="rounded-[1.7rem] border border-white/10 bg-white/[0.05] p-6"><div className="flex items-start justify-between gap-3"><CalendarClock className="text-orange-400" /><span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${badge.className}`}>{badge.label}</span></div><h2 className="mt-4 text-xl font-black">{event.name}</h2><p className="mt-2 text-sm text-slate-400">{event.simulados?.title || "Sem Simulado"}</p><div className="mt-3 space-y-1 text-xs text-slate-500"><p>Início: <span className="text-slate-300">{formatDateTime(event.starts_at)}</span></p><p>Término: <span className="text-slate-300">{formatDateTime(event.ends_at)}</span></p><p>Duração: <span className="text-slate-300">{formatDurationHours(event.duration_minutes)}</span></p></div>{!event.simulados && <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">Configuração incompleta: vincule um Simulado antes de iniciar.</div>}<div className="mt-5 flex items-center gap-2"><PremiumButton href={`/admin/eventos/${event.id}`} variant="dark-primary">Gerenciar</PremiumButton><PremiumButton variant="dark" onClick={() => void copyRegistrationLink(event.registration_url)} className="h-10 w-10 !rounded-xl !p-0" icon={<Link2 size={17} />}><span className="sr-only">Copiar link de cadastro pro evento</span></PremiumButton></div></article>; })}
         </div>
       </div>
     </main>

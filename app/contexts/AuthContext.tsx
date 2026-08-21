@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase/client";
 
@@ -15,11 +16,21 @@ type Profile = {
   avatar_url: string | null;
 };
 
+// Deriva dinamicamente, a partir das relações reais do aluno (Jornadas
+// matriculadas + origem de cadastro), se os menus "Jornadas"/"Simulados" e o
+// tutorial inicial das Corujas devem aparecer. Fonte única (evita requisições
+// duplicadas em Header, Sidebar e AppShell — ver docs/Sprint-evento-de-simulado.md).
+type StudentNavAccess = {
+  hasJornadas: boolean;
+  hasEventOrigin: boolean;
+};
+
 type AuthContextType = {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  studentNavAccess: StudentNavAccess | null;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -32,9 +43,11 @@ function isMissingAvatarColumnError(error: { code?: string; message?: string } |
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [studentNavAccess, setStudentNavAccess] = useState<StudentNavAccess | null>(null);
   const sessionUserIdRef = useRef<string | null>(null);
   const profileRef = useRef<Profile | null>(null);
 
@@ -89,6 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    setStudentNavAccess(null);
   }, []);
 
   useEffect(() => {
@@ -132,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (event === "SIGNED_OUT" || !newUserId) {
         setProfile(null);
+        setStudentNavAccess(null);
         setLoading(false);
         return;
       }
@@ -166,16 +181,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadProfile]);
 
+  useEffect(() => {
+    if (!session?.access_token || profile?.role !== "student") return;
+
+    let cancelled = false;
+
+    fetch("/api/student/nav-access", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then((response) => response.json())
+      .then((json) => {
+        if (cancelled || !json.ok) return;
+        setStudentNavAccess({ hasJornadas: Boolean(json.has_jornadas), hasEventOrigin: Boolean(json.has_event_origin) });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, profile?.role, profile?.id, pathname]);
+
   const value = useMemo<AuthContextType>(
     () => ({
       session,
       user: session?.user ?? null,
       profile,
       loading,
+      studentNavAccess,
       signOut,
       refreshProfile,
     }),
-    [session, profile, loading, signOut, refreshProfile]
+    [session, profile, loading, studentNavAccess, signOut, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

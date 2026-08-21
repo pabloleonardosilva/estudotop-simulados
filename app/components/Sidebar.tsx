@@ -44,7 +44,7 @@ export default function Sidebar() {
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { profile, user, refreshProfile } = useAuth();
+  const { profile, user, studentNavAccess, refreshProfile } = useAuth();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   // Nomes de canal realtime únicos por instância: abaixo de lg, o Sidebar
   // desktop (oculto por display:none) e o SidebarContent do drawer coexistem;
@@ -459,12 +459,16 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <NavLink href="/meu-perfil" active={isActive("/meu-perfil")} icon={<UserRound size={17} />} onNavigate={onNavigate} student>
               Meu Perfil
             </NavLink>
-            <NavLink href="/minhas-jornadas" active={isActive("/minhas-jornadas")} icon={<MapPin size={17} />} onNavigate={onNavigate} student>
-              Minhas Jornadas
-            </NavLink>
-            <NavLink href="/meus-simulados" active={isActive("/meus-simulados")} icon={<ClipboardList size={17} />} onNavigate={onNavigate} student>
-              Meus Simulados
-            </NavLink>
+            {Boolean(studentNavAccess?.hasJornadas) && (
+              <NavLink href="/minhas-jornadas" active={isActive("/minhas-jornadas")} icon={<MapPin size={17} />} onNavigate={onNavigate} student>
+                Minhas Jornadas
+              </NavLink>
+            )}
+            {Boolean(studentNavAccess && !studentNavAccess.hasEventOrigin) && (
+              <NavLink href="/meus-simulados" active={isActive("/meus-simulados")} icon={<ClipboardList size={17} />} onNavigate={onNavigate} student>
+                Meus Simulados
+              </NavLink>
+            )}
             {hasEvents && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student>Meus Eventos</NavLink>}
           </nav>
         </div>

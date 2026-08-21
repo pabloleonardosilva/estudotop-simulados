@@ -2066,4 +2066,16 @@ A regra de precedência do projeto permanece:
 
 ---
 
+# 77. Correção — experiência do aluno cadastrado exclusivamente por Evento (2026-08-21)
+
+Aluno com `students.origin_event_id` preenchido e nenhuma `student_jornadas` ativa/`!= cancelled` é tratado, na navegação, como "exclusivamente de Evento":
+
+- Menu "Jornadas" (superior e lateral/hambúrguer) só aparece com pelo menos uma Jornada não cancelada.
+- Menu "Simulados" (superior e lateral/hambúrguer) só aparece quando o aluno não tem origem exclusiva de Evento — independente de possuir Jornada. `event.simulado_id` nunca concede, por si só, acesso ao módulo geral de Simulados (regra já vigente, reafirmada).
+- Modal/tutorial inicial das Corujas não abre automaticamente nesse estado; a supressão é contextual (nada é marcado como "já visto" — ver `GET /api/student/nav-access` e `AuthContext.studentNavAccess` no Índice Funcional, seção 25).
+- Se o aluno deixar de ser exclusivamente de Evento (passa a ter Jornada), os dois menus e o tutorial voltam a seguir a regra normal automaticamente, sem qualquer ação manual de cadastro.
+- Card de `/meus-eventos` reorganizado (status traduzido, Professor/Professores omitido quando ausente, data/hora em formato longo, "Sua situação" isolada, CTA por estado) — ver Índice Funcional, seção 25, para o detalhamento completo.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*

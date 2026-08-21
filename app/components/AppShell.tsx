@@ -36,7 +36,7 @@ const JOURNEY_EXPLAINER_SHOWN_LOGIN_PREFIX = "estudotop:journey-explainer:shown-
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, studentNavAccess } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [focusedHelpTicketId, setFocusedHelpTicketId] = useState<string | null>(null);
@@ -138,6 +138,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (loading || !user?.id || profile?.role !== "student" || profile?.must_change_password) return;
     if (isPublicRoute || isPublicViewRoute || isChangePasswordRoute || isStudentExamPage || isFocusRoute) return;
     if (typeof window === "undefined") return;
+    // Aguarda a resolução do contexto de navegação do aluno (Jornadas/origem de
+    // Evento) antes de decidir. Aluno exclusivamente de Evento não recebe o
+    // tutorial neste contexto — supressão contextual, sem marcar como visto.
+    if (!studentNavAccess) return;
+    if (studentNavAccess.hasEventOrigin && !studentNavAccess.hasJornadas) return;
 
     const userId = user.id;
     let cancelled = false;
@@ -185,6 +190,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     isChangePasswordRoute,
     isStudentExamPage,
     isFocusRoute,
+    studentNavAccess,
   ]);
 
   useEffect(() => {

@@ -6,6 +6,16 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { shell } from "@/app/lib/email/jornadaEmailTemplates";
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 export type SimuladoEventStatus = "scheduled" | "active" | "closed" | "archived";
 
@@ -50,7 +60,16 @@ type ReleasedParticipant = {
 };
 
 function resultReleasedEmail(input: { studentName: string; eventName: string; simuladoTitle: string; resultUrl: string }) {
-  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f6f8fc;font-family:Arial,Helvetica,sans-serif;color:#172033"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="padding:34px 14px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:680px;background:#fff;border:1px solid #e6edf6;border-radius:28px;overflow:hidden"><tr><td style="height:7px;background:linear-gradient(90deg,#f97316,#facc15,#f97316)"></td></tr><tr><td style="padding:42px 40px"><p style="margin:0 0 12px;color:#c2410c;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase">EstudoTOP Simulados</p><h1 style="margin:0;color:#0f172a;font-size:30px">Seu resultado está disponível</h1><p style="margin:22px 0 0;font-size:16px;line-height:1.75;color:#334155">Olá, ${input.studentName}! O resultado do Evento <strong>${input.eventName}</strong>, referente ao Simulado <strong>${input.simuladoTitle}</strong>, já pode ser consultado.</p><p style="margin:28px 0;text-align:center"><a href="${input.resultUrl}" style="display:inline-block;background:linear-gradient(90deg,#f97316,#facc15);color:#111827;text-decoration:none;font-weight:800;padding:16px 30px;border-radius:14px">Ver meus resultados</a></p><p style="margin:0;color:#64748b;font-size:14px">Equipe EstudoTOP</p></td></tr></table></td></tr></table></body></html>`;
+  const html = shell(
+    "Seu resultado está disponível",
+    `O resultado do Evento ${input.eventName} já pode ser consultado.`,
+    `
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">Olá, <strong style="color:#0f172a;">${escapeHtml(input.studentName)}</strong>! O resultado do Evento <strong style="color:#0f172a;">${escapeHtml(input.eventName)}</strong>, referente ao Simulado <strong style="color:#0f172a;">${escapeHtml(input.simuladoTitle)}</strong>, já pode ser consultado.</p>
+      <div style="text-align:center;">
+        <a href="${input.resultUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Ver meus resultados</a>
+      </div>
+    `,
+  );
   const text = `Olá, ${input.studentName}!\n\nSeu resultado está disponível.\nEvento: ${input.eventName}\nSimulado: ${input.simuladoTitle}\n\nAcesse: ${input.resultUrl}\n\nEquipe EstudoTOP`;
   return { html, text };
 }

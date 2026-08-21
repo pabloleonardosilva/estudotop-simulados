@@ -45,9 +45,11 @@ export default function Header({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut } = useAuth();
+  const { profile, studentNavAccess, signOut } = useAuth();
 
   const isAdmin = profile?.role === "admin";
+  const showJornadas = Boolean(studentNavAccess?.hasJornadas);
+  const showSimulados = Boolean(studentNavAccess && !studentNavAccess.hasEventOrigin);
 
   function menuClass(active: boolean) {
     return active
@@ -126,14 +128,18 @@ export default function Header({
                 <Home size={21} strokeWidth={2.2} />
                 <span>Meu Painel</span>
               </DesktopNavItem>
-              <DesktopNavItem href="/minhas-jornadas" active={pathname.startsWith("/minhas-jornadas")}>
-                <Map size={21} strokeWidth={2.2} />
-                <span>Jornadas</span>
-              </DesktopNavItem>
-              <DesktopNavItem href="/meus-simulados" active={pathname.startsWith("/meus-simulados")}>
-                <ClipboardList size={21} strokeWidth={2.2} />
-                <span>Simulados</span>
-              </DesktopNavItem>
+              {showJornadas && (
+                <DesktopNavItem href="/minhas-jornadas" active={pathname.startsWith("/minhas-jornadas")}>
+                  <Map size={21} strokeWidth={2.2} />
+                  <span>Jornadas</span>
+                </DesktopNavItem>
+              )}
+              {showSimulados && (
+                <DesktopNavItem href="/meus-simulados" active={pathname.startsWith("/meus-simulados")}>
+                  <ClipboardList size={21} strokeWidth={2.2} />
+                  <span>Simulados</span>
+                </DesktopNavItem>
+              )}
               <DesktopNavItem href="/minhas-anotacoes" active={pathname.startsWith("/minhas-anotacoes")}>
                 <NotebookText size={21} strokeWidth={2.2} />
                 <span>Anotações</span>
