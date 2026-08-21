@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase/client";
 
-type UserRole = "admin" | "student";
+type UserRole = "admin" | "student" | "professor";
 
 type Profile = {
   id: string;

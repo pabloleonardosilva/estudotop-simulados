@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logSecurityEvent } from "@/lib/logging/security-log";
 import { logActivity } from "@/lib/logging/activity-log";
 import { touchUserSession } from "@/lib/logging/session-log";
+import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 
 type Payload = {
   eventType?: string;
@@ -37,16 +38,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Evento não permitido." }, { status: 400 });
     }
 
-    if (eventType === "session_touch" && body.actorType !== "system" && body.actorId) {
+    if (eventType === "session_touch" || eventType === "login_success") {
+      const authHeader = request.headers.get("authorization") || "";
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const supabase = createSupabaseAdminClient();
+      const { data: auth } = token ? await supabase.auth.getUser(token) : { data: { user: null } };
+      if (!auth.user) return NextResponse.json({ ok: false, message: "Não autenticado." }, { status: 401 });
+      const { data: profile } = await supabase.from("profiles").select("id,full_name,role,is_active").eq("id", auth.user.id).maybeSingle();
+      if (!profile?.is_active || !["admin", "student"].includes(profile.role)) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
+      const actorType = profile.role === "admin" ? "admin" : "student";
       await touchUserSession({
         request,
-        actorType: body.actorType === "admin" ? "admin" : "student",
-        actorId: body.actorId,
-        actorName: body.actorName || null,
-        actorEmail: body.actorEmail || null,
+        actorType,
+        actorId: auth.user.id,
+        actorName: profile.full_name,
+        actorEmail: auth.user.email || null,
         lastRoute: body.route || null,
         metadata: body.metadata || {},
       });
+      if (eventType === "session_touch") return NextResponse.json({ ok: true });
+      await logActivity({ request, actorType, actorId: auth.user.id, actorName: profile.full_name, actorEmail: auth.user.email || null, action: "login_success", entityType: "auth", route: body.route || "/login", metadata: body.metadata || {} });
       return NextResponse.json({ ok: true });
     }
 
@@ -62,30 +73,6 @@ export async function POST(request: Request) {
       route: body.route || null,
       metadata: body.metadata || {},
     });
-
-    if (eventType === "login_success" && body.actorType !== "system" && body.actorId) {
-      await logActivity({
-        request,
-        actorType: body.actorType || "student",
-        actorId: body.actorId,
-        actorName: body.actorName || null,
-        actorEmail: body.actorEmail || null,
-        action: "login_success",
-        entityType: "auth",
-        route: body.route || "/login",
-        metadata: body.metadata || {},
-      });
-
-      await touchUserSession({
-        request,
-        actorType: body.actorType === "admin" ? "admin" : "student",
-        actorId: body.actorId,
-        actorName: body.actorName || null,
-        actorEmail: body.actorEmail || null,
-        lastRoute: body.route || "/login",
-        metadata: body.metadata || {},
-      });
-    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

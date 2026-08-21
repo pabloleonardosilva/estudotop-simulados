@@ -22,10 +22,10 @@ export default function LoginPage() {
     }
   }, []);
 
-  function logClientSecurityEvent(payload: Record<string, unknown>) {
+  function logClientSecurityEvent(payload: Record<string, unknown>, accessToken?: string) {
     fetch("/api/system/security-event", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
       body: JSON.stringify({ route: "/login", ...payload }),
     }).catch(() => undefined);
   }
@@ -179,17 +179,20 @@ export default function LoginPage() {
       return;
     }
 
+    let destination = profile.role === "admin" ? "/dashboard" : profile.role === "professor" ? "/professor/eventos" : "/aluno";
+    if (profile.role === "student" && data.session?.access_token) {
+      const joinResponse = await fetch("/api/events/join", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}` } });
+      const joinResult = await joinResponse.json().catch(() => null) as { ok?: boolean; event_id?: string } | null;
+      if (joinResponse.ok && joinResult?.ok && joinResult.event_id) destination = `/meus-eventos/${joinResult.event_id}`;
+    }
+
     logClientSecurityEvent({
       eventType: "login_success",
-      actorType: profile.role,
-      actorId: data.user.id,
-      actorName: profile.full_name,
-      actorEmail: data.user.email,
       riskLevel: "low",
-      metadata: { destination: profile.role === "admin" ? "/dashboard" : "/aluno" },
-    });
+      metadata: { destination },
+    }, data.session?.access_token);
 
-    router.replace(profile.role === "admin" ? "/dashboard" : "/aluno");
+    router.replace(destination);
   }
 
   return (

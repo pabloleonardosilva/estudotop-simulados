@@ -36,7 +36,9 @@ export async function POST(request: Request) {
       .eq("id", userId)
       .maybeSingle();
 
-    if (!profile || profile.role !== "student" || !profile.must_change_password || !student || student.status === "blocked") {
+    const isStudent = profile?.role === "student";
+    const isProfessor = profile?.role === "professor";
+    if (!profile || (!isStudent && !isProfessor) || !profile.must_change_password || (isStudent && (!student || student.status === "blocked"))) {
       return NextResponse.json({ ok: false, message: "Troca de senha nÃ£o autorizada para esta conta." }, { status: 403 });
     }
 
@@ -62,18 +64,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas não foi possível concluir a liberação do perfil. Entre em contato com o suporte." }, { status: 500 });
     }
 
-    const { error: studentError } = await supabase
-      .from("students")
-      .update({ status: "active" })
-      .eq("id", userId);
-    if (studentError) {
-      void logSystemError({ source: "api.auth.complete_password_change.student", error: studentError, request });
-      return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas não foi possível concluir a ativação da conta. Entre em contato com o suporte." }, { status: 500 });
+    if (isStudent) {
+      const { error: studentError } = await supabase.from("students").update({ status: "active" }).eq("id", userId);
+      if (studentError) {
+        void logSystemError({ source: "api.auth.complete_password_change.student", error: studentError, request });
+        return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_PARTIAL", message: "A senha foi atualizada, mas não foi possível concluir a ativação da conta. Entre em contato com o suporte." }, { status: 500 });
+      }
     }
 
     // Registra no histórico do aluno que a senha provisória foi substituída
     // pela senha definitiva. Não registramos a senha em si por segurança.
-    await logPasswordActivity({
+    if (isStudent) await logPasswordActivity({
       supabase,
       studentId: userId,
       eventType: "password_changed",

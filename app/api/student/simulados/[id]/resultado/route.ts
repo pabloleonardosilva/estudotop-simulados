@@ -28,6 +28,7 @@ type AttemptSummary = {
   inactivity_event_count: number | null;
   scissors_used_question_ids: string[] | null;
   owl_help_used_count: number | null;
+  event_participant_id: string | null;
 };
 
 type QuestionDetail = {
@@ -64,7 +65,7 @@ export async function GET(
     .maybeSingle();
 
   const attemptColumns =
-    "id, status, time_spent_seconds, submitted_at, disqualified_at, disqualification_reason, tab_switch_count, focus_violation_count, inactivity_event_count, scissors_used_question_ids, owl_help_used_count";
+    "id, status, time_spent_seconds, submitted_at, disqualified_at, disqualification_reason, tab_switch_count, focus_violation_count, inactivity_event_count, scissors_used_question_ids, owl_help_used_count, event_participant_id";
 
   let attempt: AttemptSummary | null = null;
 
@@ -116,6 +117,13 @@ export async function GET(
       { ok: false, message: "Nenhum resultado disponível." },
       { status: 404 },
     );
+  }
+
+  if (attempt.event_participant_id) {
+    const { data: participant } = await supabase.from("simulado_event_participants").select("result_released_at").eq("id", attempt.event_participant_id).eq("student_id", student.id).maybeSingle();
+    if (!participant?.result_released_at) {
+      return NextResponse.json({ ok: false, code: "EVENT_RESULT_BLOCKED", message: "Seu resultado foi calculado e aguarda liberação pelo professor." }, { status: 403 });
+    }
   }
 
   const { data: simulado, error: simuladoError } = await supabase

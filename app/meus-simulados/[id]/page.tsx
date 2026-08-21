@@ -8,15 +8,24 @@ export const dynamic = "force-dynamic";
 
 export default async function MeusSimuladosDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ event?: string }>;
 }) {
   const student = await requireStudentPage();
   const { id } = await params;
   const supabase = createSupabaseAdminClient();
+  const { event: eventId } = await searchParams;
 
-  const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase);
-  if (accessError) notFound();
+  if (eventId) {
+    const { data: participant } = await supabase.from("simulado_event_participants").select("id,simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
+    const event = participant?.simulado_events as unknown as { simulado_id: string } | null;
+    if (!participant || event?.simulado_id !== id) notFound();
+  } else {
+    const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase);
+    if (accessError) notFound();
+  }
 
   // 3. Acesso validado — carrega dados completos do simulado
   const { data: simulado } = await supabase

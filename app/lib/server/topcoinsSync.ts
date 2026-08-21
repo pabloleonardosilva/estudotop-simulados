@@ -4,6 +4,8 @@ import { calculateEarnedTopCoins } from "@/app/lib/gamification/topcoins";
 type AttemptWithResult = {
   id: string;
   created_at: string;
+  event_participant_id: string | null;
+  simulado_event_participants: { result_released_at: string | null } | { result_released_at: string | null }[] | null;
   simulado_results: { correct_count: number } | { correct_count: number }[] | null;
 };
 
@@ -26,7 +28,7 @@ export async function resyncTopCoinEarnings(
 ): Promise<void> {
   const { data: attempts } = await supabase
     .from("simulado_attempts")
-    .select("id, created_at, simulado_results ( correct_count )")
+    .select("id, created_at, event_participant_id, simulado_event_participants:event_participant_id(result_released_at), simulado_results ( correct_count )")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
     .eq("status", "completed")
@@ -39,7 +41,11 @@ export async function resyncTopCoinEarnings(
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId);
 
-  const rows = (attempts || []) as unknown as AttemptWithResult[];
+  const rows = ((attempts || []) as unknown as AttemptWithResult[]).filter((attempt) => {
+    if (!attempt.event_participant_id) return true;
+    const participant = Array.isArray(attempt.simulado_event_participants) ? attempt.simulado_event_participants[0] : attempt.simulado_event_participants;
+    return Boolean(participant?.result_released_at);
+  });
   if (rows.length === 0) return;
 
   const { data: jornadaLink } = await supabase

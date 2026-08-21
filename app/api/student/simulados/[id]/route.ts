@@ -15,9 +15,16 @@ export async function GET(
 
   const { id } = await params;
   const supabase = createSupabaseAdminClient();
+  const eventId = new URL(request.url).searchParams.get("event");
 
-  const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase, request);
-  if (accessError) return accessError;
+  if (eventId) {
+    const { data: participant } = await supabase.from("simulado_event_participants").select("simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
+    const event = participant?.simulado_events as unknown as { simulado_id: string } | null;
+    if (!participant || event?.simulado_id !== id) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
+  } else {
+    const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase, request);
+    if (accessError) return accessError;
+  }
 
   const { data: simulado, error } = await supabase
     .from("simulados")
@@ -65,7 +72,7 @@ export async function GET(
 
   const jornadaId = new URL(request.url).searchParams.get("jornada");
 
-  if (!jornadaId) {
+  if (!jornadaId && !eventId) {
     const { data: jornadaLink } = await supabase
       .from("jornada_simulados")
       .select("id")

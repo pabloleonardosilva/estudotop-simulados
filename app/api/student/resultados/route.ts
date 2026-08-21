@@ -15,6 +15,8 @@ type AttemptRow = {
   simulado_id: string;
   submitted_at: string | null;
   created_at: string | null;
+  event_participant_id: string | null;
+  simulado_event_participants: { result_released_at: string | null } | { result_released_at: string | null }[] | null;
   simulados: { id: string; title: string | null; published_at: string | null } | { id: string; title: string | null; published_at: string | null }[] | null;
 };
 
@@ -77,6 +79,8 @@ export async function GET(request: Request) {
         simulado_id,
         submitted_at,
         created_at,
+        event_participant_id,
+        simulado_event_participants:event_participant_id ( result_released_at ),
         simulados:simulado_id ( id, title, published_at )
       `,
     )
@@ -102,6 +106,8 @@ export async function GET(request: Request) {
   }> = [];
 
   for (const row of (attempts || []) as AttemptRow[]) {
+    const eventParticipant = Array.isArray(row.simulado_event_participants) ? row.simulado_event_participants[0] : row.simulado_event_participants;
+    if (row.event_participant_id && !eventParticipant?.result_released_at) continue;
     if (seen.has(row.simulado_id)) continue;
     seen.add(row.simulado_id);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { BookOpen, GraduationCap, MailCheck, ShieldCheck, Trophy } from "lucide-react";
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 
@@ -34,6 +34,17 @@ export default function CadastroPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [invalidFields, setInvalidFields] = useState<RegistrationField[]>([]);
+  const [eventSignup, setEventSignup] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const query = new URLSearchParams(window.location.search);
+      const eventEmail = query.get("email");
+      setEventSignup(Boolean(query.get("event")));
+      if (eventEmail) setEmail(eventEmail);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const cpfDigits = onlyDigits(cpf);
   const cpfInvalid = cpfDigits.length > 0 && !isValidCpf(cpfDigits);
@@ -167,7 +178,7 @@ export default function CadastroPage() {
                 ? "Preencha seus dados, confirme o código enviado ao e-mail e aguarde a liberação da equipe EstudoTOP. O CPF é obrigatório e evita cadastros duplicados."
                 : step === "code"
                 ? `Enviamos um código para ${email}. Confirme para efetivar o cadastro.`
-                : "Seu e-mail foi confirmado. Depois da aprovação, você receberá um link para definir sua senha de primeiro acesso."}
+                : eventSignup ? "Sua conta está ativa. Enviamos o link para você definir a senha e entrar no Evento." : "Seu e-mail foi confirmado. Depois da aprovação, você receberá um link para definir sua senha de primeiro acesso."}
             </p>
 
             {successMessage && (
@@ -187,7 +198,7 @@ export default function CadastroPage() {
                 <input className={fieldClass("fullName")} aria-invalid={invalidFields.includes("fullName")} placeholder="Nome completo" type="text" value={fullName} onChange={(e) => { setFullName(e.target.value); clearFieldError("fullName"); }} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <input className={fieldClass("whatsapp")} aria-invalid={invalidFields.includes("whatsapp")} placeholder="WhatsApp" type="tel" value={whatsapp} onChange={(e) => { setWhatsapp(e.target.value); clearFieldError("whatsapp"); }} />
-                  <input className={fieldClass("email", emailInvalid)} aria-invalid={invalidFields.includes("email") || emailInvalid} placeholder="Melhor e-mail" type="email" value={email} onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }} />
+                  <input className={fieldClass("email", emailInvalid)} aria-invalid={invalidFields.includes("email") || emailInvalid} placeholder="Melhor e-mail" type="email" value={email} readOnly={eventSignup} onChange={(e) => { setEmail(e.target.value); clearFieldError("email"); }} />
                 </div>
                 <input className={fieldClass("cpf", cpfInvalid)} aria-invalid={invalidFields.includes("cpf") || cpfInvalid} placeholder="CPF obrigatório" type="text" value={cpf} onChange={(e) => { setCpf(formatCpf(e.target.value)); clearFieldError("cpf"); }} />
                 {cpfInvalid && <p className="text-xs font-semibold text-red-300">CPF inválido. Verifique os dígitos.</p>}
@@ -217,7 +228,7 @@ export default function CadastroPage() {
                 </div>
                 <p className="font-semibold text-emerald-300">Tudo certo!</p>
                 <p className="mt-2 text-sm leading-6 text-emerald-200/80">
-                  Seu cadastro foi confirmado e ficará em análise. Depois da aprovação, enviaremos o link de primeiro acesso para você criar sua senha.
+                  {eventSignup ? "Sua participação foi confirmada e sua conta já está ativa. Consulte seu e-mail para definir a senha de primeiro acesso." : "Seu cadastro foi confirmado e ficará em análise. Depois da aprovação, enviaremos o link de primeiro acesso para você criar sua senha."}
                 </p>
                 <div className="mt-5">
                   <Link href="/login" className="text-sm font-semibold text-orange-300 hover:text-orange-200">

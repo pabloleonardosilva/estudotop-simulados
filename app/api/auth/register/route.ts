@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
-import { addMinutes, generateNumericCode, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addMinutes, generateNumericCode, hashEmailActionToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 
@@ -80,6 +82,15 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
+    const cookieStore = await cookies();
+    const eventIntentToken = cookieStore.get("estudotop_event_intent")?.value;
+    let eventId: string | null = null;
+    if (eventIntentToken) {
+      const { data: intent } = await supabase.from("simulado_event_join_intents").select("event_id,email,simulado_events:event_id(status,starts_at,ends_at,started_at)").eq("token_hash", hashEmailActionToken(eventIntentToken)).is("consumed_at", null).gt("expires_at", new Date().toISOString()).maybeSingle();
+      const event = intent?.simulado_events as unknown as { status: string; starts_at: string; ends_at: string; started_at?: string | null } | null;
+      const status = event ? effectiveEventStatus(event) : null;
+      if (intent && intent.email.toLowerCase() === email && status !== "closed" && status !== "archived") eventId = intent.event_id;
+    }
 
     const [{ data: emailMatches }, { data: cpfMatches }] = await Promise.all([
       supabase.from("students").select("id, email, cpf").eq("email", email),
@@ -149,7 +160,7 @@ export async function POST(request: Request) {
       desired_contests: desiredContests,
       code_hash: codeHash,
       expires_at: addMinutes(PUBLIC_CODE_EXPIRATION_MINUTES),
-      metadata: { source: "public_signup" },
+      metadata: { source: eventId ? "event_signup" : "public_signup", event_id: eventId },
     });
 
     if (insertError) {

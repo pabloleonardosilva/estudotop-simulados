@@ -1013,11 +1013,70 @@ Escopo previsto:
 
 - Criada a rota clean `/meu-perfil`, acessível pelo bloco de identidade do header desktop, pelo ícone de perfil no header compacto e pela opção **Meu Perfil** no menu lateral expansível do aluno.
 - O aluno pode atualizar o próprio nome, telefone, foto e concursos de interesse; e-mail e CPF permanecem somente leitura. A API `/api/student/profile` deriva o UUID do token e ignora qualquer tentativa de indicar outro aluno.
-- A página mostra apenas métricas executivas de trajetória e Jornadas, com atalhos para `/meus-resultados` e `/minhas-jornadas`, sem duplicar dashboards.
+- Os painéis de trajetória/Simulados e Jornadas foram removidos de `/meu-perfil`; resultados e Jornadas continuam em suas rotas próprias.
 - Central de Ajuda, upload existente e recuperação de senha foram reutilizados. Não foram criados toggles sem persistência, troca direta de e-mail, exclusão automática nem URL fictícia de privacidade.
 - Em `/meu-perfil`, a ação **Alterar avatar** abre um catálogo responsivo com 128 ilustrações originais: primeiro 90 corujas EstudoTOP estilizadas e, depois, 38 pessoas diversas. A seleção é validada no servidor por identificador fechado; URLs arbitrárias enviadas pelo cliente são rejeitadas. O upload legado permanece inalterado nos demais pontos que ainda o utilizam.
 - Correção de compatibilidade em 2026-08-19: selecionar ou remover um avatar passa a persistir em `students.avatar_url` e sincroniza `profiles.avatar_url` somente quando essa coluna existe. O `AuthContext` usa a API autenticada do aluno para recuperar o avatar no fallback, evitando que ambientes sem a coluna em `profiles` rejeitem a seleção.
 - Refinamento em 2026-08-19: a escolha de avatar passou a ser apenas uma pré-seleção local até o clique em **Salvar avatar**; cancelar ou fechar o modal não altera o perfil.
 - O quadro **Dados pessoais** passou a iniciar em modo de leitura, com edição liberada somente pelo lápis premium no cabeçalho.
 - O modal de interesses passou a pesquisar os órgãos/concursos efetivamente presentes em `questions.orgao`, atualizando o catálogo automaticamente com o banco de questões. Um texto fora da lista pode ser salvo somente em `students.desired_contests`, sem criar registro de catálogo, com limite, normalização e validação server-side.
+- Refinamento visual em 2026-08-19: os blocos informativos de **Preferências**, **Privacidade e dados** e **Precisa de ajuda?** foram removidos de `/meu-perfil`. A página foi recomposta com fundo em camadas, cards translúcidos, interesses destacados e métricas com maior hierarquia visual; identidade, edição, segurança, interesses, trajetória, Jornadas e o acesso global à Central de Ajuda permanecem funcionais.
 - Nenhuma migration foi criada ou alterada para esta funcionalidade.
+
+### Evento de Simulado preparado em 2026-08-20
+
+- Criada a base do módulo Evento, mantendo o Simulado como motor de questões, tentativas, resultados e TopCoins.
+- Criada a role `professor`, com cadastro exclusivo pelo Admin, primeiro acesso, recuperação de senha, área restrita aos Eventos atribuídos, preview sem tentativa real e dashboard operacional com atualização periódica.
+- Criado ingresso público por link com intenção opaca persistida no banco e em cookie `HttpOnly`; conta existente só é vinculada após autenticação. Cadastro novo por Evento válido nasce ativo e preserva a origem.
+- Tentativas de Evento carregam contexto explícito. Resultado bloqueado continua calculado, mas não é exposto pelas APIs do aluno; TopCoins aguardam a liberação individual definitiva.
+- Criadas áreas `/admin/eventos`, `/admin/professores`, `/professor/eventos`, `/evento/[slug]` e `/meus-eventos`, com guards server-side por papel, ownership e atribuição.
+- Migration criada: `supabase/migrations/20260820120000_create_simulado_events.sql`. Nenhuma migration foi executada durante a implementação.
+
+### Criação premium de Evento refinada em 2026-08-20
+
+- O formulário de `/admin/eventos` passou ao tema dark premium, com iluminação, glow, estados de foco e composição responsiva coerentes com a área administrativa.
+- Clicar em qualquer ponto dos campos de início ou término abre o seletor nativo de data e hora nos navegadores compatíveis.
+- Início, término e duração em minutos agora são controlados e sincronizados sem efeitos encadeados: alterar o término recalcula a duração; alterar a duração ou o início recalcula o término. Valores não positivos e término anterior ao início são bloqueados.
+- Corrigido o envio do formulário: o botão **Criar Evento** agora declara `type="submit"` explicitamente.
+- A migration `supabase/migrations/20260820120000_create_simulado_events.sql` foi executada manualmente pelo responsável no banco operacional em 2026-08-20; nenhuma migration foi executada pelo agente nesta atualização.
+- O seletor de Simulado na criação passou ao componente pesquisável dark premium do sistema. A tela de gerenciamento ganhou edição de nome, Simulado, início, término, duração e política de resultados, preservando a sincronização temporal e as proteções server-side para troca do Simulado.
+- O gerenciamento do Evento passou a oferecer **Copiar link de cadastro**, copiando a URL pública completa `/evento/[slug]` e apresentando confirmação na própria tela.
+- Cada card da listagem de Eventos também oferece a cópia do link público por um botão compacto com ícone e nome acessível **Copiar link de cadastro pro evento**.
+
+### Bloqueadores de fechamento do Evento corrigidos em 2026-08-20
+
+- A liberação de resultados por Admin, Professor, alteração da política para `released` ou conclusão sob política liberada usa um fluxo compartilhado e idempotente. O resultado e os TopCoins permanecem válidos mesmo se o Resend falhar; envio e erro ficam registrados por participante.
+- Criação e edição do Evento permitem selecionar zero, um ou vários professores ativos, preservam os vínculos atuais e validam os IDs no servidor.
+- Eventos encerrados podem ser reabertos pelo Admin com um novo término futuro, sem alterar política de resultados ou histórico.
+- O cadastro administrativo do Professor passou a manter o perfil inativo durante a montagem da conta, detectar duplicidades também no Auth e compensar falhas na ordem vínculos → professor → perfil → Auth, com logging explícito para falhas de compensação.
+- A migration existente já contém todos os campos e relacionamentos necessários; nenhuma migration adicional foi criada e nenhuma migration foi executada nesta correção.
+
+### Modo aula do Professor implementado em 2026-08-20
+
+- A dashboard do Evento apresenta uma questão oficial por vez, com rich text, imagens, alternativas variáveis e suporte a Certo/Errado.
+- O estado inicial não revela gabarito nem estatísticas. Exibir/Ocultar dados atua somente na interface do Professor, e qualquer navegação restaura o estado virgem.
+- Distribuição, acertos, erros, brancos concluídos, percentuais e tempo médio são agregados no servidor usando exclusivamente a tentativa representativa de cada participante do Evento.
+- O acesso permanece protegido pelo guard de Professor ativo associado ao Evento e o painel reutiliza o polling único da dashboard.
+- Os links de cadastro dos Eventos agora são montados no servidor a partir de `NEXT_PUBLIC_APP_URL`. A origem local do navegador não é mais copiada; configurações ausentes ou apontando para localhost são rejeitadas com aviso administrativo.
+
+### Painel Participantes do Professor implementado em 2026-08-20
+
+- A dashboard passou a possuir as três áreas funcionais: Visão geral, Questões/Modo aula e Participantes.
+- Participantes exibem identidade mínima, status individual, ingresso, início, conclusão, tempo concluído, tentativas no Evento, resultado oficial e situação da liberação.
+
+### Fechamento consolidado do Evento de Simulado em 2026-08-20
+
+- Bloqueios de operação sem Simulado e de mutações em Eventos arquivados foram aplicados na API e na interface.
+- A retomada de tentativa válida após o encerramento foi preservada, mantendo novas tentativas bloqueadas.
+- Pré-evento, regras, estados individuais, presença online, métricas representativas e histórico arquivado foram completados.
+- A presença usa `user_sessions` com heartbeat de 30 segundos e janela online de 90 segundos; nenhuma estrutura adicional de presença foi necessária.
+- A nota oficial é visível ao Professor mesmo quando ainda bloqueada para o aluno; a tela não altera política, resultado ou `result_released_at`.
+- O recorte usa somente tentativas do Evento, exclui preview e respeita a tentativa representativa. Busca, filtro, paginação visual e polling central de dez segundos preservam legibilidade e atualização.
+
+### Segurança final do Evento de Simulado preparada em 2026-08-20
+
+- O heartbeat passou para rota estudantil autenticada, com identidade derivada exclusivamente do token e ownership validado pela participação no Evento. `session_touch` e `login_success` também deixaram de confiar em identidade enviada pelo cliente.
+- O ingresso público não revela mais se um e-mail possui conta antes da comprovação de posse. reCAPTCHA v3 é validado no servidor e a resposta inicial é idêntica para contas existentes e novas.
+- A confirmação usa token opaco de 256 bits, hash SHA-256 persistido, validade de 24 horas, Resend e cookie `HttpOnly`. Após a confirmação, conta existente segue para login/recuperação e conta nova para cadastro com e-mail fixado e contexto preservado.
+- Cooldown de 60 segundos evita reenvio repetido. Criada, sem execução, a migration `supabase/migrations/20260820170000_limit_event_join_intents.sql`, que deduplica e limita a uma intenção pendente por Evento/e-mail.
+- As variáveis existentes `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`, `RESEND_API_KEY` e `NEXT_PUBLIC_APP_URL` são reutilizadas; nenhum novo segredo foi introduzido.

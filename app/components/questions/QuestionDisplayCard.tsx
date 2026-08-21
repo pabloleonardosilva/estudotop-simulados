@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { qCard } from "@/lib/ui/question-tokens";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
 
@@ -54,6 +54,8 @@ export default function QuestionDisplayCard({
   onSelect,
   disabled = false,
   extraBadges,
+  markIncorrect = false,
+  renderAlternativeMeta,
 }: {
   question: QuestionLike;
   orderLabel?: string;
@@ -62,6 +64,8 @@ export default function QuestionDisplayCard({
   onSelect?: (alt: Alternative) => void;
   disabled?: boolean;
   extraBadges?: React.ReactNode;
+  markIncorrect?: boolean;
+  renderAlternativeMeta?: (alternative: Alternative) => React.ReactNode;
 }) {
   const alternatives = [...(question.question_alternatives || question.alternatives || [])].sort(
     (a, b) => Number(a.order_number || 0) - Number(b.order_number || 0),
@@ -100,8 +104,9 @@ export default function QuestionDisplayCard({
               const isSelected = selectedAlternativeId === alt.id;
               const label = alt.label || String.fromCharCode(65 + index);
               const isWrongTrueFalse = isTrueFalseWrong(question.question_type, alt);
-              const cls = showCorrect && isWrongTrueFalse ? qCard.alts.wrong : showCorrect && isCorrect ? qCard.alts.correct : isSelected ? qCard.alts.selected : `${qCard.alts.base} ${onSelect && !disabled ? "cursor-pointer hover:border-orange-200 hover:bg-orange-50" : ""}`;
-              const labelCls = showCorrect && isWrongTrueFalse ? qCard.alts.labelWrong : showCorrect && isCorrect ? qCard.alts.labelCorrect : isSelected ? qCard.alts.labelSelected : qCard.alts.labelBase;
+              const showWrong = showCorrect && (isWrongTrueFalse || (markIncorrect && !isCorrect));
+              const cls = showWrong ? qCard.alts.wrong : showCorrect && isCorrect ? qCard.alts.correct : isSelected ? qCard.alts.selected : `${qCard.alts.base} ${onSelect && !disabled ? "cursor-pointer hover:border-orange-200 hover:bg-orange-50" : ""}`;
+              const labelCls = showWrong ? qCard.alts.labelWrong : showCorrect && isCorrect ? qCard.alts.labelCorrect : isSelected ? qCard.alts.labelSelected : qCard.alts.labelBase;
               const content = (
                 <>
                   <span className={labelCls}>{alternativeDisplayLabel(question.question_type, alt, label, showCorrect, isCorrect)}</span>
@@ -109,6 +114,7 @@ export default function QuestionDisplayCard({
                     <div className={qCard.alts.text} dangerouslySetInnerHTML={{ __html: html(alt.text) }} />
                     {alt.image_url && <img src={alt.image_url} alt={`Imagem alternativa ${label}`} className="mt-2 max-h-44 rounded-xl border border-slate-100 bg-white object-contain p-2" />}
                   </div>
+                  {renderAlternativeMeta?.(alt)}
                   {showCorrect && isCorrect && <CheckCircle2 className={`mt-1 shrink-0 ${isWrongTrueFalse ? "text-red-500" : "text-emerald-500"}`} size={18} />}
                   {showCorrect && isSelected && !isCorrect && <XCircle className="mt-1 shrink-0 text-red-500" size={18} />}
                 </>

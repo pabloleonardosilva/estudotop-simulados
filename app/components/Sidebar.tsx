@@ -6,12 +6,14 @@ import {
   BadgeCheck,
   BarChart3,
   BookOpen,
+  CalendarClock,
   Camera,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
   Home,
+  GraduationCap,
   Layers,
   LibraryBig,
   LifeBuoy,
@@ -84,7 +86,20 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [publicationQueueCount, setPublicationQueueCount] = useState<number | null>(null);
   const [openHelpMessagesCount, setOpenHelpMessagesCount] = useState<number | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [hasEvents, setHasEvents] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile?.role !== "student") return;
+    let cancelled = false;
+    void supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session || cancelled) return;
+      const response = await fetch("/api/student/events", { headers: { Authorization: `Bearer ${data.session.access_token}` } });
+      const json = await response.json().catch(() => ({}));
+      if (!cancelled && response.ok && json.ok) setHasEvents((json.events || []).length > 0);
+    });
+    return () => { cancelled = true; };
+  }, [profile?.role, pathname]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -331,6 +346,14 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 Jornadas
               </NavLink>
 
+              <NavLink href="/admin/eventos" active={isActive("/admin/eventos")} icon={<CalendarClock size={16} />} onNavigate={onNavigate}>
+                Eventos
+              </NavLink>
+
+              <NavLink href="/admin/professores" active={isActive("/admin/professores")} icon={<GraduationCap size={16} />} onNavigate={onNavigate}>
+                Professores
+              </NavLink>
+
               <NavLink href="/simulados" active={isActive("/simulados") && pathname !== "/simulados/novo"} icon={<ClipboardList size={16} />} onNavigate={onNavigate}>
                 Simulados
               </NavLink>
@@ -442,6 +465,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <NavLink href="/meus-simulados" active={isActive("/meus-simulados")} icon={<ClipboardList size={17} />} onNavigate={onNavigate} student>
               Meus Simulados
             </NavLink>
+            {hasEvents && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student>Meus Eventos</NavLink>}
           </nav>
         </div>
       </div>

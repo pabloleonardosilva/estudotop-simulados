@@ -9,6 +9,12 @@ export type AuthAdmin = {
   full_name: string | null;
 };
 
+export type AuthProfessor = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+};
+
 export type AuthenticatedStudentPage = {
   id: string;
   email: string | null;
@@ -56,6 +62,43 @@ export async function requireAdmin(request: Request): Promise<AuthAdmin | NextRe
     id: profile.id as string,
     full_name: profile.full_name as string | null,
   };
+}
+
+export async function requireProfessor(request: Request): Promise<AuthProfessor | NextResponse> {
+  const authHeader = request.headers.get("authorization") || request.headers.get("Authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
+  if (!token) return NextResponse.json({ ok: false, message: "Não autorizado." }, { status: 401 });
+
+  const supabase = createSupabaseAdminClient();
+  const { data: userData } = await supabase.auth.getUser(token);
+  if (!userData.user) return NextResponse.json({ ok: false, message: "Não autorizado." }, { status: 401 });
+
+  const [{ data: profile }, { data: professor }] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, role, is_active").eq("id", userData.user.id).maybeSingle(),
+    supabase.from("professors").select("id, email, status").eq("id", userData.user.id).maybeSingle(),
+  ]);
+  if (!profile || profile.role !== "professor" || !profile.is_active || professor?.status !== "active") {
+    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
+  }
+  return { id: profile.id, full_name: profile.full_name, email: professor.email || userData.user.email || null };
+}
+
+export async function requireEventManager(request: Request, eventId: string) {
+  const admin = await requireAdmin(request);
+  if (!(admin instanceof NextResponse)) return { actor: admin, role: "admin" as const };
+  if (admin.status !== 403) return admin;
+
+  const professor = await requireProfessor(request);
+  if (professor instanceof NextResponse) return professor;
+  const supabase = createSupabaseAdminClient();
+  const { data: assignment } = await supabase
+    .from("simulado_event_professors")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq("professor_id", professor.id)
+    .maybeSingle();
+  if (!assignment) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
+  return { actor: professor, role: "professor" as const };
 }
 
 export async function requireStudentPage(): Promise<AuthenticatedStudentPage> {
@@ -123,4 +166,17 @@ export async function requireAdminPage(): Promise<void> {
     });
     redirect("/login");
   }
+}
+
+export async function requireProfessorPage(): Promise<{ id: string }> {
+  const browserSupabase = await createSupabaseBrowserServerClient();
+  const { data: { user } } = await browserSupabase.auth.getUser();
+  if (!user) redirect("/login");
+  const supabase = createSupabaseAdminClient();
+  const [{ data: profile }, { data: professor }] = await Promise.all([
+    supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle(),
+    supabase.from("professors").select("status").eq("id", user.id).maybeSingle(),
+  ]);
+  if (!profile || profile.role !== "professor" || !profile.is_active || professor?.status !== "active") redirect("/login");
+  return { id: user.id };
 }

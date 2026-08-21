@@ -7,6 +7,7 @@ import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
+import { sendFirstAccessEmail } from "@/lib/server/sendFirstAccessEmail";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
           desired_contests: confirmation.desired_contests,
           code_hash: hashRegistrationValue(newCode),
           expires_at: addMinutes(PUBLIC_CODE_EXPIRATION_MINUTES),
-          metadata: { source: "invalid_code_resend" },
+          metadata: { ...confirmation.metadata, source: "invalid_code_resend" },
         })
         .select("id")
         .single();
@@ -183,6 +184,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: cpfDuplicado ? "Este CPF já está vinculado a outro cadastro." : "Este e-mail já foi confirmado anteriormente." }, { status: 409 });
     }
 
+    const eventId = typeof confirmation.metadata?.event_id === "string" ? confirmation.metadata.event_id : null;
+    let eventSignup = false;
+    if (eventId) {
+      const { data: event } = await supabase.from("simulado_events").select("status,starts_at,ends_at,started_at").eq("id", eventId).maybeSingle();
+      const now = Date.now();
+      eventSignup = Boolean(event && event.status !== "archived" && event.status !== "closed" && new Date(event.ends_at).getTime() > now);
+      if (!eventSignup) return NextResponse.json({ ok: false, message: "O Evento não aceita mais novos cadastros." }, { status: 409 });
+    }
+
     const temporaryPassword = generateTemporaryPassword();
     let userId: string;
     try {
@@ -193,8 +203,8 @@ export async function POST(request: Request) {
         phone: confirmation.phone || null,
         desiredContests: confirmation.desired_contests || null,
         temporaryPassword,
-        status: "pending",
-        extraStudentFields: { email_confirmed_at: new Date().toISOString() },
+        status: eventSignup ? "active" : "pending",
+        extraStudentFields: { email_confirmed_at: new Date().toISOString(), ...(eventSignup ? { origin: "Evento de Simulado", origin_event_id: eventId, origin_registered_at: new Date().toISOString() } : {}) },
       });
       userId = account.userId;
     } catch (error) {
@@ -207,9 +217,23 @@ export async function POST(request: Request) {
       .update({ used_at: new Date().toISOString(), user_id: userId })
       .eq("id", confirmation.id);
 
+    if (eventSignup && eventId) {
+      await Promise.all([
+        supabase.from("profiles").update({ is_active: true }).eq("id", userId),
+        supabase.from("simulado_event_participants").upsert({ event_id: eventId, student_id: userId, source: "registration" }, { onConflict: "event_id,student_id", ignoreDuplicates: true }),
+        supabase.from("simulado_event_join_intents").update({ consumed_at: new Date().toISOString() }).eq("event_id", eventId).eq("email", email).is("consumed_at", null),
+      ]);
+      try {
+        await sendFirstAccessEmail(userId);
+      } catch (error) {
+        void logSystemError({ source: "api.auth.confirm_registration.event_first_access_email", error, request, metadata: { user_id: userId, event_id: eventId } });
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      message: "E-mail confirmado. Seu cadastro foi efetivado e ficará em análise para liberação.",
+      message: eventSignup ? "E-mail confirmado. Sua conta está ativa e sua participação no Evento foi confirmada." : "E-mail confirmado. Seu cadastro foi efetivado e ficará em análise para liberação.",
+      event_id: eventSignup ? eventId : null,
     });
   } catch (error) {
     void logSystemError({ source: "api.auth.confirm_registration", error, request });

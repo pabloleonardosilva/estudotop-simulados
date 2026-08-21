@@ -281,8 +281,22 @@ export default function SimuladoExperience({
   const router = useRouter();
   const searchParams = useSearchParams();
   const jornadaId = searchParams.get("jornada");
-  const jornadaQuery = jornadaId ? `?jornada=${encodeURIComponent(jornadaId)}` : "";
+  const eventId = searchParams.get("event");
+  const jornadaQuery = jornadaId ? `?jornada=${encodeURIComponent(jornadaId)}` : eventId ? `?event=${encodeURIComponent(eventId)}` : "";
   const [phase, setPhase] = useState<Phase>("loading");
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    async function heartbeat() {
+      const { data: auth } = await supabase.auth.getSession();
+      if (!auth.session || cancelled) return;
+      await fetch(`/api/student/events/${eventId}/heartbeat`, { method: "POST", headers: { Authorization: `Bearer ${auth.session.access_token}` } }).catch(() => undefined);
+    }
+    void heartbeat();
+    const timer = window.setInterval(() => void heartbeat(), 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [eventId]);
   const [simulado, setSimulado] = useState<InitialSimulado>(initialSimulado);
   const [attempt, setAttempt] = useState<AttemptData | null>(null);
   const [attemptInfo, setAttemptInfo] = useState<AttemptInfo>({
@@ -355,6 +369,12 @@ export default function SimuladoExperience({
       if (!res.ok || !json.ok) {
         setErrorMessage(json.message || "Erro ao carregar simulado.");
         setPhase("error");
+        return;
+      }
+
+      if (eventId && json.result_released === false) {
+        setPhase("done");
+        router.replace(`/meus-eventos/${eventId}`);
         return;
       }
 
@@ -812,10 +832,11 @@ export default function SimuladoExperience({
       const query = new URLSearchParams();
       if (attemptIdValue) query.set("attemptId", attemptIdValue);
       if (jornadaId) query.set("jornada", jornadaId);
+      if (eventId) query.set("event", eventId);
       const queryString = query.toString();
       return `/meus-simulados/${simuladoId}/resultado${queryString ? `?${queryString}` : ""}`;
     },
-    [simuladoId, jornadaId],
+    [simuladoId, jornadaId, eventId],
   );
 
   const submitAttempt = useCallback(
@@ -859,7 +880,7 @@ export default function SimuladoExperience({
       setPhase("done");
       router.replace(buildResultUrl(attempt.id));
     },
-    [attempt, simuladoId, timeSpent, router, buildResultUrl],
+    [attempt, simuladoId, timeSpent, router, buildResultUrl, eventId],
   );
 
   function closeTopCoinsReward() {

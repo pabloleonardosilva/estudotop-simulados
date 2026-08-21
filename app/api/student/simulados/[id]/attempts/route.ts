@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { assertStudentCanStartSimulado } from "@/lib/server/studentAssertions";
 import { logActivity } from "@/lib/logging/activity-log";
+import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 
 function shuffle<T>(array: T[]): T[] {
   const arr = [...array];
@@ -75,6 +76,24 @@ export async function POST(
 
   const { id: simuladoId } = await params;
   const supabase = createSupabaseAdminClient();
+  const eventId = new URL(request.url).searchParams.get("event");
+  let eventParticipant: { id: string; event_id: string } | null = null;
+  let eventResultPolicy: "blocked" | "released" | null = null;
+  let eventCanStartNewAttempt = true;
+
+  if (eventId) {
+    const { data: participant } = await supabase
+      .from("simulado_event_participants")
+      .select("id,event_id,simulado_events:event_id(id,simulado_id,status,starts_at,ends_at,started_at,result_policy)")
+      .eq("event_id", eventId)
+      .eq("student_id", student.id)
+      .maybeSingle();
+    const event = participant?.simulado_events as unknown as { id: string; simulado_id: string | null; status: string; starts_at: string; ends_at: string; started_at: string | null; result_policy: "blocked" | "released" } | null;
+    if (!participant || !event || !event.simulado_id || event.simulado_id !== simuladoId) return NextResponse.json({ ok: false, message: "Você não possui acesso a um Simulado vinculado a este Evento." }, { status: 403 });
+    eventCanStartNewAttempt = effectiveEventStatus(event) === "active";
+    eventParticipant = { id: participant.id, event_id: participant.event_id };
+    eventResultPolicy = event.result_policy;
+  }
 
   const { data: simulado, error: simuladoError } = await supabase
     .from("simulados")
@@ -118,8 +137,10 @@ export async function POST(
     );
   }
 
-  const accessError = await assertStudentCanStartSimulado(student.id, simuladoId, supabase, request);
-  if (accessError) return accessError;
+  if (!eventId) {
+    const accessError = await assertStudentCanStartSimulado(student.id, simuladoId, supabase, request);
+    if (accessError) return accessError;
+  }
 
   const jornadaId = new URL(request.url).searchParams.get("jornada");
   if (jornadaId) {
@@ -170,6 +191,16 @@ export async function POST(
   }
 
   if (existing) {
+    if ((eventId && (existing.event_id !== eventId || existing.attempt_context !== "event" || existing.is_preview)) || (!eventId && existing.event_id)) {
+      return NextResponse.json({ ok: false, message: "Já existe uma tentativa em andamento deste Simulado em outro contexto." }, { status: 409 });
+    }
+    if (eventParticipant) {
+      await supabase
+        .from("simulado_event_participants")
+        .update({ representative_attempt_id: existing.id })
+        .eq("id", eventParticipant.id)
+        .is("representative_attempt_id", null);
+    }
     await logActivity({
       request,
       actorType: "student",
@@ -182,6 +213,10 @@ export async function POST(
       metadata: { simulado_id: simuladoId, simulado_title: simulado.title, jornada_id: jornadaId },
     });
     return buildAttemptResponse(supabase, existing, simulado);
+  }
+
+  if (eventId && !eventCanStartNewAttempt) {
+    return NextResponse.json({ ok: false, message: "O Evento não permite iniciar novas tentativas neste momento." }, { status: 403 });
   }
 
   // Validação de tentativas restantes
@@ -323,6 +358,7 @@ export async function POST(
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
     owl_help_limit: simulado.owl_help_limit ?? null,
+    event_result_policy: eventResultPolicy,
   };
 
   const { data: created, error: createError } = await supabase
@@ -339,6 +375,9 @@ export async function POST(
       question_order: questionOrder,
       settings_snapshot: settingsSnapshot,
       rules_accepted_at: startedAt.toISOString(),
+      attempt_context: eventId ? "event" : jornadaId ? "jornada" : "standalone",
+      event_id: eventId,
+      event_participant_id: eventParticipant?.id || null,
     })
     .select("*")
     .single();
@@ -348,6 +387,14 @@ export async function POST(
       { ok: false, message: createError?.message || "Não foi possível iniciar a tentativa." },
       { status: 500 },
     );
+  }
+
+  if (eventParticipant) {
+    await supabase
+      .from("simulado_event_participants")
+      .update({ representative_attempt_id: created.id })
+      .eq("id", eventParticipant.id)
+      .is("representative_attempt_id", null);
   }
 
   await logActivity({
@@ -365,6 +412,7 @@ export async function POST(
       attempt_number: attemptNumber,
       total_questions: orderedRows.length,
       jornada_id: jornadaId,
+      event_id: eventId,
     },
   });
 

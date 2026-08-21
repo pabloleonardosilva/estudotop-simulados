@@ -18,7 +18,10 @@ export async function POST(request: Request) {
     if (userError || !userData.user) return NextResponse.json({ ok: false, code: "PASSWORD_SESSION_INVALID", message: "Sua sessão de alteração de senha expirou. Solicite um novo acesso." }, { status: 401 });
 
     const approvedStudent = await getApprovedStudentForPasswordRecovery(supabase, { userId: userData.user.id });
-    if (!approvedStudent) return NextResponse.json({ ok: false, code: "PASSWORD_RECOVERY_NOT_ALLOWED", message: "A recuperação de senha está disponível somente para alunos aprovados." }, { status: 403 });
+    const { data: professor } = approvedStudent ? { data: null } : await supabase.from("professors").select("id,status").eq("id", userData.user.id).eq("status", "active").maybeSingle();
+    const { data: professorProfile } = professor ? await supabase.from("profiles").select("role,is_active").eq("id", professor.id).maybeSingle() : { data: null };
+    const validProfessor = Boolean(professor && professorProfile?.role === "professor" && professorProfile.is_active);
+    if (!approvedStudent && !validProfessor) return NextResponse.json({ ok: false, code: "PASSWORD_RECOVERY_NOT_ALLOWED", message: "A recuperação de senha não está disponível para esta conta." }, { status: 403 });
 
     const context = await getPasswordPolicyContext(supabase, userData.user.id, userData.user.email);
     const policyError = passwordPolicyError(password || "", confirmPassword, context);
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, code: "PASSWORD_UPDATE_FAILED", message: "Não foi possível atualizar sua senha. Tente novamente." }, { status: 400 });
     }
 
-    await logPasswordActivity({ supabase, studentId: approvedStudent.id, eventType: "password_reset", description: "Senha redefinida pelo aluno", performedByName: "Aluno", details: { source: "recovery_session", changed_by: "student" } });
+    if (approvedStudent) await logPasswordActivity({ supabase, studentId: approvedStudent.id, eventType: "password_reset", description: "Senha redefinida pelo aluno", performedByName: "Aluno", details: { source: "recovery_session", changed_by: "student" } });
 
     return NextResponse.json({ ok: true, message: "Senha alterada com sucesso." });
   } catch (error) {

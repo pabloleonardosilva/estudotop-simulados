@@ -10,6 +10,7 @@ import {
   simuladoReleasedTemplate,
 } from "@/app/lib/email/jornadaEmailTemplates";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { releasePendingEventResults } from "@/lib/server/simuladoEvents";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -333,6 +334,15 @@ export async function POST(
     );
   }
 
+  let eventResultReleased = true;
+  if (attempt.event_participant_id && attempt.event_id) {
+    const { data: event } = await supabase.from("simulado_events").select("result_policy").eq("id", attempt.event_id).maybeSingle();
+    const { data: participant } = await supabase.from("simulado_event_participants").select("representative_attempt_id,result_released_at").eq("id", attempt.event_participant_id).maybeSingle();
+    if (!participant?.representative_attempt_id) await supabase.from("simulado_event_participants").update({ representative_attempt_id: attemptId }).eq("id", attempt.event_participant_id);
+    if (event?.result_policy === "released" && !participant?.result_released_at) await releasePendingEventResults(supabase, attempt.event_id, request);
+    eventResultReleased = Boolean(participant?.result_released_at || event?.result_policy === "released");
+  }
+
   const { data: activeJornadas, error: activeJornadasError } = await supabase
     .from("student_jornadas")
     .select("id, expires_at, jornadas:jornada_id(title, planned_simulados_count)")
@@ -467,7 +477,7 @@ export async function POST(
   // remova as moedas daquela tentativa (ver app/lib/server/topcoinsSync.ts).
   let persistedTopCoins: number | null = null;
   try {
-    await resyncTopCoinEarnings(supabase, student.id, simuladoId);
+    if (eventResultReleased) await resyncTopCoinEarnings(supabase, student.id, simuladoId);
     const { data: earningRow } = await supabase
       .from("topcoin_earnings")
       .select("amount")
@@ -527,5 +537,5 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ ok: true, result_id: resultRow.id, earned_topcoins: persistedTopCoins });
+  return NextResponse.json({ ok: true, result_id: resultRow.id, earned_topcoins: persistedTopCoins, result_released: eventResultReleased, event_id: attempt.event_id || null });
 }

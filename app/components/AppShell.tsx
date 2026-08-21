@@ -53,7 +53,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("estudotop:open-help-center", openHelpCenter);
   }, []);
   const publicRoutes = ["/login", "/esqueci-senha", "/redefinir-senha", "/cadastro", "/primeiro-acesso"];
-  const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith("/cadastro/confirmar");
+  const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith("/cadastro/confirmar") || pathname.startsWith("/evento/");
   const isPublicViewRoute = pathname.startsWith("/r/");
   const isChangePasswordRoute = pathname === "/alterar-senha";
   const isStudentExamPage = pathname.startsWith("/aluno/simulado");
@@ -66,6 +66,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isDarkPremiumRoute =
     isDarkSimuladosRoute ||
     pathname.startsWith("/admin/jornadas") ||
+    pathname.startsWith("/admin/eventos") ||
+    pathname.startsWith("/admin/professores") ||
     pathname.startsWith("/admin/raio-x-provas") ||
     pathname.startsWith("/questoes") ||
     pathname.startsWith("/admin/alunos") ||
@@ -78,23 +80,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setIsPopupRoute(new URLSearchParams(window.location.search).get("popup") === "1");
+    const timer = window.setTimeout(() => setIsPopupRoute(new URLSearchParams(window.location.search).get("popup") === "1"), 0);
+    return () => window.clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {
     if (!loading && user?.id && profile?.role) {
-      fetch("/api/system/security-event", {
+      void supabase.auth.getSession().then(({ data }) => data.session && fetch("/api/system/security-event", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
         body: JSON.stringify({
           eventType: "session_touch",
-          actorType: profile.role,
-          actorId: user.id,
-          actorName: profile.full_name,
-          actorEmail: user.email,
           route: pathname,
         }),
-      }).catch(() => undefined);
+      }).catch(() => undefined));
     }
   }, [loading, user?.id, user?.email, profile?.role, profile?.full_name, pathname]);
 
@@ -112,7 +111,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     if (user && profile && isPublicRoute && pathname !== "/cadastro" && !pathname.startsWith("/cadastro/confirmar")) {
-      router.replace(profile.role === "admin" ? "/dashboard" : "/aluno");
+      router.replace(profile.role === "admin" ? "/dashboard" : profile.role === "professor" ? "/professor/eventos" : "/aluno");
       return;
     }
 
@@ -122,11 +121,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       pathname.startsWith("/meus-simulados") ||
       pathname.startsWith("/minhas-anotacoes") ||
       pathname.startsWith("/meus-resultados") ||
+      pathname.startsWith("/meus-eventos") ||
       pathname.startsWith("/meu-perfil") ||
       pathname.startsWith("/extrato-topcoins");
 
     if (user && profile?.role === "student" && !isChangePasswordRoute && !isAllowedStudentRoute) {
       router.replace("/minhas-jornadas");
+    }
+
+    if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor")) {
+      router.replace("/professor/eventos");
     }
   }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router]);
 
@@ -299,6 +303,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const isStudentArea = profile.role === "student";
+
+  if (profile.role === "professor") {
+    return <div className={`min-h-dvh bg-[#050b14] text-white ${openSans.className}`}><main className="min-h-dvh">{children}</main></div>;
+  }
 
   if (isStudentArea) {
     const isPainel = pathname === "/aluno";

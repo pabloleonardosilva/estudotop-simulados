@@ -24,6 +24,11 @@ export function getPublicAppUrl(): string {
     throw new Error("NEXT_PUBLIC_APP_URL não é uma URL válida.");
   }
 
+  const hostname = parsed.hostname.toLowerCase();
+  if (!["http:", "https:"].includes(parsed.protocol) || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    throw new Error("NEXT_PUBLIC_APP_URL deve apontar para a URL web pública da aplicação, nunca para localhost.");
+  }
+
   // Sem barra final: os chamadores concatenam caminhos como `/login`.
   return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
