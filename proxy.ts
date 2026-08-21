@@ -46,7 +46,8 @@ export async function proxy(request: NextRequest) {
 
   const isPublic =
     publicPaths.some((path) => pathname.startsWith(path)) ||
-    pathname.startsWith("/r/");
+    pathname.startsWith("/r/") ||
+    pathname.startsWith("/evento/");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();

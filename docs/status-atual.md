@@ -1080,3 +1080,12 @@ Escopo previsto:
 - A confirmação usa token opaco de 256 bits, hash SHA-256 persistido, validade de 24 horas, Resend e cookie `HttpOnly`. Após a confirmação, conta existente segue para login/recuperação e conta nova para cadastro com e-mail fixado e contexto preservado.
 - Cooldown de 60 segundos evita reenvio repetido. Criada, sem execução, a migration `supabase/migrations/20260820170000_limit_event_join_intents.sql`, que deduplica e limita a uma intenção pendente por Evento/e-mail.
 - As variáveis existentes `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`, `RESEND_API_KEY` e `NEXT_PUBLIC_APP_URL` são reutilizadas; nenhum novo segredo foi introduzido.
+
+### Correção — link público do Evento redirecionava para /login — ✅ Corrigido em 2026-08-21
+
+- Identificado em produção: `GET /evento/<slug>` sem sessão retornava `307` para `/login` antes mesmo de a página carregar.
+- Causa raiz: `proxy.ts` (raiz do projeto, equivalente ao `middleware.ts` nesta versão do Next.js) mantém sua própria lista de rotas públicas, independente da lista usada pelo `AppShell.tsx`. A Sprint do Evento havia atualizado apenas o `AppShell`; o `proxy.ts` não conhecia `/evento/` e bloqueava o visitante anônimo antes de a rota pública ser alcançada.
+- Correção: adicionada a condição `pathname.startsWith("/evento/")` ao cálculo de `isPublic` em `proxy.ts`, no mesmo padrão já usado para `/r/`.
+- Validado localmente com build de produção (`next start`), sem cookies: `/evento/<slug>` responde `200`; URLs desconhecidas e todas as rotas privadas (Admin, Professor, Aluno) continuam retornando `307 → /login` normalmente.
+- Lição registrada para futuras rotas públicas: uma rota só é efetivamente pública quando adicionada tanto em `proxy.ts` quanto em `app/components/AppShell.tsx`.
+- Nenhuma migration foi criada ou alterada para esta correção.
