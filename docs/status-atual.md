@@ -1089,3 +1089,13 @@ Escopo previsto:
 - Validado localmente com build de produção (`next start`), sem cookies: `/evento/<slug>` responde `200`; URLs desconhecidas e todas as rotas privadas (Admin, Professor, Aluno) continuam retornando `307 → /login` normalmente.
 - Lição registrada para futuras rotas públicas: uma rota só é efetivamente pública quando adicionada tanto em `proxy.ts` quanto em `app/components/AppShell.tsx`.
 - Nenhuma migration foi criada ou alterada para esta correção.
+
+### Refinamento do ingresso e cadastro pelo Evento de Simulado — ✅ Implementado em 2026-08-21
+
+- Removido o terceiro e-mail ("crie sua senha") do cadastro de aluno novo originado por Evento. O fluxo passa a enviar somente dois e-mails: continuação do cadastro e código de confirmação.
+- Os dois e-mails passaram a reutilizar o mesmo shell escuro (`#050816`/`#0b1020`, barra em gradiente laranja, cabeçalho "ESTUDOTOP") já usado nos e-mails de Jornada, via `lib/email/studentRegistrationTemplates.ts`. O e-mail de continuação, antes HTML solto direto em `app/api/events/[slug]/route.ts`, passou a usar a nova função `eventContinueRegistrationTemplate`.
+- Depois do código correto, `POST /api/auth/confirm-registration` cria o token de definição de senha (mesma tabela/propósito `first_access` já usada pelo primeiro acesso por e-mail) e devolve o token bruto diretamente na resposta, sem envio por Resend. `/cadastro` ganhou a etapa "Crie sua senha", reaproveitando `PasswordRequirements` e `validatePassword` (política única do sistema) e enviando o token para `POST /api/auth/first-access`, endpoint existente e inalterado.
+- `students.approved_at` passou a ser preenchido na criação da conta por Evento, garantindo que "Esqueci minha senha" continue funcionando caso o aluno feche o navegador antes de criar a senha inicial.
+- `/evento/[slug]` ganhou uma tela clara e específica depois do envio do e-mail de continuação ("Enviamos um e-mail para você"), com e-mail parcialmente mascarado e aviso sobre Spam/Promoções; a etapa de captura do e-mail permanece no visual escuro premium.
+- Cadastro convencional (fora de Evento), cadastro administrativo, Professor e recuperação de senha não foram alterados.
+- Nenhuma migration foi criada ou alterada nesta correção.

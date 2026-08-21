@@ -2,17 +2,17 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { generateTemporaryPassword } from "@/lib/utils/password";
-import { addMinutes, generateNumericCode, hashRegistrationValue } from "@/lib/security/registrationTokens";
+import { addHours, addMinutes, generateNumericCode, generateSecureToken, hashEmailActionToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
-import { sendFirstAccessEmail } from "@/lib/server/sendFirstAccessEmail";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
 const INVALID_CODE_RESEND_COOLDOWN_SECONDS = 60;
+const EVENT_PASSWORD_SETUP_EXPIRATION_HOURS = 72;
 
 type ConfirmPayload = {
   email: string;
@@ -204,7 +204,7 @@ export async function POST(request: Request) {
         desiredContests: confirmation.desired_contests || null,
         temporaryPassword,
         status: eventSignup ? "active" : "pending",
-        extraStudentFields: { email_confirmed_at: new Date().toISOString(), ...(eventSignup ? { origin: "Evento de Simulado", origin_event_id: eventId, origin_registered_at: new Date().toISOString() } : {}) },
+        extraStudentFields: { email_confirmed_at: new Date().toISOString(), ...(eventSignup ? { origin: "Evento de Simulado", origin_event_id: eventId, origin_registered_at: new Date().toISOString(), approved_at: new Date().toISOString() } : {}) },
       });
       userId = account.userId;
     } catch (error) {
@@ -223,17 +223,41 @@ export async function POST(request: Request) {
         supabase.from("simulado_event_participants").upsert({ event_id: eventId, student_id: userId, source: "registration" }, { onConflict: "event_id,student_id", ignoreDuplicates: true }),
         supabase.from("simulado_event_join_intents").update({ consumed_at: new Date().toISOString() }).eq("event_id", eventId).eq("email", email).is("consumed_at", null),
       ]);
-      try {
-        await sendFirstAccessEmail(userId);
-      } catch (error) {
-        void logSystemError({ source: "api.auth.confirm_registration.event_first_access_email", error, request, metadata: { user_id: userId, event_id: eventId } });
+
+      // Cadastro originado por Evento define a senha imediatamente na própria
+      // experiência, sem um terceiro e-mail. O token reutiliza exatamente o
+      // mecanismo seguro de primeiro acesso (mesma tabela/propósito consumido
+      // por POST /api/auth/first-access), apenas sem envio por e-mail: é
+      // devolvido uma única vez, nesta resposta, para uso imediato no navegador
+      // que acabou de comprovar o código. Se o aluno abandonar antes de criar a
+      // senha, a conta permanece recuperável pelo fluxo convencional "Esqueci
+      // minha senha" (students.approved_at foi definido acima).
+      const passwordSetupToken = generateSecureToken();
+      const { error: passwordTokenError } = await supabase.from("student_registration_confirmations").insert({
+        purpose: "first_access",
+        user_id: userId,
+        full_name: confirmation.full_name,
+        email,
+        token_hash: hashEmailActionToken(passwordSetupToken),
+        expires_at: addHours(EVENT_PASSWORD_SETUP_EXPIRATION_HOURS),
+        metadata: { source: "event_signup_inline", event_id: eventId },
+      });
+      if (passwordTokenError) {
+        void logSystemError({ source: "api.auth.confirm_registration.event_password_token", error: passwordTokenError, request, metadata: { user_id: userId, event_id: eventId } });
       }
+
+      return NextResponse.json({
+        ok: true,
+        message: "E-mail confirmado. Sua conta está ativa. Defina sua senha para continuar.",
+        event_id: eventId,
+        password_setup_token: passwordTokenError ? null : passwordSetupToken,
+      });
     }
 
     return NextResponse.json({
       ok: true,
-      message: eventSignup ? "E-mail confirmado. Sua conta está ativa e sua participação no Evento foi confirmada." : "E-mail confirmado. Seu cadastro foi efetivado e ficará em análise para liberação.",
-      event_id: eventSignup ? eventId : null,
+      message: "E-mail confirmado. Seu cadastro foi efetivado e ficará em análise para liberação.",
+      event_id: null,
     });
   } catch (error) {
     void logSystemError({ source: "api.auth.confirm_registration", error, request });

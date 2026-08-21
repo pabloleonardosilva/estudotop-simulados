@@ -7,13 +7,10 @@ import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { Resend } from "resend";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSecurityEvent } from "@/lib/logging/security-log";
+import { eventContinueRegistrationPlainText, eventContinueRegistrationTemplate } from "@/lib/email/studentRegistrationTemplates";
 
 const RECAPTCHA_ACTION = "event_join_request";
 const RESEND_COOLDOWN_MS = 60_000;
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] || character);
-}
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -56,12 +53,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
   }
   const confirmationUrl = `${publicAppUrl}/evento/${encodeURIComponent(slug)}?token=${encodeURIComponent(token)}`;
-  const safeEventName = escapeHtml(event.name);
   const { error: emailError } = await new Resend(resendApiKey).emails.send({
     from: "EstudoTOP <estudotop@estudotop.com.br>", replyTo: "estudotop@estudotop.com.br", to: email,
-    subject: `Confirme sua participação — ${event.name}`,
-    html: `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#050816;font-family:Arial,sans-serif;color:#fff"><table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#0b1020;border:1px solid #253047;border-radius:24px;overflow:hidden"><tr><td style="height:5px;background:linear-gradient(90deg,#ff6b00,#f7c76b,#ff6b00)"></td></tr><tr><td style="padding:38px;text-align:center"><p style="letter-spacing:6px;color:#f7c76b;font-weight:700">ESTUDOTOP</p><h1>Confirme seu e-mail</h1><p style="color:#b8c2d8;line-height:1.7">Confirme seu e-mail para continuar no Evento <strong style="color:#fff">${safeEventName}</strong>.</p><a href="${confirmationUrl}" style="display:inline-block;margin-top:18px;background:linear-gradient(135deg,#f7c76b,#ff6b00);color:#111827;text-decoration:none;font-weight:900;padding:15px 28px;border-radius:999px">Continuar participação</a><p style="margin-top:24px;color:#7f8aa3;font-size:12px;word-break:break-all">Este link expira em 24 horas.<br>${confirmationUrl}</p></td></tr></table></td></tr></table></body></html>`,
-    text: `Confirme seu e-mail para continuar no Evento ${event.name}: ${confirmationUrl}`,
+    subject: `Continue sua inscrição — ${event.name}`,
+    html: eventContinueRegistrationTemplate({ eventName: event.name, continueUrl: confirmationUrl }),
+    text: eventContinueRegistrationPlainText({ eventName: event.name, continueUrl: confirmationUrl }),
   });
   if (emailError) {
     await supabase.from("simulado_event_join_intents").delete().eq("token_hash", hashEmailActionToken(token));

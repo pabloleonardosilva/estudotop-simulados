@@ -1893,6 +1893,15 @@ Após implementação, `docs/INDICE_FUNCOES_SISTEMA.md` deverá documentar:
 - Solicitações repetidas para o mesmo Evento/e-mail possuem cooldown de 60 segundos. Uma nova migration deduplica intenções pendentes e cria índice único parcial, garantindo no máximo uma intenção não consumida por Evento/e-mail mesmo sob concorrência.
 - Aluno já autenticado pode ingressar diretamente: a API deriva a identidade do token e valida o Evento antes de criar o vínculo, sem solicitar novamente o e-mail.
 
+## 71.6 Redução do cadastro por Evento para dois e-mails — 2026-08-21
+
+- O fluxo de aluno novo originado por Evento passa a enviar exatamente dois e-mails: continuação do cadastro (posse do e-mail) e código de confirmação. O terceiro e-mail, que antes enviava um link separado para "criar senha", foi eliminado desse fluxo.
+- Os dois e-mails reutilizam o mesmo wrapper/identidade visual já usado pelas Jornadas (`lib/email/jornadaEmailTemplates.ts` e `lib/email/studentRegistrationTemplates.ts` compartilham o mesmo shell escuro `#050816`/`#0b1020` com barra em gradiente laranja e cabeçalho "ESTUDOTOP"). O e-mail de continuação, que antes era HTML solto direto na rota, passou a usar `eventContinueRegistrationTemplate` no mesmo arquivo/shell do e-mail de código.
+- Depois do código correto, a conta do Evento já nasce ativa e recebe imediatamente, na própria resposta da API, um token de definição de senha (`purpose: "first_access"`, mesma tabela e mesmo mecanismo já usado pelo primeiro acesso por e-mail) — sem que esse token seja enviado por e-mail. A tela `/cadastro` evolui para uma etapa "Crie sua senha" dentro da mesma experiência, usando `PasswordRequirements`/`validatePassword` (política única do sistema) e enviando o token para `POST /api/auth/first-access` (endpoint existente, sem alteração).
+- `students.approved_at` passou a ser preenchido automaticamente na criação de conta originada por Evento, para que o fluxo convencional "Esqueci minha senha" continue funcionando mesmo que o aluno abandone a etapa antes de criar a senha.
+- A tela pública `/evento/[slug]` recebeu uma segunda variação clara: a etapa antes de informar o e-mail permanece no visual escuro premium recém-criado; a etapa exibida depois do envio ("Enviamos um e-mail para você") passou a usar fundo claro, e-mail parcialmente mascarado e aviso sobre Spam/Promoções, para não ter aparência administrativa.
+- Nenhuma migration foi criada ou alterada para esta correção.
+
 # 72. Testes funcionais obrigatórios
 
 ## Cadastro e ingresso

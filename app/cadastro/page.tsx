@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { BookOpen, GraduationCap, MailCheck, ShieldCheck, Trophy } from "lucide-react";
+import { BookOpen, Eye, EyeOff, GraduationCap, KeyRound, MailCheck, ShieldCheck, Trophy } from "lucide-react";
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
+import { supabase } from "../lib/supabase/client";
+import { PasswordRequirements } from "@/app/components/auth/PasswordRequirements";
+import { validatePassword } from "@/lib/auth/passwordPolicy";
 
-type Step = "form" | "code" | "done";
+type Step = "form" | "code" | "password" | "done";
 type RegistrationField = "fullName" | "whatsapp" | "email" | "cpf" | "desiredContests";
 
 const FIELD_LABELS: Record<RegistrationField, string> = {
@@ -23,6 +27,7 @@ function formatRequiredFields(fields: RegistrationField[]) {
 }
 
 export default function CadastroPage() {
+  const router = useRouter();
   const [step, setStep] = useState<Step>("form");
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -35,6 +40,16 @@ export default function CadastroPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [invalidFields, setInvalidFields] = useState<RegistrationField[]>([]);
   const [eventSignup, setEventSignup] = useState(false);
+  const [eventId, setEventId] = useState<string | null>(null);
+  const [passwordSetupToken, setPasswordSetupToken] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordViolations, setPasswordViolations] = useState<string[]>([]);
+  const [passwordCreated, setPasswordCreated] = useState(false);
+  const passwordValidation = validatePassword(password, { fullName, email });
+  const canCreatePassword = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -138,6 +153,8 @@ export default function CadastroPage() {
       message: string;
       resend_message?: string;
       clear_code?: boolean;
+      event_id?: string | null;
+      password_setup_token?: string | null;
     };
     setLoading(false);
 
@@ -149,6 +166,53 @@ export default function CadastroPage() {
     }
 
     setSuccessMessage(data.message);
+    if (data.event_id && data.password_setup_token) {
+      setEventId(data.event_id);
+      setPasswordSetupToken(data.password_setup_token);
+      setStep("password");
+      return;
+    }
+    setStep("done");
+  }
+
+  async function handleCreatePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage("");
+
+    if (!passwordSetupToken) {
+      setErrorMessage("Sua sessão de definição de senha expirou. Solicite um novo cadastro.");
+      return;
+    }
+    if (!passwordValidation.valid || password !== confirmPassword) {
+      setErrorMessage(password !== confirmPassword ? "A confirmação da senha está diferente da nova senha." : "A senha não atende aos requisitos de segurança.");
+      return;
+    }
+
+    setLoading(true);
+    const response = await fetch("/api/auth/first-access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: passwordSetupToken, password, confirmPassword }),
+    });
+
+    const data = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
+
+    if (!data.ok) {
+      setLoading(false);
+      setPasswordViolations(data.violations || []);
+      setErrorMessage(data.message || "Não foi possível definir sua senha.");
+      return;
+    }
+
+    setPasswordCreated(true);
+    const { data: authData } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    setSuccessMessage("Cadastro concluído.");
+
+    if (authData?.session && eventId) {
+      router.replace(`/meus-eventos/${eventId}`);
+      return;
+    }
     setStep("done");
   }
 
@@ -168,17 +232,21 @@ export default function CadastroPage() {
               <MailCheck />
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-orange-400">
-              {step === "form" ? "Dados do aluno" : step === "code" ? "Confirmação" : "Cadastro confirmado"}
+              {step === "form" ? "Dados do aluno" : step === "code" ? "Confirmação" : step === "password" ? "Segurança" : "Cadastro confirmado"}
             </p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-              {step === "form" ? "Cadastro de acesso" : step === "code" ? "Digite o código enviado" : "Cadastro efetivado"}
+              {step === "form" ? "Cadastro de acesso" : step === "code" ? "Digite o código enviado" : step === "password" ? "Crie sua senha" : "Cadastro efetivado"}
             </h1>
             <p className="mt-2 text-sm leading-6 text-slate-300">
               {step === "form"
                 ? "Preencha seus dados, confirme o código enviado ao e-mail e aguarde a liberação da equipe EstudoTOP. O CPF é obrigatório e evita cadastros duplicados."
                 : step === "code"
-                ? `Enviamos um código para ${email}. Confirme para efetivar o cadastro.`
-                : eventSignup ? "Sua conta está ativa. Enviamos o link para você definir a senha e entrar no Evento." : "Seu e-mail foi confirmado. Depois da aprovação, você receberá um link para definir sua senha de primeiro acesso."}
+                ? `Enviamos um código para ${email}. Confirme para efetivar o cadastro. Esse código possui validade limitada.`
+                : step === "password"
+                ? "E-mail confirmado com sucesso. Agora crie sua senha de acesso para concluir o cadastro."
+                : eventSignup
+                ? (passwordCreated ? "Sua senha foi criada e o cadastro foi concluído." : "Sua conta está ativa. Use \"Esqueci minha senha\" na tela de login para criar sua senha de acesso.")
+                : "Seu e-mail foi confirmado. Depois da aprovação, você receberá um link para definir sua senha de primeiro acesso."}
             </p>
 
             {successMessage && (
@@ -221,6 +289,45 @@ export default function CadastroPage() {
               </form>
             )}
 
+            {step === "password" && (
+              <form className="mt-6 space-y-4" onSubmit={handleCreatePassword}>
+                <div className="mb-2 inline-flex rounded-2xl bg-orange-500/15 p-2.5 text-orange-300">
+                  <KeyRound size={18} />
+                </div>
+                <div className="relative">
+                  <input
+                    className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 pr-12 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
+                    placeholder="Senha"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setPasswordViolations([]); }}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-orange-300" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>
+                    {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+                <PasswordRequirements password={password} context={{ fullName, email }} serverViolations={passwordViolations} dark />
+                <div className="relative">
+                  <input
+                    className="w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3.5 pr-12 text-sm outline-none placeholder:text-slate-500 focus:border-orange-400"
+                    placeholder="Confirmar senha"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowConfirmPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-orange-300" aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>
+                    {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+                {confirmPassword.length > 0 && password !== confirmPassword && <p className="text-xs font-semibold text-red-300">A confirmação da senha está diferente da nova senha.</p>}
+                <button type="submit" disabled={!canCreatePassword} className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
+                  {loading ? "Salvando..." : "Criar senha e continuar"}
+                </button>
+              </form>
+            )}
+
             {step === "done" && (
               <div className="mt-8 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 py-6">
                 <div className="mb-3 inline-flex rounded-2xl bg-emerald-500/20 p-2 text-emerald-300">
@@ -228,11 +335,13 @@ export default function CadastroPage() {
                 </div>
                 <p className="font-semibold text-emerald-300">Tudo certo!</p>
                 <p className="mt-2 text-sm leading-6 text-emerald-200/80">
-                  {eventSignup ? "Sua participação foi confirmada e sua conta já está ativa. Consulte seu e-mail para definir a senha de primeiro acesso." : "Seu cadastro foi confirmado e ficará em análise. Depois da aprovação, enviaremos o link de primeiro acesso para você criar sua senha."}
+                  {eventSignup
+                    ? (passwordCreated ? "Sua participação no Evento foi confirmada e sua senha já está ativa." : "Sua participação foi confirmada e sua conta já está ativa. Use \"Esqueci minha senha\" na tela de login para criar sua senha de acesso.")
+                    : "Seu cadastro foi confirmado e ficará em análise. Depois da aprovação, enviaremos o link de primeiro acesso para você criar sua senha."}
                 </p>
                 <div className="mt-5">
                   <Link href="/login" className="text-sm font-semibold text-orange-300 hover:text-orange-200">
-                    Voltar para o login
+                    {passwordCreated ? "Entrar agora" : "Voltar para o login"}
                   </Link>
                 </div>
               </div>

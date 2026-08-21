@@ -11,6 +11,20 @@ type AdminInviteEmailProps = {
   expiresInHours: number;
 };
 
+type EventContinueRegistrationEmailProps = {
+  eventName: string;
+  continueUrl: string;
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 const shellStart = `
 <!doctype html>
 <html lang="pt-BR">
@@ -60,7 +74,7 @@ export function publicRegistrationCodeTemplate({
                 <div style="background:linear-gradient(135deg,rgba(247,199,107,0.14),rgba(255,107,0,0.08));border:1px solid rgba(247,199,107,0.30);border-radius:20px;padding:26px;text-align:center;">
                   <p style="font-size:12px;color:#f7c76b;font-weight:800;margin:0 0 12px;letter-spacing:2px;text-transform:uppercase;">Código de confirmação</p>
                   <div style="font-size:40px;letter-spacing:10px;font-weight:900;color:#ffffff;">${code}</div>
-                  <p style="font-size:13px;color:#aeb9d2;margin:16px 0 0;">Este código expira em ${expiresInMinutes} minutos.</p>
+                  <p style="font-size:13px;color:#aeb9d2;margin:16px 0 0;">Este código expira em ${expiresInMinutes} minutos. Não compartilhe este código com ninguém.</p>
                 </div>
               </td>
             </tr>
@@ -104,4 +118,40 @@ export function adminInviteConfirmationTemplate({
                   Este link expira em ${expiresInHours} horas. Se o botão não funcionar, copie e cole este endereço no navegador:<br />
                   <span style="color:#aeb9d2;word-break:break-all;">${confirmUrl}</span>
                 </p>${shellEnd}`;
+}
+
+export function eventContinueRegistrationTemplate({ eventName, continueUrl }: EventContinueRegistrationEmailProps) {
+  const safeEventName = escapeHtml(eventName);
+  return `${shellStart}
+                <h1 style="font-size:28px;line-height:1.25;margin:0;color:#ffffff;">Continue sua inscrição no Evento</h1>
+                <p style="font-size:15px;line-height:1.7;color:#b8c2d8;margin:16px 0 0;">
+                  Recebemos uma solicitação para participar do Evento <strong style="color:#ffffff;">${safeEventName}</strong>. Clique no botão abaixo para continuar seu cadastro no EstudoTOP.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:22px 34px 8px;">
+                <a href="${continueUrl}" style="display:inline-block;background:linear-gradient(135deg,#f7c76b,#ff6b00);color:#111827;text-decoration:none;font-weight:900;font-size:15px;padding:15px 28px;border-radius:999px;box-shadow:0 12px 30px rgba(247,199,107,0.25);">
+                  Continuar cadastro
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 34px 34px;">
+                <p style="font-size:12px;line-height:1.6;color:#7f8aa3;margin:0;">
+                  Por segurança, este link possui validade limitada. Se o botão não funcionar, copie e cole este endereço no navegador:<br />
+                  <span style="color:#aeb9d2;word-break:break-all;">${continueUrl}</span>
+                </p>${shellEnd}`;
+}
+
+export function eventContinueRegistrationPlainText({ eventName, continueUrl }: EventContinueRegistrationEmailProps) {
+  return `Continue sua inscrição no Evento ${eventName}
+
+Recebemos uma solicitação para participar do Evento ${eventName}. Acesse o link abaixo para continuar seu cadastro no EstudoTOP.
+
+${continueUrl}
+
+Por segurança, este link possui validade limitada.
+
+EstudoTOP Simulados`;
 }
