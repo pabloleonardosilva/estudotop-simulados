@@ -100,30 +100,35 @@ export default function CadastroPage() {
       return;
     }
 
-    const response = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fullName,
-        whatsapp,
-        email,
-        cpf: cpfDigits,
-        desiredContests,
-      }),
-    });
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName,
+          whatsapp,
+          email,
+          cpf: cpfDigits,
+          desiredContests,
+        }),
+      });
 
-    const data = (await response.json()) as { ok: boolean; message: string; fields?: RegistrationField[] };
-    setLoading(false);
+      const data = (await response.json()) as { ok: boolean; message: string; fields?: RegistrationField[] };
 
-    if (!data.ok) {
-      setInvalidFields(data.fields || []);
-      setErrorMessage(data.message);
-      return;
+      if (!data.ok) {
+        setInvalidFields(data.fields || []);
+        setErrorMessage(data.message);
+        return;
+      }
+
+      setInvalidFields([]);
+      setSuccessMessage(data.message);
+      setStep("code");
+    } catch {
+      setErrorMessage("Não foi possível enviar o código agora. Verifique sua conexão e tente novamente.");
+    } finally {
+      setLoading(false);
     }
-
-    setInvalidFields([]);
-    setSuccessMessage(data.message);
-    setStep("code");
   }
 
   function clearFieldError(field: RegistrationField) {
@@ -141,38 +146,43 @@ export default function CadastroPage() {
     setLoading(true);
     setErrorMessage("");
 
-    const response = await fetch("/api/auth/confirm-registration", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code }),
-    });
+    try {
+      const response = await fetch("/api/auth/confirm-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
+      });
 
-    const data = (await response.json()) as {
-      ok: boolean;
-      code?: string;
-      message: string;
-      resend_message?: string;
-      clear_code?: boolean;
-      event_id?: string | null;
-      password_setup_token?: string | null;
-    };
-    setLoading(false);
+      const data = (await response.json()) as {
+        ok: boolean;
+        code?: string;
+        message: string;
+        resend_message?: string;
+        clear_code?: boolean;
+        event_id?: string | null;
+        password_setup_token?: string | null;
+      };
 
-    if (!data.ok) {
-      if (data.clear_code) setCode("");
-      if (data.resend_message) setSuccessMessage(data.resend_message);
-      setErrorMessage(data.message);
-      return;
+      if (!data.ok) {
+        if (data.clear_code) setCode("");
+        if (data.resend_message) setSuccessMessage(data.resend_message);
+        setErrorMessage(data.message);
+        return;
+      }
+
+      setSuccessMessage(data.message);
+      if (data.event_id && data.password_setup_token) {
+        setEventId(data.event_id);
+        setPasswordSetupToken(data.password_setup_token);
+        setStep("password");
+        return;
+      }
+      setStep("done");
+    } catch {
+      setErrorMessage("Não foi possível confirmar o código agora. Verifique sua conexão e tente novamente.");
+    } finally {
+      setLoading(false);
     }
-
-    setSuccessMessage(data.message);
-    if (data.event_id && data.password_setup_token) {
-      setEventId(data.event_id);
-      setPasswordSetupToken(data.password_setup_token);
-      setStep("password");
-      return;
-    }
-    setStep("done");
   }
 
   async function handleCreatePassword(event: FormEvent<HTMLFormElement>) {
@@ -189,31 +199,35 @@ export default function CadastroPage() {
     }
 
     setLoading(true);
-    const response = await fetch("/api/auth/first-access", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: passwordSetupToken, password, confirmPassword }),
-    });
+    try {
+      const response = await fetch("/api/auth/first-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: passwordSetupToken, password, confirmPassword }),
+      });
 
-    const data = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
+      const data = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
 
-    if (!data.ok) {
+      if (!data.ok) {
+        setPasswordViolations(data.violations || []);
+        setErrorMessage(data.message || "Não foi possível definir sua senha.");
+        return;
+      }
+
+      setPasswordCreated(true);
+      const { data: authData } = await supabase.auth.signInWithPassword({ email, password });
+      setSuccessMessage("Cadastro concluído.");
+
+      if (authData?.session && eventId) {
+        router.replace(`/meus-eventos/${eventId}`);
+        return;
+      }
+      setStep("done");
+    } catch {
+      setErrorMessage("Não foi possível concluir agora. Verifique sua conexão e tente novamente.");
+    } finally {
       setLoading(false);
-      setPasswordViolations(data.violations || []);
-      setErrorMessage(data.message || "Não foi possível definir sua senha.");
-      return;
     }
-
-    setPasswordCreated(true);
-    const { data: authData } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    setSuccessMessage("Cadastro concluído.");
-
-    if (authData?.session && eventId) {
-      router.replace(`/meus-eventos/${eventId}`);
-      return;
-    }
-    setStep("done");
   }
 
   return (

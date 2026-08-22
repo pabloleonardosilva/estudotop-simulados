@@ -31,11 +31,15 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
   useEffect(() => { void fetch(`/api/events/${slug}`).then((response) => response.json()).then((json) => { if (json.ok) setEvent(json.event); else setMessage(json.message); }).finally(() => setLoading(false)); }, [slug]);
   useEffect(() => {
     const timer = window.setTimeout(async () => {
-      const { data: auth } = await supabase.auth.getSession();
-      if (!auth.session || new URLSearchParams(window.location.search).has("token")) return;
-      const response = await fetch(`/api/events/${slug}`, { method: "PUT", headers: { Authorization: `Bearer ${auth.session.access_token}` } });
-      const json = await response.json().catch(() => ({}));
-      if (response.ok && json.ok && json.event_id) router.replace(`/meus-eventos/${json.event_id}`);
+      try {
+        const { data: auth } = await supabase.auth.getSession();
+        if (!auth.session || new URLSearchParams(window.location.search).has("token")) return;
+        const response = await fetch(`/api/events/${slug}`, { method: "PUT", headers: { Authorization: `Bearer ${auth.session.access_token}` } });
+        const json = await response.json().catch(() => ({}));
+        if (response.ok && json.ok && json.event_id) router.replace(`/meus-eventos/${json.event_id}`);
+      } catch {
+        // Verificação silenciosa de vínculo já existente — falha de rede aqui não deve travar a tela pública.
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [router, slug]);
@@ -44,11 +48,16 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
     if (!token) return;
     const timer = window.setTimeout(async () => {
       setSending(true);
-      const response = await fetch(`/api/events/${slug}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
-      const json = await response.json().catch(() => ({}));
-      setSending(false);
-      if (!response.ok || !json.ok) return setMessage(json.message || "Link de confirmação inválido ou expirado.");
-      router.replace(json.next);
+      try {
+        const response = await fetch(`/api/events/${slug}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || !json.ok) return setMessage(json.message || "Link de confirmação inválido ou expirado.");
+        router.replace(json.next);
+      } catch {
+        setMessage("Não foi possível validar seu link agora. Verifique sua conexão e tente novamente.");
+      } finally {
+        setSending(false);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [router, slug]);
@@ -68,10 +77,16 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
         });
       });
     } catch { setSending(false); setMessage("Não foi possível validar o envio. Tente novamente."); return; }
-    const response = await fetch(`/api/events/${slug}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, captcha_token: captchaToken }) });
-    const json = await response.json().catch(() => ({})); setSending(false);
-    if (!response.ok || !json.ok) return setMessage(json.message || "Não foi possível continuar.");
-    setSent(true); setMessage(json.message);
+    try {
+      const response = await fetch(`/api/events/${slug}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, captcha_token: captchaToken }) });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.ok) return setMessage(json.message || "Não foi possível continuar.");
+      setSent(true); setMessage(json.message);
+    } catch {
+      setMessage("Não foi possível continuar agora. Verifique sua conexão e tente novamente.");
+    } finally {
+      setSending(false);
+    }
   }
 
   async function submit(submitEvent: FormEvent) { submitEvent.preventDefault(); await requestConfirmation(); }
