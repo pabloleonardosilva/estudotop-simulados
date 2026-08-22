@@ -2097,10 +2097,20 @@ O Admin passa a poder gerenciar participação em Evento pelos dois caminhos já
 
 `POST /api/events/[slug]` gravava a intent em `simulado_event_join_intents` **antes** de chamar o Resend, e o cooldown de 60 segundos usava `created_at` da intent como se isso provasse envio real. Uma falha silenciosa do provider deixava uma intent sem e-mail correspondente, e qualquer nova tentativa dentro dos 60s seguintes recaía no cooldown — respondendo sucesso sem tentar o Resend de novo, sem nenhum registro no painel do provider.
 
-- Corrigido invertendo a ordem: o Resend só é chamado, e só depois de confirmado o sucesso a intent é gravada. Falha do provider nunca mais escreve estado no banco.
+- Correção final (ver seção 80 — a primeira tentativa de correção, invertendo a ordem para "Resend antes do insert", introduziu uma regressão distinta, corrigida no mesmo dia): a intent volta a ser gravada antes do Resend, mas a falha do envio passa a invalidar a intent explicitamente (`UPDATE` de `expires_at` para o passado) em vez de depender de `created_at` sem confirmação alguma.
 - Mensagem de cooldown real agora é distinta da de sucesso, informando o tempo restante.
 - Exclusão de aluno (comum e definitiva) passou a limpar as intents **não consumidas** do e-mail excluído — intents consumidas (histórico de auditoria) são preservadas.
-- Nenhuma migration foi necessária — a estrutura existente (`created_at`, `consumed_at`, índice único parcial) já era suficiente uma vez reordenada a lógica.
+- Nenhuma migration foi necessária — a estrutura existente (`created_at`, `consumed_at`, `expires_at`, índice único parcial) já era suficiente uma vez reordenada a lógica.
+
+---
+
+# 80. Correção — link de confirmação do Evento podia dar "inválido" por condição de corrida (2026-08-22)
+
+A correção da seção 79 (gravar a intent só depois do Resend confirmar sucesso) resolveu o cooldown fantasma, mas abriu uma corrida nova: se o e-mail fosse entregue muito rápido, ou tivesse o link acessado automaticamente por um scanner de segurança do provedor de e-mail do destinatário, o clique podia acontecer antes de o `INSERT` terminar no banco — `POST /api/events/[slug]/confirm` não encontrava a intent e respondia "Link de confirmação inválido ou expirado", mesmo o e-mail tendo sido enviado com sucesso.
+
+- Corrigido voltando a gravar a intent **antes** do envio, eliminando a corrida.
+- Falha do Resend deixou de ser tratada com `DELETE` sem verificação de erro: agora é um `UPDATE` explícito de `expires_at` para o passado, invalidando a intent no mesmo instante — preservando a garantia da seção 79 (intent com `expires_at` no futuro só existe quando o envio foi de fato confirmado) sem reintroduzir a corrida entre e-mail entregue e token persistido.
+- Nenhuma migration foi criada ou alterada.
 
 ---
 

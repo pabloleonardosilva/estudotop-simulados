@@ -36,12 +36,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!event) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
   if (!eventAcceptsEntries(event) && effectiveEventStatus(event) !== "scheduled") return NextResponse.json({ ok: false, message: "Este Evento não aceita novas participações." }, { status: 409 });
   const supabase = createSupabaseAdminClient();
-  // O cooldown usa created_at da intent como prova de envio real. Por isso a
-  // intent só é gravada DEPOIS de o Resend confirmar sucesso (mais abaixo) —
-  // nunca antes. Se a escrita ocorresse antes do envio, uma falha silenciosa
-  // do provider (ou uma requisição que nunca recebe resposta) deixaria uma
-  // intent "fantasma" que bloquearia novas tentativas por até 60s com um
-  // falso "Confira seu e-mail", sem o Resend ter sido chamado de fato.
+  // O cooldown usa created_at da intent como prova de envio real. Só existe
+  // intent com expires_at no futuro quando o Resend de fato confirmou sucesso
+  // para ela (ver mais abaixo: falha de envio invalida a intent no mesmo
+  // instante, via UPDATE de expires_at para o passado, em vez de deixá-la
+  // "fantasma" bloqueando novas tentativas por até 60s).
   const { data: recentIntent } = await supabase.from("simulado_event_join_intents").select("created_at").eq("event_id", event.id).eq("email", email).is("consumed_at", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (recentIntent) {
     const elapsedMs = Date.now() - new Date(recentIntent.created_at).getTime();
@@ -57,6 +56,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const token = generateSecureToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const confirmationUrl = `${publicAppUrl}/evento/${encodeURIComponent(slug)}?token=${encodeURIComponent(token)}`;
+  // A intent é gravada ANTES do envio — nunca depois. Se o token só existisse
+  // no banco após a resposta do Resend, um e-mail entregue muito rápido
+  // (ou verificado automaticamente por um scanner de segurança do provedor de
+  // e-mail do destinatário) poderia levar o destinatário a clicar no link
+  // antes do INSERT terminar, fazendo /confirm rejeitar um token válido como
+  // "inválido ou expirado". Gravar antes elimina essa corrida.
+  await supabase.from("simulado_event_join_intents").delete().eq("event_id", event.id).eq("email", email).is("consumed_at", null);
+  const { data: intent, error } = await supabase.from("simulado_event_join_intents").insert({ event_id: event.id, email, token_hash: hashEmailActionToken(token), expires_at: expiresAt }).select("id").single();
+  if (error) {
+    if (error.code === "23505") return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
+    return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
+  }
   const { error: emailError } = await new Resend(resendApiKey).emails.send({
     from: "EstudoTOP <estudotop@estudotop.com.br>", replyTo: "estudotop@estudotop.com.br", to: email,
     subject: `Continue sua inscrição — ${event.name}`,
@@ -64,13 +75,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     text: eventContinueRegistrationPlainText({ eventName: event.name, continueUrl: confirmationUrl }),
   });
   if (emailError) {
+    // Invalida imediatamente em vez de depender de DELETE (que também poderia
+    // falhar sem verificação): com expires_at no passado, esta intent nunca
+    // mais aparece no cooldown check acima nem é aceita por /confirm — e o
+    // índice único parcial (consumed_at is null) é liberado da mesma forma,
+    // pois o filtro é só por consumed_at, não por expires_at.
+    await supabase.from("simulado_event_join_intents").update({ expires_at: new Date(Date.now() - 1000).toISOString() }).eq("id", intent.id);
     return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora. Tente novamente em instantes." }, { status: 502 });
-  }
-  await supabase.from("simulado_event_join_intents").delete().eq("event_id", event.id).eq("email", email).is("consumed_at", null);
-  const { error } = await supabase.from("simulado_event_join_intents").insert({ event_id: event.id, email, token_hash: hashEmailActionToken(token), expires_at: expiresAt });
-  if (error) {
-    if (error.code === "23505") return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
-    return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
   }
   return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
 }
