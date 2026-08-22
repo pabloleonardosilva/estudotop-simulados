@@ -138,6 +138,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await supabase.from("student_registration_confirmations").delete().eq("user_id", id);
     if (studentEmail) {
       await supabase.from("student_registration_confirmations").delete().eq("email", studentEmail);
+      // Mesma lógica: só intenções de ingresso em Evento NÃO consumidas são removidas.
+      // Consumidas permanecem como histórico de auditoria (não bloqueiam recadastro,
+      // pois o índice único parcial só considera consumed_at is null).
+      await supabase.from("simulado_event_join_intents").delete().eq("email", studentEmail).is("consumed_at", null);
     }
 
     // Auth primeiro: se falhar aqui, students/profiles permanecem intactos e

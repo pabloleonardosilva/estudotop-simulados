@@ -2093,4 +2093,15 @@ O Admin passa a poder gerenciar participação em Evento pelos dois caminhos já
 
 ---
 
+# 79. Correção — ingresso público no Evento não chamava o Resend em alguns casos (2026-08-22)
+
+`POST /api/events/[slug]` gravava a intent em `simulado_event_join_intents` **antes** de chamar o Resend, e o cooldown de 60 segundos usava `created_at` da intent como se isso provasse envio real. Uma falha silenciosa do provider deixava uma intent sem e-mail correspondente, e qualquer nova tentativa dentro dos 60s seguintes recaía no cooldown — respondendo sucesso sem tentar o Resend de novo, sem nenhum registro no painel do provider.
+
+- Corrigido invertendo a ordem: o Resend só é chamado, e só depois de confirmado o sucesso a intent é gravada. Falha do provider nunca mais escreve estado no banco.
+- Mensagem de cooldown real agora é distinta da de sucesso, informando o tempo restante.
+- Exclusão de aluno (comum e definitiva) passou a limpar as intents **não consumidas** do e-mail excluído — intents consumidas (histórico de auditoria) são preservadas.
+- Nenhuma migration foi necessária — a estrutura existente (`created_at`, `consumed_at`, índice único parcial) já era suficiente uma vez reordenada a lógica.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*

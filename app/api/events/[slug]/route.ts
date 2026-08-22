@@ -36,9 +36,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (!event) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
   if (!eventAcceptsEntries(event) && effectiveEventStatus(event) !== "scheduled") return NextResponse.json({ ok: false, message: "Este Evento não aceita novas participações." }, { status: 409 });
   const supabase = createSupabaseAdminClient();
+  // O cooldown usa created_at da intent como prova de envio real. Por isso a
+  // intent só é gravada DEPOIS de o Resend confirmar sucesso (mais abaixo) —
+  // nunca antes. Se a escrita ocorresse antes do envio, uma falha silenciosa
+  // do provider (ou uma requisição que nunca recebe resposta) deixaria uma
+  // intent "fantasma" que bloquearia novas tentativas por até 60s com um
+  // falso "Confira seu e-mail", sem o Resend ter sido chamado de fato.
   const { data: recentIntent } = await supabase.from("simulado_event_join_intents").select("created_at").eq("event_id", event.id).eq("email", email).is("consumed_at", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (recentIntent && Date.now() - new Date(recentIntent.created_at).getTime() < RESEND_COOLDOWN_MS) {
-    return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
+  if (recentIntent) {
+    const elapsedMs = Date.now() - new Date(recentIntent.created_at).getTime();
+    if (elapsedMs < RESEND_COOLDOWN_MS) {
+      const secondsRemaining = Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - elapsedMs) / 1000));
+      return NextResponse.json({ ok: true, message: `Já enviamos um e-mail para este endereço há poucos instantes. Aguarde ${secondsRemaining} segundo(s) e confira sua caixa de entrada antes de solicitar outro.` });
+    }
   }
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora." }, { status: 503 });
@@ -46,12 +56,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   try { publicAppUrl = getPublicAppUrl(); } catch { return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora." }, { status: 503 }); }
   const token = generateSecureToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  await supabase.from("simulado_event_join_intents").delete().eq("event_id", event.id).eq("email", email).is("consumed_at", null);
-  const { error } = await supabase.from("simulado_event_join_intents").insert({ event_id: event.id, email, token_hash: hashEmailActionToken(token), expires_at: expiresAt });
-  if (error) {
-    if (error.code === "23505") return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
-    return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
-  }
   const confirmationUrl = `${publicAppUrl}/evento/${encodeURIComponent(slug)}?token=${encodeURIComponent(token)}`;
   const { error: emailError } = await new Resend(resendApiKey).emails.send({
     from: "EstudoTOP <estudotop@estudotop.com.br>", replyTo: "estudotop@estudotop.com.br", to: email,
@@ -60,8 +64,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     text: eventContinueRegistrationPlainText({ eventName: event.name, continueUrl: confirmationUrl }),
   });
   if (emailError) {
-    await supabase.from("simulado_event_join_intents").delete().eq("token_hash", hashEmailActionToken(token));
-    return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora." }, { status: 502 });
+    return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora. Tente novamente em instantes." }, { status: 502 });
+  }
+  await supabase.from("simulado_event_join_intents").delete().eq("event_id", event.id).eq("email", email).is("consumed_at", null);
+  const { error } = await supabase.from("simulado_event_join_intents").insert({ event_id: event.id, email, token_hash: hashEmailActionToken(token), expires_at: expiresAt });
+  if (error) {
+    if (error.code === "23505") return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
+    return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
   }
   return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
 }

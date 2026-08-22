@@ -360,6 +360,11 @@ export async function DELETE(
     }
     if (studentEmail) {
       await supabase.from("student_registration_confirmations").delete().eq("email", studentEmail);
+      // Intenções de ingresso em Evento ainda pendentes (não consumidas) para este
+      // e-mail. Consumidas são histórico de auditoria e não são tocadas; pendentes
+      // não têm valor de auditoria e, se deixadas, ocupariam o índice único parcial
+      // (event_id, lower(email)) até expirar (24h), atrasando um recadastro legítimo.
+      await supabase.from("simulado_event_join_intents").delete().eq("email", studentEmail).is("consumed_at", null);
     }
 
     // 1b. Participações em Evento sem tentativa real. simulado_event_participants.student_id
