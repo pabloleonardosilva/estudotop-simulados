@@ -14,6 +14,7 @@ import PremiumButton from "./ui/PremiumButton";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase/client";
 import { getHelpContactReasonLabel, type HelpContactReason } from "@/lib/help-tickets";
+import { isEventOnlyStudent, studentHomePath } from "@/lib/student-nav";
 
 const openSans = Open_Sans({
   subsets: ["latin"],
@@ -43,6 +44,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [journeyExplainerOpen, setJourneyExplainerOpen] = useState(false);
   const [unseenHelpReply, setUnseenHelpReply] = useState<UnseenHelpReply | null>(null);
   const [topCoinsBalance, setTopCoinsBalance] = useState<number | null>(null);
+  const [navAccessTimedOut, setNavAccessTimedOut] = useState(false);
 
   useEffect(() => {
     const openHelpCenter = () => {
@@ -78,6 +80,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/topicos") ||
     pathname.startsWith("/bancas");
 
+  // Logo após o login (rota pública → home por role), o aluno precisa que
+  // studentNavAccess já esteja resolvido para decidir entre /aluno e
+  // /meus-eventos sem piscar uma tela e trocar para outra. Um timeout de
+  // segurança evita travar indefinidamente se a chamada nunca resolver.
+  const isResolvingStudentHome = Boolean(
+    user && profile?.role === "student" && !profile.must_change_password && isPublicRoute && !studentNavAccess,
+  );
+  const awaitingStudentHome = isResolvingStudentHome && !navAccessTimedOut;
+
+  useEffect(() => {
+    if (!isResolvingStudentHome) return;
+    const timer = window.setTimeout(() => setNavAccessTimedOut(true), 4000);
+    return () => {
+      window.clearTimeout(timer);
+      setNavAccessTimedOut(false);
+    };
+  }, [isResolvingStudentHome]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => setIsPopupRoute(new URLSearchParams(window.location.search).get("popup") === "1"), 0);
@@ -111,7 +131,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     if (user && profile && isPublicRoute && pathname !== "/cadastro" && !pathname.startsWith("/cadastro/confirmar")) {
-      router.replace(profile.role === "admin" ? "/dashboard" : profile.role === "professor" ? "/professor/eventos" : "/aluno");
+      if (profile.role === "student") {
+        // Aguarda studentNavAccess resolver (ou o timeout de segurança) antes de
+        // decidir entre /aluno e /meus-eventos, evitando piscar uma home errada.
+        if (awaitingStudentHome) return;
+        router.replace(studentHomePath(studentNavAccess));
+        return;
+      }
+      router.replace(profile.role === "admin" ? "/dashboard" : "/professor/eventos");
       return;
     }
 
@@ -126,13 +153,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       pathname.startsWith("/extrato-topcoins");
 
     if (user && profile?.role === "student" && !isChangePasswordRoute && !isAllowedStudentRoute) {
-      router.replace("/minhas-jornadas");
+      // Aluno exclusivamente de Evento cai em /meus-eventos; demais mantêm o
+      // destino padrão já existente (/minhas-jornadas) — comportamento inalterado.
+      router.replace(isEventOnlyStudent(studentNavAccess) ? "/meus-eventos" : "/minhas-jornadas");
     }
 
     if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor")) {
       router.replace("/professor/eventos");
     }
-  }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router]);
+  }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router, awaitingStudentHome, studentNavAccess]);
 
   useEffect(() => {
     if (loading || !user?.id || profile?.role !== "student" || profile?.must_change_password) return;
@@ -142,7 +171,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // Evento) antes de decidir. Aluno exclusivamente de Evento não recebe o
     // tutorial neste contexto — supressão contextual, sem marcar como visto.
     if (!studentNavAccess) return;
-    if (studentNavAccess.hasEventOrigin && !studentNavAccess.hasJornadas) return;
+    if (isEventOnlyStudent(studentNavAccess)) return;
 
     const userId = user.id;
     let cancelled = false;
@@ -290,6 +319,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ ticket_id: ticketId }),
     }).catch(() => undefined);
+  }
+
+  if (awaitingStudentHome) {
+    return <LoadingScreen message="Carregando ambiente..." />;
   }
 
   if (isPopupRoute || isPublicRoute || isStudentExamPage || isFocusRoute || isPublicViewRoute) {

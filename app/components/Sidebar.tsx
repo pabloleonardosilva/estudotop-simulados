@@ -32,6 +32,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import { supabase } from "../lib/supabase/client";
 import { useAuth } from "../contexts/AuthContext";
 import { adminFetch } from "../lib/supabase/adminFetch";
+import { studentHomePath } from "@/lib/student-nav";
 
 type AdminMenuGroup = "overview" | "management" | "questions" | "system" | "settings";
 
@@ -86,20 +87,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [publicationQueueCount, setPublicationQueueCount] = useState<number | null>(null);
   const [openHelpMessagesCount, setOpenHelpMessagesCount] = useState<number | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [hasEvents, setHasEvents] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (profile?.role !== "student") return;
-    let cancelled = false;
-    void supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session || cancelled) return;
-      const response = await fetch("/api/student/events", { headers: { Authorization: `Bearer ${data.session.access_token}` } });
-      const json = await response.json().catch(() => ({}));
-      if (!cancelled && response.ok && json.ok) setHasEvents((json.events || []).length > 0);
-    });
-    return () => { cancelled = true; };
-  }, [profile?.role, pathname]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -453,7 +441,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <div className="rounded-[1.35rem] border border-white/[0.09] bg-[#020811]/80 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
           <p className="px-3.5 pb-2.5 pt-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-400">Área do Aluno</p>
           <nav className="space-y-1.5 text-sm">
-            <NavLink href="/aluno" active={isActive("/aluno")} icon={<Home size={17} />} onNavigate={onNavigate} student>
+            <NavLink href={studentHomePath(studentNavAccess)} active={isActive(studentHomePath(studentNavAccess))} icon={<Home size={17} />} onNavigate={onNavigate} student>
               Painel
             </NavLink>
             <NavLink href="/meu-perfil" active={isActive("/meu-perfil")} icon={<UserRound size={17} />} onNavigate={onNavigate} student>
@@ -469,7 +457,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 Meus Simulados
               </NavLink>
             )}
-            {hasEvents && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student>Meus Eventos</NavLink>}
+            {Boolean(studentNavAccess?.hasEvents) && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student>Meus Eventos</NavLink>}
           </nav>
         </div>
       </div>

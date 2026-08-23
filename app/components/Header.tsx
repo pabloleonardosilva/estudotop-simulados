@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   Bell,
+  CalendarClock,
   ClipboardList,
   Home,
   LifeBuoy,
@@ -16,6 +17,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { studentHomePath } from "@/lib/student-nav";
 import TopCoinStack from "./gamification/TopCoinStack";
 
 function getInitials(name: string | null | undefined): string {
@@ -50,6 +52,8 @@ export default function Header({
   const isAdmin = profile?.role === "admin";
   const showJornadas = Boolean(studentNavAccess?.hasJornadas);
   const showSimulados = Boolean(studentNavAccess && !studentNavAccess.hasEventOrigin);
+  const showEventos = Boolean(studentNavAccess?.hasEvents);
+  const studentHome = studentHomePath(studentNavAccess);
 
   function menuClass(active: boolean) {
     return active
@@ -78,7 +82,7 @@ export default function Header({
                 <Menu size={20} />
               </button>
 
-              <Link href="/aluno" className="flex min-w-0 items-center gap-3">
+              <Link href={studentHome} className="flex min-w-0 items-center gap-3">
                 <span className="flex h-9 w-[52px] shrink-0 items-center justify-center gap-1 rounded-xl border-2 border-white/85">
                   <span className="h-3.5 w-3.5 rounded-full border-2 border-white/85" />
                   <span className="h-3.5 w-3.5 rounded-full border-2 border-white/85" />
@@ -124,7 +128,7 @@ export default function Header({
             </div>
 
             <nav className="col-span-2 col-start-1 row-start-2 flex h-full min-w-0 items-center justify-center gap-5 border-t border-white/[0.06] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:gap-3 xl:border-t-0 2xl:gap-[30px]" aria-label="Menu principal do aluno">
-              <DesktopNavItem href="/aluno" active={pathname.startsWith("/aluno")}>
+              <DesktopNavItem href={studentHome} active={pathname.startsWith(studentHome)}>
                 <Home size={21} strokeWidth={2.2} />
                 <span>Meu Painel</span>
               </DesktopNavItem>
@@ -138,6 +142,12 @@ export default function Header({
                 <DesktopNavItem href="/meus-simulados" active={pathname.startsWith("/meus-simulados")}>
                   <ClipboardList size={21} strokeWidth={2.2} />
                   <span>Simulados</span>
+                </DesktopNavItem>
+              )}
+              {showEventos && (
+                <DesktopNavItem href="/meus-eventos" active={pathname.startsWith("/meus-eventos")}>
+                  <CalendarClock size={21} strokeWidth={2.2} />
+                  <span>Eventos</span>
                 </DesktopNavItem>
               )}
               <DesktopNavItem href="/minhas-anotacoes" active={pathname.startsWith("/minhas-anotacoes")}>

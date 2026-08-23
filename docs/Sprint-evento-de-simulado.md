@@ -2114,4 +2114,19 @@ A correção da seção 79 (gravar a intent só depois do Resend confirmar suces
 
 ---
 
+# 81. Correção — home e navegação do aluno cadastrado exclusivamente em Eventos (2026-08-22)
+
+A seção 77 já escondia corretamente "Jornadas"/"Simulados" para o aluno exclusivamente de Evento, mas com duas lacunas reais encontradas em teste: o menu superior nunca teve item "Eventos" (só o menu lateral tinha "Meus Eventos", via uma consulta própria e duplicada a `/api/student/events`), e o redirecionamento pós-login sempre mandava todo aluno para `/aluno` — página sem conteúdo relevante para quem só participa de Evento.
+
+- **Definição de "somente Evento" corrigida e centralizada:** passou a exigir participação real (`simulado_event_participants`, contada pelo próprio `GET /api/student/nav-access`, novo campo `has_events`), e não mais apenas `students.origin_event_id`. Um aluno cadastrado fora de Evento e depois adicionado a um administrativamente (seção 78) também é reconhecido como "somente Evento" assim que tiver participação real e nenhuma Jornada — a origem de cadastro (`origin_event_id`) deixou de ser, sozinha, o sinal de "somente Evento" para efeitos de navegação (continua sendo usada apenas como proxy da regra de visibilidade do menu "Simulados", inalterada da seção 77).
+- **Fonte única:** `isEventOnlyStudent()` e `studentHomePath()`, novas funções puras em `lib/student-nav.ts`, consomem o mesmo `AuthContext.studentNavAccess` (`hasJornadas`/`hasEventOrigin`/`hasEvents`) já buscado uma única vez por sessão. `Header`, `Sidebar` e `AppShell` chamam as mesmas funções — a consulta duplicada que o `Sidebar` fazia a `/api/student/events` só para saber se mostrava "Meus Eventos" foi removida.
+- **Home contextual:** aluno "somente Evento" tem `/meus-eventos` como home (nunca um Evento específico automaticamente) — no redirect pós-login (rota pública → home por role) e no fallback de rota do aluno fora da lista permitida. Demais alunos continuam indo para `/aluno`/`/minhas-jornadas`, sem mudança de comportamento.
+- **Sem flicker e sem trava:** o redirect pós-login aguarda `studentNavAccess` resolver antes de decidir entre `/aluno` e `/meus-eventos` (nunca mostra `/aluno` para depois trocar), com um timeout de segurança de 4s que garante o redirecionamento padrão (`/aluno`) mesmo se a chamada nunca responder.
+- **Menu superior:** ganhou item "Eventos" (`/meus-eventos`), visível só com `has_events`. "Meu Painel"/logo, para aluno "somente Evento", passam a apontar para `/meus-eventos` em vez de `/aluno` — texto inalterado, só o destino.
+- **Tutorial das Corujas:** condição de supressão passou a usar `isEventOnlyStudent()` (antes verificava só `hasEventOrigin && !hasJornadas`, sem considerar `hasEvents`) — corrige o caso de borda de um aluno com `origin_event_id` preenchido mas sem nenhuma participação real, que antes já teria o tutorial suprimido indevidamente. Segue sem persistir "visto" — supressão puramente contextual.
+- Deep links (`/meus-eventos/[id]`, resultados, perfil, anotações) não foram alterados — a mudança afeta apenas a home/redirecionamento inicial.
+- Nenhuma migration foi necessária. Nenhuma role, flag permanente ou coluna nova foi criada.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*

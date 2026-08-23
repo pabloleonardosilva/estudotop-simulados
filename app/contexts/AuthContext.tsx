@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname } from "next/navigation";
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase/client";
+import type { StudentNavAccess } from "@/lib/student-nav";
 
 type UserRole = "admin" | "student" | "professor";
 
@@ -17,13 +18,12 @@ type Profile = {
 };
 
 // Deriva dinamicamente, a partir das relações reais do aluno (Jornadas
-// matriculadas + origem de cadastro), se os menus "Jornadas"/"Simulados" e o
-// tutorial inicial das Corujas devem aparecer. Fonte única (evita requisições
+// matriculadas, participação real em Evento e origem de cadastro), se os
+// menus "Jornadas"/"Simulados"/"Eventos", a home pós-login e o tutorial
+// inicial das Corujas devem aparecer. Fonte única (evita requisições
 // duplicadas em Header, Sidebar e AppShell — ver docs/Sprint-evento-de-simulado.md).
-type StudentNavAccess = {
-  hasJornadas: boolean;
-  hasEventOrigin: boolean;
-};
+// Tipo compartilhado em lib/student-nav.ts, junto com isEventOnlyStudent()/
+// studentHomePath(), consumidos por Header/Sidebar/AppShell.
 
 type AuthContextType = {
   session: Session | null;
@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((response) => response.json())
       .then((json) => {
         if (cancelled || !json.ok) return;
-        setStudentNavAccess({ hasJornadas: Boolean(json.has_jornadas), hasEventOrigin: Boolean(json.has_event_origin) });
+        setStudentNavAccess({ hasJornadas: Boolean(json.has_jornadas), hasEventOrigin: Boolean(json.has_event_origin), hasEvents: Boolean(json.has_events) });
       })
       .catch(() => undefined);
 
