@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, LockKeyhole, Target } from "lucide-react";
 import { supabase } from "../lib/supabase/client";
+import { studentHomePath } from "@/lib/student-nav";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -183,7 +184,30 @@ export default function LoginPage() {
     if (profile.role === "student" && data.session?.access_token) {
       const joinResponse = await fetch("/api/events/join", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}` } });
       const joinResult = await joinResponse.json().catch(() => null) as { ok?: boolean; event_id?: string } | null;
-      if (joinResponse.ok && joinResult?.ok && joinResult.event_id) destination = `/meus-eventos/${joinResult.event_id}`;
+      if (joinResponse.ok && joinResult?.ok && joinResult.event_id) {
+        destination = `/meus-eventos/${joinResult.event_id}`;
+      } else {
+        // Sem intenção de ingresso pendente: usa a mesma fonte única de
+        // navegação do aluno (lib/student-nav.ts) usada por Header/Sidebar/
+        // AppShell, para que aluno exclusivamente de Evento também caia em
+        // /meus-eventos ao entrar pela tela de login.
+        const navAccessResponse = await fetch("/api/student/nav-access", {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        const navAccessResult = await navAccessResponse.json().catch(() => null) as {
+          ok?: boolean;
+          has_jornadas?: boolean;
+          has_event_origin?: boolean;
+          has_events?: boolean;
+        } | null;
+        if (navAccessResponse.ok && navAccessResult?.ok) {
+          destination = studentHomePath({
+            hasJornadas: Boolean(navAccessResult.has_jornadas),
+            hasEventOrigin: Boolean(navAccessResult.has_event_origin),
+            hasEvents: Boolean(navAccessResult.has_events),
+          });
+        }
+      }
     }
 
     logClientSecurityEvent({

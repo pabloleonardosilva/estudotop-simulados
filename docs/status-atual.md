@@ -1206,3 +1206,12 @@ Escopo previsto:
 - Deep links (`/meus-eventos/[id]`, resultados, perfil, anotações) não foram alterados — a mudança afeta somente a home/redirecionamento inicial. Backend, permissões e guards não foram tocados.
 - Nenhuma migration foi criada ou alterada. Nenhuma role nova, nenhuma flag permanente (`event_only` ou similar) foi criada.
 - Validado: `npx tsc --noEmit` limpo, `npm run build` limpo, `eslint` limpo nos arquivos alterados (`lib/student-nav.ts`, `app/api/student/nav-access/route.ts`, `app/contexts/AuthContext.tsx`, `app/components/Header.tsx`, `app/components/Sidebar.tsx`, `app/components/AppShell.tsx`), `git diff --check` sem problemas de espaço em branco.
+
+### Correção — tela de login ainda mandava aluno exclusivamente de Evento para /aluno — ✅ Implementado em 2026-08-23
+
+- **Diagnóstico com dado real:** `contato@estudotop.com.br` (`profiles.role = 'student'`, `origin_event_id` preenchido, 1 participação real em `simulado_event_participants`, 0 `student_jornadas`) continuava caindo em `/aluno` ao entrar por `/login`, mesmo após a correção anterior (2026-08-22).
+- **Causa raiz:** `app/login/page.tsx` (`handleLogin`) sempre teve sua própria decisão de destino pós-autenticação (`let destination = ... : "/aluno"` + `router.replace(destination)`), totalmente independente do redirect do `AppShell.tsx`. A correção de 2026-08-22 alterou só o `AppShell`; o formulário de login nunca chegava a deixar o `AppShell` decidir, porque já navegava para `/aluno` sozinho antes disso.
+- **Correção:** quando não existe intenção de ingresso em Evento pendente (o fluxo pré-existente de `/api/events/join`, inalterado, que só devolve `event_id` com um cookie `estudotop_event_intent` válido — exclusivo de quem acabou de confirmar o e-mail de um Evento), o destino do aluno passa a ser `studentHomePath()` (`lib/student-nav.ts`), calculado a partir de `GET /api/student/nav-access` — a mesma fonte única já usada por `Header`/`Sidebar`/`AppShell`. Falha nessa chamada mantém o fallback seguro `/aluno`.
+- O redirecionamento direto para `/meus-eventos/[id]` de quem tem intenção de ingresso pendente não foi alterado — é um caso distinto e intencional.
+- Nenhuma migration foi criada ou alterada nesta correção.
+- Validado: `npx tsc --noEmit` limpo, `npm run build` limpo, `eslint` limpo em `app/login/page.tsx`, `git diff --check` sem problemas de espaço em branco.

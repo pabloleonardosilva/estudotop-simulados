@@ -2129,4 +2129,14 @@ A seção 77 já escondia corretamente "Jornadas"/"Simulados" para o aluno exclu
 
 ---
 
+# 82. Correção — tela de login tinha destino pós-login próprio, não coberto pela seção 81 (2026-08-23)
+
+Teste real (`contato@estudotop.com.br`, aluno com participação real em Evento e nenhuma Jornada) mostrou que a home ainda caía em `/aluno` ao entrar por `/login`, mesmo após a seção 81. Causa raiz: `app/login/page.tsx` (`handleLogin`) sempre teve sua **própria** decisão de destino pós-autenticação (`let destination = ... : "/aluno"`, seguida de `router.replace(destination)`), completamente independente do redirect do `AppShell.tsx` — a seção 81 corrigiu apenas o `AppShell`, então o login continuava usando o destino fixo antigo antes mesmo de o `AppShell` ter qualquer chance de agir.
+
+- Correção: quando não há intenção de ingresso em Evento pendente (fluxo pré-existente e inalterado de `/api/events/join`, que só devolve `event_id` quando existe cookie `estudotop_event_intent` válido para aquela conta — usado exclusivamente para o aluno que acabou de clicar num link de Evento), o destino do aluno passa a ser calculado por `studentHomePath()` (`lib/student-nav.ts`), a partir de `GET /api/student/nav-access` — a mesma fonte única já usada por `Header`/`Sidebar`/`AppShell`. Se essa chamada falhar, o destino permanece `/aluno` (mesmo fallback seguro já usado pelo `AppShell`).
+- O fluxo de auto-ingresso por intenção pendente (redirecionar direto para `/meus-eventos/[id]` do Evento recém-confirmado) não foi alterado — é um caso distinto e intencional, disparado só por quem acabou de confirmar o e-mail de um Evento.
+- Nenhuma migration foi criada ou alterada.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*
