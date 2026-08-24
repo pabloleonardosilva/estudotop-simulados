@@ -61,6 +61,12 @@ function parseFeedbackMode(value: unknown, instantFeedbackValue: unknown) {
   return ["instant", "final_only"].includes(mode) ? mode : null;
 }
 
+// Ausência do campo (frontend antigo, payload incompleto) nunca deve virar
+// "false" — os dois recursos de anti-cheat são ligados por padrão.
+function parseBooleanDefaultTrue(value: unknown) {
+  return value === undefined || value === null ? true : value === true;
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -82,6 +88,8 @@ export async function PATCH(
     const maxAttempts = parseMaxAttempts(body.max_attempts);
     const scoringModel = parseScoringModel(body.scoring_model);
     const feedbackMode = parseFeedbackMode(body.feedback_mode, body.instant_feedback_enabled);
+    const antiTabSwitchEnabled = parseBooleanDefaultTrue(body.anti_tab_switch_enabled);
+    const antiWindowBlurEnabled = parseBooleanDefaultTrue(body.anti_window_blur_enabled);
 
     if (!title) {
       return NextResponse.json({ ok: false, message: "Informe o nome do simulado." }, { status: 400 });
@@ -189,6 +197,8 @@ export async function PATCH(
         scoring_model: scoringModel,
         owl_help_enabled: owlHelpEnabled,
         owl_help_limit: owlHelpLimit,
+        anti_tab_switch_enabled: antiTabSwitchEnabled,
+        anti_window_blur_enabled: antiWindowBlurEnabled,
         published_at: status === "published" && !current.published_at ? now : current.published_at,
         archived_at: status === "archived" && !current.archived_at ? now : status !== "archived" ? null : current.archived_at,
       })

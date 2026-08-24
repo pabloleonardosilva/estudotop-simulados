@@ -150,6 +150,21 @@ export type StudentEventParticipation = {
   representative_attempt_id: string | null;
   result_released_at: string | null;
   attempts_count: number;
+  attempts_total: number;
+  attempts_counting: number;
+  attempts_in_progress: number;
+  latest_attempt_id: string | null;
+  latest_attempt_status: string | null;
+  latest_attempt_started_at: string | null;
+  latest_attempt_submitted_at: string | null;
+  latest_attempt_last_activity_at: string | null;
+  latest_attempt_answered_count: number | null;
+  latest_attempt_total_questions: number | null;
+  latest_attempt_progress_percent: number | null;
+  latest_result_percentage: number | null;
+  latest_result_score: number | null;
+  latest_result_finished_at: string | null;
+  latest_result_time_spent_seconds: number | null;
   simulado_events: {
     id: string;
     name: string;
@@ -159,6 +174,13 @@ export type StudentEventParticipation = {
     ends_at: string;
     started_at: string | null;
     simulado_id: string | null;
+    result_policy?: string | null;
+    simulados?: {
+      id: string;
+      title: string;
+      max_attempts: number | null;
+      time_limit_minutes: number | null;
+    } | null;
   } | null;
 };
 
@@ -274,7 +296,13 @@ async function getData(id: string) {
       .order("created_at", { ascending: false }),
     supabase
       .from("simulado_event_participants")
-      .select("id, event_id, joined_at, source, representative_attempt_id, result_released_at, simulado_events:event_id(id, name, status, starts_at, ends_at, started_at, simulado_id)")
+      .select(`
+        id, event_id, joined_at, source, representative_attempt_id, result_released_at,
+        simulado_events:event_id(
+          id, name, status, starts_at, ends_at, started_at, simulado_id, result_policy,
+          simulados:simulado_id(id, title, max_attempts, time_limit_minutes)
+        )
+      `)
       .eq("student_id", id)
       .order("joined_at", { ascending: false }),
     supabase
@@ -297,21 +325,70 @@ async function getData(id: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawEventParticipations = (eventParticipationsRes.data || []) as any[];
   const participationIds = rawEventParticipations.map((row) => row.id);
-  const attemptsByParticipant = new Map<string, number>();
+
+  // Tentativas escopadas por event_participant_id — nunca por simulado_id
+  // isolado, para não confundir tentativas do mesmo Simulado feitas fora
+  // deste Evento (Jornada ou uso avulso).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eventAttemptsByParticipant = new Map<string, any[]>();
+  const eventAttemptIds: string[] = [];
   if (participationIds.length > 0) {
     const { data: eventAttempts, error: eventAttemptsError } = await supabase
       .from("simulado_attempts")
-      .select("id, event_participant_id")
+      .select("id, event_participant_id, status, counts_toward_limit, started_at, submitted_at, last_activity_at, created_at, answered_count, total_questions, progress_percent")
       .in("event_participant_id", participationIds);
     if (eventAttemptsError) throw new Error(eventAttemptsError.message);
     for (const attempt of eventAttempts || []) {
       const key = String((attempt as { event_participant_id: string }).event_participant_id);
-      attemptsByParticipant.set(key, (attemptsByParticipant.get(key) || 0) + 1);
+      const list = eventAttemptsByParticipant.get(key) || [];
+      list.push(attempt);
+      eventAttemptsByParticipant.set(key, list);
+      eventAttemptIds.push(String((attempt as { id: string }).id));
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eventResultsByAttempt = new Map<string, any>();
+  if (eventAttemptIds.length > 0) {
+    const { data: eventResults, error: eventResultsError } = await supabase
+      .from("simulado_results")
+      .select("attempt_id, display_percentage, percentage, display_score, score, time_spent_seconds, finished_at")
+      .in("attempt_id", eventAttemptIds);
+    if (eventResultsError) throw new Error(eventResultsError.message);
+    for (const result of eventResults || []) {
+      if ((result as { attempt_id: string | null }).attempt_id) {
+        eventResultsByAttempt.set(String((result as { attempt_id: string }).attempt_id), result);
+      }
     }
   }
 
   const studentEvents: StudentEventParticipation[] = rawEventParticipations.map((row) => {
     const rawEvent = Array.isArray(row.simulado_events) ? row.simulado_events[0] : row.simulado_events;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attempts = (eventAttemptsByParticipant.get(row.id) || []) as any[];
+    const attemptsTotal = attempts.length;
+    const attemptsCounting = attempts.filter((attempt) => Boolean(attempt.counts_toward_limit)).length;
+    const attemptsInProgress = attempts.filter((attempt) => String(attempt.status) === "in_progress").length;
+    const visibleAttempts = attempts.filter((attempt) => Boolean(attempt.counts_toward_limit) || String(attempt.status) === "in_progress");
+    const sortedAttempts = [...visibleAttempts].sort((a, b) => {
+      const aDate = new Date(a.last_activity_at || a.submitted_at || a.started_at || a.created_at || 0).getTime();
+      const bDate = new Date(b.last_activity_at || b.submitted_at || b.started_at || b.created_at || 0).getTime();
+      return bDate - aDate;
+    });
+    const latestAttempt = sortedAttempts[0] || null;
+    // Mesma regra da Área do Aluno/Jornada: nota exibida é a da primeira
+    // tentativa concluída que conta para o limite, não a última.
+    const realResultEntry = attempts
+      .filter((attempt) => Boolean(attempt.counts_toward_limit) && String(attempt.status) === "completed")
+      .map((attempt) => ({ attempt, result: eventResultsByAttempt.get(String(attempt.id)) || null }))
+      .filter((entry) => entry.result)
+      .sort((a, b) => {
+        const aDate = String(a.attempt.submitted_at || a.attempt.created_at || "");
+        const bDate = String(b.attempt.submitted_at || b.attempt.created_at || "");
+        return aDate.localeCompare(bDate);
+      })[0] || null;
+    const latestResult = realResultEntry?.result || null;
+
     return {
       id: row.id,
       event_id: row.event_id,
@@ -319,7 +396,22 @@ async function getData(id: string) {
       source: row.source,
       representative_attempt_id: row.representative_attempt_id,
       result_released_at: row.result_released_at,
-      attempts_count: attemptsByParticipant.get(row.id) || 0,
+      attempts_count: attemptsTotal,
+      attempts_total: attemptsTotal,
+      attempts_counting: attemptsCounting,
+      attempts_in_progress: attemptsInProgress,
+      latest_attempt_id: latestAttempt?.id || null,
+      latest_attempt_status: latestAttempt?.status || null,
+      latest_attempt_started_at: latestAttempt?.started_at || latestAttempt?.created_at || null,
+      latest_attempt_submitted_at: latestAttempt?.submitted_at || null,
+      latest_attempt_last_activity_at: latestAttempt?.last_activity_at || null,
+      latest_attempt_answered_count: latestAttempt?.answered_count ?? null,
+      latest_attempt_total_questions: latestAttempt?.total_questions ?? null,
+      latest_attempt_progress_percent: latestAttempt?.progress_percent ?? null,
+      latest_result_percentage: latestResult ? Number(latestResult.display_percentage ?? latestResult.percentage ?? 0) : null,
+      latest_result_score: latestResult ? Number(latestResult.display_score ?? latestResult.score ?? 0) : null,
+      latest_result_finished_at: latestResult?.finished_at || null,
+      latest_result_time_spent_seconds: latestResult?.time_spent_seconds ?? null,
       simulado_events: rawEvent ? { ...rawEvent, effective_status: effectiveEventStatus(rawEvent) } : null,
     };
   });

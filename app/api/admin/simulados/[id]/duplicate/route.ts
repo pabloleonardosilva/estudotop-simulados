@@ -75,6 +75,8 @@ export async function POST(
       scoring_model: original.scoring_model,
       owl_help_enabled: Boolean(original.owl_help_enabled),
       owl_help_limit: original.owl_help_enabled ? original.owl_help_limit : null,
+      anti_tab_switch_enabled: original.anti_tab_switch_enabled ?? true,
+      anti_window_blur_enabled: original.anti_window_blur_enabled ?? true,
       published_at: null,
       archived_at: null,
       created_at: now,

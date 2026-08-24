@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from "react";
-import { CalendarClock, CheckCircle2, Clock3, Link2, Loader2, Plus, Sparkles } from "lucide-react";
+import { CalendarClock, Check, CheckCircle2, Clock3, ImageIcon, Link2, Loader2, Plus, Sparkles } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
+import { EVENT_COVERS, type EventCoverKey } from "./utils";
 
 type EventRow = { id: string; name: string; public_slug: string; registration_url: string | null; effective_status: string; starts_at: string; ends_at: string; duration_minutes: number; result_policy: string; simulados?: { title?: string } | null };
 type Simulado = { id: string; title: string };
@@ -66,6 +67,7 @@ export default function EventosAdminClient() {
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION_MINUTES);
   const [resultPolicy, setResultPolicy] = useState("blocked");
   const [professorIds, setProfessorIds] = useState<string[]>([]);
+  const [coverKey, setCoverKey] = useState<EventCoverKey>("administrativo");
 
   const load = useCallback(async () => {
     const [eventResponse, simuladoResponse, professorResponse] = await Promise.all([
@@ -95,6 +97,7 @@ export default function EventosAdminClient() {
     setDurationMinutes(DEFAULT_DURATION_MINUTES);
     setResultPolicy("blocked");
     setProfessorIds([]);
+    setCoverKey("administrativo");
   }
 
   function handleStartChange(value: string) {
@@ -141,7 +144,7 @@ export default function EventosAdminClient() {
           name: name.trim(), simulado_id: simuladoId || null,
           starts_at: startDate.toISOString(), ends_at: endDate.toISOString(),
           duration_minutes: durationMinutes, result_policy: resultPolicy,
-          professor_ids: professorIds,
+          professor_ids: professorIds, cover_key: coverKey,
         }),
       });
       const json = await response.json();
@@ -203,6 +206,39 @@ export default function EventosAdminClient() {
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={endsAt} min={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleEndChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
               <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={durationMinutes} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(event.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={resultPolicy} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setResultPolicy(event.target.value)}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
+              <fieldset className="md:col-span-2">
+                <legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do Evento</legend>
+                <p className="mb-3 text-xs text-slate-500">Escolha a imagem que será exibida no card do Evento para o aluno.</p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {EVENT_COVERS.map((cover) => {
+                    const active = coverKey === cover.value;
+                    return (
+                      <button
+                        key={cover.value}
+                        type="button"
+                        onClick={() => setCoverKey(cover.value)}
+                        className={`group relative overflow-hidden rounded-2xl border text-left transition duration-300 ${
+                          active
+                            ? "border-orange-400/70 ring-2 ring-orange-400/20 shadow-[0_0_28px_rgba(249,115,22,0.18)]"
+                            : "border-white/[0.10] hover:border-white/[0.22]"
+                        }`}
+                      >
+                        <div className="relative h-24 bg-cover bg-center" style={{ backgroundImage: `url(${cover.image})` }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#050A12] via-[#050A12]/35 to-transparent" />
+                          {active ? (
+                            <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-[#050A12] shadow-lg">
+                              <Check size={14} strokeWidth={3} />
+                            </span>
+                          ) : null}
+                          <div className="absolute inset-x-0 bottom-0 p-2.5">
+                            <p className="text-xs font-black text-white">{cover.label}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">

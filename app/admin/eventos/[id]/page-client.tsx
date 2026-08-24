@@ -2,12 +2,13 @@
 
 import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Archive, ArrowLeft, Ban, CalendarClock, CheckCircle2, ClipboardCopy, Copy, Loader2, Pencil, PlayCircle, RotateCcw, Save, Search, ShieldCheck, Square, Unlock, UserPlus, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, Ban, CalendarClock, Check, CheckCircle2, ClipboardCopy, Copy, ImageIcon, Loader2, Pencil, PlayCircle, RotateCcw, Save, Search, ShieldCheck, Square, Unlock, UserPlus, X } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
+import { EVENT_COVERS, type EventCoverKey } from "../utils";
 
 type EventData = {
   id: string;
@@ -21,6 +22,7 @@ type EventData = {
   starts_at: string;
   ends_at: string;
   duration_minutes: number;
+  cover_key: string | null;
   simulados?: { title?: string } | null;
   simulado_event_professors: Array<{ professor_id: string }>;
   simulado_event_participants: Array<{ id: string; result_released_at: string | null; representative_attempt_id: string | null }>;
@@ -48,6 +50,7 @@ type EditForm = {
   durationMinutes: number;
   resultPolicy: "blocked" | "released";
   professorIds: string[];
+  coverKey: EventCoverKey;
 };
 
 function toDateTimeLocal(date: Date) {
@@ -72,6 +75,7 @@ function formFromEvent(event: EventData): EditForm {
     durationMinutes: event.duration_minutes,
     resultPolicy: event.result_policy,
     professorIds: event.simulado_event_professors.map((item) => item.professor_id),
+    coverKey: (EVENT_COVERS.find((item) => item.value === event.cover_key)?.value || "administrativo"),
   };
 }
 
@@ -275,6 +279,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
           duration_minutes: form.durationMinutes,
           result_policy: form.resultPolicy,
           professor_ids: form.professorIds,
+          cover_key: form.coverKey,
         }),
       });
       const json = await response.json();
@@ -337,6 +342,39 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={form.endsAt} min={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleEndChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
               <PremiumInput variant="jornada" label={`Duração em minutos (${formatDurationHours(form.durationMinutes)})`} type="number" min={1} step={1} value={form.durationMinutes} onChange={(change: ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(change.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={form.resultPolicy} onChange={(change: ChangeEvent<HTMLSelectElement>) => updateForm("resultPolicy", change.target.value as EditForm["resultPolicy"])}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
+              <fieldset className="md:col-span-2">
+                <legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do Evento</legend>
+                <p className="mb-3 text-xs text-slate-500">Escolha a imagem que será exibida no card do Evento para o aluno.</p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {EVENT_COVERS.map((cover) => {
+                    const active = form.coverKey === cover.value;
+                    return (
+                      <button
+                        key={cover.value}
+                        type="button"
+                        onClick={() => updateForm("coverKey", cover.value)}
+                        className={`group relative overflow-hidden rounded-2xl border text-left transition duration-300 ${
+                          active
+                            ? "border-orange-400/70 ring-2 ring-orange-400/20 shadow-[0_0_28px_rgba(249,115,22,0.18)]"
+                            : "border-white/[0.10] hover:border-white/[0.22]"
+                        }`}
+                      >
+                        <div className="relative h-24 bg-cover bg-center" style={{ backgroundImage: `url(${cover.image})` }}>
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#050A12] via-[#050A12]/35 to-transparent" />
+                          {active ? (
+                            <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-[#050A12] shadow-lg">
+                              <Check size={14} strokeWidth={3} />
+                            </span>
+                          ) : null}
+                          <div className="absolute inset-x-0 bottom-0 p-2.5">
+                            <p className="text-xs font-black text-white">{cover.label}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">

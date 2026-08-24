@@ -235,6 +235,8 @@ function normalizeConfigSnapshot(payload: SimuladoPayload) {
     scoring_model: payload.scoring_model || "traditional",
     owl_help_enabled: Boolean(payload.owl_help_enabled),
     owl_help_limit: payload.owl_help_enabled ? payload.owl_help_limit ?? null : null,
+    anti_tab_switch_enabled: payload.anti_tab_switch_enabled ?? true,
+    anti_window_blur_enabled: payload.anti_window_blur_enabled ?? true,
   });
 }
 
@@ -323,6 +325,8 @@ export default function EditarSimuladoClient({
     owl_help_limit: simulado.owl_help_enabled
       ? resolveOwlHelpLimit(simulado.owl_help_limit, simulado.question_count)
       : null,
+    anti_tab_switch_enabled: simulado.anti_tab_switch_enabled ?? true,
+    anti_window_blur_enabled: simulado.anti_window_blur_enabled ?? true,
   });
   const [relations, setRelations] = useState(initialRelations || []);
   const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(() => normalizeConfigSnapshot({
@@ -345,6 +349,8 @@ export default function EditarSimuladoClient({
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
     owl_help_limit: simulado.owl_help_limit ?? null,
+    anti_tab_switch_enabled: simulado.anti_tab_switch_enabled ?? true,
+    anti_window_blur_enabled: simulado.anti_window_blur_enabled ?? true,
   }));
   const [savedQuestionSnapshot, setSavedQuestionSnapshot] = useState(() => normalizeQuestionSnapshot(initialRelations || []));
 
@@ -1133,6 +1139,32 @@ export default function EditarSimuladoClient({
                 <Toggle label="Embaralhar questões" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
                 <Toggle label="Embaralhar alternativas" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
               </div>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-orange-200">
+                  <ShieldCheck size={15} /> Segurança da execução
+                </p>
+                <div className="grid gap-3 xl:grid-cols-2 dark-form">
+                  <Toggle
+                    label="Detectar ALT+TAB / troca de guia"
+                    value={form.anti_tab_switch_enabled ?? true}
+                    onChange={(value) => update("anti_tab_switch_enabled", value)}
+                  >
+                    <p className="text-xs font-semibold leading-5 text-slate-400">
+                      Quando ativo, trocar de guia, minimizar a janela ou sair da tela do simulado registra violação de foco.
+                    </p>
+                  </Toggle>
+                  <Toggle
+                    label="Detectar janelas lado a lado"
+                    value={form.anti_window_blur_enabled ?? true}
+                    onChange={(value) => update("anti_window_blur_enabled", value)}
+                  >
+                    <p className="text-xs font-semibold leading-5 text-slate-400">
+                      Quando ativo, usar outra janela ou aplicativo enquanto o simulado permanece visível abre o alerta de 10 segundos antes de registrar violação.
+                    </p>
+                  </Toggle>
+                </div>
+              </div>
               {configDirty && (
                 <div className="mt-6 flex justify-end border-t border-white/10 pt-5">
                   <PremiumButton icon={<Save size={18} />} onClick={save}>Salvar configurações</PremiumButton>
@@ -1194,6 +1226,8 @@ export default function EditarSimuladoClient({
                 <Summary label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Sem limite"} icon={<Clock3 size={15} />} />
                 <Summary label="Questões" value={form.question_count ? String(form.question_count) : String(relations.length || "Não definido")} icon={<Target size={15} />} />
                 <Summary label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean(form.owl_help_enabled)} />
+                <Summary label="ALT+TAB / guias" value={(form.anti_tab_switch_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_tab_switch_enabled ?? true} />
+                <Summary label="Janelas lado a lado" value={(form.anti_window_blur_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_window_blur_enabled ?? true} />
               </div>
             </SidebarPanel>
 

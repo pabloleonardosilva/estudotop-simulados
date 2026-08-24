@@ -86,6 +86,12 @@ Transições permitidas: `draft → published → archived`. Não há volta de `
 | `owl_help_enabled` | bool? | Habilita o assistente Coruja para o aluno |
 | `owl_help_limit` | int? | Limite manual positivo; nulo usa fallback legado quando a ajuda está habilitada |
 
+#### Segurança da execução (anti-cheat, configurável por simulado — 2026-08-24)
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `anti_tab_switch_enabled` | bool | Controla detecção de ALT+TAB/troca de guia/minimização (`document.visibilitychange`). Padrão: ligado. |
+| `anti_window_blur_enabled` | bool | Controla detecção de outra janela/aplicativo/janelas lado a lado (`window.blur`, tolerância de 10s). Padrão: ligado. |
+
 ### 1.4 Banco de Questões do Simulado
 
 Cada simulado tem seu próprio conjunto de questões vinculadas via `simulado_questions`. A ordem é controlada por `order_number` e pode ser reordenada via drag-and-drop.
@@ -398,6 +404,20 @@ Um rascunho local (`localStorage`) é salvo automaticamente para evitar perda de
 - Anti-cheat ampliado em 2026-07-18: troca de guia/minimização permanece imediata; perda de foco para outra janela ou aplicativo usa tolerância contínua de 10 segundos. Retorno dentro do prazo cancela a ocorrência, e eventos `blur`/`visibilitychange` são deduplicados antes de chamar a mesma API de violação.
 - A tolerância de `window.blur` exibe `WindowBlurCountdownOverlay`: alerta bloqueante de alto contraste, contador grande de 10 a 1 e aviso sobre a terceira ocorrência. O cálculo usa deadline absoluto para não acumular atraso; `window.focus` desmonta o alerta e cancela os timers imediatamente.
 - Antes do início, o card de segurança orienta manter a janela do simulado maximizada e não exibi-la lado a lado com outra janela. A orientação não altera a tolerância nem os eventos do anti-cheat.
+- **Configurável por simulado desde 2026-08-24:** os dois mecanismos deixaram de ser fixos globalmente. `anti_tab_switch_enabled` (`document.visibilitychange`) e `anti_window_blur_enabled` (`window.blur`, tolerância de 10s) são ligados/desligados individualmente pelo admin em `/simulados/novo` e `/simulados/[id]/editar`, ligados por padrão. Durante uma tentativa em andamento, a regra aplicada é a gravada em `simulado_attempts.settings_snapshot` no início daquela tentativa — nunca a configuração atual do simulado, evitando que uma alteração administrativa no meio da prova mude as regras de segurança já aceitas pelo aluno. O card de regras antes de iniciar reflete o estado real: texto completo quando os dois estão ativos, texto reduzido quando só um está ativo, e nenhuma ameaça de desclassificação por foco quando os dois estão desligados.
+- **`max_attempts` reaproveitado pelo Evento (2026-08-25):** o Evento não define política própria de tentativas — os cards de `/meus-eventos` passaram a exibir a contagem real (`counts_toward_limit`) e a permitir "Refazer Simulado" quando o próprio `max_attempts` do Simulado ainda permite. A tentativa oficial do Evento continua sendo sempre a primeira (`representative_attempt_id`, nunca sobrescrito); tentativas extras usam o fluxo de tentativa já existente (`POST /api/student/simulados/[id]/attempts`), sem API nova. Ver `docs/Sprint-evento-de-simulado.md`, seção 85, para o detalhamento completo.
+
+### Configurações individuais de anti-cheat por simulado — 2026-08-24
+
+- **Dois campos novos em `simulados`:** `anti_tab_switch_enabled` e `anti_window_blur_enabled`, booleanos, `not null default true` — migration `supabase/migrations/20260824070000_add_simulado_anti_cheat_toggles.sql` (não executada nesta entrega).
+- **Admin:** toggles "Detectar ALT+TAB / troca de guia" e "Detectar janelas lado a lado" em um bloco "Segurança da execução", dentro do card de Configurações/Comportamentos, tanto em `/simulados/novo` quanto em `/simulados/[id]/editar` (ligados por padrão; simulado antigo sem os campos também aparece ligado, via fallback `?? true`). Resumo lateral de ambas as telas e o detalhe administrativo (`/simulados/[id]`) exibem "ALT+TAB / guias" e "Janelas lado a lado" como Ativo/Inativo. Duplicação de simulado (`POST /api/admin/simulados/[id]/duplicate`) preserva os dois valores do original.
+- **APIs `POST/PATCH /api/admin/simulados`:** novo helper `parseBooleanDefaultTrue` — ausência do campo no payload nunca grava `false`, sempre `true`.
+- **Execução do aluno:** os dois campos são propagados por `app/meus-simulados/[id]/page.tsx`, `GET /api/student/simulados/[id]` e `POST /api/student/simulados/[id]/attempts`. Nesta última, `buildSimuladoSnapshot` passou a aceitar o `settings_snapshot` da tentativa e usar `booleanFromSnapshotOrSimulado` para os dois campos — tentativa retomada usa o valor gravado no início dela, nunca a configuração atual do simulado; tentativa nova grava o valor vigente no próprio `settings_snapshot`.
+- **`app/meus-simulados/[id]/page-client.tsx`:** o efeito único de anti-fraude (troca de guia/minimização via `visibilitychange` + perda de foco via `blur` com tolerância de 10s) ganhou dois guard clauses — `if (!antiTabSwitchEnabled) return;` no handler de `visibilitychange`, `if (!antiWindowBlurEnabled) return;` no handler de `blur`. Desligado, nenhum timer/countdown é aberto e nenhuma violação é registrada por aquele mecanismo; o outro mecanismo continua funcionando normalmente se estiver ligado. A API `focus-violation` não foi alterada — continua protegida e só registra quando chamada; a decisão de chamar é do cliente.
+- **Card de regras antes de iniciar:** texto e variante (`danger`/`default`) do aviso de segurança passam a refletir os dois toggles — texto completo com os dois ativos, texto reduzido quando só um está ativo, e sem ameaça de desclassificação quando os dois estão desligados.
+- **Preview admin (`/simulados/[id]/preview`):** simula o mesmo aviso condicionalmente (só há simulação de `visibilitychange`; não existia simulação de `window.blur` no preview antes desta entrega, então nada foi adicionado nesse ponto). Preview nunca grava tentativa real, comportamento inalterado.
+- **Resultado do aluno não alterado:** `tab_switch_count`/`focus_violation_count` continuam existindo; com um recurso desligado, os eventos correspondentes simplesmente não são registrados e os contadores ficam em 0 — os textos de "Foco excelente/aceitável/comprometido" já são inteiramente orientados por esses números, sem nenhum texto fixo presumindo anti-cheat sempre ativo.
+- Submit, respostas, TopCoins, Ajuda da Coruja, caderno, tesourinha, Jornada e Evento não foram alterados.
 
 ### Header responsivo da execução — título e métricas — 2026-07-18
 
@@ -457,7 +477,7 @@ Questão em branco = 0 pontos (não penaliza)
 ### 6.1 Tabelas do Módulo de Simulados
 
 #### `simulados`
-Configuração completa. Colunas principais: `id`, `title`, `status`, `scoring_model`, `navigation_type`, `time_limit_minutes`, `max_attempts`, `feedback_mode`, `shuffle_questions`, `shuffle_alternatives`, `allow_blank_answers`, `show_result_on_finish`, `show_answer_key_on_finish`, `show_teacher_comment`, `owl_help_enabled`, `owl_help_limit`.
+Configuração completa. Colunas principais: `id`, `title`, `status`, `scoring_model`, `navigation_type`, `time_limit_minutes`, `max_attempts`, `feedback_mode`, `shuffle_questions`, `shuffle_alternatives`, `allow_blank_answers`, `show_result_on_finish`, `show_answer_key_on_finish`, `show_teacher_comment`, `owl_help_enabled`, `owl_help_limit`, `anti_tab_switch_enabled`, `anti_window_blur_enabled`.
 
 #### `simulado_questions`
 Vínculo simulado ↔ questão. Colunas: `id`, `simulado_id`, `question_id`, `order_number`, `points`, `status` (`active|annulled`).

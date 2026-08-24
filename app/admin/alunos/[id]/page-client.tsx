@@ -587,6 +587,7 @@ function AlunoActivityPanel({
   events,
   onAssign,
   onOpenSchedule,
+  onOpenEventSchedule,
 }: {
   student: StudentDetail;
   activityLog: ActivityLog[];
@@ -596,6 +597,7 @@ function AlunoActivityPanel({
   events: StudentEventParticipation[];
   onAssign: (tab?: "jornadas" | "eventos") => void;
   onOpenSchedule: (jornada: StudentJornada) => void;
+  onOpenEventSchedule: (participation: StudentEventParticipation) => void;
 }) {
   const [tab, setTab] = useState<ActivityTab>("resumo");
   const [period, setPeriod] = useState<PeriodFilter>("30d");
@@ -779,7 +781,7 @@ function AlunoActivityPanel({
 
         {tab === "atividades" && (
           <div className="space-y-6">
-            <AssignedEvents events={events} />
+            <AssignedEvents events={events} onOpenEventSchedule={onOpenEventSchedule} />
             <AssignedActivities
               jornadas={jornadas}
               items={filteredAssignedItems}
@@ -1149,7 +1151,24 @@ function AssignedActivities({
   );
 }
 
-function AssignedEvents({ events }: { events: StudentEventParticipation[] }) {
+function eventParticipationSituation(se: StudentEventParticipation): { label: string; cls: string } {
+  if (se.attempts_in_progress > 0) return { label: "Em andamento", cls: "border-blue-500/25 bg-blue-500/10 text-blue-300" };
+  if (se.attempts_counting <= 0) return { label: "Sem tentativa registrada", cls: "border-white/[0.10] bg-white/[0.04] text-white/45" };
+  if (se.result_released_at) return { label: "Resultado disponível", cls: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+  return { label: "Aguardando liberação de resultado", cls: "border-amber-500/25 bg-amber-500/10 text-amber-300" };
+}
+
+function AssignedEvents({ events, onOpenEventSchedule }: { events: StudentEventParticipation[]; onOpenEventSchedule: (participation: StudentEventParticipation) => void }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  function toggleExpanded(participationId: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(participationId)) next.delete(participationId);
+      else next.add(participationId);
+      return next;
+    });
+  }
+
   if (events.length === 0) {
     return (
       <div className="flex min-h-32 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/[0.08] bg-white/[0.025] text-center">
@@ -1163,11 +1182,9 @@ function AssignedEvents({ events }: { events: StudentEventParticipation[] }) {
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/40">Eventos</p>
       {events.map((se) => {
         const event = se.simulado_events;
-        const situacao = se.attempts_count === 0
-          ? "Sem tentativa registrada"
-          : se.result_released_at
-            ? "Resultado disponível"
-            : "Aguardando liberação de resultado";
+        const simulado = event?.simulados || null;
+        const situacao = eventParticipationSituation(se);
+        const expanded = expandedIds.has(se.id);
         return (
           <div key={se.id} className="rounded-[1.55rem] border border-white/[0.08] bg-gradient-to-br from-white/[0.045] to-orange-500/[0.025] p-4 shadow-lg shadow-black/10">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1177,13 +1194,48 @@ function AssignedEvents({ events }: { events: StudentEventParticipation[] }) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{event ? eventStatusLabel(event.effective_status) : "—"}</span>
+                <PremiumButton variant="secondary" icon={<ListChecks size={13} />} className="!py-1.5 !px-3 !text-xs" onClick={() => onOpenEventSchedule(se)}>Cronograma</PremiumButton>
                 <Link href={`/admin/eventos/${se.event_id}`}><PremiumButton variant="secondary" icon={<CalendarClock size={13} />} className="!py-1.5 !px-3 !text-xs">Ver Evento</PremiumButton></Link>
+                <PremiumButton
+                  variant="secondary"
+                  icon={expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  className="!py-1.5 !px-3 !text-xs"
+                  onClick={() => toggleExpanded(se.id)}
+                >
+                  {expanded ? "Recolher" : "Expandir"}
+                </PremiumButton>
               </div>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <SysMini label="Sua situação" value={situacao} />
-              <SysMini label="Tentativas" value={String(se.attempts_count)} />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <SysMini label="Situação" value={situacao.label} />
+              <SysMini label="Tentativas" value={`${se.attempts_counting}/${simulado?.max_attempts ?? "∞"}`} />
+              <SysMini label="Resultado" value={se.latest_result_percentage !== null ? `${Math.round(se.latest_result_percentage)}%` : se.attempts_counting > 0 ? "Aguardando" : "—"} />
+              <SysMini label="Período" value={event ? eventStatusLabel(event.effective_status) : "—"} />
+              <SysMini label="Simulado" value={simulado?.title || "—"} />
             </div>
+            {expanded && (
+              <div className="mt-4 space-y-2">
+                {!event?.simulado_id ? (
+                  <p className="text-xs text-white/35">Este Evento ainda não possui simulado vinculado.</p>
+                ) : (
+                  <div className="grid gap-3 rounded-[1.1rem] border border-white/[0.065] bg-black/10 p-3 md:grid-cols-[minmax(0,1fr)_180px_190px]">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-white/86">01 · {simulado?.title || "Simulado"}</p>
+                      <p className="mt-1 text-xs text-white/38">Evento: {fmtDateTime(event.starts_at)} — {fmtDateTime(event.ends_at)}</p>
+                      {(se.latest_attempt_started_at || se.latest_result_finished_at) && <p className="mt-1 text-xs text-white/38">Última tentativa: {fmtDateTime(se.latest_attempt_started_at)} · Conclusão: {fmtDateTime(se.latest_result_finished_at)}</p>}
+                      <p className="mt-1 text-xs text-white/38">Resultado: <span className={se.result_released_at ? "font-bold text-emerald-300" : "font-bold text-amber-300/80"}>{se.result_released_at ? "Liberado" : "Aguardando liberação"}</span></p>
+                    </div>
+                    <div><span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-bold ${situacao.cls}`}>{situacao.label}</span></div>
+                    <div className="text-xs text-white/45">
+                      {se.latest_result_percentage !== null ? <p>Nota: <strong className="text-emerald-300">{Math.round(se.latest_result_percentage)}%</strong></p> : <p>Nota: —</p>}
+                      <p>Tempo: {fmtSeconds(Number(se.latest_result_time_spent_seconds || 0))}</p>
+                      <p>Tentativas: {se.attempts_counting} válidas · {se.attempts_total} total</p>
+                      {se.latest_attempt_answered_count !== null && <p>Respostas: {se.latest_attempt_answered_count}/{se.latest_attempt_total_questions ?? "—"}</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -1483,6 +1535,13 @@ export default function AlunoAdminDetalheClient({
   const [scheduleProcessingId, setScheduleProcessingId] = useState<string | null>(null);
   const [attemptDrafts, setAttemptDrafts] = useState<Record<string, string>>({});
   const [resetAttemptsTarget, setResetAttemptsTarget] = useState<{ jornada: StudentJornada; item: StudentJornadaScheduleItem } | null>(null);
+
+  // Cronograma do Evento — estados isolados dos de Jornada acima, para não
+  // haver interferência entre os dois modais.
+  const [scheduleModalEvent, setScheduleModalEvent] = useState<StudentEventParticipation | null>(null);
+  const [eventScheduleProcessingId, setEventScheduleProcessingId] = useState<string | null>(null);
+  const [eventAttemptDrafts, setEventAttemptDrafts] = useState<Record<string, string>>({});
+  const [resetEventAttemptsTarget, setResetEventAttemptsTarget] = useState<StudentEventParticipation | null>(null);
 
   const [resendEmailModal, setResendEmailModal] = useState(false);
   const [resendEmailTab, setResendEmailTab] = useState<"emails" | "history">("emails");
@@ -2002,6 +2061,64 @@ export default function AlunoAdminDetalheClient({
     await performSetAttempts(jornada, item, attempts);
   }
 
+  function updateLocalEventParticipation(participationId: string, patch: Partial<StudentEventParticipation>) {
+    setLocalEvents((current) => current.map((item) => (item.id === participationId ? { ...item, ...patch } : item)));
+  }
+
+  async function performSetEventAttempts(participation: StudentEventParticipation, attempts: number) {
+    setEventScheduleProcessingId(`attempts:${participation.id}`);
+    setFeedback(null);
+    try {
+      const res = await adminFetch(`/api/admin/events/${participation.event_id}/participants/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_attempts", attempts }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        event_participation?: Partial<StudentEventParticipation>;
+      };
+      if (!data.ok) throw new Error(data.message || "Não foi possível ajustar as tentativas.");
+
+      if (attempts === 0 && data.event_participation) {
+        updateLocalEventParticipation(participation.id, data.event_participation);
+        setScheduleModalEvent((current) => (current && current.id === participation.id ? { ...current, ...data.event_participation } : current));
+        setEventAttemptDrafts((current) => ({ ...current, [participation.id]: "0" }));
+      }
+
+      setFeedback({ type: "success", message: data.message || "Tentativas ajustadas." });
+      router.refresh();
+      return true;
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erro inesperado ao ajustar tentativas." });
+      return false;
+    } finally {
+      setEventScheduleProcessingId(null);
+    }
+  }
+
+  async function handleSetEventAttempts(participation: StudentEventParticipation) {
+    const raw = eventAttemptDrafts[participation.id] ?? String(participation.attempts_counting);
+    const attempts = Number(raw);
+    if (!Number.isInteger(attempts) || attempts < 0) {
+      setFeedback({ type: "error", message: "Informe um número inteiro de tentativas." });
+      return;
+    }
+
+    if (attempts === 0) {
+      setResetEventAttemptsTarget(participation);
+      return;
+    }
+
+    await performSetEventAttempts(participation, attempts);
+  }
+
+  function onOpenEventSchedule(participation: StudentEventParticipation) {
+    setScheduleModalEvent(participation);
+    setEventAttemptDrafts((current) => ({ ...current, [participation.id]: String(participation.attempts_counting) }));
+  }
+
   async function handleAssignJornada() {
     if (!assignForm.jornada_id) {
       setFeedback({ type: "error", message: "Selecione uma Jornada publicada para inserir o aluno." });
@@ -2237,6 +2354,7 @@ export default function AlunoAdminDetalheClient({
                 setScheduleModalJornada(sj);
                 setAttemptDrafts(Object.fromEntries(sj.schedule.map((item) => [item.id, String(item.attempts_counting)])));
               }}
+              onOpenEventSchedule={onOpenEventSchedule}
             />
           </div>
 
@@ -3285,6 +3403,170 @@ export default function AlunoAdminDetalheClient({
           </div>
         </div>
       )}
+
+      <PremiumModal
+        open={Boolean(resetEventAttemptsTarget)}
+        tone="warning"
+        title="Zerar tentativas deste Evento?"
+        message="Zerar as tentativas deste Evento irá apagar as tentativas, respostas e resultados deste aluno neste Evento. O aluno voltará a aparecer como sem tentativa registrada no Evento. Esta ação não apagará tentativas do mesmo simulado feitas fora deste Evento. Deseja continuar?"
+        onClose={() => setResetEventAttemptsTarget(null)}
+        dismissible={!eventScheduleProcessingId}
+        actions={resetEventAttemptsTarget ? (
+          <div className="flex w-full flex-col-reverse gap-3 sm:flex-row">
+            <PremiumButton
+              variant="secondary"
+              full
+              onClick={() => setResetEventAttemptsTarget(null)}
+              disabled={Boolean(eventScheduleProcessingId)}
+            >
+              Cancelar
+            </PremiumButton>
+            <PremiumButton
+              variant="dark-warning"
+              full
+              icon={<AlertTriangle size={16} />}
+              disabled={Boolean(eventScheduleProcessingId)}
+              onClick={async () => {
+                const target = resetEventAttemptsTarget;
+                if (!target) return;
+                const resetCompleted = await performSetEventAttempts(target, 0);
+                if (resetCompleted) setResetEventAttemptsTarget(null);
+              }}
+            >
+              {eventScheduleProcessingId ? "Zerando…" : "Sim, zerar tentativas"}
+            </PremiumButton>
+          </div>
+        ) : undefined}
+      />
+
+      {/* Modal — Cronograma do Evento */}
+      {scheduleModalEvent && (() => {
+        const event = scheduleModalEvent.simulado_events;
+        const simulado = event?.simulados || null;
+        const situacao = eventParticipationSituation(scheduleModalEvent);
+        const isProcessingAttempts = eventScheduleProcessingId === `attempts:${scheduleModalEvent.id}`;
+        return (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[radial-gradient(circle_at_25%_15%,rgba(32,132,255,0.10),transparent_34%),radial-gradient(circle_at_80%_88%,rgba(255,111,0,0.12),transparent_30%),rgba(1,5,12,0.78)] px-4 py-6 backdrop-blur-[14px]">
+            <div className="relative isolate flex h-[min(720px,calc(100vh-54px))] w-[min(1100px,calc(100vw-64px))] max-w-none flex-col overflow-hidden rounded-[26px] border border-blue-300/35 bg-[linear-gradient(145deg,rgba(8,22,40,0.98),rgba(5,15,28,0.98))] shadow-[0_30px_100px_rgba(0,0,0,0.62),0_0_52px_rgba(28,123,235,0.14),0_0_42px_rgba(255,122,0,0.08),inset_0_1px_0_rgba(255,255,255,0.045)]">
+              <div className="pointer-events-none absolute inset-0 -z-10">
+                <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-500/[0.10] blur-[100px]" />
+                <div className="absolute -right-24 bottom-0 h-72 w-72 rounded-full bg-orange-500/[0.10] blur-[110px]" />
+                <div className="absolute inset-x-8 top-0 h-[2px] bg-[linear-gradient(90deg,transparent_0%,#258EFF_26%,transparent_50%,#FF7A00_75%,transparent_100%)]" />
+                <div className="absolute inset-x-24 bottom-0 h-px bg-gradient-to-r from-transparent via-blue-400/35 to-orange-400/55" />
+              </div>
+
+              <div className="flex min-h-[150px] items-start justify-between gap-6 border-b border-white/[0.08] bg-gradient-to-r from-white/[0.025] to-transparent px-8 py-[30px] lg:px-10">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-orange-400">Evento individual</p>
+                  <h2 className="mt-2 text-[30px] font-bold leading-tight tracking-[-0.02em] text-white">
+                    Cronograma do Evento
+                  </h2>
+                  <p className="mt-2 text-sm font-medium text-[#A9B8C9]">
+                    Tentativas, resultado e participação deste aluno no Evento.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScheduleModalEvent(null)}
+                  className="flex h-[54px] w-[54px] items-center justify-center rounded-[14px] border border-blue-200/25 bg-white/[0.025] text-white/70 shadow-lg shadow-black/20 transition hover:rotate-[3deg] hover:scale-[1.02] hover:border-white/[0.18] hover:bg-white/[0.07] hover:text-white"
+                  aria-label="Fechar cronograma do Evento"
+                >
+                  <X size={21} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[26px] [scrollbar-color:rgba(96,165,250,0.55)_rgba(255,255,255,0.04)] [scrollbar-width:thin]">
+                {!event?.simulado_id ? (
+                  <div className="rounded-[1.75rem] border border-dashed border-white/[0.10] bg-white/[0.025] p-10 text-center text-sm text-white/45">
+                    Este Evento ainda não possui simulado vinculado.
+                  </div>
+                ) : (
+                  <div
+                    className="group relative isolate min-h-[145px] overflow-hidden rounded-[18px] border border-blue-300/28 bg-[linear-gradient(135deg,rgba(17,38,65,0.84),rgba(8,26,48,0.80))] p-5 shadow-[0_12px_34px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.025)]"
+                  >
+                    <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-orange-400/65" />
+                    <div className="pointer-events-none absolute -left-16 top-1/2 h-36 w-36 -translate-y-1/2 rounded-full bg-orange-500/[0.11] blur-[70px]" />
+
+                    <div className="grid gap-5 xl:grid-cols-[minmax(320px,1.7fr)_160px_340px_260px] xl:items-center">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-4">
+                          <div className="relative flex h-[66px] w-[66px] shrink-0 items-center justify-center rounded-full border border-orange-400/80 bg-[radial-gradient(circle,rgba(255,138,0,0.16),rgba(10,21,37,0.80))] text-[18px] font-black text-white shadow-[0_0_0_4px_rgba(255,138,0,0.035),0_0_24px_rgba(255,138,0,0.25),inset_0_0_18px_rgba(255,138,0,0.08)]">
+                            <span className="absolute inset-1 rounded-full border border-orange-300/20" />
+                            01
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-[15px] font-semibold text-white/92">{simulado?.title || "Simulado"}</p>
+                            <p className="mt-1 truncate text-xs text-white/50">{event.name}</p>
+                            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/42">
+                              <span>Início: <strong className="font-semibold text-white/70">{fmtDateTime(event.starts_at)}</strong></span>
+                              <span className="text-white/20">•</span>
+                              <span>Fim: <strong className="font-semibold text-white/70">{fmtDateTime(event.ends_at)}</strong></span>
+                              <span className="text-white/20">•</span>
+                              <span>Entrada do aluno: <strong className="font-semibold text-white/70">{fmtDateTime(scheduleModalEvent.joined_at)}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="xl:relative xl:pl-6 xl:before:absolute xl:before:bottom-[18px] xl:before:left-0 xl:before:top-[18px] xl:before:w-px xl:before:bg-white/[0.075]">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/32">Situação</p>
+                        <span className={`inline-flex h-[38px] items-center rounded-full border px-4 text-xs font-bold shadow-sm ${situacao.cls}`}>
+                          {situacao.label}
+                        </span>
+                        <p className="mt-2 text-[11px] font-medium text-white/45">
+                          Resultado: {scheduleModalEvent.result_released_at ? <span className="text-emerald-300">Liberado</span> : <span className="text-amber-300/80">Aguardando liberação</span>}
+                        </p>
+                      </div>
+
+                      <div className="xl:relative xl:pl-6 xl:before:absolute xl:before:bottom-[18px] xl:before:left-0 xl:before:top-[18px] xl:before:w-px xl:before:bg-white/[0.075]">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/32">Tentativas</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={eventAttemptDrafts[scheduleModalEvent.id] ?? String(scheduleModalEvent.attempts_counting)}
+                            onChange={(e) => setEventAttemptDrafts((current) => ({ ...current, [scheduleModalEvent.id]: e.target.value }))}
+                            className="h-12 w-[105px] rounded-[13px] border border-blue-300/20 bg-black/20 px-3.5 text-sm font-bold text-white/90 shadow-inner outline-none transition focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10"
+                          />
+                          <span className="text-xs text-white/35">de {simulado?.max_attempts ?? "∞"}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSetEventAttempts(scheduleModalEvent)}
+                            disabled={isProcessingAttempts}
+                            className="inline-flex h-12 min-w-[118px] items-center justify-center gap-2 rounded-[13px] border border-blue-300/34 bg-[linear-gradient(180deg,rgba(18,47,79,0.95),rgba(9,31,56,0.95))] px-4 text-xs font-bold text-slate-200 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:border-blue-200/45 hover:shadow-[0_0_20px_rgba(43,134,235,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Save size={14} />
+                            {isProcessingAttempts ? "Salvando…" : "Salvar"}
+                          </button>
+                        </div>
+                        <p className="mt-2 text-[11px] text-white/30">Total real: {scheduleModalEvent.attempts_total}</p>
+                      </div>
+
+                      <div className="text-xs text-white/45 xl:relative xl:pl-6 xl:before:absolute xl:before:bottom-[18px] xl:before:left-0 xl:before:top-[18px] xl:before:w-px xl:before:bg-white/[0.075]">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/32">Desempenho</p>
+                        {scheduleModalEvent.latest_result_percentage !== null ? <p>Nota: <strong className="text-emerald-300">{Math.round(scheduleModalEvent.latest_result_percentage)}%</strong></p> : <p>Nota: —</p>}
+                        <p>Tempo: {fmtSeconds(Number(scheduleModalEvent.latest_result_time_spent_seconds || 0))}</p>
+                        {scheduleModalEvent.latest_attempt_answered_count !== null && <p>Respostas: {scheduleModalEvent.latest_attempt_answered_count}/{scheduleModalEvent.latest_attempt_total_questions ?? "—"}</p>}
+                        {scheduleModalEvent.latest_attempt_started_at && <p>Última tentativa: {fmtDateTime(scheduleModalEvent.latest_attempt_started_at)}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex min-h-[90px] items-center justify-end border-t border-white/[0.08] bg-[linear-gradient(180deg,rgba(8,24,43,0.94),rgba(7,19,34,0.98))] px-8 py-4 lg:px-10">
+                <button
+                  type="button"
+                  onClick={() => setScheduleModalEvent(null)}
+                  className="inline-flex h-[54px] min-w-[150px] items-center justify-center rounded-[14px] border border-white/70 bg-gradient-to-b from-white to-slate-200 px-8 text-sm font-black text-[#07111F] shadow-[0_10px_30px_rgba(0,0,0,0.30),0_0_24px_rgba(255,255,255,0.10)] transition hover:-translate-y-0.5 hover:brightness-105"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal — Reenvio de E-mails */}
       {resendEmailModal && (

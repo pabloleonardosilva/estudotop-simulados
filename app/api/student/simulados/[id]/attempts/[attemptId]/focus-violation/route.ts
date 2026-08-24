@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
+import { FOCUS_VIOLATION_LIMIT } from "@/lib/simulado-focus-violation";
 
 type ViolationPayload = {
   violation_number?: number;
@@ -66,7 +67,7 @@ export async function POST(
   };
 
   let disqualified = false;
-  if (nextViolationCount >= 3) {
+  if (nextViolationCount >= FOCUS_VIOLATION_LIMIT) {
     disqualified = true;
     updatePayload.status = "disqualified";
     updatePayload.disqualified_at = new Date().toISOString();

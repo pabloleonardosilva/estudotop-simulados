@@ -65,6 +65,20 @@ function getFeedbackMode(simulado: { feedback_mode?: unknown; instant_feedback_e
     : (simulado.instant_feedback_enabled ? "instant" : "final_only");
 }
 
+// Durante uma tentativa já iniciada, as regras de anti-cheat respeitam
+// preferencialmente o settings_snapshot gravado no início da tentativa, para
+// que uma alteração administrativa no meio da prova não mude as regras de
+// segurança daquela tentativa específica.
+function booleanFromSnapshotOrSimulado(
+  snapshot: Record<string, unknown> | null | undefined,
+  simulado: Record<string, unknown>,
+  key: "anti_tab_switch_enabled" | "anti_window_blur_enabled",
+) {
+  if (snapshot && typeof snapshot[key] === "boolean") return snapshot[key] as boolean;
+  if (typeof simulado[key] === "boolean") return simulado[key] as boolean;
+  return true;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -117,7 +131,9 @@ export async function POST(
         allow_blank_answers,
         scoring_model,
         owl_help_enabled,
-        owl_help_limit
+        owl_help_limit,
+        anti_tab_switch_enabled,
+        anti_window_blur_enabled
       `,
     )
     .eq("id", simuladoId)
@@ -358,6 +374,8 @@ export async function POST(
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
     owl_help_limit: simulado.owl_help_limit ?? null,
+    anti_tab_switch_enabled: simulado.anti_tab_switch_enabled !== false,
+    anti_window_blur_enabled: simulado.anti_window_blur_enabled !== false,
     event_result_policy: eventResultPolicy,
   };
 
@@ -421,7 +439,7 @@ export async function POST(
     ok: true,
     attempt: sanitizeAttempt(created),
     questions: orderedPayload,
-    simulado: buildSimuladoSnapshot(simulado),
+    simulado: buildSimuladoSnapshot(simulado, settingsSnapshot),
     totalAttemptsUsed: used,
     totalAttempted: totalCompleted,
   });
@@ -510,7 +528,7 @@ async function buildAttemptResponse(
     attempt: sanitizeAttempt(attempt),
     questions: orderedPayload,
     answers: answers || [],
-    simulado: buildSimuladoSnapshot(simulado),
+    simulado: buildSimuladoSnapshot(simulado, attempt.settings_snapshot as Record<string, unknown> | null),
   });
 }
 
@@ -535,7 +553,7 @@ function sanitizeAttempt(attempt: Record<string, unknown>) {
   };
 }
 
-function buildSimuladoSnapshot(simulado: Record<string, unknown>) {
+function buildSimuladoSnapshot(simulado: Record<string, unknown>, attemptSettingsSnapshot?: Record<string, unknown> | null) {
   const feedbackMode = getFeedbackMode(simulado);
   return {
     id: simulado.id,
@@ -552,5 +570,7 @@ function buildSimuladoSnapshot(simulado: Record<string, unknown>) {
     scoring_model: simulado.scoring_model,
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
     owl_help_limit: simulado.owl_help_limit ?? null,
+    anti_tab_switch_enabled: booleanFromSnapshotOrSimulado(attemptSettingsSnapshot, simulado, "anti_tab_switch_enabled"),
+    anti_window_blur_enabled: booleanFromSnapshotOrSimulado(attemptSettingsSnapshot, simulado, "anti_window_blur_enabled"),
   };
 }

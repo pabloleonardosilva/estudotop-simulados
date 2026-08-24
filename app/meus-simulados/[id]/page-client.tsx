@@ -72,6 +72,8 @@ type InitialSimulado = {
   navigation_type?: "open" | "closed" | null;
   owl_help_enabled?: boolean | null;
   owl_help_limit?: number | null;
+  anti_tab_switch_enabled?: boolean | null;
+  anti_window_blur_enabled?: boolean | null;
 };
 
 type AttemptData = {
@@ -559,6 +561,11 @@ export default function SimuladoExperience({
   useEffect(() => {
     if (phase !== "in_progress") return;
 
+    // Ausência/null trata como ativo (comportamento atual preservado para
+    // simulados antigos sem as colunas configuradas).
+    const antiTabSwitchEnabled = simulado.anti_tab_switch_enabled !== false;
+    const antiWindowBlurEnabled = simulado.anti_window_blur_enabled !== false;
+
     function clearWindowBlurGraceTimer() {
       if (windowBlurGraceTimerRef.current !== null) {
         window.clearTimeout(windowBlurGraceTimerRef.current);
@@ -580,6 +587,7 @@ export default function SimuladoExperience({
     }
 
     function handleVisibilityChange() {
+      if (!antiTabSwitchEnabled) return;
       if (document.hidden) {
         clearWindowBlurGraceTimer();
         registerViolationOnce();
@@ -587,6 +595,7 @@ export default function SimuladoExperience({
     }
 
     function handleWindowBlur() {
+      if (!antiWindowBlurEnabled) return;
       if (document.hidden || windowBlurGraceTimerRef.current !== null) return;
       const deadline = Date.now() + WINDOW_BLUR_GRACE_MS;
       windowBlurDeadlineRef.current = deadline;
@@ -626,7 +635,7 @@ export default function SimuladoExperience({
       window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [phase, recordViolation]);
+  }, [phase, recordViolation, simulado.anti_tab_switch_enabled, simulado.anti_window_blur_enabled]);
 
   // Bloqueia print / save / contextmenu enquanto está em prova
   useEffect(() => {
@@ -2775,12 +2784,26 @@ function RulesScreen({
               }
             />
 
-            <RuleItem
-              icon={<ShieldAlert size={20} />}
-              title="Não saia da tela do simulado!"
-              description="Mantenha a janela do simulado maximizada e não a exiba lado a lado com outra janela. Trocar de guia ou minimizar é registrado imediatamente. Manter outra janela ou aplicativo em foco por mais de 10 segundos também gera uma ocorrência. Na terceira ocorrência, a tentativa é encerrada e contabilizada."
-              variant="danger"
-            />
+            {(() => {
+              const antiTabSwitchEnabled = simulado.anti_tab_switch_enabled !== false;
+              const antiWindowBlurEnabled = simulado.anti_window_blur_enabled !== false;
+              const noneEnabled = !antiTabSwitchEnabled && !antiWindowBlurEnabled;
+              const description = antiTabSwitchEnabled && antiWindowBlurEnabled
+                ? "Mantenha a janela do simulado maximizada e não a exiba lado a lado com outra janela. Trocar de guia ou minimizar é registrado imediatamente. Manter outra janela ou aplicativo em foco por mais de 10 segundos também gera uma ocorrência. Na terceira ocorrência, a tentativa é encerrada e contabilizada."
+                : noneEnabled
+                  ? "Durante a prova, mantenha o foco e evite distrações para obter um resultado mais fiel da sua preparação."
+                  : antiTabSwitchEnabled
+                    ? "Trocar de guia ou minimizar a janela durante a prova registra violação de foco. Na terceira ocorrência, a tentativa é encerrada."
+                    : "Usar outra janela ou aplicativo enquanto o simulado permanece aberto aciona um alerta de 10 segundos. Se você não voltar ao simulado, a violação será registrada.";
+              return (
+                <RuleItem
+                  icon={<ShieldAlert size={20} />}
+                  title={noneEnabled ? "Mantenha o foco durante a prova" : "Não saia da tela do simulado!"}
+                  description={description}
+                  variant={noneEnabled ? "default" : "danger"}
+                />
+              );
+            })()}
 
             {simulado.show_answer_key_on_finish && (
               <RuleItem

@@ -58,6 +58,8 @@ type SimuladoMeta = {
   scoring_model: "traditional" | "cebraspe";
   owl_help_enabled?: boolean;
   owl_help_limit?: number | null;
+  anti_tab_switch_enabled?: boolean;
+  anti_window_blur_enabled?: boolean;
 };
 
 type PreviewQuestion = {
@@ -180,6 +182,8 @@ export default function PreviewSimuladoClient({
     scoring_model: simulado.scoring_model || "traditional",
     owl_help_enabled: Boolean(simulado.owl_help_enabled),
     owl_help_limit: simulado.owl_help_limit ?? null,
+    anti_tab_switch_enabled: simulado.anti_tab_switch_enabled !== false,
+    anti_window_blur_enabled: simulado.anti_window_blur_enabled !== false,
   };
 
   const [phase, setPhase] = useState<Phase>("rules");
@@ -230,12 +234,13 @@ export default function PreviewSimuladoClient({
   }, [phase, violationWarned]);
 
   useEffect(() => {
+    if (simulado.anti_tab_switch_enabled === false) return;
     function onVisibility() {
       if (document.hidden) handleViolation();
     }
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [handleViolation]);
+  }, [handleViolation, simulado.anti_tab_switch_enabled]);
 
   // Block print/save in progress
   useEffect(() => {
@@ -413,12 +418,26 @@ export default function PreviewSimuladoClient({
                 title={meta.instant_feedback_enabled ? "Feedback instantâneo ativado" : "Feedback ao final do simulado"}
                 description={meta.instant_feedback_enabled ? "Você verá se acertou ou errou imediatamente." : "O gabarito será exibido após o envio."}
               />
-              <RuleItem
-                icon={<ShieldAlert size={20} />}
-                title="Não saia da tela do simulado!"
-                description="Trocar de aba ou minimizar gera um aviso."
-                variant="danger"
-              />
+              {(() => {
+                const antiTabSwitchEnabled = meta.anti_tab_switch_enabled !== false;
+                const antiWindowBlurEnabled = meta.anti_window_blur_enabled !== false;
+                const noneEnabled = !antiTabSwitchEnabled && !antiWindowBlurEnabled;
+                const description = antiTabSwitchEnabled && antiWindowBlurEnabled
+                  ? "Trocar de aba, minimizar a janela ou usar outra janela/aplicativo gera um aviso."
+                  : noneEnabled
+                    ? "Durante a prova, mantenha o foco e evite distrações para obter um resultado mais fiel da sua preparação."
+                    : antiTabSwitchEnabled
+                      ? "Trocar de aba ou minimizar a janela gera um aviso."
+                      : "Usar outra janela ou aplicativo enquanto o simulado permanece aberto aciona o alerta de 10 segundos.";
+                return (
+                  <RuleItem
+                    icon={<ShieldAlert size={20} />}
+                    title={noneEnabled ? "Mantenha o foco durante a prova" : "Não saia da tela do simulado!"}
+                    description={description}
+                    variant={noneEnabled ? "default" : "danger"}
+                  />
+                );
+              })()}
             </div>
 
             <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

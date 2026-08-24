@@ -4,10 +4,27 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-type EventPayload = { name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown };
+type EventPayload = { name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown };
 
 function code() {
   return `ES-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+// Catálogo oficial de capas do Evento (ver app/admin/eventos/utils.ts, fonte
+// de verdade da apresentação). Aqui só a lista de chaves válidas, no mesmo
+// padrão já usado por app/api/admin/jornadas/route.ts para categoria — nunca
+// aceitar caminho/URL arbitrário vindo do cliente.
+const EVENT_COVER_KEYS = ["saude", "policial", "tribunais", "administrativo"] as const;
+
+// Ausência de capa é válida (usa fallback no frontend); chave presente mas
+// fora do catálogo é rejeitada. Lança erro nesse segundo caso.
+function normalizeCoverKey(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const key = String(value);
+  if (!(EVENT_COVER_KEYS as readonly string[]).includes(key)) {
+    throw new Error("Selecione uma imagem de capa válida para o Evento.");
+  }
+  return key;
 }
 
 export async function GET(request: Request) {
@@ -34,6 +51,12 @@ export async function POST(request: Request) {
   if (name.length < 3 || !startsAt || !endsAt || !Number.isInteger(duration) || duration <= 0 || new Date(endsAt) <= new Date(startsAt)) {
     return NextResponse.json({ ok: false, message: "Informe nome, início, término e duração válidos." }, { status: 400 });
   }
+  let coverKey: string | null;
+  try {
+    coverKey = normalizeCoverKey(body?.cover_key);
+  } catch (error) {
+    return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Imagem de capa inválida." }, { status: 400 });
+  }
   const simuladoId = typeof body?.simulado_id === "string" && body.simulado_id ? body.simulado_id : null;
   const supabase = createSupabaseAdminClient();
   if (professorIds.length) {
@@ -42,7 +65,7 @@ export async function POST(request: Request) {
   }
   let created = null;
   for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
-    const result = await supabase.from("simulado_events").insert({ name, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, code: code(), created_by: admin.id }).select("*").single();
+    const result = await supabase.from("simulado_events").insert({ name, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, cover_key: coverKey, code: code(), created_by: admin.id }).select("*").single();
     if (!result.error) created = result.data;
     else if (result.error.code !== "23505") return NextResponse.json({ ok: false, message: "Não foi possível criar o Evento." }, { status: 500 });
   }

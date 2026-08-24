@@ -50,6 +50,8 @@ export async function GET(
         navigation_type,
         owl_help_enabled,
         owl_help_limit,
+        anti_tab_switch_enabled,
+        anti_window_blur_enabled,
         simulado_questions ( id )
       `,
     )
@@ -194,6 +196,8 @@ export async function GET(
       navigation_type: simulado.navigation_type || "open",
       owl_help_enabled: Boolean(simulado.owl_help_enabled),
       owl_help_limit: simulado.owl_help_limit ?? null,
+      anti_tab_switch_enabled: simulado.anti_tab_switch_enabled ?? true,
+      anti_window_blur_enabled: simulado.anti_window_blur_enabled ?? true,
     },
     attempts: {
       in_progress: inProgress,

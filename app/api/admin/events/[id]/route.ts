@@ -4,7 +4,12 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown };
+type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown };
+
+// Catálogo oficial de capas do Evento (ver app/admin/eventos/utils.ts, fonte
+// de verdade da apresentação). Aqui só a lista de chaves válidas — nunca
+// aceitar caminho/URL arbitrário vindo do cliente.
+const EVENT_COVER_KEYS = ["saude", "policial", "tribunais", "administrativo"] as const;
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin(request);
@@ -61,14 +66,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: "Resultados pendentes liberados.", released_count: released.releasedCount });
   }
   if (body.action === "duplicate") {
-    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
+    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, cover_key: current.cover_key, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
     if (error || !duplicated) return NextResponse.json({ ok: false, message: "Não foi possível duplicar o Evento." }, { status: 500 });
     const { data: assignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     if (assignments?.length) await supabase.from("simulado_event_professors").insert(assignments.map((item) => ({ event_id: duplicated.id, professor_id: item.professor_id })));
     return NextResponse.json({ ok: true, message: "Evento duplicado sem Simulado e sem participantes.", event: duplicated }, { status: 201 });
   }
 
-  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids"]
+  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "cover_key"]
     .some((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (!hasEditableFields) return NextResponse.json({ ok: false, message: "Nenhuma alteração válida foi informada." }, { status: 400 });
 
@@ -97,6 +102,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: false, message: "Simulado inválido." }, { status: 400 });
   }
 
+  if (body.cover_key !== undefined && body.cover_key !== null && body.cover_key !== "" && !(EVENT_COVER_KEYS as readonly unknown[]).includes(body.cover_key)) {
+    return NextResponse.json({ ok: false, message: "Selecione uma imagem de capa válida para o Evento." }, { status: 400 });
+  }
+
   const professorIds = Array.isArray(body.professor_ids) ? [...new Set(body.professor_ids.filter((value): value is string => typeof value === "string"))] : null;
   if (body.professor_ids !== undefined && !professorIds) return NextResponse.json({ ok: false, message: "Seleção de professores inválida." }, { status: 400 });
   if (professorIds?.length) {
@@ -118,6 +127,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (typeof body.ends_at === "string") updates.ends_at = body.ends_at;
   if (Number.isInteger(body.duration_minutes) && Number(body.duration_minutes) > 0) updates.duration_minutes = Number(body.duration_minutes);
   if (body.result_policy === "blocked" || body.result_policy === "released") updates.result_policy = body.result_policy;
+  if (body.cover_key === null || body.cover_key === "") updates.cover_key = null;
+  else if (typeof body.cover_key === "string" && (EVENT_COVER_KEYS as readonly string[]).includes(body.cover_key)) updates.cover_key = body.cover_key;
   const { error } = await supabase.from("simulado_events").update(updates).eq("id", id);
   if (error) return NextResponse.json({ ok: false, message: "Não foi possível atualizar o Evento." }, { status: 500 });
   if (professorIds) {

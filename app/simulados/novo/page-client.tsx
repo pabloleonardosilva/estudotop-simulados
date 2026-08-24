@@ -76,6 +76,8 @@ const defaultForm: SimuladoPayload = {
   scoring_model: "traditional",
   owl_help_enabled: false,
   owl_help_limit: null,
+  anti_tab_switch_enabled: true,
+  anti_window_blur_enabled: true,
 };
 
 export default function NovoSimuladoClient({ disciplines }: { disciplines: Discipline[] }) {
@@ -301,6 +303,32 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
               <Toggle label="Embaralhar questões?" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
               <Toggle label="Embaralhar alternativas?" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
             </div>
+
+            <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-orange-200">
+                <ShieldCheck size={15} /> Segurança da execução
+              </p>
+              <div className="grid gap-3 md:grid-cols-2 dark-form">
+                <Toggle
+                  label="Detectar ALT+TAB / troca de guia"
+                  value={form.anti_tab_switch_enabled ?? true}
+                  onChange={(value) => update("anti_tab_switch_enabled", value)}
+                >
+                  <p className="text-xs font-semibold leading-5 text-slate-400">
+                    Quando ativo, trocar de guia, minimizar a janela ou sair da tela do simulado registra violação de foco.
+                  </p>
+                </Toggle>
+                <Toggle
+                  label="Detectar janelas lado a lado"
+                  value={form.anti_window_blur_enabled ?? true}
+                  onChange={(value) => update("anti_window_blur_enabled", value)}
+                >
+                  <p className="text-xs font-semibold leading-5 text-slate-400">
+                    Quando ativo, usar outra janela ou aplicativo enquanto o simulado permanece visível abre o alerta de 10 segundos antes de registrar violação.
+                  </p>
+                </Toggle>
+              </div>
+            </div>
           </SimuladoCard>
 
           <SimuladoCard variant="dark" title="Correção" description="Vídeo opcional de correção." icon={<PlayCircle size={18} />}>
@@ -338,6 +366,8 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
               <Rule label="Em branco" value={form.allow_blank_answers ? "Permitido" : "Obrigatório responder"} icon={<CheckCircle2 size={15} />} />
               <Rule label="Feedback" value={(form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")) === "instant" ? "Imediato" : "Ao final"} icon={<Eye size={15} />} />
               <Rule label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={form.owl_help_enabled ?? false} />
+              <Rule label="ALT+TAB / guias" value={(form.anti_tab_switch_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_tab_switch_enabled ?? true} />
+              <Rule label="Janelas lado a lado" value={(form.anti_window_blur_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_window_blur_enabled ?? true} />
             </div>
             <div className="border-t border-white/10 p-4">
               <PremiumButton full icon={<CheckCircle2 size={18} />} onClick={submit} disabled={saving}>

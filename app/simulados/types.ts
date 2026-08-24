@@ -86,6 +86,8 @@ export type Simulado = {
   scoring_model: ScoringModel;
   owl_help_enabled?: boolean | null;
   owl_help_limit?: number | null;
+  anti_tab_switch_enabled?: boolean | null;
+  anti_window_blur_enabled?: boolean | null;
   created_at: string;
   updated_at: string;
   published_at?: string | null;
@@ -119,4 +121,6 @@ export type SimuladoPayload = {
   scoring_model: ScoringModel;
   owl_help_enabled?: boolean | null;
   owl_help_limit?: number | null;
+  anti_tab_switch_enabled?: boolean | null;
+  anti_window_blur_enabled?: boolean | null;
 };
