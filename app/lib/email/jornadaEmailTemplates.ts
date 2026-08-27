@@ -128,7 +128,7 @@ function statusLabel(status: string): string {
 
 export function shell(title: string, preheader: string, body: string): string {
   return `
-  <div style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <div style="margin:0;padding:0;background:#f8fafc;font-family:Inter,Arial,Helvetica,sans-serif;color:#0f172a;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>
     <div style="max-width:720px;margin:0 auto;padding:28px 16px;">
       <div style="background:#0f172a;border-radius:28px 28px 0 0;padding:26px 28px;color:#fff;">

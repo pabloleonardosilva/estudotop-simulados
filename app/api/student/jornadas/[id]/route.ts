@@ -6,6 +6,7 @@ import { logStudentActivity } from "@/app/lib/server/auditLogger";
 type AttemptRow = {
   id: string;
   simulado_id: string;
+  student_jornada_simulado_id: string;
   status: string;
   submitted_at: string | null;
   created_at: string | null;
@@ -128,14 +129,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const rows = [...((data as any).student_jornada_simulados || [])].sort(
     (a: any, b: any) => a.order_number - b.order_number,
   );
-  const simuladoIds = rows.map((row: any) => row.simulado_id).filter(Boolean);
+  const studentJornadaSimuladoIds = rows.map((row: any) => row.id).filter(Boolean);
 
-  const { data: attempts } = simuladoIds.length
+  const { data: attempts } = studentJornadaSimuladoIds.length
     ? await supabase
         .from("simulado_attempts")
-        .select("id, simulado_id, status, submitted_at, time_spent_seconds, progress_percent, counts_toward_limit, created_at")
+        .select("id, simulado_id, student_jornada_simulado_id, status, submitted_at, time_spent_seconds, progress_percent, counts_toward_limit, created_at")
         .eq("student_id", student.id)
-        .in("simulado_id", simuladoIds)
+        .in("student_jornada_simulado_id", studentJornadaSimuladoIds)
         .order("created_at", { ascending: false })
     : { data: [] as AttemptRow[] };
 
@@ -155,11 +156,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     resultsByAttempt.set(result.attempt_id, result);
   }
 
-  const attemptsBySimulado = new Map<string, AttemptRow[]>();
+  const attemptsByScheduleItem = new Map<string, AttemptRow[]>();
   for (const attempt of ((attempts || []) as AttemptRow[])) {
-    const list = attemptsBySimulado.get(attempt.simulado_id) || [];
+    const list = attemptsByScheduleItem.get(attempt.student_jornada_simulado_id) || [];
     list.push(attempt);
-    attemptsBySimulado.set(attempt.simulado_id, list);
+    attemptsByScheduleItem.set(attempt.student_jornada_simulado_id, list);
   }
 
   const jornadaExpired = (data as any).expires_at <= todayDateOnly();
@@ -167,10 +168,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const simulados = rows.map((row: any, index: number) => {
     const previous = index > 0 ? rows[index - 1] : null;
     const sim = row.simulados || {};
-    const simAttempts = attemptsBySimulado.get(row.simulado_id) || [];
+    const simAttempts = attemptsByScheduleItem.get(row.id) || [];
     const inProgress = simAttempts.find((attempt) => attempt.status === "in_progress") || null;
     const anyCompleted = simAttempts.find((attempt) => attempt.status === "completed" && attempt.counts_toward_limit) || null;
-    const previousAttempts = previous?.simulado_id ? attemptsBySimulado.get(previous.simulado_id) || [] : [];
+    const previousAttempts = previous?.id ? attemptsByScheduleItem.get(previous.id) || [] : [];
     const previousCompleted =
       index === 0 || previousAttempts.some((attempt) => attempt.status === "completed" && attempt.counts_toward_limit);
     const rawStatus = row.status === "completed" && !anyCompleted

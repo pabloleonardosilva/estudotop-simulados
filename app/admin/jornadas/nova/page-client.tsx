@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, type ReactNode, useMemo, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,6 +26,8 @@ import PremiumLoadingOverlay from "../../../components/ui/PremiumLoadingOverlay"
 import PremiumModal from "../../../components/ui/PremiumModal";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { JORNADA_CATEGORIES, jornadaCategoryLabel } from "../utils";
+import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
+import type { SystemImage } from "@/lib/system-images";
 
 type Feedback = { tone: "success" | "error"; title: string; message: string } | null;
 
@@ -43,6 +45,7 @@ const defaultForm = {
   important_guidelines: "",
   journey_highlights: ["cronograma_progressivo", "relatorios_desempenho", "correcao_comentada"] as string[],
   category: "policial" as "saude" | "policial" | "tribunais" | "administrativo",
+  card_image_id: null as string | null,
   duration_days: 90,
   release_duration_days: 83,
   planned_simulados_count: 10,
@@ -65,6 +68,8 @@ export default function NovaJornadaClient() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [cardImages, setCardImages] = useState<SystemImage[]>([]);
+  useEffect(() => { void loadSystemImages("journey_card").then(setCardImages); }, []);
 
   function update<K extends keyof typeof defaultForm>(key: K, value: (typeof defaultForm)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -121,6 +126,7 @@ export default function NovaJornadaClient() {
           important_guidelines: form.important_guidelines.trim() || null,
           journey_highlights: form.journey_highlights,
           category: form.category,
+          card_image_id: form.card_image_id,
           duration_days: Number(form.duration_days),
           release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
@@ -180,7 +186,7 @@ export default function NovaJornadaClient() {
         <StepProgress />
 
         <section className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
-          <JornadaFormCard form={form} update={update} />
+          <JornadaFormCard form={form} update={update} cardImages={cardImages} />
           <SummaryCard
             form={form}
             examDateFormatted={examDateFormatted}
@@ -281,9 +287,11 @@ function StepConnector({ active = false }: { active?: boolean }) {
 function JornadaFormCard({
   form,
   update,
+  cardImages,
 }: {
   form: typeof defaultForm;
   update: <K extends keyof typeof defaultForm>(key: K, value: (typeof defaultForm)[K]) => void;
+  cardImages: SystemImage[];
 }) {
   return (
     <section className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/82 p-6 shadow-2xl shadow-black/35 backdrop-blur-xl sm:p-8">
@@ -302,6 +310,10 @@ function JornadaFormCard({
             value={form.title}
             onChange={(e) => update("title", e.target.value)}
           />
+        </DarkField>
+
+        <DarkField label="Imagem do card" icon={<Route size={16} />} helper="Sem seleção, o card mantém o fallback visual da categoria.">
+          <ImageLibraryPicker images={cardImages} value={form.card_image_id} onChange={(value) => update("card_image_id", value)} />
         </DarkField>
 
         <DarkField label="Descrição (opcional)" icon={<FileText size={16} />}>

@@ -8,8 +8,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Arial como fonte padrão de todo o sistema — sem Geist ou Inter */
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-estudotop-inter), Inter, "Inter fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --animate-modal-in: modalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-backdrop-in: backdropIn 0.2s ease both;
@@ -28,7 +27,7 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-estudotop-inter), Inter, "Inter fallback", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 16px;
   font-weight: 400;
   line-height: 24px;
@@ -385,6 +384,114 @@ button:disabled,
   --student-radius-card: 1.6rem;
   --student-shadow-soft: 0 20px 60px rgba(15, 23, 42, 0.10);
   --student-shadow-dark: 0 18px 52px rgba(0, 0, 0, 0.34);
+}
+
+/* Tipografia clean premium do aluno. Escopo isolado no shell do aluno; rotas
+   de foco/resultado não recebem .student-theme pelo AppShell. */
+.et-student-font,
+.et-teacher-font,
+.student-theme .et-student-premium {
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-synthesis-weight: none;
+  font-synthesis-style: none;
+}
+
+.font-black,
+.font-extrabold {
+  font-weight: 700;
+}
+
+.student-theme .et-student-text,
+.teacher-theme .et-teacher-text {
+  color: rgb(51, 65, 85);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.student-theme .et-student-section-eyebrow,
+.student-theme .et-student-eyebrow,
+.teacher-theme .et-teacher-eyebrow {
+  color: rgb(234, 97, 18);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.student-theme .et-student-display,
+.student-theme .et-student-page-title,
+.teacher-theme .et-teacher-page-title {
+  color: #020617;
+  font-size: clamp(28px, 2.4vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.student-theme .et-student-card-title,
+.student-theme .et-student-subtitle,
+.teacher-theme .et-teacher-subtitle {
+  color: rgb(51, 65, 85);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: normal;
+  line-height: 28px;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.student-theme .et-student-orange-title,
+.teacher-theme .et-teacher-orange-title {
+  color: rgb(234, 97, 18);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.student-theme .et-student-label,
+.teacher-theme .et-teacher-label {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.student-theme .et-student-value,
+.teacher-theme .et-teacher-value {
+  color: rgb(51, 65, 85);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: normal;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.student-theme .et-student-button,
+.teacher-theme .et-teacher-button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.student-theme .et-student-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  line-height: 16px;
+  text-transform: uppercase;
 }
 
 .student-dark-shell {

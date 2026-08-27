@@ -40,6 +40,7 @@ async function getData(id: string) {
     status: j.status as Jornada["status"],
     scope_type: (j.scope_type || "general") as Jornada["scope_type"],
     category: (j.category || null) as Jornada["category"],
+    card_image_id: j.card_image_id || null,
     contest_name: j.contest_name || null,
     exam_name: j.exam_name || null,
     exam_position: j.exam_position || null,

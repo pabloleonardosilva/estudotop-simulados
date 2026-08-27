@@ -283,6 +283,15 @@ export async function PATCH(
         }
       }
 
+      if (body.card_image_id !== undefined) {
+        const cardImageId = typeof body.card_image_id === "string" && body.card_image_id ? body.card_image_id : null;
+        if (cardImageId) {
+          const { data: image } = await supabase.from("system_images").select("id").eq("id", cardImageId).eq("image_type", "journey_card").maybeSingle();
+          if (!image) return NextResponse.json({ ok: false, message: "Selecione uma imagem válida da biblioteca de Jornadas." }, { status: 400 });
+        }
+        updates.card_image_id = cardImageId;
+      }
+
       if (body.scope_type !== undefined || body.contest_name !== undefined) {
         try {
           const scope = normalizeScope(body);

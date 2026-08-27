@@ -16,11 +16,15 @@ async function setEventParticipantAttemptsCount(
 ) {
   const { studentId, eventId, eventParticipantId, simuladoId, targetCount } = params;
 
+  // Escopo intencionalmente sem simulado_id: se o Admin já trocou o
+  // Simulado vinculado ao Evento (ver ação "terminate_active_attempts"),
+  // tentativas anteriores à troca continuam pertencendo a este
+  // event_participant_id com o simulado_id ANTIGO — filtrar pelo simulado
+  // atual do Evento as tornaria invisíveis aqui, impedindo o ajuste/reset.
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
     .select("id, attempt_number, counts_toward_limit, created_at")
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId)
     .eq("event_id", eventId)
     .eq("event_participant_id", eventParticipantId)
     .order("attempt_number", { ascending: true })
@@ -71,7 +75,6 @@ async function setEventParticipantAttemptsCount(
     .from("simulado_attempts")
     .select("id, attempt_number, created_at")
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId)
     .eq("event_id", eventId)
     .eq("event_participant_id", eventParticipantId)
     .order("attempt_number", { ascending: true })
@@ -105,15 +108,21 @@ async function setEventParticipantAttemptsCount(
 
 async function resetEventParticipantHistory(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  params: { studentId: string; eventId: string; eventParticipantId: string; simuladoId: string },
+  params: { studentId: string; eventId: string; eventParticipantId: string },
 ) {
-  const { studentId, eventId, eventParticipantId, simuladoId } = params;
+  const { studentId, eventId, eventParticipantId } = params;
 
+  // Escopo intencionalmente sem simulado_id: "zerar" precisa apagar TODO o
+  // histórico deste participante no Evento, inclusive tentativas feitas
+  // antes de uma eventual troca de Simulado pelo Admin (ver ação
+  // "terminate_active_attempts" em app/api/admin/events/[id]/route.ts) —
+  // essas tentativas antigas continuam com o simulado_id anterior e
+  // ficariam órfãs (nunca apagáveis) se o filtro exigisse o simulado_id
+  // atual do Evento.
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
     .select("id")
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId)
     .eq("event_id", eventId)
     .eq("event_participant_id", eventParticipantId);
   if (attemptsError) throw new Error(attemptsError.message);
@@ -126,7 +135,6 @@ async function resetEventParticipantHistory(
       .from("simulado_attempts")
       .delete()
       .eq("student_id", studentId)
-      .eq("simulado_id", simuladoId)
       .eq("event_id", eventId)
       .eq("event_participant_id", eventParticipantId);
     if (deleteError) throw new Error(deleteError.message);
@@ -240,7 +248,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         studentId,
         eventId,
         eventParticipantId: participant.id,
-        simuladoId: event.simulado_id,
       });
 
       const { error: clearError } = await supabase

@@ -1289,7 +1289,7 @@ function ResultExperience({
       <style jsx global>{`
         @media print {
           @page { size: A4; margin: 14mm; }
-          body { background: white !important; color: #0f172a !important; font-family: Arial, Helvetica, sans-serif !important; }
+          body { background: white !important; color: #0f172a !important; font-family: var(--font-estudotop-inter), Inter, sans-serif !important; }
           * { box-shadow: none !important; text-shadow: none !important; }
           .no-print { display: none !important; }
           .print-only { display: block !important; }

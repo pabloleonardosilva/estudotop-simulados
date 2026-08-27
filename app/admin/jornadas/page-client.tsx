@@ -467,7 +467,7 @@ function JornadaStickerCard({
         <div className="mb-4 overflow-hidden rounded-[1.45rem] border border-white/10 bg-[#07101d] shadow-[inset_0_0_42px_rgba(255,138,0,0.08)]">
           <div
             className="relative h-52 overflow-hidden bg-cover bg-center transition duration-500 group-hover:scale-[1.015]"
-            style={{ backgroundImage: `url(${jornadaCategoryImage(jornada.category)})` }}
+            style={{ backgroundImage: `url(${jornada.card_image_url || jornadaCategoryImage(jornada.category)})` }}
           >
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,0.05)_0%,rgba(2,6,23,0.18)_38%,rgba(2,6,23,0.92)_100%)]" />
             <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />

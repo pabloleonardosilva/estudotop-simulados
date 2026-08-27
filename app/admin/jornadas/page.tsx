@@ -2,6 +2,7 @@ import JornadasClient from "./page-client";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
 import type { Jornada } from "./types";
+import { systemImageUrl } from "@/lib/system-images";
 
 async function getData(): Promise<Jornada[]> {
   const supabase = createSupabaseAdminClient();
@@ -15,6 +16,8 @@ async function getData(): Promise<Jornada[]> {
       status,
       scope_type,
       category,
+      card_image_id,
+      card_image:card_image_id(storage_path),
       contest_name,
       planned_simulados_count,
       duration_days,
@@ -41,6 +44,8 @@ async function getData(): Promise<Jornada[]> {
     status: j.status as Jornada["status"],
     scope_type: (j.scope_type || "general") as Jornada["scope_type"],
     category: (j.category || null) as Jornada["category"],
+    card_image_id: j.card_image_id || null,
+    card_image_url: systemImageUrl((j.card_image as unknown as { storage_path?: string } | null)?.storage_path),
     contest_name: j.contest_name || null,
     planned_simulados_count: j.planned_simulados_count || 0,
     duration_days: j.duration_days ?? null,

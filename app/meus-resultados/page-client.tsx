@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ClipboardList, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, ClipboardList, Clock3, Trophy } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
 import {
   PremiumTable,
@@ -19,6 +19,12 @@ type ResultadoRow = {
   simulado_title: string;
   jornada_title: string | null;
   submitted_at: string | null;
+  source: "jornada" | "standalone" | "event";
+  event_id: string | null;
+  event_name: string | null;
+  result_status: "available" | "pending_release";
+  can_view: boolean;
+  jornada_context_id: string | null;
 };
 
 export default function MeusResultadosClient() {
@@ -106,24 +112,39 @@ export default function MeusResultadosClient() {
           <PremiumTableHead>
             <tr>
               <PremiumTableHeader>Simulado</PremiumTableHeader>
-              <PremiumTableHeader>Jornada</PremiumTableHeader>
+              <PremiumTableHeader>Contexto</PremiumTableHeader>
               <PremiumTableHeader align="right">Ação</PremiumTableHeader>
             </tr>
           </PremiumTableHead>
           <PremiumTableBody>
             {results.map((row, index) => (
-              <PremiumTableRow key={row.simulado_id} index={index}>
+              <PremiumTableRow key={`${row.source}:${row.jornada_context_id || row.event_id || "standalone"}:${row.simulado_id}`} index={index}>
                 <PremiumTableCell>
                   <span className="font-bold text-slate-900">{row.simulado_title}</span>
                 </PremiumTableCell>
-                <PremiumTableCell>{row.jornada_title || "Simulado avulso"}</PremiumTableCell>
+                <PremiumTableCell>
+                  {row.source === "event" ? (
+                    <div>
+                      <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-orange-500">Evento de Simulado</span>
+                      <span className="text-slate-700">{row.event_name || "Evento"}</span>
+                    </div>
+                  ) : (
+                    row.jornada_title || "Simulado avulso"
+                  )}
+                </PremiumTableCell>
                 <PremiumTableCell align="right">
-                  <Link
-                    href={`/meus-simulados/${row.simulado_id}/resultado`}
-                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 text-xs font-black text-orange-700 transition hover:bg-orange-100"
-                  >
-                    Ver resultado <ArrowRight size={14} />
-                  </Link>
+                  {row.can_view ? (
+                    <Link
+                      href={`/meus-simulados/${row.simulado_id}/resultado${row.source === "jornada" && row.jornada_context_id ? `?jornada=${encodeURIComponent(row.jornada_context_id)}` : row.source === "event" && row.event_id ? `?event=${encodeURIComponent(row.event_id)}` : ""}`}
+                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 text-xs font-black text-orange-700 transition hover:bg-orange-100"
+                    >
+                      Ver resultado <ArrowRight size={14} />
+                    </Link>
+                  ) : (
+                    <span className="inline-flex h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-700">
+                      <Clock3 size={14} /> Resultado aguardando liberação
+                    </span>
+                  )}
                 </PremiumTableCell>
               </PremiumTableRow>
             ))}

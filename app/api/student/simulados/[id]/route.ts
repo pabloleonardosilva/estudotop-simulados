@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { assertStudentCanAccessSimulado } from "@/lib/server/studentAssertions";
+import {
+  assertStudentCanAccessSimulado,
+  getContextualSimuladoAttempts,
+  type AttemptExecutionContext,
+} from "@/lib/server/studentAssertions";
 import { logStudentActivity, logSystemError } from "@/app/lib/server/auditLogger";
 
 export async function GET(
@@ -15,12 +19,20 @@ export async function GET(
 
   const { id } = await params;
   const supabase = createSupabaseAdminClient();
-  const eventId = new URL(request.url).searchParams.get("event");
+  const url = new URL(request.url);
+  const eventId = url.searchParams.get("event");
+  const jornadaId = url.searchParams.get("jornada");
+  if (eventId && jornadaId) {
+    return NextResponse.json({ ok: false, message: "Informe apenas um contexto de execução." }, { status: 400 });
+  }
+  let eventParticipantId: string | null = null;
+  let studentJornadaSimuladoId: string | null = null;
 
   if (eventId) {
-    const { data: participant } = await supabase.from("simulado_event_participants").select("simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
+    const { data: participant } = await supabase.from("simulado_event_participants").select("id,simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
     const event = participant?.simulado_events as unknown as { simulado_id: string } | null;
     if (!participant || event?.simulado_id !== id) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
+    eventParticipantId = participant.id;
   } else {
     const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase, request);
     if (accessError) return accessError;
@@ -71,8 +83,6 @@ export async function GET(
       { status: 403 },
     );
   }
-
-  const jornadaId = new URL(request.url).searchParams.get("jornada");
 
   if (!jornadaId && !eventId) {
     const { data: jornadaLink } = await supabase
@@ -146,16 +156,20 @@ export async function GET(
         { status: 403 },
       );
     }
+    studentJornadaSimuladoId = jornadaSimulado.id;
   }
 
-  const { data: attempts, error: attemptsError } = await supabase
-    .from("simulado_attempts")
-    .select(
-      "id, status, attempt_number, answered_count, total_questions, progress_percent, started_at, submitted_at, expires_at, counts_toward_limit, time_spent_seconds",
-    )
-    .eq("simulado_id", id)
-    .eq("student_id", student.id)
-    .order("created_at", { ascending: false });
+  const attemptContext: AttemptExecutionContext = eventId && eventParticipantId
+    ? { type: "event", eventId, eventParticipantId }
+    : studentJornadaSimuladoId
+      ? { type: "jornada", studentJornadaSimuladoId }
+      : { type: "standalone" };
+  const { attempts: contextualAttempts, error: attemptsError } = await getContextualSimuladoAttempts(
+    supabase,
+    student.id,
+    id,
+    attemptContext,
+  );
 
   if (attemptsError) {
     void logSystemError({ source: "api.student.simulado_detail", error: attemptsError, request, metadata: { simulado_id: id } });
@@ -165,9 +179,10 @@ export async function GET(
     );
   }
 
-  const inProgress = (attempts || []).find((row) => row.status === "in_progress") || null;
-  const completed = (attempts || []).filter((row) => row.status === "completed" && row.counts_toward_limit);
-  const used = (attempts || []).filter((row) => row.counts_toward_limit).length;
+  const attempts = [...contextualAttempts].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const inProgress = attempts.find((row) => row.status === "in_progress") || null;
+  const completed = attempts.filter((row) => row.status === "completed" && row.counts_toward_limit);
+  const used = attempts.filter((row) => row.counts_toward_limit).length;
   const total = simulado.max_attempts ?? null;
   const remaining = total === null ? null : Math.max(total - used, 0);
   const questionsCount = simulado.question_count ?? (simulado.simulado_questions || []).length;

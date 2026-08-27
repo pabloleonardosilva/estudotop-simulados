@@ -930,6 +930,8 @@ A dashboard deve atualizar em tempo real ou em tempo quase real de forma eficien
 
 # 39. Dashboard — Painel de questões / modo aula
 
+**Atualização visual de 2026-08-26:** o painel passou a usar composição clara premium nos estados de apresentação e revelação. Antes da revelação, alternativas permanecem neutras; o professor pode eliminá-las/reexibi-las localmente com a tesourinha e ajustar enunciado/alternativas em quatro níveis de tamanho. Depois da revelação, correta fica verde e recebe a coruja oficial dentro da bolinha, incorretas ficam vermelhas e cada alternativa exibe percentual, quantidade de alunos e minigráfico de dez barras derivado das estatísticas reais. Navegação, gabarito, cálculos, permissões e atualização silenciosa de dez segundos foram preservados.
+
 O segundo grande painel é destinado à apresentação pedagógica.
 
 O professor escolhe uma questão e ela aparece grande na tela.
@@ -2219,4 +2221,174 @@ Reproduzido com dado real (`Inss - Simulado 2`, Simulado "Teste 02 - Simulado de
 
 ---
 
+# 88. Admin pode encerrar tentativa ativa para liberar troca do Simulado no Evento (2026-08-24)
+
+**Problema:** a troca do Simulado vinculado a um Evento já era bloqueada corretamente quando havia tentativa `in_progress` real (`is_preview = false`), mas o Admin não tinha nenhuma ação para resolver esse bloqueio além de esperar o aluno terminar.
+
+**Nova ação administrativa excepcional:** ao tentar salvar uma troca de Simulado em `PATCH /api/admin/events/[id]` e existir tentativa ativa, a resposta 409 passou a incluir `blocked_reason: "active_attempts"` e a lista das tentativas em andamento (`attempt_id`, `student_name`, `started_at`). Em `app/admin/eventos/[id]/page-client.tsx`, isso abre um modal ("Existem alunos realizando este Simulado") com três opções — **Cancelar**, **Aguardar conclusão** ou **Encerrar tentativas e prosseguir** — e a segunda opção exige uma confirmação forte adicional antes de qualquer efeito.
+
+**Encerramento no backend:** nova ação `PATCH /api/admin/events/[id]` `{ action: "terminate_active_attempts" }` — escopada estritamente por `event_id = id AND is_preview = false AND status = 'in_progress'` (nunca toca tentativas de Jornada, avulsas ou de outro Evento, mesmo do mesmo Simulado). Reaproveita exatamente o mesmo mecanismo já usado pela desclassificação por violação de foco (`status = 'disqualified'`, `disqualified_at`, `counts_toward_limit = true` — ver `app/api/student/simulados/[id]/attempts/[attemptId]/focus-violation/route.ts`), mudando apenas `disqualification_reason` para o valor novo `'admin_terminated'`, que nunca é confundido com `'focus_violation'`. Nenhuma migration foi necessária: `simulado_attempts.status` já aceita `'disqualified'` por constraint (`simulado_attempts_status_check`) e `disqualification_reason` já é `text` livre.
+
+**Ordem garantida:** o frontend só reenvia o payload original da edição (incluindo a troca de `simulado_id`) depois que a chamada de encerramento retorna sucesso — nunca troca o Simulado antes ou em paralelo. Se o reenvio falhar (ex.: nova tentativa iniciada nesse meio-tempo), o Evento permanece com o Simulado anterior e o erro real é exibido; a ação de encerramento é idempotente (`0` tentativas ativas retorna sucesso sem efeito).
+
+**Aluno — detecção do encerramento:** reaproveita o heartbeat de presença já existente (`POST /api/student/events/[id]/heartbeat`, chamado a cada 30s durante a execução em contexto de Evento) em vez de WebSocket — passou a aceitar `attempt_id` opcional (sempre revalidado por `student_id + event_id`) e retornar `attempt_status`/`disqualification_reason`. Em `app/meus-simulados/[id]/page-client.tsx`, ao detectar `disqualification_reason === "admin_terminated"` a tela sai do fluxo de prova e mostra um `FullScreenModal` (tom `warning`, não `danger`) — "Simulado encerrado" / "Este Simulado foi encerrado pelo administrador. Não é mais possível continuar esta tentativa. Suas respostas registradas até o momento foram preservadas." — com CTA "Voltar para Meus Eventos". A rota de resposta (`.../attempts/[attemptId]/answers`) já rejeitava gravações fora de `status = 'in_progress'` antes desta entrega — nenhuma alteração adicional foi necessária ali.
+
+**`representative_attempt_id` e contagem:** preservada a regra vigente — a tentativa já é representativa desde a criação (guard `.is("representative_attempt_id", null)`), o encerramento administrativo não move nem reseta esse vínculo, igual ao que já acontecia em desclassificação por foco. `counts_toward_limit = true` consome a tentativa, seguindo o mesmo precedente já aplicado por qualquer desclassificação, independentemente do progresso.
+
+**Resultado e TopCoins:** nenhum resultado é gerado (a tentativa nunca passa por `/submit`); `GET /api/student/simulados/[id]/resultado` só aceita `status = 'completed'`, então uma tentativa `admin_terminated` nunca aparece como resultado — mesmo comportamento já válido para desclassificação por foco. Nenhum TopCoin é concedido (mesmo caminho de código da desclassificação, que nunca chama a lógica de TopCoins).
+
+**Dashboard do Professor:** `GET /api/professor/events/[id]` passou a diferenciar o status do participante quando `disqualification_reason === 'admin_terminated'`, exibindo **"Encerrada pelo administrador"** (badge neutra, cinza) em vez de **"Desclassificado"** (badge vermelha, reservada a violação real de regras).
+
+**Correção correlata (mesma entrega):** `GET /api/student/events` e `GET /api/student/events/[id]` passaram a escopar as tentativas retornadas pelo `simulado_id` **atualmente** vinculado ao Evento (`attempt.simulado_id === event.simulado_id`). Antes desta correção, uma troca de Simulado no Evento (já possível mesmo sem esta Sprint, quando não havia tentativa `in_progress` nem `completed` bloqueando) podia deixar tentativas do Simulado anterior "vazando" para a contagem de tentativas/CTA do Simulado novo. Isso se tornaria muito mais frequente com o encerramento administrativo (que agora libera a troca rotineiramente), por isso foi corrigido nesta entrega — sem alterar a regra real de criação de tentativa em `POST /api/student/simulados/[id]/attempts`, que já era corretamente escopada por `simulado_id`.
+
+**Auditoria:** cada tentativa encerrada gera um registro em `logActivity` (`action: "event_attempt_admin_terminated"`, com `event_id`, `student_id`, `previous_simulado_id`).
+
+**Arquivos alterados:** `app/api/admin/events/[id]/route.ts`, `app/api/student/events/[id]/heartbeat/route.ts`, `app/api/student/events/[id]/route.ts`, `app/api/student/events/route.ts`, `app/api/professor/events/[id]/route.ts`, `app/admin/eventos/[id]/page-client.tsx`, `app/professor/eventos/[id]/page-client.tsx`, `app/meus-simulados/[id]/page-client.tsx`.
+
+**Nenhuma migration foi criada, alterada ou executada nesta entrega.** Nenhum arquivo de Jornada foi tocado. Nenhuma regra de foco/anti-cheat, política de resultado ou motor de correção do Simulado foi alterada.
+
+---
+
+# 89. Resultados de Evento bloqueados aparecem em "Meus Resultados" + notificação interna: pendência de infraestrutura (2026-08-24)
+
+**Problema:** um Simulado concluído dentro de um Evento com resultado bloqueado (`result_released_at = null`) desaparecia inteiramente de `/meus-resultados` — a rota `GET /api/student/resultados` pulava (`continue`) qualquer tentativa vinculada a `event_participant_id` sem `result_released_at`, tratando "bloqueado" como "inexistente". Podia inclusive deixar a tela exibindo o empty state "Você ainda não concluiu nenhum simulado." mesmo com atividade concluída.
+
+**Correção implementada (sem migration):** `app/api/student/resultados/route.ts` passou a incluir Simulados de Evento concluídos independentemente da liberação. Fonte da tentativa "oficial" do Evento: a mesma já usada por `GET /api/student/simulados/[id]/resultado` sem `attemptId` — **primeira tentativa `completed` com `counts_toward_limit = true`, ordenada por `submitted_at` crescente**, escopada por `event_participant_id` (nunca vazando de Jornada/avulso/outro Evento). **Decisão técnica registrada:** deliberadamente não foi usado apenas `representative_attempt_id` — quando a tentativa representativa é desclassificada (foco ou encerramento administrativo, ver seção 88) e uma tentativa seguinte é concluída, `representative_attempt_id` continua apontando para a tentativa nunca concluída; usar somente esse campo faria o Evento sumir de "Meus Resultados" mesmo com um resultado real e acessível via URL direta quando liberado — o que contrariaria o princípio central desta correção ("nunca esconder uma atividade concluída"). Validado com dado real do banco operacional (participante do Evento "Inss - Simulado 2", `representative_attempt_id` apontando para tentativa `disqualified` por encerramento administrativo, mas com tentativa seguinte `completed`/`counts_toward_limit=true` real): a nova lógica encontra corretamente essa tentativa e o item aparece como "Resultado aguardando liberação".
+
+**Payload estendido (aditivo):** cada item agora traz `source` (`jornada`/`standalone`/`event`), `event_id`, `event_name`, `result_status` (`available`/`pending_release`) e `can_view`. **Nenhum dado sensível é exposto enquanto bloqueado** — a rota nunca retornou nota/percentual/acertos/erros/gabarito (isso sempre foi responsabilidade exclusiva de `GET /api/student/simulados/[id]/resultado`, que já valida `result_released_at` no servidor via `code: "EVENT_RESULT_BLOCKED"`, preservado sem alteração).
+
+**`app/meus-resultados/page-client.tsx`:** mesma tabela (`PremiumTable`) reutilizada, sem componente novo — coluna "Jornada" renomeada para "Contexto" (mostra "Evento de Simulado" + nome do Evento quando `source === "event"`, preserva "Jornada"/"Simulado avulso" nos demais casos); coluna "Ação" mostra "Ver resultado" quando `can_view`, ou badge neutro (âmbar, ícone de relógio, texto "Resultado aguardando liberação") quando bloqueado — nunca vermelho, nunca aparência de erro. Empty state passa a considerar corretamente os itens bloqueados (não é mais acionado indevidamente).
+
+**Notificação interna de liberação — PARADO antes de criar migration, aguardando autorização:** não existe no projeto nenhuma infraestrutura de notificações genéricas de domínio (`notifications`/`announcements`/`unread`/`read_at`/`dismissed_at`) — confirmado por busca no código e no banco operacional (só existem `student_help_messages`/`student_help_ticket_messages`, sistema de chat de suporte aluno↔admin, semanticamente incompatível com "avisos do sistema", e `simulado_feedbacks`, avaliação do aluno sobre o simulado). Proposta mínima de schema (não criada):
+
+```sql
+create table if not exists public.student_notifications (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references auth.users(id) on delete cascade,
+  type text not null,                 -- ex.: 'event_result_released'
+  title text not null,
+  body text not null,
+  action_url text,
+  reference_type text,                -- ex.: 'simulado_event_participant'
+  reference_id uuid,                  -- garante idempotência (não duplica)
+  read_at timestamptz,
+  dismissed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists unique_student_notifications_dedup
+  on public.student_notifications (student_id, type, reference_id);
+```
+
+Ponto de integração natural (não implementado): `releasePendingEventResults()` em `lib/server/simuladoEvents.ts` já itera, de forma idempotente (`.is("result_released_at", null)`), exatamente os participantes recém-liberados nesta chamada — o mesmo loop que hoje dispara o e-mail de liberação seria o lugar de inserir a notificação, usando `reference_id = participant.id` para garantir que uma liberação repetida nunca gere duplicata.
+
+---
+
+# 90. Auditoria — "Evento tem prioridade máxima" sobre resultado bloqueado (2026-08-24)
+
+Auditoria completa de todos os pontos em que nota, gabarito, Desempenho por Assunto, Revisão das Questões ou TopCoins poderiam vazar para uma tentativa de origem Evento com `result_released_at = null`. Nenhuma regra de negócio foi alterada — apenas confirmada/reforçada; uma lacuna de UX (não de segurança) foi corrigida.
+
+**Confirmado, já correto, sem alteração necessária:**
+
+- **Fonte única de resultado:** `GET /api/student/simulados/[id]/resultado` é o único endpoint que retorna nota/gabarito/desempenho por assunto/revisão — e todos vivem no mesmo payload de uma única chamada (confirmado: a página de resultado faz exatamente um `fetch`). Antes de montar qualquer desses dados, a rota já verifica `attempt.event_participant_id` e, se `!participant?.result_released_at`, responde `403` com `code: "EVENT_RESULT_BLOCKED"` sem consultar `simulado_results`/`simulado_questions`/gabarito. Nenhum dado sensível chega a ser buscado no banco, muito menos retornado.
+- **PDF do Simulado:** gerado 100% client-side (`downloadSimuladoResultPdf`) a partir do `payload` já carregado — como o `payload` nunca existe quando bloqueado, o PDF nunca pode ser gerado nesse estado (a aba nem chega a renderizar).
+- **TopCoins — dupla proteção:** (1) `POST .../attempts/[attemptId]/submit` só chama `resyncTopCoinEarnings` quando `eventResultReleased === true`; (2) mesmo que fosse chamada fora dessa condição, `resyncTopCoinEarnings()` (`app/lib/server/topcoinsSync.ts`) filtra internamente `rows` excluindo qualquer tentativa com `event_participant_id` preenchido e `!result_released_at` — TopCoins nunca são inseridos em `topcoin_earnings` para tentativa de Evento bloqueada, independentemente de qual caminho de código dispara o resync.
+- **Ao finalizar (submit) com Evento bloqueado:** `earned_topcoins` retorna `null` (sem registro em `topcoin_earnings`); o frontend (`app/meus-simulados/[id]/page-client.tsx`) pula o modal de TopCoins ganhos e redireciona direto para a página de resultado, que é bloqueada pela mesma fonte única acima.
+- **Ao liberar:** a mesma rota, sem nenhuma alteração de código, passa a entregar o payload completo normalmente — a mesma experiência de resultado oficial (Resultado Geral, Raio-X, Desempenho por Assunto, Comportamento, Revisão das Questões, PDF) já é 100% reaproveitada, nenhuma página nova.
+
+**Corrigido nesta entrega (lacuna de UX, não de segurança):** ao tentar acessar o resultado bloqueado, a tela caía no bloco de erro genérico da página (`AlertTriangle` vermelho, título "Não foi possível carregar o resultado", botão "Voltar para Meus Simulados") — nenhum dado vazava, mas a experiência passava impressão de falha, não de "aguardando liberação, está tudo certo". `app/meus-simulados/[id]/resultado/page-client.tsx` passou a capturar `json.code` da resposta e, quando `EVENT_RESULT_BLOCKED`, renderiza uma tela própria e neutra (ícone de relógio âmbar, título "Resultado aguardando liberação", mesma mensagem do backend, botão "Voltar para Meus Eventos"). `app/meus-simulados/[id]/resultado/page.tsx` passou a extrair `event` de `searchParams` (já enviado por `buildResultUrl()` desde a Sprint de Eventos, mas nunca lido) e repassar como prop `eventId`, usado para linkar direto ao Evento de origem quando disponível (fallback para `/meus-eventos` quando ausente, ex.: acesso via "Meus Resultados" sem esse parâmetro).
+
+**Arquivos alterados nesta seção:** `app/meus-simulados/[id]/resultado/page.tsx`, `app/meus-simulados/[id]/resultado/page-client.tsx`.
+
+Nenhuma migration foi necessária.
+
+---
+
+# 91. Correção crítica — TopCoins também subordinados ao Evento (2026-08-24)
+
+**Reportado:** o modal de TopCoins aparecia ao final de um Simulado de Evento com resultado bloqueado.
+
+**Investigação empírica (banco operacional, somente leitura):** `select * from topcoin_earnings te join simulado_attempts a on a.id = te.attempt_id where a.event_id is not null` retornou **zero linhas** — não havia (e não há) nenhum crédito persistido para tentativa de Evento, confirmando que a camada de persistência (`resyncTopCoinEarnings`, chamada apenas quando `eventResultReleased`) já estava correta. A causa raiz identificada foi de **fluxo/UX no pós-submit**, não de crédito indevido:
+
+1. `POST .../attempts/[attemptId]/submit` decidia `eventResultReleased` corretamente, mas não expunha nenhuma flag explícita de precedência — o frontend inferia "não bloqueado" apenas por `typeof earned_topcoins === "number"`, sem uma ordem de decisão auditável.
+2. Mesmo com `earned_topcoins: null`, o fluxo pós-submit redirecionava para `/meus-simulados/[id]/resultado?attemptId=...`, que **já disparava o countdown "Nossas corujas estão reunidas montando seu feedback"** antes mesmo do fetch retornar (o overlay de preparação era renderizado em todos os branches, inclusive no de bloqueio) — dando a sensação de "algo está prestes a ser liberado" quando deveria estar totalmente bloqueado.
+
+**Correção — ordem de decisão explícita no backend (`submit/route.ts`):**
+
+```
+isEventAttempt = Boolean(attempt.event_participant_id && attempt.event_id)
+eventResultReleased = (calculado como antes, política real)
+resultAccess = (isEventAttempt && !eventResultReleased) ? "blocked_by_event" : "available"
+```
+
+`resultAccess` é retornado explicitamente no payload (`result_access`). Dupla proteção reforçada: a consulta a `topcoin_earnings` para a tentativa **só executa quando `resultAccess === "available"`** — mesmo que existisse (não existe) algum lançamento inesperado para a tentativa, ele nunca seria lido nem exposto ao cliente enquanto bloqueado.
+
+**Correção — frontend (`app/meus-simulados/[id]/page-client.tsx`):** `submitAttempt` passou a checar `result_access === "blocked_by_event"` **antes** de qualquer avaliação de `earned_topcoins`. Quando bloqueado: não abre o modal de TopCoins, não navega para a página de Resultado, não inicia countdown algum — mostra diretamente `FullScreenModal` (novo estado `event_result_blocked`, mesmo padrão já usado por `disqualified`/`admin_terminated`): **"Simulado concluído" / "Seu resultado ainda não foi liberado pelo professor. Assim que houver liberação, você poderá consultar seu resultado em Meus Resultados."**, CTA "Voltar para Meus Eventos".
+
+**Proteção adicional (acesso direto/recarregamento):** `app/meus-simulados/[id]/resultado/page-client.tsx` — se o aluno acessar a URL de resultado diretamente enquanto bloqueado (bypassando o fluxo de submit), o countdown de preparação é zerado imediatamente ao detectar `EVENT_RESULT_BLOCKED`, evitando a mesma sensação de "quase liberado".
+
+**Cenário 7 (Evento já liberado desde o início) e Simulados fora de Evento:** comportamento normal preservado sem nenhuma alteração — `resultAccess` só é `"blocked_by_event"` quando `isEventAttempt && !eventResultReleased`; em qualquer outro caso (avulso, Jornada, ou Evento já liberado) permanece `"available"`.
+
+**Duplicidade após liberação posterior:** não alterada — `releasePendingEventResults()` continua com o guard `.is("result_released_at", null)` (idempotente) e `resyncTopCoinEarnings()` continua fazendo `delete` + `insert` do zero por `student_id + simulado_id`, sem depender desta entrega.
+
+**Arquivos alterados:** `app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts`, `app/meus-simulados/[id]/page-client.tsx`, `app/meus-simulados/[id]/resultado/page-client.tsx`.
+
+Nenhuma migration foi necessária — `result_access` é um campo apenas de resposta HTTP, não persistido.
+
+---
+
+---
+
+# 92. Correção — regressão introduzida pela seção 88: "Zerar tentativas" parava de funcionar após trocar o Simulado do Evento (2026-08-25)
+
+**Reportado:** no modal "Cronograma do Evento" (`/admin/alunos/[id]`), ao definir tentativas para `0` e confirmar, a mensagem de sucesso aparecia, mas o número exibido voltava ao valor anterior.
+
+**Reprodução confirmada com dado real (banco operacional, somente leitura):** Evento "Inss - Simulado 2" — `simulado_id` **atual** do Evento (`bad77983-...`) diferente do `simulado_id` das duas tentativas existentes do participante (`38adbd06-...`, tentativas criadas **antes** de uma troca de Simulado feita pelo Admin via a ação `terminate_active_attempts`, seção 88).
+
+**Causa raiz:** `setEventParticipantAttemptsCount` e `resetEventParticipantHistory` (`app/api/admin/events/[id]/participants/[studentId]/route.ts`) filtravam as tentativas do participante por `.eq("simulado_id", simuladoId)`, usando o `simulado_id` **atual** do Evento. Após uma troca de Simulado (seção 88), tentativas anteriores continuam no banco com o `simulado_id` **antigo** — o filtro as tornava invisíveis para o SELECT e para o DELETE, que afetavam **zero linhas** sem erro. A resposta da API respondia sucesso com `attempts_total: 0` (valor fixo, nunca verificado), a UI atualizava otimisticamente, mas o `router.refresh()` seguinte recarregava a contagem real (calculada em `app/admin/alunos/[id]/page.tsx`, já corretamente escopada só por `event_participant_id`, sem `simulado_id`) — que ainda encontrava as tentativas nunca apagadas, revertendo o número exibido.
+
+**Correção:** removido `.eq("simulado_id", simuladoId)` das três consultas afetadas (as duas do SELECT/UPDATE em `setEventParticipantAttemptsCount`, e o SELECT/DELETE em `resetEventParticipantHistory`) — escopo passa a ser exclusivamente `student_id + event_id + event_participant_id`, exatamente como o comentário original da função já declarava como intenção ("sempre escopado por `event_participant_id`... nunca apenas por `student_id + simulado_id`"). `simuladoId` continua sendo usado normalmente onde é necessário (contar questões do Simulado atual e atribuí-lo às novas tentativas placeholder criadas ao **aumentar** tentativas). `resetEventParticipantHistory` deixou de receber o parâmetro `simuladoId`, por não precisar mais dele.
+
+**Validado com o dado real:** a nova consulta (sem `simulado_id`) encontra corretamente as duas tentativas existentes do participante afetado.
+
+**Nenhuma outra rota foi alterada.** O `DELETE` (remover participação) já estava corretamente escopado só por `event_participant_id`, sem esse problema.
+
+**Arquivos alterados:** `app/api/admin/events/[id]/participants/[studentId]/route.ts`.
+
+Nenhuma migration foi necessária.
+
+---
+
 *Documentação consolidada a partir das decisões funcionais da Sprint Evento de Simulado e das regras oficiais existentes do EstudoTOP Simulados.*
+
+# 93. Isolamento contextual completo entre Evento, Jornada e avulso (2026-08-25)
+
+- O Evento continua identificado por `event_id + event_participant_id`. A autoridade final de criação de tentativa passou a usar esse mesmo recorte, eliminando a divergência em que cards mostravam `0/2`, mas o POST bloqueava por tentativas globais do mesmo Simulado.
+- Eventos distintos que reutilizam o mesmo Simulado possuem tentativa ativa, contagem, resultado oficial e histórico independentes. O mesmo vale entre Evento, Jornada e execução avulsa.
+- `representative_attempt_id` permanece próprio de cada `simulado_event_participants`; dashboards administrativos e do Professor continuam filtrados pelo Evento/participante.
+- TopCoins passam a numerar tentativas dentro de cada contexto. Resultado bloqueado de Evento continua sem crédito até a liberação e a sincronização permanece idempotente.
+- `set_attempts` de Evento permanece estritamente escopado por `event_id + event_participant_id`; nenhum registro artificial foi apagado automaticamente nesta correção.
+- Migration relacionada: `supabase/migrations/20260825080000_contextualize_simulado_attempts.sql`. Não executada nesta entrega.
+
+# 94. Resultado completo do Evento liberado usa o pipeline oficial do Simulado (2026-08-25)
+
+- Depois da liberação, o resultado de Evento utiliza o mesmo pipeline de resultado do Simulado empregado nos demais contextos; Evento apenas define acesso e tentativa oficial contextual.
+- `GET /api/student/simulados/[id]/resultado` resolve primeiro a tentativa do `event_participant_id`, prioriza `representative_attempt_id` quando ele aponta para tentativa concluída válida e usa a primeira concluída válida como fallback.
+- O Simulado e as questões são carregados pelo `simulado_id` persistido na tentativa. Uma troca posterior do Simulado atualmente vinculado ao Evento não altera nem invalida a revisão histórica.
+- `result_released_at` autoriza o resultado completo do Evento, inclusive Desempenho por Assunto e Revisão das Questões, mesmo quando `show_answer_key_on_finish` do Simulado é falso. Fora de Evento, a configuração pedagógica permanece inalterada.
+- Evento bloqueado continua retornando `EVENT_RESULT_BLOCKED` antes de carregar ou expor nota, gabarito, assuntos ou respostas.
+- Falhas ao carregar participação, Simulado histórico, resultado, respostas ou questões agora geram log técnico e resposta genérica, nunca `gabarito: []` mascarado como indisponibilidade pedagógica.
+- Nenhuma migration foi necessária para esta correção.
+## 95. Redesign premium da dashboard do Professor — 2026-08-25
+
+- `/professor/eventos/[id]` foi reorganizada em três abas persistentes: **Visão geral**, **Participantes** e **Questões / revisão**. O polling silencioso de dez segundos atualiza os dados sem recriar a página, trocar a aba, fechar o modal ou alterar a questão selecionada.
+- A Visão geral apresenta participantes, maior nota, menor nota, média do Evento e tempo médio, sempre derivados das tentativas oficiais indicadas por `representative_attempt_id`. Inclui distribuição por faixas de aproveitamento e situação ao vivo, sem associar nomes às notas extremas.
+- Participantes passaram para tabela consolidada com busca, filtro, paginação, ranking e modal individual. O ranking usa acertos decrescentes e tempo total crescente; o tempo é derivado de `started_at`/`submitted_at` com precisão de milissegundos, usando `time_spent_seconds` apenas como fallback. Empates exatos compartilham posição no padrão competitivo (`1º, 2º, 2º, 4º`).
+- A aba Participantes usa tabela visual premium localizada com avatar por iniciais, badges de situação, estado vazio e paginação com opções de 10, 25 ou 50 itens. A tabela resume posição, aluno, situação, nota e ação `Ver`; o professor alterna entre `Por nota` (padrão, ranking oficial) e `Ordem alfabética`. No ranking por nota, 1º, 2º e 3º recebem troféus em ouro, prata e bronze. O modal `Ver` conserva todas as métricas detalhadas.
+- O botão **Ver** abre um modal individual localizado de até `860px`, com overlay desfocado, cabeçalho acessível, grade responsiva 4×2 das oito métricas, cores semânticas e fechamento pelo X, por Escape ou pelo botão **Entendi**. O componente compartilhado `PremiumModal` não foi alterado.
+- Questões / revisão preserva o modo apresentação sem dados. O botão **Exibir dados** revela gabarito, alternativas corretas/incorretas, distribuição de respostas e mini dashboard; trocar de questão volta ao estado oculto.
+- A autorização permanece centralizada em `requireEventManager`. Nenhum dado de outro Evento, Jornada, execução avulsa ou preview entra nos cálculos.
+- Arquivos funcionais alterados: `app/api/professor/events/[id]/route.ts` e `app/professor/eventos/[id]/page-client.tsx`. Nenhuma migration foi necessária para este redesign.
+- A interface final usa o tema claro institucional da área do aluno: fundo `slate-50`, superfícies brancas, bordas suaves e laranja como destaque. O tema escuro permanece apenas nas demais telas que já o utilizavam e não foi alterado globalmente.
+- Durações são apresentadas no padrão `HH:MM:SS`. A precisão em milissegundos continua preservada internamente e usada no desempate do ranking, sem poluir a leitura da interface.
+- O tema claro abrange todo o acesso do Professor. A tipografia Inter passou a ser global no sistema inteiro, sem exceção por rota ou papel.
+- A Visão geral foi refinada como painel de apresentação: container de até `1760px`, hero de `210px` com troféu decorativo, abas em três colunas, cinco métricas de `170px`, distribuição em dez segmentos e painel lateral ao vivo com ícones funcionais e precisão consolidada em destaque.

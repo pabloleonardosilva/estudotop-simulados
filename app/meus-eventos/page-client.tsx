@@ -23,6 +23,7 @@ type Row = {
     simulado_id: string | null;
     effective_status: string;
     cover_key: string | null;
+    card_image_url?: string | null;
     simulados?: { title?: string; max_attempts?: number | null } | null;
     simulado_event_professors: Array<{ professors: { name: string } | null }>;
   };
@@ -105,10 +106,10 @@ export default function MeusEventosClient() {
   }
 
   return (
-    <main className="min-h-full bg-slate-50 px-4 py-8 md:px-8">
+    <main className="et-student-premium min-h-full bg-slate-50 px-4 py-8 md:px-8">
       <div className="mx-auto max-w-6xl">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-600">Área do aluno</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">Meus Eventos</h1>
+        <p className="et-student-section-eyebrow">Área do aluno</p>
+        <h1 className="et-student-display mt-2">Meus Eventos</h1>
 
         {loading ? (
           <p className="mt-8 text-slate-500">Carregando...</p>
@@ -195,27 +196,27 @@ function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onO
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.38, delay: Math.min(index * 0.04, 0.2) }}
-      className={`student-journey-card group relative w-full max-w-[390px] overflow-hidden rounded-[1.6rem] transition duration-300 hover:-translate-y-1 ${isClosed ? "opacity-90" : ""}`}
+      className={`student-journey-card group relative w-full max-w-[440px] overflow-hidden rounded-[1.6rem] transition duration-300 hover:-translate-y-1 ${isClosed ? "opacity-90" : ""}`}
     >
       <div className="relative aspect-[16/8.2] overflow-hidden bg-[#07111F]">
         <div
           className="absolute inset-0 bg-cover bg-center transition duration-700 group-hover:scale-[1.035]"
-          style={{ backgroundImage: `url(${eventCoverImage(event.cover_key)})` }}
+          style={{ backgroundImage: `url(${event.card_image_url || eventCoverImage(event.cover_key)})` }}
         />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,7,13,0.02)_0%,rgba(3,7,13,0.08)_55%,rgba(3,7,13,0.46)_100%)]" />
         <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
 
-        <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/65 bg-white/92 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.17em] text-slate-800 shadow-[0_8px_24px_rgba(0,0,0,0.22)] backdrop-blur-md">
+        <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/65 bg-white/92 px-3 py-1.5 text-[10.5px] font-black uppercase tracking-[0.16em] text-slate-800 shadow-[0_8px_24px_rgba(0,0,0,0.22)] backdrop-blur-md">
           <CalendarClock size={12} className="text-orange-500" />
           Evento de Simulado
         </div>
       </div>
 
       <div className="p-5">
-        <h2 className="line-clamp-1 text-[21px] font-semibold leading-tight tracking-[-0.03em] text-[#07111F]">{event.name}</h2>
+        <h2 className="et-student-card-title min-w-0">{event.name}</h2>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <span className={`student-status-badge ${eventStatusModifierClass(event.effective_status)} inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em]`}>
+          <span className={`et-student-pill student-status-badge ${eventStatusModifierClass(event.effective_status)} inline-flex items-center gap-2 rounded-full px-3 py-1.5`}>
             <span className={`h-2 w-2 rounded-full ${eventStatusDotClass(event.effective_status)}`} />
             {eventStatusLabel(event.effective_status)}
           </span>
@@ -238,25 +239,25 @@ function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onO
         {(showContinueButton || showVerEventoButton || showEntrarButton || showResultsButton || showRefazerButton) && (
           <div className="mt-3.5 flex flex-wrap gap-2">
             {showContinueButton && (
-              <a href={`/meus-eventos/${event.id}`} className="student-button-primary inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold transition duration-200 hover:-translate-y-0.5">
+              <a href={`/meus-eventos/${event.id}`} className="et-student-button student-button-primary inline-flex h-11 min-w-fit flex-1 items-center justify-center gap-2 rounded-[14px] px-4 transition duration-200 hover:-translate-y-0.5">
                 <PlayCircle size={16} />
                 Continuar simulado
               </a>
             )}
             {showVerEventoButton && (
-              <a href={`/meus-eventos/${event.id}`} className="student-button-secondary inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition duration-200 hover:-translate-y-0.5">
+              <a href={`/meus-eventos/${event.id}`} className="et-student-button student-button-secondary inline-flex h-11 min-w-fit flex-1 items-center justify-center gap-2 rounded-[14px] px-4 transition duration-200 hover:-translate-y-0.5">
                 <CalendarClock size={16} />
                 Ver evento
               </a>
             )}
             {showEntrarButton && (
-              <a href={`/meus-eventos/${event.id}`} className="student-button-primary inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold transition duration-200 hover:-translate-y-0.5">
+              <a href={`/meus-eventos/${event.id}`} className="et-student-button student-button-primary inline-flex h-11 min-w-fit flex-1 items-center justify-center gap-2 rounded-[14px] px-4 transition duration-200 hover:-translate-y-0.5">
                 <PlayCircle size={16} />
                 Entrar no evento
               </a>
             )}
             {showResultsButton && (
-              <a href={`/meus-eventos/${event.id}`} className="student-button-secondary inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition duration-200 hover:-translate-y-0.5">
+              <a href={`/meus-eventos/${event.id}`} className="et-student-button student-button-secondary inline-flex h-11 min-w-fit flex-1 items-center justify-center gap-2 rounded-[14px] px-4 transition duration-200 hover:-translate-y-0.5">
                 <Trophy size={16} />
                 Ver resultados
               </a>
@@ -265,7 +266,7 @@ function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onO
               <button
                 type="button"
                 onClick={onOpenRefazer}
-                className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold transition duration-200 hover:-translate-y-0.5 ${showResultsButton ? "student-button-secondary" : "student-button-primary"}`}
+                className={`et-student-button inline-flex h-11 min-w-fit flex-1 items-center justify-center gap-2 rounded-[14px] px-4 transition duration-200 hover:-translate-y-0.5 ${showResultsButton ? "student-button-secondary" : "student-button-primary"}`}
               >
                 <RotateCcw size={16} />
                 Refazer simulado
@@ -296,8 +297,8 @@ function EventMetricCard({
       <div className="flex items-center gap-2.5">
         <span className="student-metric-icon inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl">{icon}</span>
         <div className="min-w-0">
-          <span className="block truncate text-[8px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</span>
-          <p className="mt-0.5 line-clamp-2 text-[12px] font-bold leading-tight text-slate-900" title={title || value}>
+          <span className="et-student-label block">{label}</span>
+          <p className="et-student-value mt-1 line-clamp-2" title={title || value}>
             {value}
           </p>
         </div>

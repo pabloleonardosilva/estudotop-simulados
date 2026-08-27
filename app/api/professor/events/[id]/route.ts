@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { requireEventManager } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { systemImageUrl } from "@/lib/system-images";
 
 type ParticipantRow = { id: string; student_id: string; joined_at: string; representative_attempt_id: string | null; result_released_at: string | null; students?: { name?: string; email?: string } | { name?: string; email?: string }[] };
-type AttemptRow = { id: string; student_id: string; status: string; started_at: string | null; submitted_at: string | null; time_spent_seconds: number | null; attempt_number: number };
+type AttemptRow = { id: string; student_id: string; status: string; disqualification_reason: string | null; started_at: string | null; submitted_at: string | null; time_spent_seconds: number | null; attempt_number: number };
 type AnswerRow = { attempt_id: string; simulado_question_id: string; selected_alternative_id: string | null; is_correct: boolean | null; response_time_seconds: number | null };
 type ResultRow = { attempt_id: string; display_score: number | null; display_percentage: number | null; percentage: number | null; correct_count: number; wrong_count: number; blank_count: number; total_questions: number; time_spent_seconds: number | null };
 type AlternativeRow = { id: string; label: string | null; text: string | null; image_url: string | null; is_correct: boolean; order_number: number | null };
@@ -20,13 +21,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const manager = await requireEventManager(request, id);
   if (manager instanceof NextResponse) return manager;
   const supabase = createSupabaseAdminClient();
-  const { data: event, error: eventError } = await supabase.from("simulado_events").select("*,simulados:simulado_id(id,title)").eq("id", id).maybeSingle();
+  const { data: event, error: eventError } = await supabase.from("simulado_events").select("*,professor_banner:professor_banner_image_id(storage_path),simulados:simulado_id(id,title)").eq("id", id).maybeSingle();
   if (eventError) return NextResponse.json({ ok: false, message: "Não foi possível carregar o Evento." }, { status: 500 });
   if (!event) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
 
   const [{ data: participantData, error: participantsError }, { data: attemptData, error: attemptsError }, { data: questionData, error: questionsError }] = await Promise.all([
     supabase.from("simulado_event_participants").select("id,student_id,joined_at,representative_attempt_id,result_released_at,students:student_id(name,email)").eq("event_id", id),
-    supabase.from("simulado_attempts").select("id,student_id,status,started_at,submitted_at,time_spent_seconds,attempt_number").eq("event_id", id).eq("is_preview", false),
+    supabase.from("simulado_attempts").select("id,student_id,status,disqualification_reason,started_at,submitted_at,time_spent_seconds,attempt_number").eq("event_id", id).eq("is_preview", false),
     event.simulado_id
       ? supabase.from("simulado_questions").select("id,order_number,status,questions:question_id(id,code,statement,image_url,year,question_type,question_alternatives(id,label,text,image_url,is_correct,order_number))").eq("simulado_id", event.simulado_id).order("order_number")
       : Promise.resolve({ data: [], error: null }),
@@ -90,9 +91,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const activeAttempt = participantAttempts.find((attempt) => attempt.status === "in_progress") || null;
     const displayedAttempt = activeAttempt || representativeAttempt;
     const result = representativeAttempt ? resultsByAttemptId.get(representativeAttempt.id) || null : null;
-    let status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "expired" = "not_started";
+    let status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "admin_terminated" | "expired" = "not_started";
     if (displayedAttempt?.status === "in_progress") status = "in_progress";
     else if (representativeAttempt?.status === "completed") status = "completed";
+    // Encerramento administrativo excepcional (ver PATCH .../events/[id],
+    // action "terminate_active_attempts") nunca deve aparecer como
+    // "Desclassificado" — motivo distinto para não sugerir violação de regras.
+    else if (representativeAttempt?.status === "disqualified" && representativeAttempt.disqualification_reason === "admin_terminated") status = "admin_terminated";
     else if (representativeAttempt?.status === "disqualified") status = "disqualified";
     else if (representativeAttempt?.status === "expired") status = "expired";
     else if (["closed", "archived"].includes(eventEffectiveStatus)) status = "not_completed";
@@ -119,12 +124,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       result: result ? {
         display_score: result.display_score,
         percentage: result.display_percentage ?? result.percentage,
+        correct_count: result.correct_count,
+        wrong_count: result.wrong_count,
+        blank_count: result.blank_count,
+        total_questions: result.total_questions,
+        time_spent_ms: representativeAttempt?.started_at && representativeAttempt.submitted_at
+          ? Math.max(0, new Date(representativeAttempt.submitted_at).getTime() - new Date(representativeAttempt.started_at).getTime())
+          : Math.max(0, Number(result.time_spent_seconds || 0) * 1000),
       } : null,
       result_status: resultStatus,
       result_released_at: participant.result_released_at,
     };
   }).sort((left, right) => {
-    const priority = { in_progress: 0, completed: 1, disqualified: 2, expired: 3, not_started: 4, not_completed: 5 };
+    const priority = { in_progress: 0, completed: 1, disqualified: 2, admin_terminated: 2, expired: 3, not_started: 4, not_completed: 5 };
     return priority[left.status] - priority[right.status] || left.name.localeCompare(right.name, "pt-BR");
   });
   const resultTotals = results.reduce((total, result) => ({
@@ -134,11 +146,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     questions: total.questions + Number(result.total_questions || 0),
     time: total.time + Number(result.time_spent_seconds || 0),
   }), { correct: 0, wrong: 0, blank: 0, questions: 0, time: 0 });
+  const officialScores = results
+    .map((result) => result.display_score)
+    .filter((score): score is number => score !== null && Number.isFinite(score));
 
   return NextResponse.json({
     ok: true,
     message: "Dashboard carregada.",
-    event: { ...event, effective_status: eventEffectiveStatus },
+    event: { ...event, professor_banner_url: systemImageUrl((event.professor_banner as unknown as { storage_path?: string } | null)?.storage_path), effective_status: eventEffectiveStatus },
     summary: {
       registered: participants.length,
       online: onlineStudentIds.size,
@@ -150,6 +165,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       error_percent: resultTotals.questions ? Math.round((resultTotals.wrong / resultTotals.questions) * 10_000) / 100 : null,
       blank_answers: resultTotals.blank,
       average_time_seconds: results.length ? Math.round(resultTotals.time / results.length) : 0,
+      highest_score: officialScores.length ? Math.max(...officialScores) : null,
+      lowest_score: officialScores.length ? Math.min(...officialScores) : null,
+      average_score: officialScores.length ? officialScores.reduce((sum, score) => sum + score, 0) / officialScores.length : null,
     },
     participants: participantRows,
     questions: questionStats,

@@ -48,6 +48,8 @@ type Phase =
   | "in_progress"
   | "focus_warning"
   | "disqualified"
+  | "admin_terminated"
+  | "event_result_blocked"
   | "submitting"
   | "done"
   | "error";
@@ -286,6 +288,13 @@ export default function SimuladoExperience({
   const eventId = searchParams.get("event");
   const jornadaQuery = jornadaId ? `?jornada=${encodeURIComponent(jornadaId)}` : eventId ? `?event=${encodeURIComponent(eventId)}` : "";
   const [phase, setPhase] = useState<Phase>("loading");
+  const phaseRef = useRef<Phase>("loading");
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  const [simulado, setSimulado] = useState<InitialSimulado>(initialSimulado);
+  const [attempt, setAttempt] = useState<AttemptData | null>(null);
+  const attemptIdRef = useRef<string | null>(null);
+  useEffect(() => { attemptIdRef.current = attempt?.id || null; }, [attempt]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -293,14 +302,33 @@ export default function SimuladoExperience({
     async function heartbeat() {
       const { data: auth } = await supabase.auth.getSession();
       if (!auth.session || cancelled) return;
-      await fetch(`/api/student/events/${eventId}/heartbeat`, { method: "POST", headers: { Authorization: `Bearer ${auth.session.access_token}` } }).catch(() => undefined);
+      // Reaproveita o batimento de presença do Evento para detectar
+      // encerramento administrativo da própria tentativa (ver PATCH
+      // .../events/[id], action "terminate_active_attempts") sem depender de
+      // WebSocket — só envia attempt_id enquanto a tentativa está em
+      // andamento.
+      const currentAttemptId = phaseRef.current === "in_progress" ? attemptIdRef.current : null;
+      const res = await fetch(`/api/student/events/${eventId}/heartbeat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${auth.session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(currentAttemptId ? { attempt_id: currentAttemptId } : {}),
+      }).catch(() => null);
+      if (!res || cancelled) return;
+      const json = await res.json().catch(() => null);
+      if (
+        phaseRef.current === "in_progress"
+        && json?.attempt_status
+        && json.attempt_status !== "in_progress"
+        && json.disqualification_reason === "admin_terminated"
+      ) {
+        setPhase("admin_terminated");
+      }
     }
     void heartbeat();
     const timer = window.setInterval(() => void heartbeat(), 30_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [eventId]);
-  const [simulado, setSimulado] = useState<InitialSimulado>(initialSimulado);
-  const [attempt, setAttempt] = useState<AttemptData | null>(null);
+
   const [attemptInfo, setAttemptInfo] = useState<AttemptInfo>({
     used: 0,
     remaining: initialSimulado.max_attempts,
@@ -878,6 +906,17 @@ export default function SimuladoExperience({
         return;
       }
 
+      // Ordem de decisão: Evento tem prioridade máxima sobre TopCoins e
+      // Resultado. Se o backend sinalizar bloqueio (result_access ===
+      // "blocked_by_event"), não avalia earned_topcoins, não abre o modal
+      // de TopCoins, não inicia o countdown de preparação do feedback e não
+      // navega para a página de Resultado — apenas informa que o Simulado
+      // foi concluído e aguarda liberação.
+      if (json.result_access === "blocked_by_event") {
+        setPhase("event_result_blocked");
+        return;
+      }
+
       // TopCoins: gamificação separada da nota pedagógica. O próprio POST
       // .../submit já calcula e persiste o ganho; se por algum motivo ele
       // não vier na resposta, não trava o fluxo — só não mostra a recompensa.
@@ -1210,6 +1249,32 @@ export default function SimuladoExperience({
         actionLabel="Ver meus simulados"
         onAction={() => router.push("/meus-simulados")}
         variant="danger"
+      />
+    );
+  }
+
+  if (phase === "admin_terminated") {
+    return (
+      <FullScreenModal
+        icon={<Info size={56} className="text-orange-500" />}
+        title="Simulado encerrado"
+        description="Este Simulado foi encerrado pelo administrador. Não é mais possível continuar esta tentativa. Suas respostas registradas até o momento foram preservadas."
+        actionLabel="Voltar para Meus Eventos"
+        onAction={() => router.push(eventId ? `/meus-eventos/${eventId}` : "/meus-eventos")}
+        variant="warning"
+      />
+    );
+  }
+
+  if (phase === "event_result_blocked") {
+    return (
+      <FullScreenModal
+        icon={<Clock3 size={56} className="text-orange-500" />}
+        title="Simulado concluído"
+        description="Seu resultado ainda não foi liberado pelo professor. Assim que houver liberação, você poderá consultar seu resultado em Meus Resultados."
+        actionLabel="Voltar para Meus Eventos"
+        onAction={() => router.push(eventId ? `/meus-eventos/${eventId}` : "/meus-eventos")}
+        variant="warning"
       />
     );
   }

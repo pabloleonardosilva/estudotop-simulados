@@ -46,6 +46,14 @@ Font.registerEmojiSource({
   format: "png",
 });
 
+Font.register({
+  family: "Inter",
+  fonts: [
+    { src: "/fonts/Inter.ttf", fontWeight: 400 },
+    { src: "/fonts/Inter.ttf", fontWeight: 700 },
+  ],
+});
+
 const C = {
   brand: "#f97316",
   brandDark: "#c2410c",
@@ -85,7 +93,7 @@ const s = StyleSheet.create({
     paddingLeft: 38,
     backgroundColor: C.slate50,
     color: C.dark,
-    fontFamily: "Helvetica",
+    fontFamily: "Inter", fontWeight: 400,
     fontSize: 10,
   },
   watermark: {
@@ -102,7 +110,7 @@ const s = StyleSheet.create({
   },
   watermarkName: {
     color: C.slate700,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 17,
     letterSpacing: 1.2,
   },
@@ -120,7 +128,7 @@ const s = StyleSheet.create({
   },
   questionsTitleEyebrow: {
     color: C.brand,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     letterSpacing: 1,
     textTransform: "uppercase",
@@ -128,7 +136,7 @@ const s = StyleSheet.create({
   },
   questionsTitleText: {
     color: C.dark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 16,
   },
   questionCard: {
@@ -156,7 +164,7 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: C.dark,
     color: C.white,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 9,
   },
   subjectChip: {
@@ -167,7 +175,7 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: C.orange50,
     color: C.brandDark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8.5,
   },
   statement: {
@@ -200,7 +208,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.slate300,
     color: C.slate700,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     textAlign: "center",
     alignItems: "center",
@@ -214,7 +222,7 @@ const s = StyleSheet.create({
   },
   alternativeLabelText: {
     color: C.slate700,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
   },
   alternativeCorrectMark: {

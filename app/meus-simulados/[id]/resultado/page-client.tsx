@@ -470,15 +470,18 @@ export default function ResultadoClient({
   simuladoId,
   attemptId = null,
   studentJornadaId = null,
+  eventId = null,
 }: {
   simuladoId: string;
   attemptId?: string | null;
   studentJornadaId?: string | null;
+  eventId?: string | null;
 }) {
   const router = useRouter();
   const [payload, setPayload] = useState<ResultPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [resultStep, setResultStep] = useState(0);
   // Etapa intermediária pós-finalização: só existe no fluxo da tentativa
   // recém-concluída (com attemptId na URL). A contagem roda enquanto o
@@ -497,6 +500,7 @@ export default function ResultadoClient({
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setErrorCode(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.replace("/login"); return; }
     // Com attemptId, a API retorna a tentativa recém-finalizada (resultado
@@ -505,13 +509,23 @@ export default function ResultadoClient({
     const query = new URLSearchParams();
     if (attemptId) query.set("attemptId", attemptId);
     if (studentJornadaId) query.set("jornada", studentJornadaId);
+    if (eventId) query.set("event", eventId);
     const queryString = query.toString();
     const res = await fetch(`/api/student/simulados/${simuladoId}/resultado${queryString ? `?${queryString}` : ""}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
     const json = await res.json();
-    if (!res.ok || !json.ok) { setError(json.message || "Erro ao carregar resultado."); setLoading(false); return; }
+    if (!res.ok || !json.ok) {
+      setError(json.message || "Erro ao carregar resultado.");
+      setErrorCode(json.code || null);
+      // Evento tem prioridade máxima: se bloqueado, encerra imediatamente o
+      // countdown de preparação do feedback — ele não deve continuar
+      // rodando/sugerindo que o resultado está prestes a aparecer.
+      if (json.code === "EVENT_RESULT_BLOCKED") setFeedbackCountdown(0);
+      setLoading(false);
+      return;
+    }
     setPayload(json);
     setLoading(false);
-  }, [router, simuladoId, attemptId, studentJornadaId]);
+  }, [router, simuladoId, attemptId, studentJornadaId, eventId]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => { void load(); }, 0);
@@ -528,6 +542,26 @@ export default function ResultadoClient({
   );
 
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">{preparingOverlay}<div className="rounded-xl border border-slate-200 bg-white px-8 py-6 text-sm text-slate-500 shadow-sm">Carregando resultado...</div></main>;
+
+  // Evento com resultado bloqueado: a API já recusou entregar nota, gabarito,
+  // desempenho por assunto e revisão das questões (nenhum dado sensível chega
+  // até aqui). Tela própria, neutra — não é um erro, é um estado de espera.
+  if (errorCode === "EVENT_RESULT_BLOCKED") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">
+        {preparingOverlay}
+        <div className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+          <Clock3 className="mx-auto text-amber-500" size={32} />
+          <h1 className="mt-4 text-base font-semibold text-slate-900">Resultado aguardando liberação</h1>
+          <p className="mt-2 text-sm text-slate-500">{error || "Seu resultado foi calculado e aguarda liberação pelo professor."}</p>
+          <Link href={eventId ? `/meus-eventos/${eventId}` : "/meus-eventos"} className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <ArrowLeft size={15} /> Voltar para Meus Eventos
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   if (error || !payload) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">{preparingOverlay}<div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm"><AlertTriangle className="mx-auto text-red-500" size={32} /><h1 className="mt-4 text-base font-semibold text-slate-900">Não foi possível carregar o resultado</h1><p className="mt-2 text-sm text-slate-500">{error || "Resultado indisponível."}</p><Link href="/meus-simulados" className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"><ArrowLeft size={15} /> Voltar para Meus Simulados</Link></div></main>;
 
   const r = payload.result;

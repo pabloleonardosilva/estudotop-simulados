@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { systemImageUrl } from "@/lib/system-images";
 
 type StudentJornadaSimuladoRow = {
   id: string;
@@ -49,6 +50,8 @@ export async function GET(request: Request) {
         planned_simulados_count,
         scope_type,
         category,
+        card_image_id,
+        card_image:card_image_id(storage_path),
         contest_name,
         exam_date,
         effective_end_date
@@ -70,17 +73,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: "Não foi possível carregar as jornadas." }, { status: 500 });
   }
 
-  const simuladoIds = Array.from(new Set((data || []).flatMap((row: any) =>
-    ((row.student_jornada_simulados || []) as StudentJornadaSimuladoRow[]).map((item) => item.simulado_id),
+  const studentJornadaSimuladoIds = Array.from(new Set((data || []).flatMap((row: any) =>
+    ((row.student_jornada_simulados || []) as StudentJornadaSimuladoRow[]).map((item) => item.id),
   ).filter(Boolean)));
-  const { data: completedAttempts, error: attemptsError } = simuladoIds.length
+  const { data: completedAttempts, error: attemptsError } = studentJornadaSimuladoIds.length
     ? await supabase
         .from("simulado_attempts")
-        .select("simulado_id")
+        .select("student_jornada_simulado_id")
         .eq("student_id", student.id)
         .eq("status", "completed")
         .eq("counts_toward_limit", true)
-        .in("simulado_id", simuladoIds)
+        .in("student_jornada_simulado_id", studentJornadaSimuladoIds)
     : { data: [], error: null };
 
   if (attemptsError) {
@@ -88,12 +91,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: "Não foi possível carregar as jornadas." }, { status: 500 });
   }
 
-  const completedSimuladoIds = new Set((completedAttempts || []).map((attempt) => attempt.simulado_id));
+  const completedScheduleItemIds = new Set((completedAttempts || []).map((attempt) => attempt.student_jornada_simulado_id));
   const jornadas = (data || []).map((row: any) => {
     const itens = (row.student_jornada_simulados || []) as StudentJornadaSimuladoRow[];
     const linkedTotal = itens.length;
     const total = row.jornadas?.planned_simulados_count || linkedTotal;
-    const completed = itens.filter((item) => completedSimuladoIds.has(item.simulado_id)).length;
+    const completed = itens.filter((item) => completedScheduleItemIds.has(item.id)).length;
     const available = itens.filter((item) => item.status === "available" || item.status === "in_progress").length;
     const progress_percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
       description: row.jornadas?.description || null,
       scope_type: row.jornadas?.scope_type || "general",
       category: row.jornadas?.category || "administrativo",
+      card_image_url: systemImageUrl(row.jornadas?.card_image?.storage_path),
       contest_name: row.jornadas?.contest_name || null,
       duration_days: row.jornadas?.duration_days || null,
       duration_months: row.jornadas?.duration_months || 0,

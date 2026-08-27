@@ -9,6 +9,8 @@ import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
 import { EVENT_COVERS, type EventCoverKey } from "../utils";
+import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
+import type { SystemImage } from "@/lib/system-images";
 
 type EventData = {
   id: string;
@@ -23,6 +25,8 @@ type EventData = {
   ends_at: string;
   duration_minutes: number;
   cover_key: string | null;
+  card_image_id: string | null;
+  professor_banner_image_id: string | null;
   simulados?: { title?: string } | null;
   simulado_event_professors: Array<{ professor_id: string }>;
   simulado_event_participants: Array<{ id: string; result_released_at: string | null; representative_attempt_id: string | null }>;
@@ -51,6 +55,8 @@ type EditForm = {
   resultPolicy: "blocked" | "released";
   professorIds: string[];
   coverKey: EventCoverKey;
+  cardImageId: string | null;
+  bannerImageId: string | null;
 };
 
 function toDateTimeLocal(date: Date) {
@@ -76,6 +82,8 @@ function formFromEvent(event: EventData): EditForm {
     resultPolicy: event.result_policy,
     professorIds: event.simulado_event_professors.map((item) => item.professor_id),
     coverKey: (EVENT_COVERS.find((item) => item.value === event.cover_key)?.value || "administrativo"),
+    cardImageId: event.card_image_id || null,
+    bannerImageId: event.professor_banner_image_id || null,
   };
 }
 
@@ -94,6 +102,9 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
   const [reopenEndsAt, setReopenEndsAt] = useState("");
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  const [cardImages, setCardImages] = useState<SystemImage[]>([]);
+  const [bannerImages, setBannerImages] = useState<SystemImage[]>([]);
+  useEffect(() => { void Promise.all([loadSystemImages("event_card"), loadSystemImages("professor_event_banner")]).then(([cards, banners]) => { setCardImages(cards); setBannerImages(banners); }); }, []);
 
   const [participants, setParticipants] = useState<Participant[] | null>(null);
   const [eligibleStudents, setEligibleStudents] = useState<EligibleStudent[]>([]);
@@ -101,6 +112,16 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
   const [addingParticipantId, setAddingParticipantId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Participant | null>(null);
   const [removingParticipant, setRemovingParticipant] = useState(false);
+
+  // Bloqueio de troca de Simulado por tentativa ativa (ver PATCH .../events/[id]):
+  // guarda o payload original de save() para reenviar automaticamente depois
+  // que o Admin encerrar as tentativas em andamento pela segunda confirmação.
+  const [activeAttemptsBlock, setActiveAttemptsBlock] = useState<{
+    attempts: Array<{ attempt_id: string; student_name: string; started_at: string }>;
+    pendingPayload: Record<string, unknown>;
+  } | null>(null);
+  const [confirmTerminate, setConfirmTerminate] = useState(false);
+  const [terminating, setTerminating] = useState(false);
 
   const loadParticipants = useCallback(async () => {
     const response = await adminFetch(`/api/admin/events/${id}/participants`);
@@ -265,31 +286,93 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
       return;
     }
 
+    const payload = {
+      name: form.name.trim(),
+      simulado_id: form.simuladoId || null,
+      starts_at: startDate.toISOString(),
+      ends_at: endDate.toISOString(),
+      duration_minutes: form.durationMinutes,
+      result_policy: form.resultPolicy,
+      professor_ids: form.professorIds,
+      cover_key: form.coverKey,
+      card_image_id: form.cardImageId,
+      professor_banner_image_id: form.bannerImageId,
+    };
+
     setSaving(true);
     setMessage("");
     try {
       const response = await adminFetch(`/api/admin/events/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          simulado_id: form.simuladoId || null,
-          starts_at: startDate.toISOString(),
-          ends_at: endDate.toISOString(),
-          duration_minutes: form.durationMinutes,
-          result_policy: form.resultPolicy,
-          professor_ids: form.professorIds,
-          cover_key: form.coverKey,
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await response.json();
+      if (json.ok) {
+        setMessage(json.message);
+        setIsError(false);
+        setEditing(false);
+        await load();
+        return;
+      }
+      if (json.blocked_reason === "active_attempts") {
+        // Não é um erro definitivo: apresenta a opção de encerramento
+        // administrativo em vez de apenas exibir a mensagem de bloqueio.
+        setActiveAttemptsBlock({ attempts: json.active_attempts || [], pendingPayload: payload });
+        return;
+      }
       setMessage(json.message);
-      setIsError(!json.ok);
-      if (json.ok) { setEditing(false); await load(); }
+      setIsError(true);
     } catch {
       setMessage("Não foi possível atualizar o Evento. Tente novamente.");
       setIsError(true);
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function terminateActiveAttemptsAndRetry() {
+    if (!activeAttemptsBlock) return;
+    setTerminating(true);
+    setMessage("");
+    try {
+      const terminateResponse = await adminFetch(`/api/admin/events/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "terminate_active_attempts" }),
+      });
+      const terminateJson = await terminateResponse.json();
+      if (!terminateJson.ok) {
+        setMessage(terminateJson.message);
+        setIsError(true);
+        return;
+      }
+
+      // Ordem obrigatória: só troca o Simulado depois que o encerramento das
+      // tentativas em andamento foi confirmado pelo backend. Reenvia o mesmo
+      // payload original de save() com os dados desejados pelo Admin.
+      const retryResponse = await adminFetch(`/api/admin/events/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activeAttemptsBlock.pendingPayload),
+      });
+      const retryJson = await retryResponse.json();
+      if (retryJson.ok) {
+        setMessage(`${terminateJson.terminated_count} tentativa(s) foram encerradas pelo administrador. O Simulado do Evento foi atualizado.`);
+        setIsError(false);
+        setEditing(false);
+      } else {
+        // O encerramento ocorreu, mas a segunda tentativa nova (ex.: aluno
+        // iniciou outra tentativa nesse meio-tempo) impediu a troca — não
+        // mostrar sucesso indevido; Evento permanece com o Simulado anterior.
+        setMessage(`${terminateJson.terminated_count} tentativa(s) foram encerradas pelo administrador, mas não foi possível concluir a atualização do Evento: ${retryJson.message}`);
+        setIsError(true);
+      }
+      setConfirmTerminate(false);
+      setActiveAttemptsBlock(null);
+      await load();
+    } finally {
+      setTerminating(false);
       setSaving(false);
     }
   }
@@ -375,6 +458,8 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
                   })}
                 </div>
               </fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Imagem do card — biblioteca</legend><ImageLibraryPicker images={cardImages} value={form.cardImageId} onChange={(value) => updateForm("cardImageId", value)} /></fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={form.bannerImageId} onChange={(value) => updateForm("bannerImageId", value)} allowEmpty /></fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -484,6 +569,63 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <PremiumButton variant="dark" full onClick={() => setRemoveTarget(null)} disabled={removingParticipant}>Voltar</PremiumButton>
               <PremiumButton variant="danger" full icon={<Ban size={15} />} onClick={() => void removeParticipant()} disabled={removingParticipant}>
                 {removingParticipant ? "Removendo..." : "Remover do Evento"}
+              </PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeAttemptsBlock && !confirmTerminate && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-amber-500/20 bg-[#0b1422] p-7 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-500/25 bg-amber-500/[0.10] text-amber-300">
+                <AlertTriangle size={22} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">Aviso</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Existem alunos realizando este Simulado</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  {activeAttemptsBlock.attempts.length} aluno{activeAttemptsBlock.attempts.length === 1 ? "" : "s"} est{activeAttemptsBlock.attempts.length === 1 ? "á" : "ão"} com uma tentativa em andamento neste Evento. A troca do Simulado só pode continuar depois que essas tentativas forem concluídas ou encerradas.
+                </p>
+              </div>
+            </div>
+            <ul className="mt-4 max-h-48 space-y-2 overflow-y-auto pr-1">
+              {activeAttemptsBlock.attempts.map((row) => (
+                <li key={row.attempt_id} className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-2.5 text-sm">
+                  <span className="font-bold text-white">{row.student_name}</span>
+                  <span className="ml-2 text-xs text-slate-500">iniciou às {new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(row.started_at))}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-6 flex flex-col gap-2.5">
+              <PremiumButton variant="dark-danger" full onClick={() => setConfirmTerminate(true)}>Encerrar tentativas e prosseguir</PremiumButton>
+              <PremiumButton variant="dark" full onClick={() => { setActiveAttemptsBlock(null); setEditing(false); }}>Aguardar conclusão</PremiumButton>
+              <PremiumButton variant="dark" full onClick={() => setActiveAttemptsBlock(null)}>Cancelar</PremiumButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeAttemptsBlock && confirmTerminate && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 bg-[#0b1422] p-7 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">Confirmação necessária</p>
+                <h2 className="mt-1 text-xl font-semibold text-white">Encerrar tentativas em andamento?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Existem alunos realizando este Simulado neste momento. Se você continuar, as tentativas em andamento serão encerradas imediatamente pelo administrador. Os alunos serão informados de que o Simulado foi encerrado administrativamente. Esta ação não poderá ser desfeita para essas tentativas.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <PremiumButton variant="dark" full onClick={() => setConfirmTerminate(false)} disabled={terminating}>Voltar</PremiumButton>
+              <PremiumButton variant="danger" full icon={terminating ? <Loader2 size={15} className="animate-spin" /> : <Square size={15} />} onClick={() => void terminateActiveAttemptsAndRetry()} disabled={terminating}>
+                {terminating ? "Encerrando..." : "Encerrar tentativas"}
               </PremiumButton>
             </div>
           </div>

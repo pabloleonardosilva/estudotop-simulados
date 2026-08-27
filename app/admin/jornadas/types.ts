@@ -11,6 +11,8 @@ export type Jornada = {
   status: JornadaStatus;
   scope_type: JornadaScopeType;
   category: JornadaCategory | null;
+  card_image_id?: string | null;
+  card_image_url?: string | null;
   contest_name: string | null;
   exam_name?: string | null;
   exam_position?: string | null;

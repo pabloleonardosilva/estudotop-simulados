@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { loadEmbeddedInter } from "@/lib/pdf/embedded-inter";
+
 type AdminPdfAlternative = {
   label: string;
   text: string;
@@ -219,14 +221,17 @@ class PdfBuilder {
     this.text(value, x + 10, y + 17, 12, "#0F172A", true);
   }
 
-  build() {
+  async build() {
     const objects: string[] = [];
     const add = (body: string) => {
       objects.push(body);
       return objects.length;
     };
 
-    const font1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+    const embedded = await loadEmbeddedInter();
+    const fontFile = add(`<< /Length ${embedded.binary.length} /Length1 ${embedded.binary.length} >>\nstream\n${embedded.binary}\nendstream`);
+    const descriptor = add(`<< /Type /FontDescriptor /FontName /Inter /Flags 32 /FontBBox [${embedded.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${embedded.ascent} /Descent ${embedded.descent} /CapHeight ${embedded.ascent} /StemV 80 /FontFile2 ${fontFile} 0 R >>`);
+    const font1 = add(`<< /Type /Font /Subtype /TrueType /BaseFont /Inter /FirstChar 32 /LastChar 255 /Widths [${embedded.widths}] /FontDescriptor ${descriptor} 0 R /Encoding /WinAnsiEncoding >>`);
     const pageIds: number[] = [];
 
     for (const page of this.pages) {
@@ -256,7 +261,7 @@ class PdfBuilder {
   }
 }
 
-export function downloadSimuladoAdminPdf({ meta, questions }: { meta: AdminPdfMeta; questions: AdminPdfQuestion[] }) {
+export async function downloadSimuladoAdminPdf({ meta, questions }: { meta: AdminPdfMeta; questions: AdminPdfQuestion[] }) {
   const pdf = new PdfBuilder();
 
   pdf.rect(0, PAGE_H - 112, PAGE_W, 112, "#0B1020");
@@ -305,7 +310,7 @@ export function downloadSimuladoAdminPdf({ meta, questions }: { meta: AdminPdfMe
     pdf.current.y -= 18;
   });
 
-  const blob = new Blob([pdf.build()], { type: "application/pdf" });
+  const blob = new Blob([await pdf.build()], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const safeTitle = (meta.title || "simulado").toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");

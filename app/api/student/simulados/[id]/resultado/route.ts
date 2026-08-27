@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { logStudentActivity } from "@/app/lib/server/auditLogger";
+import { logStudentActivity, logSystemError } from "@/app/lib/server/auditLogger";
 
 type ResultSnapshotEntry = {
   simulado_question_id: string;
@@ -18,6 +18,7 @@ type ResultSnapshotEntry = {
 
 type AttemptSummary = {
   id: string;
+  simulado_id: string;
   status: string;
   time_spent_seconds: number | null;
   submitted_at: string | null;
@@ -29,6 +30,8 @@ type AttemptSummary = {
   scissors_used_question_ids: string[] | null;
   owl_help_used_count: number | null;
   event_participant_id: string | null;
+  student_jornada_simulado_id: string | null;
+  attempt_context: string;
 };
 
 type QuestionDetail = {
@@ -57,6 +60,48 @@ export async function GET(
   const url = new URL(request.url);
   const requestedAttemptId = url.searchParams.get("attemptId");
   const requestedStudentJornadaId = url.searchParams.get("jornada");
+  const requestedEventId = url.searchParams.get("event");
+  if (requestedStudentJornadaId && requestedEventId) {
+    return NextResponse.json({ ok: false, message: "Informe apenas um contexto de execução." }, { status: 400 });
+  }
+  let requestedStudentJornadaSimuladoId: string | null = null;
+  let requestedEventParticipantId: string | null = null;
+  let representativeEventAttemptId: string | null = null;
+  let eventResultReleased = false;
+
+  if (requestedStudentJornadaId) {
+    const { data: scheduleItem } = await supabase
+      .from("student_jornada_simulados")
+      .select("id,student_jornadas:student_jornada_id(student_id)")
+      .eq("student_jornada_id", requestedStudentJornadaId)
+      .eq("simulado_id", simuladoId)
+      .maybeSingle();
+    const enrollment = scheduleItem?.student_jornadas as unknown as { student_id: string } | { student_id: string }[] | null;
+    const ownerId = Array.isArray(enrollment) ? enrollment[0]?.student_id : enrollment?.student_id;
+    if (!scheduleItem || ownerId !== student.id) {
+      return NextResponse.json({ ok: false, message: "Resultado não encontrado nesta Jornada." }, { status: 404 });
+    }
+    requestedStudentJornadaSimuladoId = scheduleItem.id;
+  }
+
+  if (requestedEventId) {
+    const { data: participant, error: participantError } = await supabase
+      .from("simulado_event_participants")
+      .select("id,representative_attempt_id,result_released_at")
+      .eq("event_id", requestedEventId)
+      .eq("student_id", student.id)
+      .maybeSingle();
+    if (participantError) {
+      void logSystemError({ source: "api.student.simulado_result.event_participant", error: participantError, request, metadata: { event_id: requestedEventId, student_id: student.id } });
+      return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
+    }
+    if (!participant) {
+      return NextResponse.json({ ok: false, message: "Resultado não encontrado neste Evento." }, { status: 404 });
+    }
+    requestedEventParticipantId = participant.id;
+    representativeEventAttemptId = participant.representative_attempt_id;
+    eventResultReleased = Boolean(participant.result_released_at);
+  }
 
   const { data: studentIdentity } = await supabase
     .from("students")
@@ -65,7 +110,7 @@ export async function GET(
     .maybeSingle();
 
   const attemptColumns =
-    "id, status, time_spent_seconds, submitted_at, disqualified_at, disqualification_reason, tab_switch_count, focus_violation_count, inactivity_event_count, scissors_used_question_ids, owl_help_used_count, event_participant_id";
+    "id, simulado_id, status, time_spent_seconds, submitted_at, disqualified_at, disqualification_reason, tab_switch_count, focus_violation_count, inactivity_event_count, scissors_used_question_ids, owl_help_used_count, event_participant_id, student_jornada_simulado_id, attempt_context";
 
   let attempt: AttemptSummary | null = null;
 
@@ -87,8 +132,10 @@ export async function GET(
     if (
       !requestedAttempt ||
       requestedAttempt.student_id !== student.id ||
-      requestedAttempt.simulado_id !== simuladoId ||
-      requestedAttempt.status !== "completed"
+      (!requestedEventParticipantId && requestedAttempt.simulado_id !== simuladoId) ||
+      requestedAttempt.status !== "completed" ||
+      (requestedStudentJornadaSimuladoId && requestedAttempt.student_jornada_simulado_id !== requestedStudentJornadaSimuladoId) ||
+      (requestedEventParticipantId && requestedAttempt.event_participant_id !== requestedEventParticipantId)
     ) {
       return NextResponse.json(
         { ok: false, message: "Resultado não encontrado para esta tentativa." },
@@ -98,18 +145,44 @@ export async function GET(
     attempt = requestedAttempt;
   } else {
     // Resultado oficial: primeira tentativa concluída que ainda conta no limite.
-    const { data: firstAttempt } = await supabase
+    let firstAttemptQuery = supabase
       .from("simulado_attempts")
       .select(attemptColumns)
-      .eq("simulado_id", simuladoId)
       .eq("student_id", student.id)
       .eq("status", "completed")
-      .eq("counts_toward_limit", true)
+      .eq("counts_toward_limit", true);
+    if (requestedStudentJornadaSimuladoId) {
+      firstAttemptQuery = firstAttemptQuery
+        .eq("simulado_id", simuladoId)
+        .eq("student_jornada_simulado_id", requestedStudentJornadaSimuladoId);
+    } else if (requestedEventParticipantId) {
+      firstAttemptQuery = firstAttemptQuery.eq("event_participant_id", requestedEventParticipantId);
+    } else {
+      firstAttemptQuery = firstAttemptQuery
+        .eq("simulado_id", simuladoId)
+        .eq("attempt_context", "standalone")
+        .is("event_participant_id", null)
+        .is("student_jornada_simulado_id", null);
+    }
+    const { data: firstAttempt } = await firstAttemptQuery
       .order("submitted_at", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     attempt = (firstAttempt || null) as AttemptSummary | null;
+
+    if (requestedEventParticipantId && representativeEventAttemptId) {
+      const { data: representativeAttempt } = await supabase
+        .from("simulado_attempts")
+        .select(attemptColumns)
+        .eq("id", representativeEventAttemptId)
+        .eq("student_id", student.id)
+        .eq("event_participant_id", requestedEventParticipantId)
+        .eq("status", "completed")
+        .eq("counts_toward_limit", true)
+        .maybeSingle();
+      if (representativeAttempt) attempt = representativeAttempt as AttemptSummary;
+    }
   }
 
   if (!attempt) {
@@ -120,11 +193,16 @@ export async function GET(
   }
 
   if (attempt.event_participant_id) {
-    const { data: participant } = await supabase.from("simulado_event_participants").select("result_released_at").eq("id", attempt.event_participant_id).eq("student_id", student.id).maybeSingle();
-    if (!participant?.result_released_at) {
+    if (!requestedEventParticipantId) {
+      const { data: participant } = await supabase.from("simulado_event_participants").select("result_released_at").eq("id", attempt.event_participant_id).eq("student_id", student.id).maybeSingle();
+      eventResultReleased = Boolean(participant?.result_released_at);
+    }
+    if (!eventResultReleased) {
       return NextResponse.json({ ok: false, code: "EVENT_RESULT_BLOCKED", message: "Seu resultado foi calculado e aguarda liberação pelo professor." }, { status: 403 });
     }
   }
+
+  const resultSimuladoId = attempt.simulado_id;
 
   const { data: simulado, error: simuladoError } = await supabase
     .from("simulados")
@@ -142,26 +220,41 @@ export async function GET(
         owl_help_enabled
       `,
     )
-    .eq("id", simuladoId)
+    .eq("id", resultSimuladoId)
     .single();
 
-  if (simuladoError || !simulado) {
+  if (simuladoError) {
+    void logSystemError({ source: "api.student.simulado_result.simulado", error: simuladoError, request, metadata: { attempt_id: attempt.id, simulado_id: resultSimuladoId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
+  }
+
+  if (!simulado) {
     return NextResponse.json(
       { ok: false, message: "Simulado não encontrado." },
       { status: 404 },
     );
   }
 
-  const { data: result } = await supabase
+  const { data: result, error: resultError } = await supabase
     .from("simulado_results")
     .select("*")
     .eq("attempt_id", attempt.id)
     .maybeSingle();
 
-  const { data: answerChangesData } = await supabase
+  if (resultError || !result) {
+    void logSystemError({ source: "api.student.simulado_result.result", error: resultError || new Error("Resultado persistido não encontrado."), request, metadata: { attempt_id: attempt.id, simulado_id: resultSimuladoId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
+  }
+
+  const { data: answerChangesData, error: answerChangesError } = await supabase
     .from("simulado_answers")
     .select("changed_count")
     .eq("attempt_id", attempt.id);
+
+  if (answerChangesError) {
+    void logSystemError({ source: "api.student.simulado_result.answers", error: answerChangesError, request, metadata: { attempt_id: attempt.id, simulado_id: resultSimuladoId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
+  }
 
   const totalAnswerChanges = (answerChangesData || []).reduce(
     (acc, row) => acc + Number(row.changed_count || 0),
@@ -172,7 +265,7 @@ export async function GET(
   const { data: averageData } = await supabase
     .from("simulado_results")
     .select("display_percentage")
-    .eq("simulado_id", simuladoId);
+    .eq("simulado_id", resultSimuladoId);
 
   const percentages = (averageData || []).map((row) => Number(row.display_percentage || 0));
   const average =
@@ -181,7 +274,7 @@ export async function GET(
       : null;
 
   // Subjects revisados
-  const { data: simuladoQuestions } = await supabase
+  const { data: simuladoQuestions, error: simuladoQuestionsError } = await supabase
     .from("simulado_questions")
     .select(
       `
@@ -206,8 +299,13 @@ export async function GET(
         )
       `,
     )
-    .eq("simulado_id", simuladoId)
+    .eq("simulado_id", resultSimuladoId)
     .order("order_number", { ascending: true });
+
+  if (simuladoQuestionsError) {
+    void logSystemError({ source: "api.student.simulado_result.questions", error: simuladoQuestionsError, request, metadata: { attempt_id: attempt.id, simulado_id: resultSimuladoId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
+  }
 
   const sqRows = (simuladoQuestions || []) as unknown as Array<{
     id: string;
@@ -230,7 +328,7 @@ export async function GET(
     snapshotBySQ.set(entry.simulado_question_id, entry);
   }
 
-  const showAnswerKey = Boolean(simulado.show_answer_key_on_finish);
+  const showAnswerKey = Boolean(simulado.show_answer_key_on_finish) || Boolean(attempt.event_participant_id && eventResultReleased);
 
   const gabarito = showAnswerKey
     ? sqRows.map((row) => {
@@ -278,7 +376,7 @@ export async function GET(
     id: string;
     jornadas: { title: string | null } | null;
     student_jornada_simulados: { simulado_id: string }[] | null;
-  }>).filter((row) => (row.student_jornada_simulados || []).some((item) => item.simulado_id === simuladoId));
+  }>).filter((row) => (row.student_jornada_simulados || []).some((item) => item.simulado_id === resultSimuladoId));
 
   let jornadaContext: { student_jornada_id: string; title: string } | null = null;
   const explicitLink = requestedStudentJornadaId
@@ -292,7 +390,7 @@ export async function GET(
     };
   }
 
-  void logStudentActivity({ studentId: student.id, action: "student.result.viewed", entityType: "attempt", entityId: attempt.id, request, metadata: { simulado_id: simuladoId, attempt_id: attempt.id, requested_attempt: Boolean(requestedAttemptId) } });
+  void logStudentActivity({ studentId: student.id, action: "student.result.viewed", entityType: "attempt", entityId: attempt.id, request, metadata: { simulado_id: resultSimuladoId, attempt_id: attempt.id, requested_attempt: Boolean(requestedAttemptId), event_id: requestedEventId } });
 
   return NextResponse.json({
     ok: true,
@@ -307,7 +405,7 @@ export async function GET(
       title: simulado.title,
       description: simulado.description,
       scoring_model: simulado.scoring_model,
-      show_answer_key_on_finish: simulado.show_answer_key_on_finish,
+      show_answer_key_on_finish: showAnswerKey,
       show_teacher_comment: simulado.show_teacher_comment,
       correction_video_url: simulado.correction_video_url,
       owl_help_enabled: Boolean(simulado.owl_help_enabled),

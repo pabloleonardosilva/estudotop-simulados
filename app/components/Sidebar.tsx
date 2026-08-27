@@ -414,6 +414,10 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <NavLink href="/bancas" active={isActive("/bancas")} icon={<BadgeCheck size={16} />} onNavigate={onNavigate}>
                 Bancas
               </NavLink>
+
+              <NavLink href="/admin/configuracoes/imagens-do-sistema" active={isActive("/admin/configuracoes/imagens-do-sistema")} icon={<LibraryBig size={16} />} onNavigate={onNavigate}>
+                Imagens do Sistema
+              </NavLink>
             </AdminGroup>
           </nav>
 

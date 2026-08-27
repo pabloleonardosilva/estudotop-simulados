@@ -572,7 +572,7 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
 }
 
 const STYLES = `
-  .rx-page { min-height: 100vh; background: #030b16; color: #e5eefb; font-family: Arial, Helvetica, sans-serif; }
+  .rx-page { min-height: 100vh; background: #030b16; color: #e5eefb; font-family: var(--font-estudotop-inter), Inter, sans-serif; }
   .rx-adminbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(3,8,15,.92); backdrop-filter: blur(16px); }
   .rx-admin-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .rx-admin-title strong { color: #e5eefb; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

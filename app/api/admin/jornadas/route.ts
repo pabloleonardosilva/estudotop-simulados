@@ -209,6 +209,12 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
+    const cardImageId = typeof body.card_image_id === "string" && body.card_image_id ? body.card_image_id : null;
+    if (cardImageId) {
+      const { data: image } = await supabase.from("system_images").select("id").eq("id", cardImageId).eq("image_type", "journey_card").maybeSingle();
+      if (!image) return NextResponse.json({ ok: false, message: "Selecione uma imagem válida da biblioteca de Jornadas." }, { status: 400 });
+    }
+
     const { data, error } = await supabase
       .from("jornadas")
       .insert({
@@ -217,6 +223,7 @@ export async function POST(request: Request) {
         status: "draft",
         scope_type: scope.scope_type,
         category,
+        card_image_id: cardImageId,
         contest_name: scope.contest_name,
         exam_name: cleanText(body.exam_name, 180),
         exam_position: cleanText(body.exam_position, 180),

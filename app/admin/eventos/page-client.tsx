@@ -8,6 +8,8 @@ import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
 import { EVENT_COVERS, type EventCoverKey } from "./utils";
+import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
+import type { SystemImage } from "@/lib/system-images";
 
 type EventRow = { id: string; name: string; public_slug: string; registration_url: string | null; effective_status: string; starts_at: string; ends_at: string; duration_minutes: number; result_policy: string; simulados?: { title?: string } | null };
 type Simulado = { id: string; title: string };
@@ -68,6 +70,11 @@ export default function EventosAdminClient() {
   const [resultPolicy, setResultPolicy] = useState("blocked");
   const [professorIds, setProfessorIds] = useState<string[]>([]);
   const [coverKey, setCoverKey] = useState<EventCoverKey>("administrativo");
+  const [cardImageId, setCardImageId] = useState<string | null>(null);
+  const [bannerImageId, setBannerImageId] = useState<string | null>(null);
+  const [cardImages, setCardImages] = useState<SystemImage[]>([]);
+  const [bannerImages, setBannerImages] = useState<SystemImage[]>([]);
+  useEffect(() => { void Promise.all([loadSystemImages("event_card"), loadSystemImages("professor_event_banner")]).then(([cards, banners]) => { setCardImages(cards); setBannerImages(banners); }); }, []);
 
   const load = useCallback(async () => {
     const [eventResponse, simuladoResponse, professorResponse] = await Promise.all([
@@ -98,6 +105,7 @@ export default function EventosAdminClient() {
     setResultPolicy("blocked");
     setProfessorIds([]);
     setCoverKey("administrativo");
+    setCardImageId(null); setBannerImageId(null);
   }
 
   function handleStartChange(value: string) {
@@ -144,7 +152,7 @@ export default function EventosAdminClient() {
           name: name.trim(), simulado_id: simuladoId || null,
           starts_at: startDate.toISOString(), ends_at: endDate.toISOString(),
           duration_minutes: durationMinutes, result_policy: resultPolicy,
-          professor_ids: professorIds, cover_key: coverKey,
+          professor_ids: professorIds, cover_key: coverKey, card_image_id: cardImageId, professor_banner_image_id: bannerImageId,
         }),
       });
       const json = await response.json();
@@ -239,6 +247,8 @@ export default function EventosAdminClient() {
                   })}
                 </div>
               </fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Imagem do card — biblioteca</legend><ImageLibraryPicker images={cardImages} value={cardImageId} onChange={setCardImageId} /></fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={bannerImageId} onChange={setBannerImageId} allowEmpty /></fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">

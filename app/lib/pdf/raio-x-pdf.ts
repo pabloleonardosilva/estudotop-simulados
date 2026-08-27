@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { loadEmbeddedInter } from "@/lib/pdf/embedded-inter";
+
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
 const MARGIN_X = 42;
@@ -278,13 +280,17 @@ class PdfBuilder {
     this.current.y -= h;
   }
 
-  build() {
+  async build() {
     const objects: string[] = [];
     const add = (body: string) => { objects.push(body); return objects.length; };
-    const f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
-    const f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
-    const f3 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>");
-    const f4 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>");
+    const embedded = await loadEmbeddedInter();
+    const fontFile = add(`<< /Length ${embedded.binary.length} /Length1 ${embedded.binary.length} >>\nstream\n${embedded.binary}\nendstream`);
+    const descriptor = add(`<< /Type /FontDescriptor /FontName /Inter /Flags 32 /FontBBox [${embedded.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${embedded.ascent} /Descent ${embedded.descent} /CapHeight ${embedded.ascent} /StemV 80 /FontFile2 ${fontFile} 0 R >>`);
+    const font = add(`<< /Type /Font /Subtype /TrueType /BaseFont /Inter /FirstChar 32 /LastChar 255 /Widths [${embedded.widths}] /FontDescriptor ${descriptor} 0 R /Encoding /WinAnsiEncoding >>`);
+    const f1 = font;
+    const f2 = font;
+    const f3 = font;
+    const f4 = font;
 
     const imageIds: Record<string, number> = {};
     for (const image of this.images) {
@@ -675,7 +681,7 @@ function safeFileName(value: string) {
     .slice(0, 110);
 }
 
-export function downloadRaioXPdf(data: RaioXPdfData) {
+export async function downloadRaioXPdf(data: RaioXPdfData) {
   const pdf = new PdfBuilder();
   pdf.registerJpeg("Owl", OWL_JPEG_BASE64, 260, 260);
 
@@ -697,7 +703,7 @@ export function downloadRaioXPdf(data: RaioXPdfData) {
   drawPanoramaPage(pdf, data, modules, total, avgDiff, dom);
   addFooters(pdf, data.title || "Raio-X da Prova");
 
-  const bytes = pdf.build();
+  const bytes = await pdf.build();
   const blob = new Blob([bytes], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

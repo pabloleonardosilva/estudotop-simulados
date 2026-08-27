@@ -4,8 +4,11 @@ import { calculateEarnedTopCoins } from "@/app/lib/gamification/topcoins";
 type AttemptWithResult = {
   id: string;
   created_at: string;
+  attempt_context: string;
   event_participant_id: string | null;
+  student_jornada_simulado_id: string | null;
   simulado_event_participants: { result_released_at: string | null } | { result_released_at: string | null }[] | null;
+  student_jornada_simulados: { student_jornadas: { jornada_id: string } | { jornada_id: string }[] | null } | { student_jornadas: { jornada_id: string } | { jornada_id: string }[] | null }[] | null;
   simulado_results: { correct_count: number } | { correct_count: number }[] | null;
 };
 
@@ -28,7 +31,7 @@ export async function resyncTopCoinEarnings(
 ): Promise<void> {
   const { data: attempts } = await supabase
     .from("simulado_attempts")
-    .select("id, created_at, event_participant_id, simulado_event_participants:event_participant_id(result_released_at), simulado_results ( correct_count )")
+    .select("id, created_at, attempt_context, event_participant_id, student_jornada_simulado_id, simulado_event_participants:event_participant_id(result_released_at), student_jornada_simulados:student_jornada_simulado_id(student_jornadas:student_jornada_id(jornada_id)), simulado_results ( correct_count )")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
     .eq("status", "completed")
@@ -48,28 +51,26 @@ export async function resyncTopCoinEarnings(
   });
   if (rows.length === 0) return;
 
-  const { data: jornadaLink } = await supabase
-    .from("student_jornada_simulados")
-    .select("student_jornadas!inner(student_id, jornada_id)")
-    .eq("simulado_id", simuladoId)
-    .eq("student_jornadas.student_id", studentId)
-    .maybeSingle();
-
-  const jornadaLinkRef = jornadaLink?.student_jornadas as
-    | { jornada_id: string }
-    | { jornada_id: string }[]
-    | null;
-  const jornadaId = Array.isArray(jornadaLinkRef)
-    ? jornadaLinkRef[0]?.jornada_id ?? null
-    : jornadaLinkRef?.jornada_id ?? null;
-
-  const inserts = rows.map((row, index) => {
-    const attemptNumber = index + 1;
+  const contextAttemptNumbers = new Map<string, number>();
+  const inserts = rows.map((row) => {
+    const contextKey = row.event_participant_id
+      ? `event:${row.event_participant_id}`
+      : row.student_jornada_simulado_id
+        ? `jornada:${row.student_jornada_simulado_id}`
+        : "standalone";
+    const attemptNumber = (contextAttemptNumbers.get(contextKey) || 0) + 1;
+    contextAttemptNumbers.set(contextKey, attemptNumber);
+    const scheduleItem = Array.isArray(row.student_jornada_simulados)
+      ? row.student_jornada_simulados[0] || null
+      : row.student_jornada_simulados;
+    const enrollment = Array.isArray(scheduleItem?.student_jornadas)
+      ? scheduleItem.student_jornadas[0] || null
+      : scheduleItem?.student_jornadas || null;
     return {
       student_id: studentId,
       simulado_id: simuladoId,
       attempt_id: row.id,
-      jornada_id: jornadaId,
+      jornada_id: enrollment?.jornada_id || null,
       attempt_number: attemptNumber,
       amount: calculateEarnedTopCoins({
         correctAnswers: correctCountOf(row.simulado_results),

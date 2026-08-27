@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { assertStudentCanStartSimulado } from "@/lib/server/studentAssertions";
+import {
+  assertStudentCanStartSimulado,
+  getContextualSimuladoAttempts,
+  type AttemptExecutionContext,
+} from "@/lib/server/studentAssertions";
 import { logActivity } from "@/lib/logging/activity-log";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 
@@ -90,8 +94,14 @@ export async function POST(
 
   const { id: simuladoId } = await params;
   const supabase = createSupabaseAdminClient();
-  const eventId = new URL(request.url).searchParams.get("event");
+  const url = new URL(request.url);
+  const eventId = url.searchParams.get("event");
+  const jornadaId = url.searchParams.get("jornada");
+  if (eventId && jornadaId) {
+    return NextResponse.json({ ok: false, message: "Informe apenas um contexto de execução." }, { status: 400 });
+  }
   let eventParticipant: { id: string; event_id: string } | null = null;
+  let studentJornadaSimuladoId: string | null = null;
   let eventResultPolicy: "blocked" | "released" | null = null;
   let eventCanStartNewAttempt = true;
 
@@ -158,7 +168,6 @@ export async function POST(
     if (accessError) return accessError;
   }
 
-  const jornadaId = new URL(request.url).searchParams.get("jornada");
   if (jornadaId) {
     const today = new Date().toISOString().slice(0, 10);
     const { data: studentJornada } = await supabase
@@ -188,28 +197,34 @@ export async function POST(
         { status: 403 },
       );
     }
+    studentJornadaSimuladoId = jornadaSimulado.id;
   }
 
-  // Verifica tentativa em andamento já existente
-  const { data: existing, error: existingError } = await supabase
-    .from("simulado_attempts")
-    .select("*")
-    .eq("simulado_id", simuladoId)
-    .eq("student_id", student.id)
-    .eq("status", "in_progress")
-    .maybeSingle();
+  const attemptContext: AttemptExecutionContext = eventParticipant
+    ? { type: "event", eventId: eventParticipant.event_id, eventParticipantId: eventParticipant.id }
+    : studentJornadaSimuladoId
+      ? { type: "jornada", studentJornadaSimuladoId }
+      : { type: "standalone" };
 
-  if (existingError) {
+  const { attempts: contextualAttempts, error: contextualAttemptsError } = await getContextualSimuladoAttempts(
+    supabase,
+    student.id,
+    simuladoId,
+    attemptContext,
+  );
+  const existingSummary = contextualAttempts.find((attempt) => attempt.status === "in_progress") || null;
+  const { data: existing, error: existingError } = existingSummary
+    ? await supabase.from("simulado_attempts").select("*").eq("id", existingSummary.id).maybeSingle()
+    : { data: null, error: null };
+
+  if (contextualAttemptsError || existingError) {
     return NextResponse.json(
-      { ok: false, message: existingError.message },
+      { ok: false, message: contextualAttemptsError?.message || existingError?.message || "Não foi possível consultar as tentativas." },
       { status: 500 },
     );
   }
 
   if (existing) {
-    if ((eventId && (existing.event_id !== eventId || existing.attempt_context !== "event" || existing.is_preview)) || (!eventId && existing.event_id)) {
-      return NextResponse.json({ ok: false, message: "Já existe uma tentativa em andamento deste Simulado em outro contexto." }, { status: 409 });
-    }
     if (eventParticipant) {
       await supabase
         .from("simulado_event_participants")
@@ -236,21 +251,8 @@ export async function POST(
   }
 
   // Validação de tentativas restantes
-  const { data: history, error: historyError } = await supabase
-    .from("simulado_attempts")
-    .select("id, counts_toward_limit, status")
-    .eq("simulado_id", simuladoId)
-    .eq("student_id", student.id);
-
-  if (historyError) {
-    return NextResponse.json(
-      { ok: false, message: historyError.message },
-      { status: 500 },
-    );
-  }
-
-  const used = (history || []).filter((row) => row.counts_toward_limit).length;
-  const totalCompleted = (history || []).filter(
+  const used = contextualAttempts.filter((row) => row.counts_toward_limit).length;
+  const totalCompleted = contextualAttempts.filter(
     (row) => row.status === "completed" || row.status === "disqualified" || row.status === "expired",
   ).length;
 
@@ -261,7 +263,7 @@ export async function POST(
     );
   }
 
-  const attemptNumber = (history?.length || 0) + 1;
+  const attemptNumber = contextualAttempts.length + 1;
 
   // Carrega questões do simulado com alternativas
   const { data: simuladoQuestions, error: sqError } = await supabase
@@ -396,6 +398,7 @@ export async function POST(
       attempt_context: eventId ? "event" : jornadaId ? "jornada" : "standalone",
       event_id: eventId,
       event_participant_id: eventParticipant?.id || null,
+      student_jornada_simulado_id: studentJornadaSimuladoId,
     })
     .select("*")
     .single();

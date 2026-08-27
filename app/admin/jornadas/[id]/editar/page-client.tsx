@@ -34,6 +34,8 @@ import PremiumModal from "../../../../components/ui/PremiumModal";
 import type { AvailableSimulado, Jornada, JornadaCategory, JornadaSimulado } from "../../types";
 import { JORNADA_CATEGORIES } from "../../utils";
 import { adminFetch } from "@/lib/supabase/adminFetch";
+import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
+import type { SystemImage } from "@/lib/system-images";
 
 type Feedback = { tone: "success" | "error" | "warning"; title: string; message: string } | null;
 type Tab = "info" | "simulados";
@@ -79,11 +81,14 @@ export default function EditarJornadaClient({
     important_guidelines: jornada.important_guidelines || "",
     journey_highlights: Array.isArray(jornada.journey_highlights) ? jornada.journey_highlights : [],
     category: (jornada.category || "administrativo") as JornadaCategory,
+    card_image_id: jornada.card_image_id || null,
     duration_days: jornada.duration_days || jornada.duration_months * 30,
     release_duration_days: jornada.release_duration_days || jornada.duration_days || jornada.duration_months * 30,
     planned_simulados_count: jornada.planned_simulados_count || Math.max(1, initialSimulados.length),
     exam_date: jornada.exam_date || "",
   });
+  const [cardImages, setCardImages] = useState<SystemImage[]>([]);
+  useEffect(() => { void loadSystemImages("journey_card").then(setCardImages); }, []);
 
   // Simulados state (mutable list for DnD)
   const [simulados, setSimulados] = useState<JornadaSimulado[]>(initialSimulados);
@@ -153,6 +158,7 @@ export default function EditarJornadaClient({
           important_guidelines: form.important_guidelines.trim() || null,
           journey_highlights: form.journey_highlights,
           category: form.category,
+          card_image_id: form.card_image_id,
           duration_days: Number(form.duration_days),
           release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
@@ -456,6 +462,12 @@ export default function EditarJornadaClient({
                   })}
                 </div>
                 <p className="mt-2 text-xs text-slate-500">A categoria define a imagem exibida no card da Jornada.</p>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-slate-300">Imagem do card</p>
+                <ImageLibraryPicker images={cardImages} value={form.card_image_id} onChange={(value) => setForm((prev) => ({ ...prev, card_image_id: value }))} />
+                <p className="mt-2 text-xs text-slate-500">Sem seleção, permanece o fallback visual da categoria.</p>
               </div>
 
               <div className="grid gap-5 md:grid-cols-3">

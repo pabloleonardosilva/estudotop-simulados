@@ -55,7 +55,7 @@ export default function PremiumModal({
     const Icon = config.icon;
 
     return (
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 px-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 px-4 font-sans backdrop-blur-sm animate-in fade-in duration-200">
         <div className={`relative w-full max-w-lg overflow-hidden rounded-[2rem] border ${config.border} bg-white p-7 text-slate-950 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200`}>
           <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${config.accent}`} />
           <div className={`pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full ${config.glow} blur-3xl`} />
@@ -82,8 +82,8 @@ export default function PremiumModal({
           </p>
           <h2 className="relative mt-2 text-2xl font-semibold text-slate-950">{title}</h2>
 
-          {message && <p className="relative mt-3 text-sm leading-6 text-slate-600">{message}</p>}
-          {children && <div className="relative mt-4 text-sm leading-6 text-slate-600">{children}</div>}
+          {message && <p className="relative mt-3 text-sm font-normal leading-5 text-slate-600">{message}</p>}
+          {children && <div className="relative mt-4 text-sm font-normal leading-5 text-slate-600">{children}</div>}
 
           <div className="relative mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             {actions || (
@@ -101,7 +101,7 @@ export default function PremiumModal({
   const Icon = config.icon;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 font-sans backdrop-blur-md animate-in fade-in duration-200">
       <div className={`relative w-full ${size === "wide" ? "max-w-7xl" : "max-w-lg"} overflow-hidden rounded-[2rem] border border-orange-400/25 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 p-7 text-white shadow-2xl shadow-orange-950/40 animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-400 to-yellow-300" />
         <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-orange-500/15 blur-3xl" />
@@ -123,13 +123,13 @@ export default function PremiumModal({
           )}
         </div>
 
-        <p className={`relative mt-5 text-xs font-black uppercase tracking-[0.22em] ${config.color}`}>
+        <p className={`relative mt-5 text-xs font-bold uppercase tracking-[0.18em] ${config.color}`}>
           {config.eyebrow}
         </p>
-        <h2 className="relative mt-2 text-2xl font-black tracking-tight text-white">{title}</h2>
+        <h2 className="relative mt-2 text-2xl font-semibold leading-8 tracking-tight text-white">{title}</h2>
 
-        {message && <p className="relative mt-3 text-sm leading-6 text-slate-300">{message}</p>}
-        {children && <div className="relative mt-4 text-sm leading-6 text-slate-300">{children}</div>}
+        {message && <p className="relative mt-3 text-sm font-normal leading-5 text-slate-300">{message}</p>}
+        {children && <div className="relative mt-4 text-sm font-normal leading-5 text-slate-300">{children}</div>}
 
         <div className="relative mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           {actions || (

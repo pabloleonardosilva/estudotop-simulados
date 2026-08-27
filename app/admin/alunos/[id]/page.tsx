@@ -425,22 +425,25 @@ async function getData(id: string) {
   const simuladoIds = Array.from(new Set(
     rawJornadas.flatMap((sj: any) => (sj.student_jornada_simulados || []).map((s: any) => s.simulado_id).filter(Boolean)),
   ));
+  const studentJornadaSimuladoIds = Array.from(new Set(
+    rawJornadas.flatMap((sj: any) => (sj.student_jornada_simulados || []).map((s: any) => s.id).filter(Boolean)),
+  ));
 
-  const attemptsBySimulado = new Map<string, any[]>();
-  if (simuladoIds.length > 0) {
+  const attemptsByScheduleItem = new Map<string, any[]>();
+  if (studentJornadaSimuladoIds.length > 0) {
     const { data: attempts, error: attemptsError } = await supabase
       .from("simulado_attempts")
-      .select("id, simulado_id, status, counts_toward_limit, created_at, started_at, submitted_at, last_activity_at, time_spent_seconds, answered_count, total_questions, progress_percent")
+      .select("id, simulado_id, student_jornada_simulado_id, status, counts_toward_limit, created_at, started_at, submitted_at, last_activity_at, time_spent_seconds, answered_count, total_questions, progress_percent")
       .eq("student_id", id)
-      .in("simulado_id", simuladoIds);
+      .in("student_jornada_simulado_id", studentJornadaSimuladoIds);
 
     if (attemptsError) throw new Error(attemptsError.message);
 
     for (const attempt of attempts || []) {
-      const key = String((attempt as any).simulado_id);
-      const list = attemptsBySimulado.get(key) || [];
+      const key = String((attempt as any).student_jornada_simulado_id);
+      const list = attemptsByScheduleItem.get(key) || [];
       list.push(attempt);
-      attemptsBySimulado.set(key, list);
+      attemptsByScheduleItem.set(key, list);
     }
   }
 
@@ -482,7 +485,7 @@ async function getData(id: string) {
     const schedule = [...(sj.student_jornada_simulados || [])]
       .sort((a: any, b: any) => Number(a.order_number || 0) - Number(b.order_number || 0))
       .map((item: any) => {
-        const attempts = attemptsBySimulado.get(String(item.simulado_id)) || [];
+        const attempts = attemptsByScheduleItem.get(String(item.id)) || [];
         const scheduledDate = item.scheduled_release_at ? new Date(`${item.scheduled_release_at}T00:00:00`) : null;
         const attemptsTotal = attempts.length;
         const attemptsCounting = attempts.filter((attempt: any) => Boolean(attempt.counts_toward_limit)).length;

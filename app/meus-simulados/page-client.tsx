@@ -301,7 +301,7 @@ export default function MeusSimuladosClient() {
 
             return (
               <article
-                key={simulado.id}
+                key={`${simulado.jornada_id || "standalone"}:${simulado.id}`}
                 className={`group relative flex min-h-[505px] w-full min-w-0 max-w-[410px] flex-col overflow-hidden rounded-[1.15rem] bg-white ring-1 ring-white transition hover:-translate-y-1 ${tone.card}`}
               >
                 <div className="relative h-[190px] overflow-hidden bg-[#05080d] px-6 py-6 text-white">
@@ -397,16 +397,16 @@ export default function MeusSimuladosClient() {
                       </span>
                     ) : isSolved(simulado) ? (
                       <>
-                        <Link href={`/meus-simulados/${simulado.id}/resultado`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-xs font-black text-slate-700 transition hover:bg-slate-100">
+                        <Link href={`/meus-simulados/${simulado.id}/resultado${simulado.jornada_id ? `?jornada=${encodeURIComponent(simulado.jornada_id)}` : ""}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-xs font-black text-slate-700 transition hover:bg-slate-100">
                           Ver resultado
                         </Link>
-                        <Link href={`/meus-simulados/${simulado.id}`} className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black transition hover:-translate-y-0.5 ${tone.button}`}>
+                        <Link href={`/meus-simulados/${simulado.id}${simulado.jornada_id ? `?jornada=${encodeURIComponent(simulado.jornada_id)}` : ""}`} className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black transition hover:-translate-y-0.5 ${tone.button}`}>
                           Refazer o simulado
                           <PlayCircle size={16} />
                         </Link>
                       </>
                     ) : (
-                      <Link href={`/meus-simulados/${simulado.id}`} className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black transition hover:-translate-y-0.5 ${tone.button}`}>
+                      <Link href={`/meus-simulados/${simulado.id}${simulado.jornada_id ? `?jornada=${encodeURIComponent(simulado.jornada_id)}` : ""}`} className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black transition hover:-translate-y-0.5 ${tone.button}`}>
                         {simulado.student_status === "in_progress" ? "Retomar simulado" : "Acessar simulado"}
                         <PlayCircle size={16} />
                       </Link>

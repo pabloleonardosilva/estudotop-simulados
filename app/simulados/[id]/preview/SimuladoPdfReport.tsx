@@ -2,12 +2,21 @@
 
 import {
   Document,
+  Font,
   Page,
   View,
   Text,
   StyleSheet,
   pdf,
 } from "@react-pdf/renderer";
+
+Font.register({
+  family: "Inter",
+  fonts: [
+    { src: "/fonts/Inter.ttf", fontWeight: 400 },
+    { src: "/fonts/Inter.ttf", fontWeight: 700 },
+  ],
+});
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -42,7 +51,7 @@ const C = {
 const s = StyleSheet.create({
   page: {
     backgroundColor: C.white,
-    fontFamily: "Helvetica",
+    fontFamily: "Inter", fontWeight: 400,
     fontSize: 10,
     color: C.slate900,
     paddingBottom: 40,
@@ -68,7 +77,7 @@ const s = StyleSheet.create({
     marginBottom: 20,
   },
   brand: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     color: C.orange,
     textTransform: "uppercase",
@@ -76,7 +85,7 @@ const s = StyleSheet.create({
     marginBottom: 5,
   },
   title: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 18,
     color: C.slate900,
     marginBottom: 4,
@@ -93,7 +102,7 @@ const s = StyleSheet.create({
     minWidth: 100,
   },
   scorePct: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 26,
     color: C.orangeDark,
   },
@@ -103,7 +112,7 @@ const s = StyleSheet.create({
 
   // seções
   sectionTitle: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 11,
     color: C.slate900,
     marginBottom: 12,
@@ -124,7 +133,7 @@ const s = StyleSheet.create({
     borderColor: C.slate200,
   },
   metricLabel: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     color: C.slate500,
     textTransform: "uppercase",
@@ -132,7 +141,7 @@ const s = StyleSheet.create({
     marginBottom: 5,
   },
   metricValue: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 15,
     color: C.slate900,
   },
@@ -142,7 +151,7 @@ const s = StyleSheet.create({
   barRow: { marginBottom: 10 },
   barHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
   barLabel: { fontSize: 9, color: C.slate700 },
-  barCount: { fontFamily: "Helvetica-Bold", fontSize: 9, color: C.slate900 },
+  barCount: { fontFamily: "Inter", fontWeight: 700, fontSize: 9, color: C.slate900 },
   barTrack: { height: 4, backgroundColor: C.slate100, borderRadius: 2 },
   barFill: { height: 4, borderRadius: 2 },
   barSub: { fontSize: 8, color: C.slate400, marginTop: 3 },
@@ -157,7 +166,7 @@ const s = StyleSheet.create({
     marginBottom: 26,
   },
   profileTitle: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 12,
     color: C.orangeDeep,
     marginBottom: 5,
@@ -198,7 +207,7 @@ const s = StyleSheet.create({
   qNum: {
     backgroundColor: C.slate900,
     color: C.white,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 9,
     paddingTop: 3,
     paddingBottom: 3,
@@ -234,7 +243,7 @@ const s = StyleSheet.create({
   altRowCorrect: { backgroundColor: C.greenLight, borderColor: C.greenBorder },
   altRowWrong: { backgroundColor: C.redLight, borderColor: C.redBorder },
   altRowNeutral: { backgroundColor: C.white, borderColor: C.slate200 },
-  altLabel: { fontFamily: "Helvetica-Bold", fontSize: 9, width: 14, paddingTop: 1 },
+  altLabel: { fontFamily: "Inter", fontWeight: 700, fontSize: 9, width: 14, paddingTop: 1 },
   altText: { flex: 1, fontSize: 9, lineHeight: 1.5 },
 
   answerRow: { flexDirection: "row", gap: 8, marginTop: 10 },
@@ -246,7 +255,7 @@ const s = StyleSheet.create({
     padding: 8,
   },
   answerCellLabel: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     color: C.slate500,
     textTransform: "uppercase",
@@ -254,7 +263,7 @@ const s = StyleSheet.create({
     marginBottom: 3,
   },
   answerCellValue: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 10,
     color: C.slate900,
   },
@@ -268,7 +277,7 @@ const s = StyleSheet.create({
     marginTop: 8,
   },
   commentTitle: {
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 9,
     color: C.greenText,
     marginBottom: 3,
@@ -511,7 +520,7 @@ function SimuladoPdfDocument(props: PdfReportProps) {
               <View key={group.subject} style={{ marginBottom: 10 }}>
                 <Text
                   style={{
-                    fontFamily: "Helvetica-Bold",
+                    fontFamily: "Inter", fontWeight: 700,
                     fontSize: 10,
                     color: C.slate700,
                     marginBottom: 5,
@@ -550,7 +559,7 @@ function SimuladoPdfDocument(props: PdfReportProps) {
         <View style={{ marginBottom: 20 }} wrap={false}>
           <Text
             style={{
-              fontFamily: "Helvetica-Bold",
+              fontFamily: "Inter", fontWeight: 700,
               fontSize: 14,
               color: C.slate900,
               marginBottom: 2,

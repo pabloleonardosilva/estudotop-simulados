@@ -1,5 +1,13 @@
 import React from "react";
-import { Document, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View, pdf } from "@react-pdf/renderer";
+
+Font.register({
+  family: "Inter",
+  fonts: [
+    { src: "/fonts/Inter.ttf", fontWeight: 400 },
+    { src: "/fonts/Inter.ttf", fontWeight: 700 },
+  ],
+});
 
 type PdfNotesStudent = {
   name?: string | null;
@@ -69,7 +77,7 @@ const s = StyleSheet.create({
   },
   coverFallbackEyebrow: {
     color: C.brand,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 11,
     letterSpacing: 3,
     textTransform: "uppercase",
@@ -77,7 +85,7 @@ const s = StyleSheet.create({
   },
   coverFallbackTitle: {
     color: C.white,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 34,
     lineHeight: 1.15,
   },
@@ -101,7 +109,7 @@ const s = StyleSheet.create({
     paddingLeft: 38,
     backgroundColor: C.slate50,
     color: C.dark,
-    fontFamily: "Helvetica",
+    fontFamily: "Inter", fontWeight: 400,
     fontSize: 10,
   },
   watermark: {
@@ -118,7 +126,7 @@ const s = StyleSheet.create({
   },
   watermarkName: {
     color: C.slate700,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 17,
     letterSpacing: 1.2,
   },
@@ -140,7 +148,7 @@ const s = StyleSheet.create({
   },
   studentPanelEyebrow: {
     color: C.brand,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     letterSpacing: 1,
     textTransform: "uppercase",
@@ -148,7 +156,7 @@ const s = StyleSheet.create({
   },
   studentPanelName: {
     color: C.dark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 15,
     marginBottom: 4,
   },
@@ -165,7 +173,7 @@ const s = StyleSheet.create({
   },
   jornadaEyebrow: {
     color: C.brand,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     letterSpacing: 1.4,
     textTransform: "uppercase",
@@ -173,7 +181,7 @@ const s = StyleSheet.create({
   },
   jornadaTitle: {
     color: C.white,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 16,
     lineHeight: 1.25,
   },
@@ -202,7 +210,7 @@ const s = StyleSheet.create({
   },
   simuladoEyebrow: {
     color: C.brandDark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 7.5,
     letterSpacing: 1.2,
     textTransform: "uppercase",
@@ -210,7 +218,7 @@ const s = StyleSheet.create({
   },
   simuladoTitle: {
     color: C.dark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 13,
     lineHeight: 1.3,
   },
@@ -224,7 +232,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.orange100,
     color: C.brandDark,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8.5,
   },
   noteCard: {
@@ -244,7 +252,7 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: C.dark,
     color: C.white,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Inter", fontWeight: 700,
     fontSize: 8,
     marginBottom: 8,
   },

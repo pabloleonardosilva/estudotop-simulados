@@ -787,6 +787,8 @@ O sistema separa dois conceitos de resultado:
 ### Meus Resultados
 
 - A página `/meus-resultados` exibe, abaixo do título, texto explicando que o resultado mostrado é o da **primeira tentativa completa** (resultado oficial), que ela é o retrato mais fiel do desempenho inicial e que tentativas seguintes servem para revisão/treinamento sem substituir o histórico.
+- **Atualização 2026-08-24 — Simulados de Evento com resultado bloqueado passam a aparecer:** ver `docs/Sprint-evento-de-simulado.md`, seção 89. A página deixou de tratar "resultado bloqueado" como "resultado inexistente" — o item aparece com contexto "Evento de Simulado" + nome do Evento e badge "Resultado aguardando liberação" (sem nota, sem link), passando para "Ver resultado" assim que `result_released_at` é definido. Mesma tentativa "oficial" usada por `GET /api/student/simulados/[id]/resultado` sem `attemptId` (primeira `completed` com `counts_toward_limit=true`), agora também usada para decidir a inclusão de Eventos nesta listagem.
+- **Atualização 2026-08-25 — Pipeline completo de Evento liberado:** a rota oficial de resultado passou a carregar o Simulado histórico pela tentativa contextual e a tratar `result_released_at` como autorização para gabarito, Desempenho por Assunto e Revisão das Questões no contexto de Evento. Jornada e avulso preservam `show_answer_key_on_finish`. Ver `docs/Sprint-evento-de-simulado.md`, seção 94.
 
 ### Arquivos da entrega
 

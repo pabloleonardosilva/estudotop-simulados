@@ -44,16 +44,6 @@ export async function PATCH(
 
       await supabase.from("student_jornadas").update({ status: "cancelled" }).eq("id", sj.id);
 
-      const { count } = await supabase
-        .from("student_jornadas")
-        .select("id", { count: "exact", head: true })
-        .eq("student_id", sj.student_id)
-        .eq("status", "active");
-
-      if (!count || count === 0) {
-        await supabase.from("students").update({ status: "inactive" }).eq("id", sj.student_id);
-      }
-
       await supabase.from("student_activity_log").insert({
         student_id: sj.student_id,
         event_type: "jornada_cancelled",
@@ -112,7 +102,6 @@ export async function PATCH(
       }
 
       await supabase.from("student_jornadas").update({ status: "active" }).eq("id", sj.id);
-      await supabase.from("students").update({ status: "active" }).eq("id", sj.student_id);
 
       await supabase.from("student_activity_log").insert({
         student_id: sj.student_id,

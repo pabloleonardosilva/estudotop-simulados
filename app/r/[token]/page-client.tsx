@@ -236,7 +236,7 @@ export default function PublicRaioXClient({ analysis, effectiveModules, totalQue
   ].filter((d) => d.value);
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "Arial, Helvetica, sans-serif" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "var(--font-estudotop-inter), Inter, sans-serif" }}>
 
       {/* ══ HERO ══════════════════════════════════════════════════════════════ */}
       <section style={{ background: C.dark, position: "relative", overflow: "hidden" }}>

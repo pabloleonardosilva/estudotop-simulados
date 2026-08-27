@@ -881,6 +881,14 @@ Nenhuma migration foi criada ou alterada.
 
 Nenhuma migration foi criada, alterada ou executada.
 
+## Correção arquitetural — vida contextual independente das tentativas — 2026-08-25
+
+- O Simulado permanece como definição compartilhada da prova. A vida operacional do aluno passa a ser identificada pelo contexto: avulso, item individual de Jornada ou participação em Evento.
+- A fonte única `getContextualSimuladoAttempts` (`lib/server/studentAssertions.ts`) recorta tentativa ativa, histórico, tentativas usadas, restantes e número da próxima tentativa antes de aplicar `simulados.max_attempts`.
+- `GET /api/student/simulados/[id]` e `POST /api/student/simulados/[id]/attempts` deixaram de contar globalmente por `student_id + simulado_id`.
+- A migration `20260825080000_contextualize_simulado_attempts.sql` adiciona `student_jornada_simulado_id` e substitui a unicidade global de tentativa ativa por índices parciais contextuais.
+- Nenhuma migration foi executada nesta entrega.
+
 ### Melhoria — Coruja voadora da Ajuda da Coruja com regra de 10 segundos — 2026-07-16
 
 **Motivo:** a primeira versão da coruja na execução real usava posição fixa no canto inferior direito da viewport, competindo visualmente com o card "Caderno" e os demais recursos de apoio da coluna lateral.

@@ -29,6 +29,7 @@ type Jornada = {
   status: "active" | "expired" | "cancelled";
   scope_type: "general" | "contest";
   category: "saude" | "policial" | "tribunais" | "administrativo" | null;
+  card_image_url?: string | null;
   contest_name: string | null;
   duration_days: number | null;
   duration_months: number;
@@ -162,7 +163,7 @@ export default function MinhasJornadasClient() {
 
 function JornadaCard({ jornada, index }: { jornada: Jornada; index: number }) {
   const progress = Math.min(100, Math.max(0, Number(jornada.progress_percent || 0)));
-  const image = jornadaCategoryImage(jornada.category);
+  const image = jornada.card_image_url || jornadaCategoryImage(jornada.category);
 
   return (
     <motion.article

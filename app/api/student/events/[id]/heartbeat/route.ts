@@ -25,5 +25,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     lastRoute: `/meus-eventos/${id}`,
     metadata: { event_id: id, source: "event_heartbeat" },
   });
-  return NextResponse.json({ ok: true, message: "Presença atualizada." });
+
+  // Reaproveita este batimento (já chamado a cada 30s durante a execução do
+  // Simulado em contexto de Evento) para o aluno detectar encerramento
+  // administrativo da própria tentativa sem exigir WebSocket/subscription
+  // nova. attempt_id é opcional e sempre revalidado por ownership
+  // (student_id + event_id) — nunca aceito de forma solta.
+  const body = await request.json().catch(() => ({}) as { attempt_id?: unknown });
+  let attemptStatus: string | null = null;
+  let disqualificationReason: string | null = null;
+  if (typeof body.attempt_id === "string" && body.attempt_id) {
+    const { data: attempt } = await supabase
+      .from("simulado_attempts")
+      .select("status, disqualification_reason")
+      .eq("id", body.attempt_id)
+      .eq("student_id", student.id)
+      .eq("event_id", id)
+      .maybeSingle();
+    if (attempt) {
+      attemptStatus = attempt.status;
+      disqualificationReason = attempt.disqualification_reason;
+    }
+  }
+
+  return NextResponse.json({ ok: true, message: "Presença atualizada.", attempt_status: attemptStatus, disqualification_reason: disqualificationReason });
 }

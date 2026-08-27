@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-type EventPayload = { name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown };
+type EventPayload = { name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown };
 
 function code() {
   return `ES-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -59,13 +59,20 @@ export async function POST(request: Request) {
   }
   const simuladoId = typeof body?.simulado_id === "string" && body.simulado_id ? body.simulado_id : null;
   const supabase = createSupabaseAdminClient();
+  const cardImageId = typeof body?.card_image_id === "string" && body.card_image_id ? body.card_image_id : null;
+  const bannerImageId = typeof body?.professor_banner_image_id === "string" && body.professor_banner_image_id ? body.professor_banner_image_id : null;
+  for (const [imageId, imageType] of [[cardImageId, "event_card"], [bannerImageId, "professor_event_banner"]] as const) {
+    if (!imageId) continue;
+    const { data: image } = await supabase.from("system_images").select("id").eq("id", imageId).eq("image_type", imageType).maybeSingle();
+    if (!image) return NextResponse.json({ ok: false, message: "Selecione uma imagem válida na biblioteca correspondente." }, { status: 400 });
+  }
   if (professorIds.length) {
     const { data: validProfessors, error: professorError } = await supabase.from("professors").select("id").in("id", professorIds);
     if (professorError || (validProfessors || []).length !== professorIds.length) return NextResponse.json({ ok: false, message: "Um ou mais professores selecionados são inválidos." }, { status: 400 });
   }
   let created = null;
   for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
-    const result = await supabase.from("simulado_events").insert({ name, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, cover_key: coverKey, code: code(), created_by: admin.id }).select("*").single();
+    const result = await supabase.from("simulado_events").insert({ name, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, cover_key: coverKey, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, code: code(), created_by: admin.id }).select("*").single();
     if (!result.error) created = result.data;
     else if (result.error.code !== "23505") return NextResponse.json({ ok: false, message: "Não foi possível criar o Evento." }, { status: 500 });
   }

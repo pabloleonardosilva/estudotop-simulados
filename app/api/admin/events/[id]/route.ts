@@ -3,8 +3,9 @@ import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
+import { logActivity } from "@/lib/logging/activity-log";
 
-type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown };
+type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown };
 
 // Catálogo oficial de capas do Evento (ver app/admin/eventos/utils.ts, fonte
 // de verdade da apresentação). Aqui só a lista de chaves válidas — nunca
@@ -66,14 +67,70 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: "Resultados pendentes liberados.", released_count: released.releasedCount });
   }
   if (body.action === "duplicate") {
-    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, cover_key: current.cover_key, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
+    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, cover_key: current.cover_key, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
     if (error || !duplicated) return NextResponse.json({ ok: false, message: "Não foi possível duplicar o Evento." }, { status: 500 });
     const { data: assignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     if (assignments?.length) await supabase.from("simulado_event_professors").insert(assignments.map((item) => ({ event_id: duplicated.id, professor_id: item.professor_id })));
     return NextResponse.json({ ok: true, message: "Evento duplicado sem Simulado e sem participantes.", event: duplicated }, { status: 201 });
   }
 
-  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "cover_key"]
+  // Encerramento administrativo excepcional: só afeta tentativas reais
+  // (is_preview=false) em_andamento DESTE Evento (event_id = id). Nunca toca
+  // tentativas de Jornada, avulsas ou de outro Evento — o mesmo Simulado pode
+  // estar vinculado a vários contextos simultaneamente. Reaproveita o mesmo
+  // status/motivo já usado pela desclassificação por foco
+  // (simulado_attempts.status = 'disqualified'), mas com
+  // disqualification_reason distinto ('admin_terminated') para nunca ser
+  // confundido com violação de regras pelo aluno. counts_toward_limit passa a
+  // true seguindo a mesma regra já aplicada em qualquer desclassificação
+  // (ver app/api/student/simulados/[id]/attempts/[attemptId]/focus-violation/route.ts),
+  // independentemente do progresso — a tentativa é consumida.
+  if (body.action === "terminate_active_attempts") {
+    const { data: activeAttempts, error: activeError } = await supabase
+      .from("simulado_attempts")
+      .select("id, student_id")
+      .eq("event_id", id)
+      .eq("is_preview", false)
+      .eq("status", "in_progress");
+    if (activeError) return NextResponse.json({ ok: false, message: "Não foi possível verificar as tentativas em andamento." }, { status: 500 });
+    if (!activeAttempts || activeAttempts.length === 0) {
+      return NextResponse.json({ ok: true, message: "Não havia tentativas em andamento para encerrar.", terminated_count: 0 });
+    }
+    const attemptIds = activeAttempts.map((row) => row.id);
+    const { data: terminated, error: terminateError } = await supabase
+      .from("simulado_attempts")
+      .update({
+        status: "disqualified",
+        disqualified_at: now,
+        disqualification_reason: "admin_terminated",
+        counts_toward_limit: true,
+        counted_at: now,
+      })
+      .eq("event_id", id)
+      .eq("is_preview", false)
+      .eq("status", "in_progress")
+      .in("id", attemptIds)
+      .select("id, student_id");
+    if (terminateError) {
+      return NextResponse.json({ ok: false, message: "Não foi possível encerrar todas as tentativas em andamento. O Simulado do Evento não foi alterado." }, { status: 500 });
+    }
+    const terminatedRows = terminated || [];
+    for (const row of terminatedRows) {
+      await logActivity({
+        request,
+        actorType: "admin",
+        actorId: admin.id,
+        actorName: admin.full_name || "Admin",
+        action: "event_attempt_admin_terminated",
+        entityType: "simulado_attempt",
+        entityId: row.id,
+        metadata: { event_id: id, event_name: current.name, student_id: row.student_id, previous_simulado_id: current.simulado_id },
+      });
+    }
+    return NextResponse.json({ ok: true, message: `${terminatedRows.length} tentativa(s) em andamento encerrada(s) pelo administrador.`, terminated_count: terminatedRows.length });
+  }
+
+  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "cover_key", "card_image_id", "professor_banner_image_id"]
     .some((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (!hasEditableFields) return NextResponse.json({ ok: false, message: "Nenhuma alteração válida foi informada." }, { status: 400 });
 
@@ -105,6 +162,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (body.cover_key !== undefined && body.cover_key !== null && body.cover_key !== "" && !(EVENT_COVER_KEYS as readonly unknown[]).includes(body.cover_key)) {
     return NextResponse.json({ ok: false, message: "Selecione uma imagem de capa válida para o Evento." }, { status: 400 });
   }
+  for (const [field, imageType] of [["card_image_id", "event_card"], ["professor_banner_image_id", "professor_event_banner"]] as const) {
+    if (body[field] === undefined || body[field] === null || body[field] === "") continue;
+    if (typeof body[field] !== "string") return NextResponse.json({ ok: false, message: "Seleção de imagem inválida." }, { status: 400 });
+    const { data: image } = await supabase.from("system_images").select("id").eq("id", body[field]).eq("image_type", imageType).maybeSingle();
+    if (!image) return NextResponse.json({ ok: false, message: "Selecione uma imagem válida na biblioteca correspondente." }, { status: 400 });
+  }
 
   const professorIds = Array.isArray(body.professor_ids) ? [...new Set(body.professor_ids.filter((value): value is string => typeof value === "string"))] : null;
   if (body.professor_ids !== undefined && !professorIds) return NextResponse.json({ ok: false, message: "Seleção de professores inválida." }, { status: 400 });
@@ -114,9 +177,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (body.simulado_id !== undefined && body.simulado_id !== current.simulado_id) {
-    const { count: running } = await supabase.from("simulado_attempts").select("id", { count: "exact", head: true }).eq("event_id", id).eq("is_preview", false).eq("status", "in_progress");
+    // Mesma verificação que já existia (event_id + is_preview=false +
+    // status='in_progress'), sem nenhum embed. `simulado_attempts.student_id`
+    // é FK para auth.users(id), não para public.students(id) — um embed
+    // `students:student_id(...)` aqui não é resolvível pelo PostgREST e
+    // sempre falha, com ou sem tentativa ativa. Nomes são buscados à parte.
+    const { data: runningAttempts, error: runningError } = await supabase
+      .from("simulado_attempts")
+      .select("id, student_id, started_at")
+      .eq("event_id", id)
+      .eq("is_preview", false)
+      .eq("status", "in_progress");
+    if (runningError) return NextResponse.json({ ok: false, message: "Não foi possível verificar tentativas em andamento." }, { status: 500 });
     const { count: completed } = await supabase.from("simulado_attempts").select("id", { count: "exact", head: true }).eq("event_id", id).eq("is_preview", false).eq("status", "completed");
-    if (running) return NextResponse.json({ ok: false, message: "Há aluno realizando o Simulado. Aguarde a conclusão para trocar." }, { status: 409 });
+    if (runningAttempts && runningAttempts.length > 0) {
+      const studentIds = [...new Set(runningAttempts.map((row) => row.student_id))];
+      const { data: runningStudents } = await supabase.from("students").select("id, name").in("id", studentIds);
+      const nameByStudentId = new Map((runningStudents || []).map((student) => [student.id, student.name]));
+      return NextResponse.json({
+        ok: false,
+        message: "Há aluno realizando o Simulado. Encerre as tentativas em andamento ou aguarde a conclusão para trocar.",
+        blocked_reason: "active_attempts",
+        active_attempts: runningAttempts.map((row) => ({
+          attempt_id: row.id,
+          student_name: nameByStudentId.get(row.student_id) || "Aluno",
+          started_at: row.started_at,
+        })),
+      }, { status: 409 });
+    }
     if (completed) return NextResponse.json({ ok: false, message: "O Simulado não pode ser trocado após a primeira conclusão real." }, { status: 409 });
   }
 
@@ -129,6 +217,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (body.result_policy === "blocked" || body.result_policy === "released") updates.result_policy = body.result_policy;
   if (body.cover_key === null || body.cover_key === "") updates.cover_key = null;
   else if (typeof body.cover_key === "string" && (EVENT_COVER_KEYS as readonly string[]).includes(body.cover_key)) updates.cover_key = body.cover_key;
+  if (body.card_image_id !== undefined) updates.card_image_id = typeof body.card_image_id === "string" && body.card_image_id ? body.card_image_id : null;
+  if (body.professor_banner_image_id !== undefined) updates.professor_banner_image_id = typeof body.professor_banner_image_id === "string" && body.professor_banner_image_id ? body.professor_banner_image_id : null;
   const { error } = await supabase.from("simulado_events").update(updates).eq("id", id);
   if (error) return NextResponse.json({ ok: false, message: "Não foi possível atualizar o Evento." }, { status: 500 });
   if (professorIds) {

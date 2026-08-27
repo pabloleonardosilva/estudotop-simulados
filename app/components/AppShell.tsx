@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
-import { Open_Sans } from "next/font/google";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import MobileSidebar from "./MobileSidebar";
@@ -15,11 +14,6 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase/client";
 import { getHelpContactReasonLabel, type HelpContactReason } from "@/lib/help-tickets";
 import { isEventOnlyStudent, studentHomePath } from "@/lib/student-nav";
-
-const openSans = Open_Sans({
-  subsets: ["latin"],
-  display: "swap",
-});
 
 type UnseenHelpReply = {
   id: string;
@@ -64,11 +58,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     /^\/simulados\/[^/]+\/preview/.test(pathname) ||
     /^\/meus-simulados\/[^/]+(\/resultado)?$/.test(pathname) ||
     /^\/admin\/raio-x-provas\/[^/]+\/relatorio/.test(pathname);
+  const isStudentSimulationRoute = /^\/meus-simulados\/[^/]+$/.test(pathname);
   const isDarkSimuladosRoute = pathname.startsWith("/simulados");
   const isDarkPremiumRoute =
     isDarkSimuladosRoute ||
     pathname.startsWith("/admin/jornadas") ||
     pathname.startsWith("/admin/eventos") ||
+    pathname.startsWith("/admin/configuracoes/imagens-do-sistema") ||
     pathname.startsWith("/admin/professores") ||
     pathname.startsWith("/admin/raio-x-provas") ||
     pathname.startsWith("/questoes") ||
@@ -325,7 +321,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return <LoadingScreen message="Carregando ambiente..." />;
   }
 
-  if (isPopupRoute || isPublicRoute || isStudentExamPage || isFocusRoute || isPublicViewRoute) {
+  if (isStudentSimulationRoute || isStudentExamPage) {
+    return <div className="et-student-font min-h-dvh">{children}</div>;
+  }
+
+  if (isPopupRoute || isPublicRoute || isFocusRoute || isPublicViewRoute) {
     return <>{children}</>;
   }
 
@@ -344,14 +344,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isStudentArea = profile.role === "student";
 
   if (profile.role === "professor") {
-    return <div className={`min-h-dvh bg-[#050b14] text-white ${openSans.className}`}><main className="min-h-dvh">{children}</main></div>;
+    return (
+      <div className="teacher-theme et-teacher-font min-h-dvh bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_48%,#f1f5f9_100%)] text-slate-900">
+        <main className="min-h-dvh">{children}</main>
+      </div>
+    );
   }
 
   if (isStudentArea) {
     const isPainel = pathname === "/aluno";
 
     return (
-      <div className={`student-theme student-dark-shell min-h-dvh ${openSans.className}`}>
+      <div className="student-theme et-student-font student-dark-shell min-h-dvh">
         <Header
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onOpenHelp={() => { setFocusedHelpTicketId(unseenHelpReply?.id || null); setUnseenHelpReply(null); setHelpOpen(true); }}
@@ -380,7 +384,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           {unseenHelpReply && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-300">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-300">
                 {unseenHelpReply.ticket_number} · {getHelpContactReasonLabel(unseenHelpReply.contact_reason)}
               </p>
               <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-300">{unseenHelpReply.latest_message.message}</p>

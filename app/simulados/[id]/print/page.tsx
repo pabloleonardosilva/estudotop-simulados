@@ -209,7 +209,7 @@ function QuestionContent({ relation, index, total, mode }: { relation: any; inde
           ? `slide-question flex h-full max-h-full w-full flex-col overflow-y-auto bg-white text-slate-950 ${slideLayout.article}`
           : "break-inside-avoid-page border-b border-slate-300 pb-6 print:pb-4"
       }
-      style={mode === "slide" ? { fontFamily: 'Aptos, "Aptos Display", Arial, Helvetica, sans-serif' } : undefined}
+      style={mode === "slide" ? { fontFamily: "var(--font-estudotop-inter), Inter, sans-serif" } : undefined}
     >
       <div className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold ${mode === "slide" ? slideLayout.meta : "mb-4 text-xs print:mb-2.5"}`}>
         <span className="text-slate-950">Questão {index + 1} de {total}</span>
@@ -318,7 +318,7 @@ export default async function SimuladoPrintPage({
         .slide-mode .print-richtext *,
         .slide-mode li,
         .slide-mode li * {
-          font-family: Aptos, "Aptos Display", Arial, Helvetica, sans-serif !important;
+          font-family: var(--font-estudotop-inter), Inter, sans-serif !important;
           font-size: inherit !important;
           line-height: inherit !important;
           color: inherit !important;

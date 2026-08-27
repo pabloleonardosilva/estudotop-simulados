@@ -89,6 +89,7 @@ export async function GET(request: Request) {
               .select("submitted_at")
               .eq("student_id", sj.student_id)
               .eq("simulado_id", prev.simulado_id)
+              .eq("student_jornada_simulado_id", prev.id)
               .eq("status", "completed")
               .eq("counts_toward_limit", true)
               .order("submitted_at", { ascending: false, nullsFirst: false })

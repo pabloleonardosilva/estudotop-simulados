@@ -836,3 +836,11 @@ A mudança é exclusivamente visual/UX em `app/minhas-jornadas/[id]/page-client.
 - Adicionado toggle Expandir/Recolher por Jornada na aba "Atividades atribuídas" do perfil do aluno, para não exibir o cronograma completo de todas as Jornadas simultaneamente.
 - Renomeado "Gerenciar Jornadas" para "Gerenciar Atividades" no perfil do aluno (rótulo e cabeçalho do modal), mesma lógica e mesma API.
 - Nenhuma migration foi criada ou alterada.
+
+## Correção arquitetural — mesmo Simulado em Jornadas distintas — 2026-08-25
+
+- Cada `student_jornada_simulados` constitui uma vida independente do Simulado para o aluno.
+- Tentativas novas de Jornada persistem `attempt_context = 'jornada'` e `student_jornada_simulado_id`; uma tentativa da Jornada A não reduz limite, não cria retomada e não define resultado/progresso na Jornada B.
+- Conclusão, liberação sequencial, cronograma administrativo, ajuste/zeragem de tentativas, listagem e detalhe da Jornada passaram a consultar o item individual da matrícula, nunca apenas `student_id + simulado_id`.
+- Registros históricos de Jornada são associados automaticamente apenas quando existe um único item candidato para aquele aluno/Simulado. Casos ambíguos são preservados sem atribuição por suposição.
+- Migration criada: `supabase/migrations/20260825080000_contextualize_simulado_attempts.sql`. Não executada nesta entrega.

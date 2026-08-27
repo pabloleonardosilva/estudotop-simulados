@@ -6,6 +6,66 @@ import { logSecurityEvent } from "@/app/lib/server/auditLogger";
 
 type Supabase = ReturnType<typeof createSupabaseAdminClient>;
 
+export type AttemptExecutionContext =
+  | { type: "standalone" }
+  | { type: "jornada"; studentJornadaSimuladoId: string }
+  | { type: "event"; eventId: string; eventParticipantId: string };
+
+export type ContextualAttemptRow = {
+  id: string;
+  status: string;
+  attempt_number: number;
+  answered_count: number;
+  total_questions: number;
+  progress_percent: number;
+  started_at: string;
+  submitted_at: string | null;
+  expires_at: string | null;
+  counts_toward_limit: boolean;
+  time_spent_seconds: number | null;
+  created_at: string;
+  event_id: string | null;
+  event_participant_id: string | null;
+  student_jornada_simulado_id: string | null;
+  attempt_context: string;
+};
+
+export async function getContextualSimuladoAttempts(
+  supabase: Supabase,
+  studentId: string,
+  simuladoId: string,
+  context: AttemptExecutionContext,
+): Promise<{ attempts: ContextualAttemptRow[]; error: { message: string } | null }> {
+  let query = supabase
+    .from("simulado_attempts")
+    .select("id,status,attempt_number,answered_count,total_questions,progress_percent,started_at,submitted_at,expires_at,counts_toward_limit,time_spent_seconds,created_at,event_id,event_participant_id,student_jornada_simulado_id,attempt_context")
+    .eq("student_id", studentId)
+    .eq("simulado_id", simuladoId);
+
+  if (context.type === "event") {
+    query = query
+      .eq("attempt_context", "event")
+      .eq("event_id", context.eventId)
+      .eq("event_participant_id", context.eventParticipantId);
+  } else if (context.type === "jornada") {
+    query = query
+      .eq("attempt_context", "jornada")
+      .eq("student_jornada_simulado_id", context.studentJornadaSimuladoId);
+  } else {
+    query = query
+      .eq("attempt_context", "standalone")
+      .is("event_id", null)
+      .is("event_participant_id", null)
+      .is("student_jornada_simulado_id", null);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: true });
+  return {
+    attempts: (data || []) as ContextualAttemptRow[],
+    error: error ? { message: error.message } : null,
+  };
+}
+
 const ACCESS_STATUSES = ["available", "in_progress", "completed"];
 const START_STATUSES = ["available", "in_progress", "completed"];
 
@@ -85,15 +145,12 @@ async function reconcileReleaseFromAttempts(
 ): Promise<boolean> {
   const { data: attempts } = await supabase
     .from("simulado_attempts")
-    .select("id, status, counts_toward_limit")
+    .select("id, status, counts_toward_limit, student_jornada_simulado_id")
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId);
+    .eq("simulado_id", simuladoId)
+    .in("student_jornada_simulado_id", jornadaSimuladoIds);
 
   if (!attempts?.length) return false;
-
-  const hasCountedCompleted = attempts.some((row) => row.status === "completed" && row.counts_toward_limit);
-  const hasInProgress = attempts.some((row) => row.status === "in_progress");
-  const targetStatus = hasCountedCompleted ? "completed" : hasInProgress ? "in_progress" : "available";
 
   const { data: rows } = await supabase
     .from("student_jornada_simulados")
@@ -103,6 +160,11 @@ async function reconcileReleaseFromAttempts(
     .in("jornada_simulado_id", jornadaSimuladoIds);
 
   for (const row of rows || []) {
+    const contextualAttempts = attempts.filter((attempt) => attempt.student_jornada_simulado_id === row.id);
+    if (contextualAttempts.length === 0) continue;
+    const hasCountedCompleted = contextualAttempts.some((attempt) => attempt.status === "completed" && attempt.counts_toward_limit);
+    const hasInProgress = contextualAttempts.some((attempt) => attempt.status === "in_progress");
+    const targetStatus = hasCountedCompleted ? "completed" : hasInProgress ? "in_progress" : "available";
     const patch: { status?: string; released_at?: string } = {};
     if (row.status === "locked" || row.status === "locked_late") {
       patch.status = targetStatus;

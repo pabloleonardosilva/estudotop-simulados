@@ -334,21 +334,38 @@ export async function POST(
     );
   }
 
+  // Evento tem prioridade máxima sobre qualquer configuração do Simulado: se
+  // a tentativa nasceu em Evento e o resultado ainda não está liberado
+  // (result_policy = "blocked" e result_released_at = null), TopCoins,
+  // nota, gabarito e feedback ficam bloqueados — calcular internamente
+  // (acima) não é o mesmo que disponibilizar ao aluno. Esta decisão precisa
+  // ser resolvida ANTES de qualquer lógica de TopCoins.
+  const isEventAttempt = Boolean(attempt.event_participant_id && attempt.event_id);
   let eventResultReleased = true;
-  if (attempt.event_participant_id && attempt.event_id) {
+  if (isEventAttempt) {
     const { data: event } = await supabase.from("simulado_events").select("result_policy").eq("id", attempt.event_id).maybeSingle();
     const { data: participant } = await supabase.from("simulado_event_participants").select("representative_attempt_id,result_released_at").eq("id", attempt.event_participant_id).maybeSingle();
     if (!participant?.representative_attempt_id) await supabase.from("simulado_event_participants").update({ representative_attempt_id: attemptId }).eq("id", attempt.event_participant_id);
     if (event?.result_policy === "released" && !participant?.result_released_at) await releasePendingEventResults(supabase, attempt.event_id, request);
     eventResultReleased = Boolean(participant?.result_released_at || event?.result_policy === "released");
   }
+  const resultAccess: "available" | "blocked_by_event" = isEventAttempt && !eventResultReleased ? "blocked_by_event" : "available";
 
-  const { data: activeJornadas, error: activeJornadasError } = await supabase
-    .from("student_jornadas")
-    .select("id, expires_at, jornadas:jornada_id(title, planned_simulados_count)")
-    .eq("student_id", student.id)
-    .eq("status", "active")
-    .gt("expires_at", today);
+  const { data: journeyScheduleItem, error: activeJornadasError } = attempt.student_jornada_simulado_id
+    ? await supabase
+      .from("student_jornada_simulados")
+      .select("id,student_jornada_id,student_jornadas:student_jornada_id(id,expires_at,status,student_id,jornadas:jornada_id(title,planned_simulados_count))")
+      .eq("id", attempt.student_jornada_simulado_id)
+      .maybeSingle()
+    : { data: null, error: null };
+
+  const journeyEnrollmentRef = journeyScheduleItem?.student_jornadas as unknown as ActiveJornadaRow | ActiveJornadaRow[] | null;
+  const journeyEnrollment = Array.isArray(journeyEnrollmentRef) ? journeyEnrollmentRef[0] || null : journeyEnrollmentRef;
+  const activeJornadas = journeyEnrollment
+    && journeyEnrollment.id
+    && journeyEnrollment.expires_at > today
+    ? [journeyEnrollment]
+    : [];
 
   if (activeJornadasError) {
     void logSystemError({ source: "api.student.simulado_submit.jornada_lookup", error: activeJornadasError, request, metadata: { student_id: student.id, simulado_id: simuladoId } });
@@ -357,8 +374,8 @@ export async function POST(
     const { data: completedJourneyItems, error: jornadaProgressError } = await supabase
       .from("student_jornada_simulados")
       .update({ status: "completed", completed_at: finishedAt })
+      .eq("id", attempt.student_jornada_simulado_id)
       .eq("simulado_id", simuladoId)
-      .in("student_jornada_id", activeJourneyRows.map((row) => row.id))
       .in("status", ["available", "in_progress"])
       .select("student_jornada_id, order_number");
 
@@ -475,15 +492,21 @@ export async function POST(
   // = true) — isso garante que "tentativa" nunca passe de max_attempts e que
   // um reset de tentativas pelo admin (que zera counts_toward_limit) já
   // remova as moedas daquela tentativa (ver app/lib/server/topcoinsSync.ts).
+  // Dupla proteção contra Evento bloqueado: (1) resync só roda quando
+  // eventResultReleased; (2) mesmo que exista algum lançamento inesperado
+  // em topcoin_earnings para esta tentativa, o valor só é lido/exposto ao
+  // cliente quando resultAccess === "available" — nunca antes.
   let persistedTopCoins: number | null = null;
   try {
-    if (eventResultReleased) await resyncTopCoinEarnings(supabase, student.id, simuladoId);
-    const { data: earningRow } = await supabase
-      .from("topcoin_earnings")
-      .select("amount")
-      .eq("attempt_id", attemptId)
-      .maybeSingle();
-    persistedTopCoins = earningRow?.amount ?? null;
+    if (resultAccess === "available") {
+      if (eventResultReleased) await resyncTopCoinEarnings(supabase, student.id, simuladoId);
+      const { data: earningRow } = await supabase
+        .from("topcoin_earnings")
+        .select("amount")
+        .eq("attempt_id", attemptId)
+        .maybeSingle();
+      persistedTopCoins = earningRow?.amount ?? null;
+    }
   } catch {
     // Não trava o fluxo pedagógico (já salvo acima) se o TopCoins falhar.
   }
@@ -537,5 +560,12 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ ok: true, result_id: resultRow.id, earned_topcoins: persistedTopCoins, result_released: eventResultReleased, event_id: attempt.event_id || null });
+  return NextResponse.json({
+    ok: true,
+    result_id: resultRow.id,
+    earned_topcoins: persistedTopCoins,
+    result_released: eventResultReleased,
+    result_access: resultAccess,
+    event_id: attempt.event_id || null,
+  });
 }

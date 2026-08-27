@@ -125,8 +125,8 @@ export default function SimuladoDetailActions({ simulado, questions }: SimuladoD
     }
   }
 
-  function exportSimuladoPdf() {
-    downloadSimuladoAdminPdf({
+  async function exportSimuladoPdf() {
+    await downloadSimuladoAdminPdf({
       meta: {
         title: simulado.title || "Simulado",
         status: simulado.status || "draft",

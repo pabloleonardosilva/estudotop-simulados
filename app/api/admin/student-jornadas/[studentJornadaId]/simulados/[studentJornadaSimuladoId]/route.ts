@@ -52,12 +52,14 @@ async function hasAnyAttempt(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   studentId: string,
   simuladoId: string,
+  studentJornadaSimuladoId: string,
 ) {
   const { count, error } = await supabase
     .from("simulado_attempts")
     .select("id", { count: "exact", head: true })
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId);
+    .eq("simulado_id", simuladoId)
+    .eq("student_jornada_simulado_id", studentJornadaSimuladoId);
 
   if (error) throw new Error(error.message);
   return Number(count || 0) > 0;
@@ -67,6 +69,7 @@ async function setAttemptsCount(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   studentId: string,
   simuladoId: string,
+  studentJornadaSimuladoId: string,
   targetCount: number,
 ) {
   const { data: attempts, error: attemptsError } = await supabase
@@ -74,6 +77,7 @@ async function setAttemptsCount(
     .select("id, attempt_number, counts_toward_limit, created_at")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
+    .eq("student_jornada_simulado_id", studentJornadaSimuladoId)
     .order("attempt_number", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -111,6 +115,8 @@ async function setAttemptsCount(
       counts_toward_limit: true,
       question_order: [],
       settings_snapshot: { admin_adjusted: true },
+      attempt_context: "jornada",
+      student_jornada_simulado_id: studentJornadaSimuladoId,
     }));
 
     const { error: insertError } = await supabase
@@ -125,6 +131,7 @@ async function setAttemptsCount(
     .select("id, attempt_number, created_at")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
+    .eq("student_jornada_simulado_id", studentJornadaSimuladoId)
     .order("attempt_number", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -162,12 +169,14 @@ async function resetSimuladoHistory(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   studentId: string,
   simuladoId: string,
+  studentJornadaSimuladoId: string,
 ) {
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
     .select("id")
     .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId);
+    .eq("simulado_id", simuladoId)
+    .eq("student_jornada_simulado_id", studentJornadaSimuladoId);
 
   if (attemptsError) throw new Error(attemptsError.message);
 
@@ -179,7 +188,8 @@ async function resetSimuladoHistory(
       .from("simulado_attempts")
       .delete()
       .eq("student_id", studentId)
-      .eq("simulado_id", simuladoId);
+      .eq("simulado_id", simuladoId)
+      .eq("student_jornada_simulado_id", studentJornadaSimuladoId);
 
     if (deleteAttemptsError) throw new Error(deleteAttemptsError.message);
   }
@@ -311,7 +321,7 @@ export async function PATCH(
         return NextResponse.json({ ok: false, message: "Apenas simulados atualmente liberados podem voltar ao estado bloqueado." }, { status: 400 });
       }
 
-      const blockedByAttempt = await hasAnyAttempt(supabase, studentId, row.simulado_id);
+      const blockedByAttempt = await hasAnyAttempt(supabase, studentId, row.simulado_id, row.id);
       if (blockedByAttempt) {
         return NextResponse.json({ ok: false, message: "Não é possível desliberar enquanto o Total real de tentativas for maior que zero. Zere e confirme a limpeza do histórico primeiro." }, { status: 400 });
       }
@@ -356,7 +366,7 @@ export async function PATCH(
 
         let removedAttempts = 0;
         try {
-          removedAttempts = await resetSimuladoHistory(supabase, studentId, row.simulado_id);
+          removedAttempts = await resetSimuladoHistory(supabase, studentId, row.simulado_id, row.id);
         } catch (resetError) {
           await supabase
             .from("student_jornada_simulados")
@@ -394,7 +404,7 @@ export async function PATCH(
         });
       }
 
-      await setAttemptsCount(supabase, studentId, row.simulado_id, attempts);
+      await setAttemptsCount(supabase, studentId, row.simulado_id, row.id, attempts);
       return NextResponse.json({ ok: true, message: "Número de tentativas ajustado para este aluno." });
     }
 

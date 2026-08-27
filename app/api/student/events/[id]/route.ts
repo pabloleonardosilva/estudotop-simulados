@@ -16,6 +16,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
   if (!participant) return NextResponse.json({ ok: false, message: "Evento não encontrado para sua conta." }, { status: 404 });
   const event = participant.simulado_events as unknown as { id: string; status: string; starts_at: string; ends_at: string; started_at: string | null; simulado_id: string | null } & Record<string, unknown>;
-  const { data: attempts } = await supabase.from("simulado_attempts").select("id,status,attempt_number,counts_toward_limit,started_at,submitted_at").eq("event_id", id).eq("student_id", student.id).order("created_at");
+  // Escopado pelo Simulado atualmente vinculado ao Evento: se o Admin trocar
+  // o Simulado do Evento, tentativas do Simulado anterior não devem mais
+  // contar tentativas/CTA "Continuar" deste Evento.
+  const { data: attempts } = event.simulado_id
+    ? await supabase.from("simulado_attempts").select("id,status,attempt_number,counts_toward_limit,started_at,submitted_at").eq("event_id", id).eq("student_id", student.id).eq("simulado_id", event.simulado_id).order("created_at")
+    : { data: [] };
   return NextResponse.json({ ok: true, message: "Evento carregado.", participant: { ...participant, simulado_events: { ...event, effective_status: effectiveEventStatus(event) } }, attempts: attempts || [] });
 }
