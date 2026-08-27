@@ -970,7 +970,7 @@ export default function RevisarQuestoesClient({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#07111F] px-4 pb-20 pt-6 md:px-8 md:pt-10">
+    <div className="et-admin-dark-page px-4 pb-20 pt-6 md:px-8 md:pt-10">
       {/* Header */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -2027,7 +2027,7 @@ function StatCard({
     orange: { border: "border-orange-500/20", num: "text-orange-400", iconBg: "border-orange-500/20 bg-orange-500/[0.10] text-orange-400" },
     amber:  { border: "border-amber-500/20",  num: "text-amber-400",  iconBg: "border-amber-500/20 bg-amber-500/[0.10] text-amber-400" },
     green:  { border: "border-emerald-500/20", num: "text-emerald-400", iconBg: "border-emerald-500/20 bg-emerald-500/[0.10] text-emerald-400" },
-    red:    { border: "border-red-500/20",    num: "text-red-400",    iconBg: "border-red-500/20 bg-red-500/[0.10] text-red-400" },
+    red:    { border: "border-[#ff2800]/70 shadow-[0_0_30px_rgba(255,40,0,0.34)]", num: "text-[#ff3b18] drop-shadow-[0_0_11px_rgba(255,40,0,0.70)]", iconBg: "border-[#ff6047] bg-[#ff2800]/40 text-white shadow-[0_0_28px_rgba(255,40,0,0.52)]" },
     slate:  { border: "border-white/[0.08]",  num: "text-white/70",  iconBg: "border-white/[0.08] bg-white/[0.06] text-white/50" },
     violet: { border: "border-violet-500/20", num: "text-violet-400", iconBg: "border-violet-500/20 bg-violet-500/[0.10] text-violet-400" },
   }[tone];

@@ -184,7 +184,7 @@ export default function EventosAdminClient() {
   }
 
   return (
-    <main className="relative min-h-full overflow-hidden bg-[#050b14] px-4 py-8 text-white">
+    <main className="et-admin-dark-page relative min-h-full overflow-hidden px-4 py-8">
       <div className="pointer-events-none absolute left-1/3 top-0 h-80 w-80 rounded-full bg-orange-500/[0.07] blur-[110px]" />
       <div className="pointer-events-none absolute right-0 top-40 h-72 w-72 rounded-full bg-amber-300/[0.04] blur-[120px]" />
       <div className="relative mx-auto max-w-7xl">

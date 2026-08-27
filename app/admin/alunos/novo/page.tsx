@@ -113,8 +113,7 @@ export default function NovoAlunoAdminPage() {
   }
 
   return (
-    <div className="et-dark-admin-page relative isolate min-h-screen overflow-hidden bg-[#03070D] text-slate-100">
-      <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_16%_0%,rgba(249,115,22,0.12),transparent_30%),radial-gradient(circle_at_78%_5%,rgba(37,99,235,0.16),transparent_32%),linear-gradient(180deg,#03070D_0%,#050B14_48%,#03070D_100%)]" />
+    <div className="et-admin-dark-page relative isolate min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:72px_72px]">
       </div>
       <PremiumLoadingOverlay
@@ -128,8 +127,8 @@ export default function NovoAlunoAdminPage() {
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-orange-400">
           EstudoTOP Simulados
         </p>
-        <div className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/80 p-6 shadow-2xl shadow-black/35 backdrop-blur-xl md:p-7">
-          <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_8%_20%,rgba(249,115,22,0.18),transparent_24%),radial-gradient(circle_at_85%_8%,rgba(37,99,235,0.18),transparent_32%),linear-gradient(135deg,#05080D,#061426_48%,#05080D)]" />
+        <div className="et-admin-dark-hero relative isolate overflow-hidden p-6 md:p-7">
+          <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_13%_47%,rgba(249,115,22,.18),transparent_28%)]" />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-white">Cadastrar aluno</h1>

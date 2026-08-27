@@ -19,7 +19,6 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import PremiumButton from "@/app/components/ui/PremiumButton";
 import { formatCpf } from "@/lib/utils/cpf";
 import type { StudentRow } from "./page";
 
@@ -172,17 +171,17 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
   const showingTo = Math.min(currentPage * pageSize, filtered.length);
 
   return (
-    <div className="et-dark-admin-page relative isolate min-h-screen overflow-hidden bg-[#03070D] text-slate-100">
-      <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_16%_0%,rgba(249,115,22,0.12),transparent_30%),radial-gradient(circle_at_78%_5%,rgba(37,99,235,0.16),transparent_32%),linear-gradient(180deg,#03070D_0%,#050B14_48%,#03070D_100%)]" />
-      <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:72px_72px]">
+    <div className="et-admin-dark-page relative isolate min-h-screen overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_10%,rgba(15,23,42,.20),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(249,115,22,.055),transparent_30%),linear-gradient(180deg,#010308,#030711_45%,#010308)]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 opacity-[.045] [background-image:linear-gradient(rgba(255,255,255,.032)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.032)_1px,transparent_1px)] [background-size:72px_72px]">
       </div>
       {/* Page header */}
       <div className="relative mx-auto max-w-7xl px-6 pb-6 pt-8">
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-orange-400">
           EstudoTOP Simulados
         </p>
-        <div className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/80 p-6 shadow-2xl shadow-black/35 backdrop-blur-xl md:p-7">
-          <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_8%_20%,rgba(249,115,22,0.18),transparent_24%),radial-gradient(circle_at_85%_8%,rgba(37,99,235,0.18),transparent_32%),linear-gradient(135deg,#05080D,#061426_48%,#05080D)]" />
+        <div className="et-admin-dark-hero relative isolate overflow-hidden p-6 md:p-7">
+          <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_13%_47%,rgba(249,115,22,.18),transparent_28%)]" />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-white">Alunos</h1>
@@ -191,7 +190,10 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
             </p>
           </div>
           <Link href="/admin/alunos/novo">
-            <PremiumButton icon={<Plus size={18} />}>Novo aluno</PremiumButton>
+            <span className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-orange-500/70 bg-orange-500/10 px-5 text-sm font-bold text-orange-300 transition duration-200 hover:bg-orange-500/20 hover:text-orange-100">
+              <Plus size={18} />
+              Novo aluno
+            </span>
           </Link>
         </div>
         </div>
@@ -199,7 +201,7 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
 
       <div className="relative mx-auto max-w-7xl px-6 pb-12">
         {/* Metric cards */}
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Total"
             value={counts.all}
@@ -284,8 +286,7 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
         </div>
 
         {/* Table card */}
-        <div className="relative isolate rounded-[2rem] border border-white/[0.07] bg-white/[0.03] backdrop-blur-sm">
-          <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-white/[0.03] to-transparent blur-[16px]" />
+        <div className="et-admin-dark-panel relative isolate">
 
           {/* Card header */}
           <div className="border-b border-white/[0.06] px-7 py-5">
@@ -433,25 +434,23 @@ function MetricCard({
   icon: React.ReactNode;
   color: "sky" | "amber" | "emerald" | "red";
 }) {
-  const cls = {
-    sky: { text: "text-sky-400", bg: "bg-sky-500/15", ring: "ring-sky-500/20" },
-    amber: { text: "text-amber-400", bg: "bg-amber-500/15", ring: "ring-amber-500/20" },
-    emerald: { text: "text-emerald-400", bg: "bg-emerald-500/15", ring: "ring-emerald-500/20" },
-    red: { text: "text-red-400", bg: "bg-red-500/15", ring: "ring-red-500/20" },
+  const tone = {
+    sky: "from-sky-500/25 to-sky-500/5 text-sky-200",
+    amber: "from-orange-500/25 to-orange-500/5 text-orange-200",
+    emerald: "from-emerald-500/25 to-emerald-500/5 text-emerald-200",
+    red: "from-red-500/25 to-red-500/5 text-red-200",
   }[color];
 
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className={`text-xs font-black uppercase tracking-[0.18em] ${cls.text}`}>{label}</p>
-          <p className={`mt-2 text-4xl font-black ${cls.text}`}>{value}</p>
-          <p className="mt-2 text-xs text-white/35">{description}</p>
+    <div className="et-admin-dark-card px-4 py-4">
+      <div className="flex items-center gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${tone} shadow-[inset_0_1px_0_rgba(255,255,255,.08)]`}>
+          {icon}
         </div>
-        <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${cls.bg} ring-1 ${cls.ring}`}
-        >
-          <span className={cls.text}>{icon}</span>
+        <div className="min-w-0">
+          <p className="truncate whitespace-nowrap text-[10px] font-black uppercase tracking-[0.14em] text-slate-400" title={label}>{label}</p>
+          <p className="mt-0.5 truncate text-xl font-black tracking-[-0.04em] text-white">{value}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-400">{description}</p>
         </div>
       </div>
     </div>
@@ -511,7 +510,7 @@ function StudentTableRow({ student }: { student: StudentRow }) {
       <td className="px-7 py-4">
         <div className="flex items-center justify-end gap-2">
           <Link href={`/admin/alunos/${student.id}`}>
-            <button className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/65 transition hover:border-white/[0.16] hover:bg-white/[0.08] hover:text-white active:scale-95">
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/[0.11] bg-white/[0.022] px-4 text-xs font-bold text-white transition duration-200 hover:border-white/[0.18] hover:bg-white/[0.06] active:scale-[0.98]">
               <ExternalLink size={13} />
               Abrir
             </button>

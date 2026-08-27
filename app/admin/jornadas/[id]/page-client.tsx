@@ -326,7 +326,7 @@ export default function JornadaDetailClient({
   const heroSubtitle = `${plannedCount || linkedCount || 0} simulados • ${studentJornadas.length} alunos • Liberação progressiva`;
 
   return (
-    <div className="min-h-screen bg-[#010308] text-slate-100">
+    <div className="et-admin-dark-page">
       <PremiumLoadingOverlay show={loading} title="Processando…" message="Aguarde um momento." />
 
       <PremiumModal
@@ -472,7 +472,6 @@ export default function JornadaDetailClient({
       )}
 
       <div className="relative overflow-hidden px-5 py-7 sm:px-8 lg:px-10">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(15,23,42,.20),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(249,115,22,.055),transparent_30%),linear-gradient(180deg,#010308,#030711_45%,#010308)]" />
         <div className="pointer-events-none absolute inset-0 opacity-[.045] [background-image:linear-gradient(rgba(255,255,255,.032)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.032)_1px,transparent_1px)] [background-size:72px_72px]" />
 
         <main className="relative mx-auto max-w-[1600px] space-y-6">
@@ -482,7 +481,7 @@ export default function JornadaDetailClient({
             <span className="text-slate-300">{jornada.title}</span>
           </div>
 
-          <section className="relative overflow-hidden rounded-[24px] border border-white/[0.065] bg-[#040A12]/92 shadow-[0_24px_90px_rgba(0,0,0,.48)] backdrop-blur-xl">
+          <section className="et-admin-dark-hero relative overflow-hidden">
             <div
               className="absolute inset-0 bg-cover bg-center opacity-70"
               style={{ backgroundImage: `linear-gradient(90deg,rgba(3,5,9,.96) 0%,rgba(3,5,9,.78) 45%,rgba(3,5,9,.54) 100%), url(${headerBg})` }}
@@ -873,10 +872,10 @@ function ProgressPanel({ averageCompletion, completedSum, activeStudents, paused
           <p className="text-3xl font-black text-white">{averageCompletion}%</p>
         </div>
       </div>
-      <div className="mt-6 h-24 rounded-2xl border border-white/[0.075] bg-[linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015))] p-4">
+      <div className="et-admin-dark-chart mt-6 h-24 p-4">
         <div className="flex h-full items-end gap-2">
           {[34, 48, 42, 58, 64, 55, 70, averageCompletion || 38].map((height, i) => (
-            <div key={i} className="flex-1 rounded-t-lg bg-gradient-to-t from-slate-500/20 to-slate-200/60 shadow-[0_0_18px_rgba(255,255,255,.04)]" style={{ height: `${Math.max(12, height)}%` }} />
+            <div key={i} className="et-admin-dark-chart-bar flex-1" style={{ height: `${Math.max(12, height)}%` }} />
           ))}
         </div>
       </div>

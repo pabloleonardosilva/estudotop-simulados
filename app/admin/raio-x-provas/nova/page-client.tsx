@@ -233,7 +233,7 @@ export default function NovaRaioXProvaClient({ disciplines, boards, contests, po
   }
 
   return (
-    <main className="min-h-full bg-[#07111F] px-4 py-6 text-white md:px-8">
+    <main className="et-admin-dark-page min-h-full px-4 py-6 md:px-8">
       <div className="pointer-events-none fixed inset-0 opacity-80">
         <div className="absolute left-[-12%] top-[-10%] h-72 w-72 rounded-full bg-orange-500/10 blur-3xl" />
         <div className="absolute right-[-10%] top-1/4 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl" />

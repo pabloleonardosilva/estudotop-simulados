@@ -1464,7 +1464,7 @@ export default function QuestoesClient({
   }
 
   return (
-    <main className="relative min-h-screen overflow-visible bg-[#07111F] px-4 pb-20 pt-6 md:px-8 md:pt-10">
+    <main className="et-admin-dark-page relative overflow-visible px-4 pb-20 pt-6 md:px-8 md:pt-10">
       <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 h-[600px] w-[1000px] rounded-full bg-sky-900/[0.12] blur-[150px]" />
       <div className="pointer-events-none absolute -right-40 top-1/4 h-[500px] w-[500px] rounded-full bg-violet-900/[0.08] blur-[120px]" />
       <div className="pointer-events-none absolute -left-40 bottom-1/3 h-[400px] w-[500px] rounded-full bg-blue-900/[0.07] blur-[100px]" />

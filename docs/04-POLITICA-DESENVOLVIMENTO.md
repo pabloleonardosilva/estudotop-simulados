@@ -337,7 +337,17 @@ Em caso de conflito prevalecerá a Constituição Técnica.
 
 ---
 
-# 16. Histórico
+# 16. Identidade visual administrativa
+
+Toda página comum do Admin deve montar o `AppShell` e consumir o design dark premium global definido em `app/globals.css` pela classe de escopo `et-admin-dark-content`, pelos componentes compartilhados obrigatórios e pela família `et-admin-dark-*`.
+
+A referência visual oficial é `/admin/jornadas/[id]`. É proibido criar por página uma segunda configuração de tipografia, canvas, paleta, cards, botões, caixas de ícone, sombras, glows ou charts para reproduzir essa identidade.
+
+Caixas de ícone devem usar `et-admin-dark-icon-box` e sua variação semântica. Charts devem usar `et-admin-dark-chart`, `et-admin-dark-chart-bar`, `et-admin-dark-progress-*`, o tratamento global de Recharts ou `data-admin-chart` quando forem SVG próprios. Estilos locais são permitidos somente para estados funcionais reais, conteúdo especializado ou rotas de foco que deliberadamente não montam o shell.
+
+---
+
+# 17. Histórico
 
 ## Versão 2.0
 

@@ -408,11 +408,11 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
     setIsError(false);
   }
 
-  if (!event || !form) return <main className="min-h-full bg-[#050b14] p-8 text-slate-300">{message || "Carregando..."}</main>;
+  if (!event || !form) return <main className="et-admin-dark-page min-h-full p-8">{message || "Carregando..."}</main>;
   const pending = event.simulado_event_participants.filter((item) => item.representative_attempt_id && !item.result_released_at).length;
 
   return (
-    <main className="relative min-h-full overflow-hidden bg-[#050b14] px-4 py-8 text-white">
+    <main className="et-admin-dark-page relative min-h-full overflow-hidden px-4 py-8">
       <div className="pointer-events-none absolute left-1/3 top-0 h-80 w-80 rounded-full bg-orange-500/[0.07] blur-[110px]" />
       <div className="relative mx-auto max-w-6xl">
         <Link href="/admin/eventos" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-orange-300"><ArrowLeft size={16} />Voltar aos Eventos</Link>

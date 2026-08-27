@@ -247,7 +247,7 @@ function ActionModal({ modal, onCancel }: { modal: NonNullable<ActionModalState>
   const iconBg = isApprove
     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-400"
     : isArchive
-    ? "border-red-500/25 bg-red-500/10 text-red-400"
+    ? "border-[#ff5a3d] bg-[#ff2800]/25 text-[#fff4f1] shadow-[0_0_30px_rgba(255,40,0,0.48)]"
     : "border-orange-500/25 bg-orange-500/10 text-orange-400";
 
   if (!mounted) return null;
@@ -279,6 +279,7 @@ function ActionModal({ modal, onCancel }: { modal: NonNullable<ActionModalState>
           <PremiumButton variant="secondary" onClick={onCancel} disabled={modal.loading}>Cancelar</PremiumButton>
           <PremiumButton
             variant={isArchive ? "danger" : isApprove ? "primary" : "secondary"}
+            className={isArchive ? "!border-[#ff6047] !bg-[#ff2800]/40 !text-white !shadow-[0_0_32px_rgba(255,40,0,0.52)] hover:!border-[#ff8a73] hover:!bg-[#ff2800]/60 hover:!text-white hover:!shadow-[0_0_44px_rgba(255,40,0,0.72)]" : ""}
             onClick={() => { void modal.onConfirm(); }}
             disabled={modal.loading}
             icon={modal.loading ? <Loader2 className="animate-spin" size={16} /> : undefined}
@@ -325,7 +326,7 @@ function ImageUrlEditor({ value, onChange, label }: { value: string; onChange: (
         />
         {value && (
           <button type="button" onClick={() => onChange("")}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/[0.10] text-red-400 hover:bg-red-500/[0.18]"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#ff5a3d] bg-[#ff2800]/30 text-[#fff4f1] shadow-[0_0_26px_rgba(255,40,0,0.42)] transition hover:border-[#ff8a73] hover:bg-[#ff2800]/50 hover:text-white hover:shadow-[0_0_36px_rgba(255,40,0,0.62)]"
             title="Remover imagem">
             <Trash2 size={16} />
           </button>
@@ -362,11 +363,11 @@ function TrueFalseEditor({ alternatives, onMarkCorrect }: {
           <button key={label} type="button" onClick={() => onMarkCorrect(index)}
             className={
               isSelected && isWrong
-                ? "rounded-2xl border-2 border-red-500/40 bg-red-500/[0.10] px-5 py-4 text-left text-sm font-bold text-red-300"
+                ? "rounded-2xl border-2 border-[#ff6047] bg-[linear-gradient(135deg,rgba(255,40,0,0.48),rgba(183,0,0,0.34))] px-5 py-4 text-left text-sm font-bold text-white shadow-[0_0_34px_rgba(255,40,0,0.52),inset_0_1px_0_rgba(255,255,255,0.16)]"
               : isSelected
                 ? "rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/[0.10] px-5 py-4 text-left text-sm font-bold text-emerald-300"
               : isWrong
-                ? "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-red-500/30 hover:bg-red-500/[0.08] hover:text-red-300"
+                ? "rounded-2xl border border-[#ff2800]/45 bg-[#ff2800]/10 px-5 py-4 text-left text-sm font-semibold text-[#ffb4a6] transition hover:border-[#ff6047] hover:bg-[#ff2800]/30 hover:text-white hover:shadow-[0_0_28px_rgba(255,40,0,0.42)]"
                 : "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-emerald-500/30 hover:bg-emerald-500/[0.08] hover:text-emerald-300"
             }
           >
@@ -1096,10 +1097,10 @@ export default function QuestionEditor({
             )}
 
             {/* Gabarito */}
-            <div className={`mt-5 flex items-center gap-3 rounded-xl border px-4 py-3 ${isWrongTrueFalseAnswer ? "border-red-500/25 bg-red-500/[0.08]" : "border-emerald-500/25 bg-emerald-500/[0.08]"}`}>
-              <ShieldCheck size={16} className={`shrink-0 ${isWrongTrueFalseAnswer ? "text-red-400" : "text-emerald-400"}`} />
-              <span className={`text-sm font-bold ${isWrongTrueFalseAnswer ? "text-red-300" : "text-emerald-300"}`}>Gabarito:</span>
-              <span className={`text-sm ${isWrongTrueFalseAnswer ? "text-red-300/80" : "text-emerald-300/80"}`}>
+            <div className={`mt-5 flex items-center gap-3 rounded-xl border px-4 py-3 ${isWrongTrueFalseAnswer ? "border-[#ff6047] bg-[linear-gradient(90deg,rgba(255,40,0,0.42),rgba(190,0,0,0.28))] shadow-[0_0_32px_rgba(255,40,0,0.46)]" : "border-emerald-500/25 bg-emerald-500/[0.08]"}`}>
+              <ShieldCheck size={16} className={`shrink-0 ${isWrongTrueFalseAnswer ? "text-red-200 drop-shadow-[0_0_7px_rgba(248,113,113,0.85)]" : "text-emerald-400"}`} />
+              <span className={`text-sm font-bold ${isWrongTrueFalseAnswer ? "text-red-50" : "text-emerald-300"}`}>Gabarito:</span>
+              <span className={`text-sm ${isWrongTrueFalseAnswer ? "text-red-100" : "text-emerald-300/80"}`}>
                 {isTrueFalse
                   ? correctAlternative?.label === "C" ? "Certo" : (correctAlternative?.label === "E" || String(correctAlternative?.text || "").trim().toLowerCase() === "errado") ? "Errado" : "Não informado"
                   : correctAlternative?.label ? `Alternativa ${correctAlternative.label}` : "Não informado"}
@@ -1206,7 +1207,7 @@ export default function QuestionEditor({
 
           <button type="button" disabled={processing}
             onClick={() => setActionModal({ title: "Descartar questão", message: "A questão será arquivada e removida desta lista.", confirmLabel: "Descartar", variant: "archive", onConfirm: archiveQuestion })}
-            className="inline-flex items-center gap-2 rounded-xl border border-red-500/25 bg-red-500/[0.08] px-4 py-2.5 text-sm font-semibold text-red-400 transition hover:border-red-500/40 hover:bg-red-500/[0.14] hover:text-red-300 disabled:opacity-40">
+            className="inline-flex items-center gap-2 rounded-xl border border-[#ff6047] bg-[#ff2800]/35 px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_28px_rgba(255,40,0,0.44)] transition hover:-translate-y-0.5 hover:border-[#ff8a73] hover:bg-[#ff2800]/55 hover:text-white hover:shadow-[0_0_40px_rgba(255,40,0,0.66)] disabled:opacity-40">
             {processing ? <Loader2 className="animate-spin" size={15} /> : <Archive size={15} />} Descartar
           </button>
 

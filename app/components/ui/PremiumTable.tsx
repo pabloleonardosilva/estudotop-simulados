@@ -5,7 +5,7 @@ type Variant = "light" | "jornada";
 export function PremiumTable({ children, variant = "light" }: { children: ReactNode; variant?: Variant }) {
   const dark = variant === "jornada";
   return (
-    <div className={dark ? "overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0D1926] shadow-sm" : "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"}>
+    <div className={dark ? "et-admin-dark-table" : "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100"}>
       <table className="w-full text-sm">{children}</table>
     </div>
   );
@@ -13,7 +13,7 @@ export function PremiumTable({ children, variant = "light" }: { children: ReactN
 
 export function PremiumTableHead({ children, variant = "light" }: { children: ReactNode; variant?: Variant }) {
   const dark = variant === "jornada";
-  return <thead className={dark ? "bg-gradient-to-r from-white/[0.05] to-white/[0.02] text-white/40" : "bg-gradient-to-r from-slate-50 to-slate-100/60 text-slate-500"}>{children}</thead>;
+  return <thead className={dark ? "et-admin-dark-table-header text-white/40" : "bg-gradient-to-r from-slate-50 to-slate-100/60 text-slate-500"}>{children}</thead>;
 }
 
 export function PremiumTableHeader({
@@ -43,7 +43,7 @@ export function PremiumTableRow({ children, index, variant = "light" }: { childr
   const odd = index !== undefined && index % 2 === 1;
 
   if (dark) {
-    return <tr className={`transition ${odd ? "bg-white/[0.05]" : "bg-white/[0.02]"} hover:!bg-orange-500/[0.08]`}>{children}</tr>;
+    return <tr className={`et-admin-dark-table-row ${odd ? "bg-white/[0.035]" : ""}`}>{children}</tr>;
   }
 
   return <tr className={`transition ${odd ? "bg-slate-50/70" : "bg-white"} hover:!bg-orange-50/60`}>{children}</tr>;

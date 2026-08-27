@@ -78,7 +78,7 @@ export default function EditarQuestaoClient({
     }
 
     return (
-      <div className="min-h-screen bg-[#07111F] px-4 py-6 md:px-6">
+      <div className="et-admin-dark-page px-4 py-6 md:px-6">
         {notice && (
           <div className={`mb-4 rounded-2xl border px-5 py-3 text-sm font-semibold ${notice.type === "success" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}>
             {notice.message}

@@ -59,23 +59,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     /^\/meus-simulados\/[^/]+(\/resultado)?$/.test(pathname) ||
     /^\/admin\/raio-x-provas\/[^/]+\/relatorio/.test(pathname);
   const isStudentSimulationRoute = /^\/meus-simulados\/[^/]+$/.test(pathname);
-  const isDarkSimuladosRoute = pathname.startsWith("/simulados");
-  const isDarkPremiumRoute =
-    isDarkSimuladosRoute ||
-    pathname.startsWith("/admin/jornadas") ||
-    pathname.startsWith("/admin/eventos") ||
-    pathname.startsWith("/admin/configuracoes/imagens-do-sistema") ||
-    pathname.startsWith("/admin/professores") ||
-    pathname.startsWith("/admin/raio-x-provas") ||
-    pathname.startsWith("/questoes") ||
-    pathname.startsWith("/admin/alunos") ||
-    pathname.startsWith("/admin/logs") ||
-    pathname.startsWith("/admin/ajuda") ||
-    pathname.startsWith("/disciplinas") ||
-    pathname.startsWith("/assuntos") ||
-    pathname.startsWith("/topicos") ||
-    pathname.startsWith("/bancas");
-
   // Logo após o login (rota pública → home por role), o aluno precisa que
   // studentNavAccess já esteja resolvido para decidir entre /aluno e
   // /meus-eventos sem piscar uma tela e trocar para outra. Um timeout de
@@ -422,7 +405,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={`min-h-dvh ${isDarkPremiumRoute ? "bg-[#03070D]" : "bg-[#eef0f4]"} lg:h-dvh lg:overflow-hidden`}>
+    <div className="min-h-dvh bg-[#03070D] lg:h-dvh lg:overflow-hidden">
       <div className="flex min-h-dvh lg:h-dvh">
         <div className="et-admin-sidebar-slot hidden lg:block lg:h-dvh lg:shrink-0">
           <Sidebar />
@@ -433,29 +416,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-dvh min-w-0 flex-1 flex-col lg:h-dvh lg:overflow-y-auto">
           <Header onOpenMobileMenu={() => setMobileMenuOpen(true)} />
 
-          <main className="et-laptop-density min-w-0 flex-1">{children}</main>
+          <main className="et-admin-dark-content et-laptop-density min-w-0 flex-1">{children}</main>
 
           {(
-            <footer className={`px-4 pb-5 pt-6 md:px-6 ${isDarkPremiumRoute ? "bg-transparent" : ""}`}>
+            <footer className="bg-transparent px-4 pb-5 pt-6 md:px-6">
               <div
-                className={
-                  isDarkPremiumRoute
-                    ? "rounded-2xl border border-white/[0.08] bg-[#0B111C]/90 px-5 py-4 text-center text-xs text-slate-500 shadow-[0_18px_45px_rgba(0,0,0,0.22)] backdrop-blur"
-                    : "rounded-2xl border border-slate-200/80 bg-white/70 px-5 py-4 text-center text-xs text-slate-500 shadow-sm backdrop-blur"
-                }
+                className="rounded-2xl border border-white/[0.08] bg-[#0B111C]/90 px-5 py-4 text-center text-xs text-slate-500 shadow-[0_18px_45px_rgba(0,0,0,0.22)] backdrop-blur"
               >
                 <p
-                  className={
-                    isDarkPremiumRoute
-                      ? "font-semibold tracking-[0.16em] text-orange-300/80"
-                      : "font-semibold tracking-[0.16em] text-slate-400"
-                  }
+                  className="font-semibold tracking-[0.16em] text-orange-300/80"
                 >
                   ESTUDOTOP SIMULADOS v0.3
                 </p>
 
-                <p className={isDarkPremiumRoute ? "mt-1 text-slate-400" : "mt-1"}>
-                  Desenvolvido por <span className={isDarkPremiumRoute ? "font-semibold text-slate-200" : "font-semibold text-slate-700"}>Pablo Leonardo</span> - EstudoTOP
+                <p className="mt-1 text-slate-400">
+                  Desenvolvido por <span className="font-semibold text-slate-200">Pablo Leonardo</span> - EstudoTOP
                 </p>
               </div>
             </footer>

@@ -135,7 +135,7 @@ export default function LogsClient() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07111F] px-4 pb-20 pt-6 text-white md:px-8 md:pt-10">
+    <main className="et-admin-dark-page px-4 pb-20 pt-6 md:px-8 md:pt-10">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-10%] h-96 w-96 rounded-full bg-orange-500/10 blur-3xl" />
         <div className="absolute right-[-10%] top-[20%] h-[28rem] w-[28rem] rounded-full bg-blue-500/10 blur-3xl" />

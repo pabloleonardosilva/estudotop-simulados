@@ -19,11 +19,14 @@ export default function PremiumInput({
   uppercase?: boolean;
   premiumStepper?: boolean;
   onStep?: (value: number) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange?: (e: any) => void;
   className?: string;
   variant?: "light" | "jornada";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleChange(e: any) {
     if (uppercase) {
       e.target.value = e.target.value.toUpperCase();
@@ -47,8 +50,8 @@ export default function PremiumInput({
   return (
     <div>
       {label && (
-        <label className={dark ? "mb-2 flex items-center gap-2 text-sm font-medium text-slate-300" : "mb-2 flex items-center gap-2 text-sm font-medium text-slate-700"}>
-          {icon && <span className={dark ? "text-blue-300" : "text-slate-400"}>{icon}</span>}
+        <label className={dark ? "et-admin-dark-label mb-2 flex items-center gap-2" : "mb-2 flex items-center gap-2 text-sm font-medium text-slate-700"}>
+          {icon && <span className={dark ? "text-orange-300" : "text-slate-400"}>{icon}</span>}
           {label}
         </label>
       )}
@@ -57,14 +60,14 @@ export default function PremiumInput({
         <textarea
           {...props}
           onChange={handleChange}
-          className={`${dark ? "min-h-32 w-full resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "min-h-32 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} ${className}`}
+          className={`${dark ? "et-admin-dark-textarea min-h-32 w-full resize-none px-4 py-3 text-sm outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "min-h-32 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} ${className}`}
         />
       ) : premiumStepper ? (
         <div className="relative">
           <input
             {...props}
             onChange={handleChange}
-            className={`${dark ? "h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 pr-12 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-12 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`}
+            className={`${dark ? "et-admin-dark-input h-12 w-full px-4 pr-12 text-sm outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-12 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${className}`}
           />
           <div className={`absolute bottom-1 right-1 top-1 flex w-8 flex-col overflow-hidden rounded-[10px] border shadow-sm ${
             dark
@@ -103,7 +106,7 @@ export default function PremiumInput({
         <input
           {...props}
           onChange={handleChange}
-          className={`${dark ? "h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} ${className}`}
+          className={`${dark ? "et-admin-dark-input h-12 w-full px-4 text-sm outline-none transition placeholder:text-slate-600 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10" : "h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100"} ${className}`}
         />
       )}
     </div>

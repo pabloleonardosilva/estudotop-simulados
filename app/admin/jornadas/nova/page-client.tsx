@@ -168,7 +168,7 @@ export default function NovaJornadaClient() {
   }, [form.duration_days]);
 
   return (
-    <div className="relative isolate min-h-screen overflow-hidden bg-[#03070D] text-white">
+    <div className="et-admin-dark-page relative isolate overflow-hidden">
       <PremiumLoadingOverlay show={saving} title="Criando jornada…" message="Salvando configurações iniciais." />
       <PremiumModal
         open={Boolean(feedback)}
@@ -178,7 +178,6 @@ export default function NovaJornadaClient() {
         onClose={() => setFeedback(null)}
       />
 
-      <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_18%_8%,rgba(249,115,22,0.10),transparent_28%),radial-gradient(circle_at_82%_5%,rgba(37,99,235,0.16),transparent_34%),linear-gradient(180deg,#03070D_0%,#050B14_48%,#03070D_100%)]" />
       <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:72px_72px]" />
 
       <main className="relative mx-auto max-w-[1600px] px-5 py-4 sm:px-6 lg:px-8">
@@ -203,7 +202,7 @@ export default function NovaJornadaClient() {
 
 function HeroHeader() {
   return (
-    <header className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/80 px-6 py-6 shadow-2xl shadow-black/35 sm:px-8">
+    <header className="et-admin-dark-hero relative isolate overflow-hidden px-6 py-6 sm:px-8">
       <div
         className="absolute inset-0 -z-20 bg-cover bg-center opacity-75"
         style={{ backgroundImage: `url(${headerBg})` }}
@@ -240,7 +239,7 @@ function HeroHeader() {
 
 function StepProgress() {
   return (
-    <section className="mt-5 rounded-[1.35rem] border border-white/[0.10] bg-[#07111F]/76 px-5 py-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
+    <section className="et-admin-dark-panel mt-5 px-5 py-4">
       <div className="grid items-center gap-4 lg:grid-cols-[1fr_76px_1fr_76px_1fr]">
         <StepItem number="1" title="Criar Jornada" subtitle="Defina as regras principais" active />
         <StepConnector active />
@@ -294,8 +293,7 @@ function JornadaFormCard({
   cardImages: SystemImage[];
 }) {
   return (
-    <section className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/82 p-6 shadow-2xl shadow-black/35 backdrop-blur-xl sm:p-8">
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_6%_0%,rgba(59,130,246,0.18),transparent_35%),radial-gradient(circle_at_100%_100%,rgba(249,115,22,0.11),transparent_28%)]" />
+    <section className="et-admin-dark-panel relative isolate overflow-hidden p-6 sm:p-8">
 
       <SectionTitle
         icon={<FileText size={30} strokeWidth={1.65} />}
@@ -527,8 +525,7 @@ function SummaryCard({
   onSubmit: () => void;
 }) {
   return (
-    <aside className="relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/82 p-6 shadow-2xl shadow-black/35 backdrop-blur-xl sm:p-7">
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_0%_0%,rgba(59,130,246,0.16),transparent_36%),radial-gradient(circle_at_100%_75%,rgba(249,115,22,0.10),transparent_36%)]" />
+    <aside className="et-admin-dark-panel relative isolate overflow-hidden p-6 sm:p-7">
 
       <SectionTitle
         icon={<ListChecks size={30} strokeWidth={1.65} />}

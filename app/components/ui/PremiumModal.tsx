@@ -102,12 +102,12 @@ export default function PremiumModal({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 font-sans backdrop-blur-md animate-in fade-in duration-200">
-      <div className={`relative w-full ${size === "wide" ? "max-w-7xl" : "max-w-lg"} overflow-hidden rounded-[2rem] border border-orange-400/25 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 p-7 text-white shadow-2xl shadow-orange-950/40 animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200`}>
+      <div className={`et-admin-dark-panel relative w-full ${size === "wide" ? "max-w-7xl" : "max-w-lg"} overflow-hidden p-7 text-white animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-200`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-400 to-yellow-300" />
         <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-orange-500/15 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
         <div className="relative flex items-start justify-between gap-4">
-          <div className={`flex items-center justify-center rounded-2xl border border-white/10 shadow-xl ${config.bg} ${config.color} ring-1 ${config.ring} ${icon ? "h-16 w-16" : "h-14 w-14"}`}>
+          <div className={`et-admin-dark-icon-box ${tone === "success" ? "et-admin-dark-icon-box-green" : tone === "error" ? "et-admin-dark-icon-box-red" : "et-admin-dark-icon-box-orange"} ${icon ? "!h-16 !w-16" : "!h-14 !w-14"}`}>
             {icon || <Icon size={28} />}
           </div>
 

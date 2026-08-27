@@ -959,17 +959,21 @@ function ActivityPremiumSelect({
 
 function MetricCard({ icon, label, value, tone }: { icon: ReactNode; label: string; value: string; tone: "orange" | "blue" | "emerald" | "red" | "slate" }) {
   const tones = {
-    orange: "border-orange-400/20 bg-orange-500/[0.08] text-orange-300",
-    blue: "border-blue-400/20 bg-blue-500/[0.08] text-blue-300",
-    emerald: "border-emerald-400/20 bg-emerald-500/[0.08] text-emerald-300",
-    red: "border-red-400/20 bg-red-500/[0.08] text-red-300",
-    slate: "border-white/[0.08] bg-white/[0.035] text-white/65",
+    orange: "et-admin-dark-icon-box-orange",
+    blue: "et-admin-dark-icon-box-cyan",
+    emerald: "et-admin-dark-icon-box-green",
+    red: "et-admin-dark-icon-box-red",
+    slate: "bg-white/[0.035] text-slate-300",
   };
   return (
-    <div className="rounded-[1.25rem] border border-white/[0.075] bg-white/[0.035] p-4 shadow-lg shadow-black/10">
-      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border ${tones[tone]}`}>{icon}</div>
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/32">{label}</p>
-      <p className="mt-1 text-lg font-black text-white">{value}</p>
+    <div className="et-admin-dark-card p-4">
+      <div className="flex items-center gap-3">
+        <div className={`et-admin-dark-icon-box ${tones[tone]}`}>{icon}</div>
+        <div className="min-w-0">
+          <p className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+          <p className="mt-0.5 truncate text-xl font-black tracking-[-0.04em] text-white">{value}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1435,7 +1439,7 @@ function PremiumStatusSelect({
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-[999] overflow-hidden rounded-[16px] border border-white/[0.10] bg-[#0B1929]/[0.99] p-1.5 shadow-[0_22px_60px_rgba(0,0,0,0.52),0_0_30px_rgba(43,134,235,0.10)] backdrop-blur-xl"
+          className="et-admin-dark-surface absolute left-0 right-0 top-[calc(100%+8px)] z-[999] overflow-hidden rounded-[16px] border border-white/[0.10] p-1.5 shadow-[0_22px_60px_rgba(0,0,0,0.52)] backdrop-blur-xl"
         >
           {options.map((option) => {
             const active = option.value === value;
@@ -2177,17 +2181,17 @@ export default function AlunoAdminDetalheClient({
   const statusCfg = STUDENT_STATUS_CFG[student.status] ?? STUDENT_STATUS_CFG.inactive;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_8%,rgba(20,94,170,0.15),transparent_28%),radial-gradient(circle_at_88%_18%,rgba(255,112,0,0.10),transparent_26%),linear-gradient(180deg,#07111F_0%,#050B14_100%)]">
+    <div className="et-admin-dark-page relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-40 top-10 h-[34rem] w-[34rem] rounded-full bg-blue-500/[0.11] blur-[120px]" />
-        <div className="absolute right-[-10rem] top-[-8rem] h-[32rem] w-[32rem] rounded-full bg-orange-500/[0.13] blur-[130px]" />
-        <div className="absolute inset-0 opacity-[0.10] [background-image:linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:32px_32px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(15,23,42,.20),transparent_34%),radial-gradient(circle_at_85%_18%,rgba(249,115,22,.055),transparent_30%),linear-gradient(180deg,#010308,#030711_45%,#010308)]" />
+        <div className="absolute inset-0 opacity-[.045] [background-image:linear-gradient(rgba(255,255,255,.032)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.032)_1px,transparent_1px)] [background-size:72px_72px]" />
       </div>
       <PremiumLoadingOverlay show={savingFields || savingStatus || sendingResendEmail} title={sendingResendEmail ? "Reenviando e-mail..." : "Salvando..."} message="" />
 
       {/* Page header */}
       <div className="relative z-10 mx-auto w-full max-w-[95rem] px-5 pb-4 pt-5 md:px-7 xl:px-8">
-        <div className="relative px-0 py-1">
+        <div className="et-admin-dark-hero relative isolate overflow-hidden px-6 py-6 md:px-7">
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_13%_47%,rgba(249,115,22,.18),transparent_28%)]" />
           <div className="relative flex flex-wrap items-center justify-between gap-8">
             <div className="flex min-w-0 items-center gap-4">
               <div className="relative flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-full border border-orange-400/65 bg-[radial-gradient(circle_at_35%_30%,#2B3440,#111827_65%)] text-xl font-black text-orange-300 shadow-[0_0_0_4px_rgba(255,138,0,0.05),0_0_24px_rgba(255,138,0,0.24)]">
@@ -2202,26 +2206,24 @@ export default function AlunoAdminDetalheClient({
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Link href="/admin/alunos">
-                <PremiumButton className="!h-[46px] !rounded-[14px] !border-white/[0.12] !bg-white/[0.035] !px-5 !text-[13px] !font-bold !text-slate-100 hover:!border-white/[0.20] hover:!bg-white/[0.07]" variant="secondary" icon={<ArrowLeft size={16} />}>Voltar</PremiumButton>
+                <PremiumButton variant="dark" icon={<ArrowLeft size={16} />}>Voltar</PremiumButton>
               </Link>
               <PremiumButton
-                className="!h-[46px] !rounded-[14px] !border-blue-300/30 !bg-[linear-gradient(180deg,rgba(18,35,57,0.96),rgba(10,24,42,0.96))] !px-[22px] !text-[13px] !font-bold !text-slate-100 !shadow-[0_10px_26px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] hover:!border-blue-200/45"
-                variant="secondary"
+                variant="dark"
                 icon={<MapPin size={16} />}
                 onClick={() => { setAssignModal(true); setFeedback(null); }}
               >
                 Gerenciar Atividades
               </PremiumButton>
               <PremiumButton
-                className="!h-[46px] !rounded-[14px] !border-blue-300/30 !bg-[linear-gradient(180deg,rgba(18,35,57,0.96),rgba(10,24,42,0.96))] !px-[22px] !text-[13px] !font-bold !text-slate-100 !shadow-[0_10px_26px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] hover:!border-blue-200/45"
-                variant="secondary"
+                variant="dark"
                 icon={<Mail size={16} />}
                 onClick={() => { setResendEmailModal(true); setResendEmailTab("emails"); setFeedback(null); }}
               >
                 Reenvio de E-mails
               </PremiumButton>
               {!editing && (
-                <PremiumButton className="!h-[46px] !rounded-[14px] !border-amber-300/70 !bg-[linear-gradient(135deg,#FF6500_0%,#FF9E00_55%,#FFC000_100%)] !px-6 !text-[13px] !font-bold !text-[#07111F] !shadow-[0_0_0_1px_rgba(255,152,0,0.22),0_8px_24px_rgba(255,105,0,0.40),0_0_34px_rgba(255,138,0,0.30),inset_0_1px_0_rgba(255,255,255,0.45)] hover:!-translate-y-0.5 hover:!brightness-105" icon={<Edit3 size={16} />} onClick={() => { setEditing(true); setFeedback(null); }}>
+                <PremiumButton icon={<Edit3 size={16} />} onClick={() => { setEditing(true); setFeedback(null); }}>
                   Editar dados
                 </PremiumButton>
               )}
@@ -2395,7 +2397,7 @@ export default function AlunoAdminDetalheClient({
             </DarkCard>
 
             {/* Zona de perigo */}
-            <div className="relative isolate overflow-hidden rounded-[1.7rem] border border-red-500/[0.16] bg-[#0B1929]/80 p-5 shadow-[0_10px_36px_rgba(0,0,0,0.34)]">
+            <div className="et-admin-dark-surface-soft relative isolate overflow-hidden rounded-[1.7rem] border border-red-500/[0.16] p-5 shadow-[0_10px_36px_rgba(0,0,0,0.34)]">
               <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[1.7rem] bg-gradient-to-b from-red-500/[0.05] to-transparent" />
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300/80">Zona de perigo</p>
               <p className="mt-2 text-xs leading-5 text-white/35">
@@ -2441,7 +2443,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Gerenciar Atividades */}
       {assignModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/[0.09] bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] border border-white/[0.09] p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-orange-400/[0.06] to-transparent blur-[20px]" />
 
             <div className="mb-6 flex items-start justify-between gap-4">
@@ -2711,7 +2713,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Confirmar remoção de Evento */}
       {removeEventTarget && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.10] to-transparent blur-[20px]" />
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
@@ -2740,7 +2742,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Confirmar remoção de Jornada */}
       {cancelJornadaTarget && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-red-500/20 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.10] to-transparent blur-[20px]" />
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/[0.10] text-red-300">
@@ -2769,7 +2771,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Resetar senha */}
       {resetPasswordModal && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-orange-400/25 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-orange-400/25 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-orange-400/[0.10] to-transparent blur-[20px]" />
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-4">
@@ -2811,7 +2813,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Excluir definitivamente */}
       {deleteModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/25 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/25 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.12] to-transparent blur-[20px]" />
 
             <div className="flex items-start justify-between gap-4">
@@ -2934,7 +2936,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Excluir aluno e todo o histórico (exclusão definitiva com dados) */}
       {hardDeleteModal && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/35 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[2rem] border border-red-500/35 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-red-500/[0.16] to-transparent blur-[20px]" />
 
             <div className="flex items-start justify-between gap-4">
@@ -3032,7 +3034,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Desativar aluno */}
       {deactivateModal && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-amber-500/25 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-amber-500/25 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-amber-500/[0.10] to-transparent blur-[20px]" />
 
             <div className="flex items-start justify-between gap-4">
@@ -3088,7 +3090,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Aprovar cadastro */}
       {approveModal && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-amber-400/30 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-amber-400/30 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-amber-400/[0.12] to-transparent blur-[20px]" />
 
             <div className="flex items-start justify-between gap-4">
@@ -3144,7 +3146,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Reativar aluno */}
       {reactivateModal && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
-          <div className="relative isolate w-full max-w-lg rounded-[2rem] border border-emerald-500/25 bg-[#0B1929] p-7 shadow-2xl">
+          <div className="et-admin-dark-surface relative isolate w-full max-w-lg rounded-[2rem] border border-emerald-500/25 p-7 shadow-2xl">
             <div className="pointer-events-none absolute -inset-[1px] -z-10 rounded-[2rem] bg-gradient-to-b from-emerald-500/[0.10] to-transparent blur-[20px]" />
 
             <div className="flex items-start justify-between gap-4">
@@ -3228,7 +3230,7 @@ export default function AlunoAdminDetalheClient({
       {/* Modal — Cronograma da Jornada */}
       {scheduleModalJornada && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[radial-gradient(circle_at_25%_15%,rgba(32,132,255,0.10),transparent_34%),radial-gradient(circle_at_80%_88%,rgba(255,111,0,0.12),transparent_30%),rgba(1,5,12,0.78)] px-4 py-6 backdrop-blur-[14px]">
-          <div className="relative isolate flex h-[min(860px,calc(100vh-54px))] w-[min(1460px,calc(100vw-64px))] max-w-none flex-col overflow-hidden rounded-[26px] border border-blue-300/35 bg-[linear-gradient(145deg,rgba(8,22,40,0.98),rgba(5,15,28,0.98))] shadow-[0_30px_100px_rgba(0,0,0,0.62),0_0_52px_rgba(28,123,235,0.14),0_0_42px_rgba(255,122,0,0.08),inset_0_1px_0_rgba(255,255,255,0.045)]">
+          <div className="et-admin-dark-panel relative isolate flex h-[min(860px,calc(100vh-54px))] w-[min(1460px,calc(100vw-64px))] max-w-none flex-col overflow-hidden">
             <div className="pointer-events-none absolute inset-0 -z-10">
               <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-500/[0.10] blur-[100px]" />
               <div className="absolute -right-24 bottom-0 h-72 w-72 rounded-full bg-orange-500/[0.10] blur-[110px]" />
@@ -3277,8 +3279,8 @@ export default function AlunoAdminDetalheClient({
                         key={item.id}
                         className={`group relative isolate min-h-[145px] overflow-hidden rounded-[18px] border p-5 shadow-[0_12px_34px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.025)] transition duration-300 hover:-translate-y-0.5 ${
                           isAvailable
-                            ? "border-blue-300/28 bg-[linear-gradient(135deg,rgba(17,38,65,0.84),rgba(8,26,48,0.80))] hover:border-blue-300/42"
-                            : "border-blue-300/20 bg-[linear-gradient(135deg,rgba(14,32,55,0.80),rgba(7,23,43,0.82))] hover:border-blue-300/34"
+                            ? "et-admin-dark-card-strong hover:border-sky-300"
+                            : "et-admin-dark-card hover:border-white/[0.12]"
                         }`}
                       >
                         <div className={`pointer-events-none absolute inset-y-0 left-0 w-px ${isAvailable ? "bg-orange-400/65" : "bg-blue-300/35"}`} />
@@ -3337,7 +3339,7 @@ export default function AlunoAdminDetalheClient({
                                 type="button"
                                 onClick={() => handleSetAttempts(scheduleModalJornada, item)}
                                 disabled={isProcessingAttempts}
-                                className="inline-flex h-12 min-w-[118px] items-center justify-center gap-2 rounded-[13px] border border-blue-300/34 bg-[linear-gradient(180deg,rgba(18,47,79,0.95),rgba(9,31,56,0.95))] px-4 text-xs font-bold text-slate-200 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:border-blue-200/45 hover:shadow-[0_0_20px_rgba(43,134,235,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                                className="et-admin-dark-button-secondary min-w-[118px] px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <Save size={14} />
                                 {isProcessingAttempts ? "Salvando…" : "Salvar"}
@@ -3364,7 +3366,7 @@ export default function AlunoAdminDetalheClient({
                                 type="button"
                                 onClick={() => handleScheduleAction(scheduleModalJornada, item, "unrelease")}
                                 disabled={Boolean(scheduleProcessingId) || !canUnrelease}
-                                className="inline-flex h-[52px] min-w-[190px] items-center justify-center gap-2 rounded-[13px] border border-blue-300/34 bg-[linear-gradient(180deg,rgba(18,45,76,0.92),rgba(8,29,53,0.94))] px-5 text-xs font-bold text-slate-200 shadow-lg shadow-black/15 transition hover:-translate-y-0.5 hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-45"
+                                className="et-admin-dark-button-secondary min-w-[190px] px-5 text-xs hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-45"
                                 title={!canUnrelease || isStartedOrCompleted ? "Para desliberar, as tentativas e o Total real precisam estar zerados." : undefined}
                               >
                                 <RotateCcw size={15} />
@@ -3447,7 +3449,7 @@ export default function AlunoAdminDetalheClient({
         const isProcessingAttempts = eventScheduleProcessingId === `attempts:${scheduleModalEvent.id}`;
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[radial-gradient(circle_at_25%_15%,rgba(32,132,255,0.10),transparent_34%),radial-gradient(circle_at_80%_88%,rgba(255,111,0,0.12),transparent_30%),rgba(1,5,12,0.78)] px-4 py-6 backdrop-blur-[14px]">
-            <div className="relative isolate flex h-[min(720px,calc(100vh-54px))] w-[min(1100px,calc(100vw-64px))] max-w-none flex-col overflow-hidden rounded-[26px] border border-blue-300/35 bg-[linear-gradient(145deg,rgba(8,22,40,0.98),rgba(5,15,28,0.98))] shadow-[0_30px_100px_rgba(0,0,0,0.62),0_0_52px_rgba(28,123,235,0.14),0_0_42px_rgba(255,122,0,0.08),inset_0_1px_0_rgba(255,255,255,0.045)]">
+            <div className="et-admin-dark-panel relative isolate flex h-[min(720px,calc(100vh-54px))] w-[min(1100px,calc(100vw-64px))] max-w-none flex-col overflow-hidden">
               <div className="pointer-events-none absolute inset-0 -z-10">
                 <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-500/[0.10] blur-[100px]" />
                 <div className="absolute -right-24 bottom-0 h-72 w-72 rounded-full bg-orange-500/[0.10] blur-[110px]" />
@@ -3482,7 +3484,7 @@ export default function AlunoAdminDetalheClient({
                   </div>
                 ) : (
                   <div
-                    className="group relative isolate min-h-[145px] overflow-hidden rounded-[18px] border border-blue-300/28 bg-[linear-gradient(135deg,rgba(17,38,65,0.84),rgba(8,26,48,0.80))] p-5 shadow-[0_12px_34px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.025)]"
+                    className="et-admin-dark-card group relative isolate min-h-[145px] overflow-hidden p-5"
                   >
                     <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-orange-400/65" />
                     <div className="pointer-events-none absolute -left-16 top-1/2 h-36 w-36 -translate-y-1/2 rounded-full bg-orange-500/[0.11] blur-[70px]" />
@@ -3533,7 +3535,7 @@ export default function AlunoAdminDetalheClient({
                             type="button"
                             onClick={() => handleSetEventAttempts(scheduleModalEvent)}
                             disabled={isProcessingAttempts}
-                            className="inline-flex h-12 min-w-[118px] items-center justify-center gap-2 rounded-[13px] border border-blue-300/34 bg-[linear-gradient(180deg,rgba(18,47,79,0.95),rgba(9,31,56,0.95))] px-4 text-xs font-bold text-slate-200 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:border-blue-200/45 hover:shadow-[0_0_20px_rgba(43,134,235,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                            className="et-admin-dark-button-secondary min-w-[118px] px-4 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <Save size={14} />
                             {isProcessingAttempts ? "Salvando…" : "Salvar"}
@@ -3895,9 +3897,7 @@ function DarkCard({
   children: ReactNode;
 }) {
   return (
-    <div className="group relative isolate overflow-hidden rounded-[24px] border border-blue-300/[0.18] bg-[linear-gradient(145deg,rgba(12,30,51,0.95),rgba(8,22,38,0.93))] shadow-[0_18px_48px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.035),0_0_34px_rgba(31,126,223,0.06)] backdrop-blur-xl transition duration-300 hover:border-white/[0.12]">
-      <div className="pointer-events-none absolute -inset-[2px] -z-10 rounded-[24px] bg-gradient-to-br from-blue-400/[0.09] via-transparent to-orange-400/[0.055] blur-[20px]" />
-      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/45 to-transparent opacity-80" />
+    <div className="et-admin-dark-panel group relative isolate overflow-hidden transition duration-300 hover:border-white/[0.12]">
       <div className="flex items-start justify-between gap-4 border-b border-white/[0.065] bg-white/[0.012] px-5 py-4">
         <div>
           <h2 className="text-base font-semibold text-white">{title}</h2>

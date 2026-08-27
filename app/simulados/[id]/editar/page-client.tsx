@@ -867,7 +867,7 @@ export default function EditarSimuladoClient({
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#03070D] px-5 py-4 text-white sm:px-6 lg:px-8">
+    <main className="et-admin-dark-page relative overflow-hidden px-5 py-4 sm:px-6 lg:px-8">
       <PremiumLoadingOverlay
         show={saving || loadingBankQuestions}
         title={loadingBankQuestions ? "Carregando banco de questões..." : "Salvando..."}
@@ -977,11 +977,10 @@ export default function EditarSimuladoClient({
         />
       )}
 
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(249,115,22,0.10),transparent_28%),radial-gradient(circle_at_82%_5%,rgba(37,99,235,0.16),transparent_34%),linear-gradient(180deg,#03070D_0%,#050B14_48%,#03070D_100%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:72px_72px]" />
       <section className="relative mx-auto max-w-[1600px]">
-        <header className="relative isolate mb-5 overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/80 p-6 shadow-2xl shadow-black/35 sm:p-8">
-          <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_12%_50%,rgba(249,115,22,0.24),transparent_34%),radial-gradient(circle_at_72%_28%,rgba(37,99,235,0.18),transparent_38%)]" />
+        <header className="et-admin-dark-hero relative isolate mb-5 overflow-hidden p-6 sm:p-8">
+          <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_13%_47%,rgba(249,115,22,.18),transparent_28%)]" />
           <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#05080D] via-[#061426]/88 to-[#05080D]/90" />
           <div className="absolute inset-y-0 left-0 -z-10 w-72 bg-[radial-gradient(circle_at_20%_50%,rgba(249,115,22,0.22),transparent_58%)]" />
           <div className="absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-orange-400/70 via-white/10 to-transparent" />
@@ -2034,7 +2033,7 @@ function QuestionBankModal(props: {
 
   return (
     <div className="animate-fullscreen-in fixed inset-0 z-[9999] overflow-y-auto bg-[#03070D] text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.20),transparent_32%),radial-gradient(circle_at_75%_10%,rgba(59,130,246,0.13),transparent_30%),linear-gradient(135deg,#03070D_0%,#07111F_42%,#02040A_100%)]" />
+      <div className="pointer-events-none absolute inset-0 et-admin-dark-bg" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,.75)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.75)_1px,transparent_1px)] [background-size:42px_42px]" />
       <div className="relative min-h-full p-5 sm:p-6">
         <div className="mb-5 flex flex-col gap-4 rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-4 shadow-2xl shadow-black/40 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">

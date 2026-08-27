@@ -35,15 +35,15 @@ export default function PremiumButton({
     danger:
       "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
     dark:
-      "border border-white/[0.09] bg-white/[0.06] text-white/70 hover:border-white/[0.15] hover:bg-white/[0.10] hover:text-white/90",
+      "et-admin-dark-button-secondary",
     "dark-danger":
-      "border border-red-500/25 bg-red-500/[0.08] text-red-400 hover:border-red-500/40 hover:bg-red-500/[0.14] hover:text-red-300",
+      "et-admin-dark-button-danger",
     "dark-warning":
-      "border border-amber-500/25 bg-amber-500/[0.08] text-amber-400 hover:border-amber-500/40 hover:bg-amber-500/[0.14] hover:text-amber-300",
+      "et-admin-dark-button-warning",
     "dark-success":
-      "border border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/[0.14] hover:text-emerald-300",
+      "et-admin-dark-button-success",
     "dark-primary":
-      "bg-gradient-to-r from-orange-500 to-amber-400 text-slate-950 shadow-md shadow-orange-900/40 hover:from-orange-600 hover:to-amber-500 active:scale-[0.98]",
+      "et-admin-dark-button-primary active:scale-[0.98]",
   };
 
   const buttonClass = `${base} ${variants[variant]} ${full ? "w-full" : ""} ${

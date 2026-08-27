@@ -106,7 +106,7 @@ export default function AjudaAdminClient() {
   const selectedStudent = detail ? studentRef(detail.students) : null;
 
   return (
-    <main className="min-h-screen bg-[#07111F] px-4 pb-20 pt-6 text-white md:px-8 md:pt-10">
+    <main className="et-admin-dark-page px-4 pb-20 pt-6 md:px-8 md:pt-10">
       <div className="mx-auto max-w-7xl">
         <section className="rounded-[2rem] border border-white/[0.08] bg-white/[0.035] p-6 shadow-2xl shadow-black/30 md:p-8"><p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-300">Atendimento ao aluno</p><h1 className="mt-4 flex items-center gap-3 text-2xl font-semibold md:text-3xl"><LifeBuoy className="text-orange-300" /> Tickets de Ajuda</h1><p className="mt-2 text-sm text-slate-400">Fila compacta, conversa completa e histórico operacional em um único lugar.</p></section>
         <section className="mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-4">
