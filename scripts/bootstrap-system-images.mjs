@@ -34,6 +34,11 @@ for (const item of legacy) {
   if (journeyError) throw journeyError;
   const { error: eventError } = await supabase.from("simulado_events").update({ card_image_id: eventImageId }).eq("cover_key", item.key).is("card_image_id", null);
   if (eventError) throw eventError;
+
+  if (item.key === "administrativo") {
+    const { error: defaultEventError } = await supabase.from("simulado_events").update({ card_image_id: eventImageId }).is("cover_key", null).is("card_image_id", null);
+    if (defaultEventError) throw defaultEventError;
+  }
 }
 
 console.log("Bootstrap idempotente da biblioteca de imagens concluído.");

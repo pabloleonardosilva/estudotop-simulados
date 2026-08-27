@@ -1,15 +1,15 @@
 "use client";
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from "react";
-import { CalendarClock, Check, CheckCircle2, Clock3, ImageIcon, Link2, Loader2, Plus, Sparkles } from "lucide-react";
+import { CalendarClock, CheckCircle2, Clock3, ImageIcon, Link2, Loader2, Plus, Sparkles } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
-import { EVENT_COVERS, type EventCoverKey } from "./utils";
 import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
 import type { SystemImage } from "@/lib/system-images";
+import BannerPositionModal from "./BannerPositionModal";
 
 type EventRow = { id: string; name: string; public_slug: string; registration_url: string | null; effective_status: string; starts_at: string; ends_at: string; duration_minutes: number; result_policy: string; simulados?: { title?: string } | null };
 type Simulado = { id: string; title: string };
@@ -69,12 +69,13 @@ export default function EventosAdminClient() {
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION_MINUTES);
   const [resultPolicy, setResultPolicy] = useState("blocked");
   const [professorIds, setProfessorIds] = useState<string[]>([]);
-  const [coverKey, setCoverKey] = useState<EventCoverKey>("administrativo");
   const [cardImageId, setCardImageId] = useState<string | null>(null);
   const [bannerImageId, setBannerImageId] = useState<string | null>(null);
+  const [bannerPosition, setBannerPosition] = useState({ x: 50, y: 50 });
+  const [positioningBanner, setPositioningBanner] = useState(false);
   const [cardImages, setCardImages] = useState<SystemImage[]>([]);
   const [bannerImages, setBannerImages] = useState<SystemImage[]>([]);
-  useEffect(() => { void Promise.all([loadSystemImages("event_card"), loadSystemImages("professor_event_banner")]).then(([cards, banners]) => { setCardImages(cards); setBannerImages(banners); }); }, []);
+  useEffect(() => { void Promise.all([loadSystemImages("event_card"), loadSystemImages("professor_event_banner")]).then(([cards, banners]) => { setCardImages(cards); setCardImageId((current) => current || cards[0]?.id || null); setBannerImages(banners); }); }, []);
 
   const load = useCallback(async () => {
     const [eventResponse, simuladoResponse, professorResponse] = await Promise.all([
@@ -104,8 +105,7 @@ export default function EventosAdminClient() {
     setDurationMinutes(DEFAULT_DURATION_MINUTES);
     setResultPolicy("blocked");
     setProfessorIds([]);
-    setCoverKey("administrativo");
-    setCardImageId(null); setBannerImageId(null);
+    setCardImageId(cardImages[0]?.id || null); setBannerImageId(null); setBannerPosition({ x: 50, y: 50 });
   }
 
   function handleStartChange(value: string) {
@@ -137,8 +137,8 @@ export default function EventosAdminClient() {
     const startDate = new Date(startsAt);
     const endDate = new Date(endsAt);
 
-    if (!name.trim() || !startsAt || !endsAt || !Number.isInteger(durationMinutes) || durationMinutes <= 0 || endDate <= startDate) {
-      setMessage("Preencha o nome e mantenha término e duração posteriores ao início.");
+    if (!name.trim() || !startsAt || !endsAt || !Number.isInteger(durationMinutes) || durationMinutes <= 0 || endDate <= startDate || !cardImageId) {
+      setMessage("Preencha os dados do Evento e selecione a imagem do card.");
       setIsError(true);
       return;
     }
@@ -152,7 +152,7 @@ export default function EventosAdminClient() {
           name: name.trim(), simulado_id: simuladoId || null,
           starts_at: startDate.toISOString(), ends_at: endDate.toISOString(),
           duration_minutes: durationMinutes, result_policy: resultPolicy,
-          professor_ids: professorIds, cover_key: coverKey, card_image_id: cardImageId, professor_banner_image_id: bannerImageId,
+          professor_ids: professorIds, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, professor_banner_position_x: bannerPosition.x, professor_banner_position_y: bannerPosition.y,
         }),
       });
       const json = await response.json();
@@ -214,41 +214,8 @@ export default function EventosAdminClient() {
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={endsAt} min={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleEndChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
               <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={durationMinutes} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(event.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={resultPolicy} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setResultPolicy(event.target.value)}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
-              <fieldset className="md:col-span-2">
-                <legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do Evento</legend>
-                <p className="mb-3 text-xs text-slate-500">Escolha a imagem que será exibida no card do Evento para o aluno.</p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {EVENT_COVERS.map((cover) => {
-                    const active = coverKey === cover.value;
-                    return (
-                      <button
-                        key={cover.value}
-                        type="button"
-                        onClick={() => setCoverKey(cover.value)}
-                        className={`group relative overflow-hidden rounded-2xl border text-left transition duration-300 ${
-                          active
-                            ? "border-orange-400/70 ring-2 ring-orange-400/20 shadow-[0_0_28px_rgba(249,115,22,0.18)]"
-                            : "border-white/[0.10] hover:border-white/[0.22]"
-                        }`}
-                      >
-                        <div className="relative h-24 bg-cover bg-center" style={{ backgroundImage: `url(${cover.image})` }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#050A12] via-[#050A12]/35 to-transparent" />
-                          {active ? (
-                            <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-[#050A12] shadow-lg">
-                              <Check size={14} strokeWidth={3} />
-                            </span>
-                          ) : null}
-                          <div className="absolute inset-x-0 bottom-0 p-2.5">
-                            <p className="text-xs font-black text-white">{cover.label}</p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Imagem do card — biblioteca</legend><ImageLibraryPicker images={cardImages} value={cardImageId} onChange={setCardImageId} /></fieldset>
-              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={bannerImageId} onChange={setBannerImageId} allowEmpty /></fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do card do Evento</legend><p className="mb-3 text-xs text-slate-500">Escolha na biblioteca a imagem exibida no card do Evento para o aluno.</p><ImageLibraryPicker images={cardImages} value={cardImageId} onChange={setCardImageId} /></fieldset>
+              <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={bannerImageId} onChange={(value) => { setBannerImageId(value); setBannerPosition({ x: 50, y: 50 }); }} allowEmpty />{bannerImageId && <div className="mt-3"><PremiumButton type="button" variant="dark" onClick={() => setPositioningBanner(true)} icon={<ImageIcon size={16} />}>Ajustar enquadramento</PremiumButton></div>}</fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -268,6 +235,7 @@ export default function EventosAdminClient() {
           {events.map((event) => { const badge = eventStatusBadge[event.effective_status] || { label: event.effective_status, className: "border-slate-500/20 bg-slate-500/10 text-slate-300" }; return <article key={event.id} className="rounded-[1.7rem] border border-white/10 bg-white/[0.05] p-6"><div className="flex items-start justify-between gap-3"><CalendarClock className="text-orange-400" /><span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${badge.className}`}>{badge.label}</span></div><h2 className="mt-4 text-xl font-black">{event.name}</h2><p className="mt-2 text-sm text-slate-400">{event.simulados?.title || "Sem Simulado"}</p><div className="mt-3 space-y-1 text-xs text-slate-500"><p>Início: <span className="text-slate-300">{formatDateTime(event.starts_at)}</span></p><p>Término: <span className="text-slate-300">{formatDateTime(event.ends_at)}</span></p><p>Duração: <span className="text-slate-300">{formatDurationHours(event.duration_minutes)}</span></p></div>{!event.simulados && <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-200">Configuração incompleta: vincule um Simulado antes de iniciar.</div>}<div className="mt-5 flex items-center gap-2"><PremiumButton href={`/admin/eventos/${event.id}`} variant="dark-primary">Gerenciar</PremiumButton><PremiumButton variant="dark" onClick={() => void copyRegistrationLink(event.registration_url)} className="h-10 w-10 !rounded-xl !p-0" icon={<Link2 size={17} />}><span className="sr-only">Copiar link de cadastro pro evento</span></PremiumButton></div></article>; })}
         </div>
       </div>
+      {positioningBanner && bannerImageId && <BannerPositionModal imageUrl={bannerImages.find((image) => image.id === bannerImageId)?.url || ""} initialX={bannerPosition.x} initialY={bannerPosition.y} eventName={name} simuladoTitle={simulados.find((item) => item.id === simuladoId)?.title || ""} onCancel={() => setPositioningBanner(false)} onSave={(x, y) => { setBannerPosition({ x, y }); setPositioningBanner(false); setMessage("Enquadramento definido. Salve o Evento para persistir."); setIsError(false); }} />}
     </main>
   );
 }

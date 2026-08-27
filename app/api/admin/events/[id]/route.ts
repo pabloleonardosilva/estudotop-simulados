@@ -5,12 +5,12 @@ import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/s
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { logActivity } from "@/lib/logging/activity-log";
 
-type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; cover_key?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown };
+type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
 
-// Catálogo oficial de capas do Evento (ver app/admin/eventos/utils.ts, fonte
-// de verdade da apresentação). Aqui só a lista de chaves válidas — nunca
-// aceitar caminho/URL arbitrário vindo do cliente.
-const EVENT_COVER_KEYS = ["saude", "policial", "tribunais", "administrativo"] as const;
+function bannerPosition(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
+}
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin(request);
@@ -21,7 +21,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (error || !data) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
   let registrationUrl: string | null = null;
   try { registrationUrl = `${getPublicAppUrl()}/evento/${data.public_slug}`; } catch { registrationUrl = null; }
-  return NextResponse.json({ ok: true, message: "Evento carregado.", event: { ...data, effective_status: effectiveEventStatus(data), registration_url: registrationUrl } });
+  return NextResponse.json(
+    { ok: true, message: "Evento carregado.", event: { ...data, effective_status: effectiveEventStatus(data), registration_url: registrationUrl } },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -67,7 +70,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: "Resultados pendentes liberados.", released_count: released.releasedCount });
   }
   if (body.action === "duplicate") {
-    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, cover_key: current.cover_key, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
+    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
     if (error || !duplicated) return NextResponse.json({ ok: false, message: "Não foi possível duplicar o Evento." }, { status: 500 });
     const { data: assignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     if (assignments?.length) await supabase.from("simulado_event_professors").insert(assignments.map((item) => ({ event_id: duplicated.id, professor_id: item.professor_id })));
@@ -130,7 +133,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: `${terminatedRows.length} tentativa(s) em andamento encerrada(s) pelo administrador.`, terminated_count: terminatedRows.length });
   }
 
-  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "cover_key", "card_image_id", "professor_banner_image_id"]
+  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "card_image_id", "professor_banner_image_id", "professor_banner_position_x", "professor_banner_position_y"]
     .some((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (!hasEditableFields) return NextResponse.json({ ok: false, message: "Nenhuma alteração válida foi informada." }, { status: 400 });
 
@@ -159,11 +162,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: false, message: "Simulado inválido." }, { status: 400 });
   }
 
-  if (body.cover_key !== undefined && body.cover_key !== null && body.cover_key !== "" && !(EVENT_COVER_KEYS as readonly unknown[]).includes(body.cover_key)) {
-    return NextResponse.json({ ok: false, message: "Selecione uma imagem de capa válida para o Evento." }, { status: 400 });
-  }
   for (const [field, imageType] of [["card_image_id", "event_card"], ["professor_banner_image_id", "professor_event_banner"]] as const) {
-    if (body[field] === undefined || body[field] === null || body[field] === "") continue;
+    if (body[field] === undefined) continue;
+    if (field === "card_image_id" && (body[field] === null || body[field] === "")) return NextResponse.json({ ok: false, message: "Selecione a imagem do card do Evento." }, { status: 400 });
+    if (body[field] === null || body[field] === "") continue;
     if (typeof body[field] !== "string") return NextResponse.json({ ok: false, message: "Seleção de imagem inválida." }, { status: 400 });
     const { data: image } = await supabase.from("system_images").select("id").eq("id", body[field]).eq("image_type", imageType).maybeSingle();
     if (!image) return NextResponse.json({ ok: false, message: "Selecione uma imagem válida na biblioteca correspondente." }, { status: 400 });
@@ -215,12 +217,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (typeof body.ends_at === "string") updates.ends_at = body.ends_at;
   if (Number.isInteger(body.duration_minutes) && Number(body.duration_minutes) > 0) updates.duration_minutes = Number(body.duration_minutes);
   if (body.result_policy === "blocked" || body.result_policy === "released") updates.result_policy = body.result_policy;
-  if (body.cover_key === null || body.cover_key === "") updates.cover_key = null;
-  else if (typeof body.cover_key === "string" && (EVENT_COVER_KEYS as readonly string[]).includes(body.cover_key)) updates.cover_key = body.cover_key;
   if (body.card_image_id !== undefined) updates.card_image_id = typeof body.card_image_id === "string" && body.card_image_id ? body.card_image_id : null;
   if (body.professor_banner_image_id !== undefined) updates.professor_banner_image_id = typeof body.professor_banner_image_id === "string" && body.professor_banner_image_id ? body.professor_banner_image_id : null;
-  const { error } = await supabase.from("simulado_events").update(updates).eq("id", id);
-  if (error) return NextResponse.json({ ok: false, message: "Não foi possível atualizar o Evento." }, { status: 500 });
+  if (body.professor_banner_position_x !== undefined || body.professor_banner_position_y !== undefined) {
+    const x = bannerPosition(body.professor_banner_position_x);
+    const y = bannerPosition(body.professor_banner_position_y);
+    if (x === null || y === null) return NextResponse.json({ ok: false, message: "Posição do banner inválida." }, { status: 400 });
+    updates.professor_banner_position_x = x;
+    updates.professor_banner_position_y = y;
+  }
+  if (body.professor_banner_image_id === null || body.professor_banner_image_id === "") {
+    updates.professor_banner_position_x = null;
+    updates.professor_banner_position_y = null;
+  }
+  const { data: updatedEvent, error } = await supabase
+    .from("simulado_events")
+    .update(updates)
+    .eq("id", id)
+    .select("professor_banner_image_id,professor_banner_position_x,professor_banner_position_y")
+    .single();
+  if (error || !updatedEvent) return NextResponse.json({ ok: false, message: "Não foi possível atualizar o Evento." }, { status: 500 });
   if (professorIds) {
     const { data: currentAssignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     const currentIds = (currentAssignments || []).map((item) => item.professor_id);
@@ -238,7 +254,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (body.result_policy === "released" && current.result_policy !== "released") {
     await releasePendingEventResults(supabase, id, request);
   }
-  return NextResponse.json({ ok: true, message: "Evento atualizado." });
+  return NextResponse.json({ ok: true, message: "Evento atualizado.", event: updatedEvent });
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {

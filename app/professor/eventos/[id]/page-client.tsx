@@ -7,12 +7,13 @@ import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import QuestionDisplayCard from "@/app/components/questions/QuestionDisplayCard";
+import ProfessorEventBannerFrame from "./ProfessorEventBannerFrame";
 
 type Tab = "overview" | "participants" | "questions";
 type Alternative = { id: string; label: string | null; text: string | null; image_url: string | null; is_correct: boolean; order_number: number | null };
 type ClassroomQuestion = { id: string; order_number: number; status: string; questions: { id: string; code: string | null; statement: string | null; image_url: string | null; year: number | null; question_type: string | null; question_alternatives: Alternative[] } | null; answered: number; total_considered: number; correct: number; wrong: number; blank: number; accuracy_percent: number | null; error_percent: number | null; average_time_seconds: number; alternative_counts: Record<string, number> };
 type Participant = { id: string; name: string; email: string; joined_at: string; status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "admin_terminated" | "expired"; attempt_count: number; representative_attempt_id: string | null; representative_attempt_number: number | null; attempt: { id: string; status: string; attempt_number: number; started_at: string | null; submitted_at: string | null; time_spent_seconds: number | null; is_representative: boolean } | null; result: { display_score: number | null; percentage: number | null; correct_count: number; wrong_count: number; blank_count: number; total_questions: number; time_spent_ms: number } | null; result_status: "not_available" | "pending" | "available"; result_released_at: string | null; is_online: boolean; rank?: number | null; rank_tied?: boolean };
-type Dashboard = { event: { id: string; name: string; simulado_id: string | null; effective_status: string; result_policy: string; starts_at: string; professor_banner_url?: string | null; simulados?: { title?: string } }; summary: { registered: number; online: number; not_started: number; taking: number; completed: number; pending_results: number; accuracy_percent: number | null; error_percent: number | null; blank_answers: number; average_time_seconds: number; highest_score: number | null; lowest_score: number | null; average_score: number | null }; participants: Participant[]; questions: ClassroomQuestion[] };
+type Dashboard = { event: { id: string; name: string; simulado_id: string | null; effective_status: string; result_policy: string; starts_at: string; professor_banner_url?: string | null; professor_banner_position_x?: number; professor_banner_position_y?: number; simulados?: { title?: string } }; summary: { registered: number; online: number; not_started: number; taking: number; completed: number; pending_results: number; accuracy_percent: number | null; error_percent: number | null; blank_answers: number; average_time_seconds: number; highest_score: number | null; lowest_score: number | null; average_score: number | null }; participants: Participant[]; questions: ClassroomQuestion[] };
 
 const DEFAULT_PARTICIPANTS_PER_PAGE = 10;
 const participantStatus = {
@@ -79,11 +80,13 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
   const [participantsPerPage, setParticipantsPerPage] = useState(DEFAULT_PARTICIPANTS_PER_PAGE);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [professorName, setProfessorName] = useState("");
 
   const load = useCallback(async () => {
     const { data: auth } = await supabase.auth.getSession();
     if (!auth.session) return;
-    const response = await fetch(`/api/professor/events/${id}`, { headers: { Authorization: `Bearer ${auth.session.access_token}` } });
+    setProfessorName(String(auth.session.user.user_metadata.full_name || auth.session.user.user_metadata.name || "").trim().replace(/^professor(?:a)?\s+/i, ""));
+    const response = await fetch(`/api/professor/events/${id}`, { cache: "no-store", headers: { Authorization: `Bearer ${auth.session.access_token}` } });
     const json = await response.json();
     if (json.ok) setData(json); else setMessage(json.message);
   }, [id]);
@@ -129,19 +132,17 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
 
   return <main className="min-h-dvh bg-[radial-gradient(circle_at_8%_10%,rgba(255,122,0,0.06),transparent_30%),radial-gradient(circle_at_92%_18%,rgba(59,130,246,0.055),transparent_34%),linear-gradient(180deg,#fbfaf7_0%,#f8fafc_52%,#ffffff_100%)] px-5 py-7 text-slate-900 antialiased lg:px-8 lg:pb-12"><div className="relative mx-auto max-w-[1760px]">
     {data.event.professor_banner_url ? (
-      <header className="relative isolate flex h-[340px] items-center overflow-hidden rounded-[26px] border border-slate-900/[0.04] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.10),0_3px_10px_rgba(15,23,42,0.05)] sm:h-[300px] md:h-[280px] xl:h-[320px] 2xl:h-[340px]">
-        <img src={data.event.professor_banner_url} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center" />
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white/75 sm:bg-transparent sm:bg-[linear-gradient(90deg,rgba(255,255,255,0.94)_0%,rgba(255,255,255,0.84)_22%,rgba(255,255,255,0.58)_34%,rgba(255,255,255,0.24)_44%,rgba(255,255,255,0.08)_56%,rgba(255,255,255,0.08)_100%)]" />
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-[inherit] ring-1 ring-inset ring-slate-900/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.40)]" />
-        <div className="relative z-10 w-full px-7 py-6 sm:max-w-[55%] sm:px-10 md:max-w-[49%] md:px-[clamp(42px,4.4vw,76px)] md:py-5 lg:max-w-[47%]">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Evento de Simulado</p>
-            <span className="inline-flex h-8 items-center gap-2 rounded-full border border-emerald-300/70 bg-emerald-50/90 px-4 text-[13px] font-bold text-emerald-700 shadow-[0_8px_20px_rgba(16,185,129,0.10),inset_0_1px_0_rgba(255,255,255,0.85)]"><span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" /><Radio size={13} className="sr-only" /> Atualização ao vivo</span>
+      <ProfessorEventBannerFrame imageUrl={data.event.professor_banner_url} positionX={Number(data.event.professor_banner_position_x ?? 50)} positionY={Number(data.event.professor_banner_position_y ?? 50)}>
+        <div className="relative z-10 w-full max-w-[600px] px-7 py-6 sm:max-w-[55%] sm:px-10 md:max-w-[49%] md:px-[clamp(42px,4.4vw,76px)] md:py-5 lg:max-w-[47%]">
+          <span className="inline-flex h-8 items-center gap-2.5 rounded-full border border-emerald-300/70 bg-emerald-50/90 px-3.5 text-[12px] font-bold text-emerald-700 shadow-[0_8px_20px_rgba(16,185,129,0.10),inset_0_1px_0_rgba(255,255,255,0.85)]"><span className="relative flex h-2.5 w-2.5 items-center justify-center"><span className="absolute h-full w-full rounded-full bg-emerald-400/35 motion-safe:animate-pulse motion-safe:[animation-duration:2s] motion-reduce:animate-none" /><span className="relative h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.10)]" /></span><Radio size={13} className="sr-only" /> Atualização ao vivo</span>
+          <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.2em] text-orange-600">Evento de Simulado</p>
+          <h1 className="mt-2.5 text-[clamp(32px,3.8vw,56px)] font-bold leading-[0.98] tracking-[-0.055em] text-[#07142f]">{data.event.name}</h1>
+          <div className="mt-4 max-w-[580px] space-y-1 text-[14px] font-medium leading-[1.45] text-slate-700">
+            <p>{data.event.simulados?.title || "Simulado ainda não vinculado"}{professorName ? ` · Professor ${professorName}` : ""}</p>
+            <p className="text-slate-600">Dados consolidados pela tentativa oficial</p>
           </div>
-          <h1 className="mt-3 text-[clamp(32px,3.8vw,56px)] font-bold leading-[0.98] tracking-[-0.055em] text-[#07142f]">{data.event.name}</h1>
-          <p className="mt-3 max-w-2xl text-[14px] leading-5 text-slate-600">{data.event.simulados?.title || "Simulado ainda não vinculado"} · dados consolidados pela tentativa oficial.</p>
         </div>
-      </header>
+      </ProfessorEventBannerFrame>
     ) : (<>
     <header className="relative flex min-h-[210px] items-center overflow-hidden rounded-[28px] border border-orange-200/70 bg-[radial-gradient(circle_at_92%_50%,rgba(255,122,0,0.16),transparent_34%),radial-gradient(circle_at_70%_18%,rgba(255,255,255,0.95),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(255,255,255,0.94)_48%,rgba(255,247,237,0.84)_100%)] px-6 py-9 shadow-[0_28px_80px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.94)] sm:px-10 lg:px-[70px]"><div aria-hidden="true" className="pointer-events-none absolute right-32 top-7 hidden text-white/75 drop-shadow-[0_16px_30px_rgba(255,122,0,0.12)] xl:block"><Trophy size={120} strokeWidth={1.35} /></div><div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-40 h-[480px] w-[650px] rounded-[50%] border border-white/70 opacity-60 shadow-[0_0_0_18px_rgba(255,255,255,0.12),0_0_0_36px_rgba(255,255,255,0.08),0_0_0_54px_rgba(255,255,255,0.05)]" /><div className="relative flex w-full flex-col gap-8 xl:flex-row xl:items-end xl:justify-between"><div className="max-w-4xl"><div className="flex flex-wrap items-center gap-4"><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Evento de Simulado</p><span className="inline-flex h-8 items-center gap-2 rounded-full border border-emerald-300/70 bg-emerald-50/90 px-4 text-[13px] font-bold text-emerald-700 shadow-[0_8px_20px_rgba(16,185,129,0.10),inset_0_1px_0_rgba(255,255,255,0.85)]"><span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" /><Radio size={13} className="sr-only" /> Atualização ao vivo</span></div><h1 className="mt-4 text-[clamp(42px,4.8vw,72px)] font-bold leading-[0.98] tracking-[-0.055em] text-[#07142f]">{data.event.name}</h1><p className="mt-[18px] text-[15px] leading-[22px] text-slate-600">{data.event.simulados?.title || "Simulado ainda não vinculado"} · dados consolidados pela tentativa oficial.</p></div><div className="relative flex flex-wrap gap-3">{data.event.simulado_id && <PremiumButton href={`/professor/eventos/${id}/preview`} variant="secondary" className="min-h-[52px] rounded-[15px] px-6 shadow-[0_14px_34px_rgba(15,23,42,0.08)]" icon={<Eye size={18} />}>Ver como aluno</PremiumButton>}{data.event.effective_status === "scheduled" && data.event.simulado_id && <PremiumButton onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}{data.event.result_policy === "blocked" && data.summary.pending_results > 0 && <PremiumButton onClick={() => void action("release_results")} icon={<Unlock size={17} />}>Liberar resultados ({data.summary.pending_results})</PremiumButton>}</div></div></header>
     </>)}

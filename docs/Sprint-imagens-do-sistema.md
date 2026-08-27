@@ -26,9 +26,14 @@ A biblioteca administrável permite cadastrar, visualizar e selecionar imagens e
 ## Integração e compatibilidade
 
 - Jornada mantém `category`; `card_image_id` tem prioridade visual e a categoria continua como fallback e informação semântica.
-- Evento mantém `cover_key`; `card_image_id` tem prioridade no card e `cover_key` continua como fallback.
+- Novos salvamentos de Evento usam `card_image_id`. Durante a transição, a listagem do aluno prioriza essa FK e usa o asset de `cover_key` somente quando ela ainda estiver nula.
+- A migration de expansão `20260827110000_unify_event_card_images.sql` converte vínculos quando o registro equivalente já existe em `system_images`. Ela é segura sem bootstrap, preserva `cover_key`, mantém a FK nula quando o arquivo ainda não foi cadastrado e não executa a etapa destrutiva de consolidação.
 - O hero de `/professor/eventos/[id]` recebe somente `professor_banner_url`. Quando o banner é nulo, o hero anterior permanece inalterado.
 - O banner cadastrado preenche uma máscara panorâmica arredondada com `object-fit: cover`, recorte central e sem distorção. A máscara usa acabamento sutil com borda translúcida, ring interno e sombra premium. Um degradê branco localizado protege a leitura dos textos no lado esquerdo, preservando a imagem no restante da composição. A altura responsiva é controlada pela interface (340px na base, 300px em telas pequenas, 280px em telas médias, 320px em telas extragrandes e 340px em telas 2XL); as ações ficam logo abaixo do banner.
+- O enquadramento do banner pertence ao Evento que utiliza a imagem. `simulado_events.professor_banner_position_x` e `professor_banner_position_y` armazenam percentuais de 0 a 100; registros antigos ou valores nulos usam `50% 50%`, equivalente ao `object-center` anterior.
+- Os formulários de criação e edição oferecem a ação **Ajustar enquadramento**. O modal reutiliza a máscara real da dashboard e mantém o ajuste apenas em estado local durante o arraste. Em Evento existente, **Salvar posição** persiste diretamente X/Y; na criação, o enquadramento é persistido junto com o novo Evento.
+- A troca do banner e o enquadramento são persistidos como dados independentes do mesmo Evento. O `PATCH /api/admin/events/[id]` devolve o ID e os percentuais efetivamente gravados; a interface somente confirma o salvamento do enquadramento quando o ID retornado coincide com a imagem selecionada, evitando restaurar silenciosamente um vínculo anterior.
+- As leituras do Evento na edição administrativa e na dashboard do professor usam `cache: "no-store"`, e as duas APIs devolvem `Cache-Control: no-store`. Ao reabrir o ajuste, o formulário é reconstruído com os percentuais atuais do banco, sem retornar indevidamente ao centro `50% 50%`.
 - As duplicações preservam as referências às imagens, sem duplicar arquivos.
 - As APIs do aluno e do professor retornam somente a URL resolvida da imagem associada, nunca a biblioteca completa.
 
@@ -41,15 +46,15 @@ A biblioteca administrável permite cadastrar, visualizar e selecionar imagens e
 
 ## Bootstrap legado
 
-O script idempotente `scripts/bootstrap-system-images.mjs` importa os quatro WebP de `public/jornadas/categories/` para cópias independentes em `journey-cards/legacy-*.webp` e `event-cards/legacy-*.webp`. Depois cria os registros ausentes e preenche somente associações ainda nulas de Jornadas (`category`) e Eventos (`cover_key`). Os arquivos em `public/` permanecem como fallback.
+O script idempotente `scripts/bootstrap-system-images.mjs` importa os quatro WebP de `public/jornadas/categories/` para cópias independentes em `journey-cards/legacy-*.webp` e `event-cards/legacy-*.webp`. Ele cria somente arquivos/registros ausentes e conclui somente FKs nulas de Jornadas e Eventos. Os arquivos em `public/` permanecem necessários ao fallback transitório dos Eventos e ao fallback legado das Jornadas.
 
-Após executar a migration autorizada, executar explicitamente na raiz:
+A migration de expansão pode ser aplicada antes do bootstrap sem falhar. Depois, mediante autorização manual e no ambiente correto, executar explicitamente na raiz para garantir os objetos físicos e concluir vínculos ainda nulos:
 
 ```powershell
 node --env-file=.env.local scripts/bootstrap-system-images.mjs
 ```
 
-Uma nova execução não duplica arquivos ou registros e não sobrescreve escolhas administrativas. O script não cria banners de professor automaticamente.
+Uma nova execução não duplica arquivos ou registros e não sobrescreve escolhas administrativas. O script não cria banners de professor automaticamente. Somente após comprovar que não restam Eventos sem `card_image_id` poderá ser criada uma migration futura de consolidação para `NOT NULL` e remoção de `cover_key`.
 
 ## Arquivos impactados
 

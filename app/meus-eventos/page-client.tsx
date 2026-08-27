@@ -8,7 +8,6 @@ import { supabase } from "@/app/lib/supabase/client";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 import { eventStatusLabel } from "@/lib/ui/eventStatus";
-import { eventCoverImage } from "@/app/admin/eventos/utils";
 
 type Row = {
   id: string;
@@ -22,8 +21,7 @@ type Row = {
     ends_at: string;
     simulado_id: string | null;
     effective_status: string;
-    cover_key: string | null;
-    card_image_url?: string | null;
+    card_image_url: string;
     simulados?: { title?: string; max_attempts?: number | null } | null;
     simulado_event_professors: Array<{ professors: { name: string } | null }>;
   };
@@ -201,7 +199,7 @@ function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onO
       <div className="relative aspect-[16/8.2] overflow-hidden bg-[#07111F]">
         <div
           className="absolute inset-0 bg-cover bg-center transition duration-700 group-hover:scale-[1.035]"
-          style={{ backgroundImage: `url(${event.card_image_url || eventCoverImage(event.cover_key)})` }}
+          style={{ backgroundImage: `url(${event.card_image_url})` }}
         />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,7,13,0.02)_0%,rgba(3,7,13,0.08)_55%,rgba(3,7,13,0.46)_100%)]" />
         <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />

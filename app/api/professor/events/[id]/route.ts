@@ -153,7 +153,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   return NextResponse.json({
     ok: true,
     message: "Dashboard carregada.",
-    event: { ...event, professor_banner_url: systemImageUrl((event.professor_banner as unknown as { storage_path?: string } | null)?.storage_path), effective_status: eventEffectiveStatus },
+    event: { ...event, professor_banner_url: systemImageUrl((event.professor_banner as unknown as { storage_path?: string } | null)?.storage_path), professor_banner_position_x: Number(event.professor_banner_position_x ?? 50), professor_banner_position_y: Number(event.professor_banner_position_y ?? 50), effective_status: eventEffectiveStatus },
     summary: {
       registered: participants.length,
       online: onlineStudentIds.size,
@@ -171,7 +171,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     },
     participants: participantRows,
     questions: questionStats,
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

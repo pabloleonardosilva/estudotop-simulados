@@ -1272,7 +1272,7 @@ Escopo previsto:
 ### Imagem configurável do Evento e card do aluno análogo ao card de Jornada — ✅ Implementado em 2026-08-25
 
 - **Objetivo:** Admin escolhe uma imagem de capa para cada Evento (mesmo paradigma já aprovado em Jornadas — catálogo controlado, sem upload livre nem URL arbitrária) e o card de `/meus-eventos` passa a pertencer à mesma família visual do card de Jornada, sem alterar nada de Jornada e sem criar relação funcional entre as duas entidades.
-- **Campo novo:** `simulado_events.cover_key` (texto, nulo por design — fallback resolvido em código, não `not null`/`check` como a migration histórica de `jornadas.category`). Migration `supabase/migrations/20260825070000_add_simulado_event_cover_key.sql`, **não executada nesta entrega**.
+- **Registro histórico:** `simulado_events.cover_key` foi introduzido nesta etapa e posteriormente substituído por `card_image_id` na unificação de 2026-08-27 descrita ao final deste documento.
 - **Catálogo isolado:** `app/admin/eventos/utils.ts` (novo arquivo), 4 chaves (`saude`/`policial`/`tribunais`/`administrativo`), reaproveitando inicialmente as mesmas imagens oficiais de `public/jornadas/categories/*.webp` — sem importar nem depender de `app/admin/jornadas/utils.ts`.
 - **Admin:** seletor visual (miniatura + check + ring laranja quando selecionado, mesmo padrão do seletor de categoria de Jornada) em `/admin/eventos` (criação) e `/admin/eventos/[id]` (edição, bloqueada quando arquivado pela trava já existente). Backend (`POST /api/admin/events`, `PATCH /api/admin/events/[id]`) valida a chave contra uma lista fechada — chave desconhecida é rejeitada (400); nunca aceita URL/caminho arbitrário. Duplicação copia a capa do Evento original.
 - **Fallback:** Evento sem `cover_key` (todos os existentes) resolve para a capa `administrativo` — nenhum Evento quebra ou fica sem imagem.
@@ -1376,3 +1376,20 @@ Escopo previsto:
 - O dashboard usa a interface clara institucional e exibe durações em `HH:MM:SS`; milissegundos permanecem restritos ao cálculo interno de desempate.
 - O acabamento visual segue o painel premium aprovado para apresentação: hero amplo decorado, largura máxima de `1760px`, métricas brancas alinhadas, faixas segmentadas e situação ao vivo em superfície aquecida pelo laranja institucional.
 - Em 2026-08-26, `Questões / revisão` recebeu o modo aula premium completo: estado inicial neutro, tesourinha local reversível, quatro níveis de tamanho para enunciado/alternativas, revelação verde/vermelha com coruja oficial na correta, gabarito, métricas e minigráficos de dez barras por alternativa calculados sobre os dados reais já entregues pela API. Polling, permissões, cálculos e contratos permaneceram inalterados.
+
+## 27/08/2026 — Enquadramento do banner da área do professor
+
+- Eventos passaram a armazenar posição horizontal e vertical normalizada do banner, sem modificar ou duplicar o asset original.
+- Criação e edição de Evento exibem prévia na máscara real, com arraste limitado pelo excedente calculado do `object-fit: cover`, cancelamento e restauração do padrão.
+- A dashboard do professor aplica o mesmo enquadramento persistido; registros anteriores permanecem em `50% 50%`, reproduzindo o `object-center` existente.
+- Correção de vínculo: o backend administrativo passou a retornar o banner e as coordenadas efetivamente gravados, e a interface só confirma o ajuste quando o ID persistido corresponde ao banner selecionado.
+- Correção de restauração: as leituras administrativas e da dashboard do professor não utilizam cache; ao sair e voltar à tela, o modal carrega a posição atual do banco em vez de retornar à posição central original.
+- A migration `supabase/migrations/20260827100000_add_professor_banner_position.sql` é a fonte oficial das colunas X/Y; nenhuma migration adicional foi necessária para as correções de integração.
+
+## 27/08/2026 — Unificação das imagens de card dos Eventos
+
+- O seletor fixo baseado em `EVENT_COVERS` foi removido da criação e da edição; existe apenas o seletor administrável **Imagem do card do Evento**.
+- As quatro imagens antigas — Saúde, Policial, Tribunais e Administrativo — permanecem disponíveis como registros `event_card` da biblioteca nova.
+- `card_image_id` é obrigatório para novos Eventos e validado nas APIs administrativas. Durante a transição, a listagem do aluno prioriza a biblioteca e preserva o asset indicado por `cover_key` quando a FK ainda estiver nula.
+- A migration de expansão `supabase/migrations/20260827110000_unify_event_card_images.sql` faz backfill somente quando o registro equivalente já existe em `system_images`; ela não falha sem bootstrap, não aplica `NOT NULL` e não remove `simulado_events.cover_key`. O bootstrap envia os quatro arquivos ao Storage, cadastra apenas os registros ausentes e conclui somente FKs nulas. A consolidação destrutiva permanece pendente de comprovação operacional.
+- O banner da área do professor e seu enquadramento permanecem independentes e inalterados.
