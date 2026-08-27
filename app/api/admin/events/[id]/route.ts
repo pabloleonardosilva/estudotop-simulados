@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { closeSimuladoEvent, effectiveEventStatus, releasePendingEventResults, reopenSimuladoEvent } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { logActivity } from "@/lib/logging/activity-log";
 
@@ -49,16 +49,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: "Evento iniciado." });
   }
   if (body.action === "close") {
-    await supabase.from("simulado_events").update({ status: "closed", closed_at: now }).eq("id", id);
+    await closeSimuladoEvent(supabase, id);
     return NextResponse.json({ ok: true, message: "Evento encerrado. Tentativas em andamento foram preservadas." });
   }
   if (body.action === "reopen") {
     const endsAt = typeof body.ends_at === "string" ? body.ends_at : "";
-    const endsTime = new Date(endsAt).getTime();
-    const startsTime = new Date(current.starts_at).getTime();
-    const durationMinutes = Math.round((endsTime - startsTime) / 60_000);
-    if (!Number.isFinite(endsTime) || endsTime <= Date.now() || durationMinutes <= 0) return NextResponse.json({ ok: false, message: "Informe um novo término futuro e posterior ao início." }, { status: 400 });
-    await supabase.from("simulado_events").update({ status: "active", ends_at: endsAt, duration_minutes: durationMinutes, closed_at: null, archived_at: null }).eq("id", id);
+    const result = await reopenSimuladoEvent(supabase, current, endsAt);
+    if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: 400 });
     return NextResponse.json({ ok: true, message: "Evento reaberto." });
   }
   if (body.action === "archive") {

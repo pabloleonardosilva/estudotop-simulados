@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireEventManager } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { effectiveEventStatus, releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { closeSimuladoEvent, effectiveEventStatus, releasePendingEventResults, reopenSimuladoEvent, updateSimuladoEventResultPolicy } from "@/lib/server/simuladoEvents";
 import { systemImageUrl } from "@/lib/system-images";
 
 type ParticipantRow = { id: string; student_id: string; joined_at: string; representative_attempt_id: string | null; result_released_at: string | null; students?: { name?: string; email?: string } | { name?: string; email?: string }[] };
@@ -178,7 +178,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const manager = await requireEventManager(request, id);
   if (manager instanceof NextResponse) return manager;
-  const body = await request.json().catch(() => null) as { action?: unknown } | null;
+  const body = await request.json().catch(() => null) as { action?: unknown; result_policy?: unknown; ends_at?: unknown } | null;
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const { data: event } = await supabase.from("simulado_events").select("*").eq("id", id).maybeSingle();
@@ -193,6 +193,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (event.status === "archived") return NextResponse.json({ ok: false, message: "Eventos arquivados são somente leitura." }, { status: 409 });
     const released = await releasePendingEventResults(supabase, id, request);
     return NextResponse.json({ ok: true, message: "Resultados liberados.", released_count: released.releasedCount });
+  }
+  if (body?.action === "set_result_policy") {
+    if (event.status === "archived") return NextResponse.json({ ok: false, message: "Eventos arquivados são somente leitura." }, { status: 409 });
+    if (body.result_policy !== "blocked" && body.result_policy !== "released") return NextResponse.json({ ok: false, message: "Política de resultados inválida." }, { status: 400 });
+    const released = await updateSimuladoEventResultPolicy(supabase, id, body.result_policy, request);
+    return NextResponse.json({ ok: true, message: body.result_policy === "released" ? "Liberação imediata ativada." : "Liberação manual ativada.", released_count: released.releasedCount });
+  }
+  if (body?.action === "close") {
+    if (effectiveEventStatus(event) !== "active") return NextResponse.json({ ok: false, message: "Somente Eventos em andamento podem ser encerrados." }, { status: 409 });
+    await closeSimuladoEvent(supabase, id);
+    return NextResponse.json({ ok: true, message: "Evento encerrado. Tentativas em andamento foram preservadas." });
+  }
+  if (body?.action === "reopen") {
+    if (effectiveEventStatus(event) !== "closed") return NextResponse.json({ ok: false, message: "Somente Eventos encerrados podem ser reabertos." }, { status: 409 });
+    const result = await reopenSimuladoEvent(supabase, event, typeof body.ends_at === "string" ? body.ends_at : "");
+    if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: 400 });
+    return NextResponse.json({ ok: true, message: "Evento reaberto." });
   }
   return NextResponse.json({ ok: false, message: "Ação não permitida ao professor." }, { status: 403 });
 }

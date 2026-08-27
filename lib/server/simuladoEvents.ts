@@ -32,6 +32,31 @@ export function eventAcceptsEntries(event: { status: string; starts_at: string; 
   return effectiveEventStatus(event) === "active";
 }
 
+export async function closeSimuladoEvent(supabase: SupabaseClient, eventId: string) {
+  const closedAt = new Date().toISOString();
+  const { error } = await supabase.from("simulado_events").update({ status: "closed", closed_at: closedAt }).eq("id", eventId);
+  if (error) throw error;
+}
+
+export async function reopenSimuladoEvent(supabase: SupabaseClient, event: { id: string; starts_at: string }, endsAt: string) {
+  const endsTime = new Date(endsAt).getTime();
+  const startsTime = new Date(event.starts_at).getTime();
+  const durationMinutes = Math.round((endsTime - startsTime) / 60_000);
+  if (!Number.isFinite(endsTime) || endsTime <= Date.now() || durationMinutes <= 0) {
+    return { ok: false as const, message: "Informe um novo término futuro e posterior ao início." };
+  }
+  const { error } = await supabase.from("simulado_events").update({ status: "active", ends_at: endsAt, duration_minutes: durationMinutes, closed_at: null, archived_at: null }).eq("id", event.id);
+  if (error) throw error;
+  return { ok: true as const };
+}
+
+export async function updateSimuladoEventResultPolicy(supabase: SupabaseClient, eventId: string, resultPolicy: "blocked" | "released", request?: Request) {
+  const { error } = await supabase.from("simulado_events").update({ result_policy: resultPolicy }).eq("id", eventId);
+  if (error) throw error;
+  if (resultPolicy === "released") return releasePendingEventResults(supabase, eventId, request);
+  return { releasedCount: 0 };
+}
+
 export async function getEventBySlug(slug: string) {
   const supabase = createSupabaseAdminClient();
   return supabase

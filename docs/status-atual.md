@@ -1393,3 +1393,11 @@ Escopo previsto:
 - `card_image_id` é obrigatório para novos Eventos e validado nas APIs administrativas. Durante a transição, a listagem do aluno prioriza a biblioteca e preserva o asset indicado por `cover_key` quando a FK ainda estiver nula.
 - A migration de expansão `supabase/migrations/20260827110000_unify_event_card_images.sql` faz backfill somente quando o registro equivalente já existe em `system_images`; ela não falha sem bootstrap, não aplica `NOT NULL` e não remove `simulado_events.cover_key`. O bootstrap envia os quatro arquivos ao Storage, cadastra apenas os registros ausentes e conclui somente FKs nulas. A consolidação destrutiva permanece pendente de comprovação operacional.
 - O banner da área do professor e seu enquadramento permanecem independentes e inalterados.
+
+## 27/08/2026 — Controle do simulado na dashboard do professor
+
+- A dashboard `/professor/eventos/[id]` ganhou menu flutuante clean **Controle do simulado**, próximo a **Ver como aluno** e fora da máscara do banner.
+- O menu exibe o estado efetivo e permite alternar entre **Liberação manual** (`blocked`) e **Liberação imediata** (`released`), encerrar Evento ativo e reabrir Evento encerrado com novo término futuro.
+- A mudança para liberação imediata usa `releasePendingEventResults()` e alcança também resultados pendentes já concluídos. Voltar à liberação manual não oculta resultados que já possuem `result_released_at`.
+- Encerramento preserva tentativas em andamento; reabertura preserva participantes, tentativas, resultados, liberações, histórico e política. Helpers compartilhados em `lib/server/simuladoEvents.ts` atendem às APIs de Admin e Professor.
+- Todas as ações são protegidas por `requireEventManager`, confirmadas em modal claro e aplicadas visualmente somente após sucesso real do backend. Nenhuma migration foi criada.
