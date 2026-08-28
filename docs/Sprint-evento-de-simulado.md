@@ -2391,3 +2391,10 @@ Nenhuma migration foi necessária.
 - O botão de resultado do card de Evento só é apresentado após `result_released_at`; o bloqueio pedagógico existente continua aplicado no servidor.
 - O cronograma administrativo explicita que seu total pertence somente ao Evento. Zerar o Evento continua removendo apenas o histórico contextual do Evento e não altera vidas avulsas ou de Jornada.
 - A auditoria somente leitura do banco confirmou o caso reportado: o Evento estava com zero tentativas, enquanto as duas tentativas vistas anteriormente em Meus Simulados eram registros avulsos reais. Nenhum histórico foi reclassificado ou apagado e nenhuma migration foi necessária.
+
+## 97. Reentrada idempotente na pré-inscrição pública — 2026-08-28
+
+- O contrato de `POST /api/events/[slug]` passou a distinguir `confirmation_email_sent` de `confirmation_pending`. Uma intent válida dentro do cooldown ou um conflito concorrente `23505` responde sucesso pendente; um novo envio confirmado pelo Resend responde sucesso enviado.
+- `/evento/[slug]` aceita explicitamente somente esses dois estados de sucesso e, em ambos, sai do formulário para **Confira seu e-mail**, mantendo os botões **Reenviar e-mail** e **Usar outro e-mail**. Reenvio/reentrada com intenção pendente é idempotente e sempre fornece feedback explícito.
+- O branch pendente não chama o Resend durante o cooldown: isso é intencional para impedir spam. Passado o cooldown, a intent anterior é substituída, o último token passa a ser o válido e um novo e-mail é enviado. Intents expiradas são renovadas; intents consumidas continuam no fluxo oficial de login/cadastro e não geram participação duplicada.
+- Permanecem inalterados reCAPTCHA v3, normalização `trim().toLowerCase()`, validade de 24 horas, hash do token, resposta anti-enumeração e unicidade por Evento/e-mail. Nenhuma migration foi necessária.

@@ -11,6 +11,7 @@ import { eventContinueRegistrationPlainText, eventContinueRegistrationTemplate }
 
 const RECAPTCHA_ACTION = "event_join_request";
 const RESEND_COOLDOWN_MS = 60_000;
+const CONFIRMATION_MESSAGE = "Enviamos um e-mail para você continuar sua inscrição neste Evento.";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -46,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     const elapsedMs = Date.now() - new Date(recentIntent.created_at).getTime();
     if (elapsedMs < RESEND_COOLDOWN_MS) {
       const secondsRemaining = Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - elapsedMs) / 1000));
-      return NextResponse.json({ ok: true, message: `Já enviamos um e-mail para este endereço há poucos instantes. Aguarde ${secondsRemaining} segundo(s) e confira sua caixa de entrada antes de solicitar outro.` });
+      return NextResponse.json({ ok: true, state: "confirmation_pending", message: `Um e-mail foi enviado recentemente. Aguarde ${secondsRemaining} segundo(s) antes de solicitar outro e confira sua caixa de entrada.` });
     }
   }
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -65,7 +66,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   await supabase.from("simulado_event_join_intents").delete().eq("event_id", event.id).eq("email", email).is("consumed_at", null);
   const { data: intent, error } = await supabase.from("simulado_event_join_intents").insert({ event_id: event.id, email, token_hash: hashEmailActionToken(token), expires_at: expiresAt }).select("id").single();
   if (error) {
-    if (error.code === "23505") return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
+    if (error.code === "23505") return NextResponse.json({ ok: true, state: "confirmation_pending", message: CONFIRMATION_MESSAGE });
     return NextResponse.json({ ok: false, message: "Não foi possível preservar seu ingresso no Evento." }, { status: 500 });
   }
   const { error: emailError } = await new Resend(resendApiKey).emails.send({
@@ -83,7 +84,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     await supabase.from("simulado_event_join_intents").update({ expires_at: new Date(Date.now() - 1000).toISOString() }).eq("id", intent.id);
     return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora. Tente novamente em instantes." }, { status: 502 });
   }
-  return NextResponse.json({ ok: true, message: "Confira seu e-mail para continuar." });
+  return NextResponse.json({ ok: true, state: "confirmation_email_sent", message: CONFIRMATION_MESSAGE });
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ slug: string }> }) {

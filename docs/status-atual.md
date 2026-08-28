@@ -1453,3 +1453,11 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] O cronograma administrativo informa explicitamente que o total mostrado pertence somente ao Evento.
 - [x] Drawer mobile do aluno atualizado para composição clean premium, sem modificar permissões, rotas ou o menu desktop.
 - [x] Nenhuma migration foi criada, alterada ou executada.
+
+## 28/08/2026 — Feedback idempotente na reentrada da pré-inscrição de Evento
+
+- [x] Reenviar o mesmo e-mail enquanto existe uma intenção válida não deixa mais o fluxo dependente de um sucesso sem estado: a API retorna `confirmation_pending` e a interface abre explicitamente **Confira seu e-mail**.
+- [x] Novo envio confirmado pelo Resend retorna `confirmation_email_sent`; ambos os estados usam mensagem pública genérica, sem revelar se existe conta.
+- [x] Cooldown de 60 segundos, reCAPTCHA, normalização do e-mail, token com hash, validade de 24 horas e índice único parcial foram preservados.
+- [x] Intenção expirada continua sendo substituída por nova intent e novo token; intenção consumida permanece fora do recorte pendente e segue o fluxo oficial existente.
+- [x] Nenhuma migration foi criada, alterada ou executada.

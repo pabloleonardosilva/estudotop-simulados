@@ -9,6 +9,7 @@ import PremiumInput from "@/app/components/ui/PremiumInput";
 import { supabase } from "@/app/lib/supabase/client";
 
 type EventInfo = { name: string; status: string; starts_at: string; ends_at: string; teachers: Array<{ name?: string } | Array<{ name?: string }>> };
+type ConfirmationState = "confirmation_email_sent" | "confirmation_pending";
 declare global { interface Window { grecaptcha?: { ready(callback: () => void): void; execute(siteKey: string, options: { action: string }): Promise<string> } } }
 
 function maskEmail(value: string) {
@@ -81,7 +82,12 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
       const response = await fetch(`/api/events/${slug}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, captcha_token: captchaToken }) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json.ok) return setMessage(json.message || "Não foi possível continuar.");
-      setSent(true); setMessage(json.message);
+      const confirmationState = json.state as ConfirmationState | undefined;
+      if (confirmationState !== "confirmation_email_sent" && confirmationState !== "confirmation_pending") {
+        return setMessage("Não foi possível confirmar o envio agora. Tente novamente.");
+      }
+      setMessage(json.message || "Enviamos um e-mail para você continuar sua inscrição neste Evento.");
+      setSent(true);
     } catch {
       setMessage("Não foi possível continuar agora. Verifique sua conexão e tente novamente.");
     } finally {
@@ -98,11 +104,11 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
           <MailCheck size={26} />
         </span>
         <p className="mt-6 text-xs font-bold uppercase tracking-[0.22em] text-orange-500">Inscrição para o Simulado</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Enviamos um e-mail para você</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Confira seu e-mail</h1>
         <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-slate-600">
-          Para continuar sua inscrição neste Evento, acesse sua caixa de entrada
-          {email && <> (<span className="font-semibold text-slate-800">{maskEmail(email)}</span>)</>} e clique no link de confirmação que acabamos de enviar.
-          Por segurança, esse link possui validade curta.
+          Enviamos um e-mail para você continuar sua inscrição neste Evento
+          {email && <> (<span className="font-semibold text-slate-800">{maskEmail(email)}</span>)</>}.
+          O link possui validade curta. Abra sua caixa de entrada e confirme o acesso para continuar o cadastro.
         </p>
         <p className="mt-4 text-xs leading-6 text-slate-400">
           Se não encontrar a mensagem, verifique também as pastas Spam, Lixo eletrônico ou Promoções.
