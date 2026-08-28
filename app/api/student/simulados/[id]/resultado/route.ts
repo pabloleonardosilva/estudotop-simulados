@@ -246,6 +246,16 @@ export async function GET(
     return NextResponse.json({ ok: false, message: "Não foi possível carregar os detalhes do resultado." }, { status: 500 });
   }
 
+  const { data: topcoinEarning, error: topcoinEarningError } = await supabase
+    .from("topcoin_earnings")
+    .select("amount")
+    .eq("attempt_id", attempt.id)
+    .eq("student_id", student.id)
+    .maybeSingle();
+  if (topcoinEarningError) {
+    void logSystemError({ source: "api.student.simulado_result.topcoins", error: topcoinEarningError, request, metadata: { attempt_id: attempt.id, student_id: student.id } });
+  }
+
   const { data: answerChangesData, error: answerChangesError } = await supabase
     .from("simulado_answers")
     .select("changed_count")
@@ -450,6 +460,7 @@ export async function GET(
           finished_at: result.finished_at,
         }
       : null,
+    earned_topcoins: topcoinEarningError ? null : Number(topcoinEarning?.amount || 0),
     average_display_percentage: average,
     total_results: percentages.length,
     subjects: Array.from(subjectsMap.values()).sort((a, b) => a.localeCompare(b)),

@@ -7,16 +7,17 @@ export default async function ResultadoPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ attemptId?: string; jornada?: string; event?: string }>;
+  searchParams: Promise<{ attemptId?: string; jornada?: string; event?: string; releasedNotification?: string }>;
 }) {
   const { id } = await params;
-  const { attemptId, jornada, event } = await searchParams;
+  const { attemptId, jornada, event, releasedNotification } = await searchParams;
   return (
     <ResultadoClient
       simuladoId={id}
       attemptId={attemptId || null}
       studentJornadaId={jornada || null}
       eventId={event || null}
+      releasedNotification={releasedNotification === "1"}
     />
   );
 }

@@ -32,6 +32,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
+import TopCoinRewardModal from "@/app/components/gamification/TopCoinRewardModal";
 import CorrectionVideoPlayer from "./CorrectionVideoPlayer";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
@@ -124,6 +125,7 @@ type ResultPayload = {
     student_jornada_id: string;
     title: string;
   } | null;
+  earned_topcoins?: number | null;
 };
 
 type TopicRollup = {
@@ -471,11 +473,13 @@ export default function ResultadoClient({
   attemptId = null,
   studentJornadaId = null,
   eventId = null,
+  releasedNotification = false,
 }: {
   simuladoId: string;
   attemptId?: string | null;
   studentJornadaId?: string | null;
   eventId?: string | null;
+  releasedNotification?: boolean;
 }) {
   const router = useRouter();
   const [payload, setPayload] = useState<ResultPayload | null>(null);
@@ -483,10 +487,11 @@ export default function ResultadoClient({
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [resultStep, setResultStep] = useState(0);
-  // Etapa intermediária pós-finalização: só existe no fluxo da tentativa
-  // recém-concluída (com attemptId na URL). A contagem roda enquanto o
-  // resultado carrega por baixo — nenhuma chamada de backend é atrasada.
-  const [feedbackCountdown, setFeedbackCountdown] = useState(() => (attemptId ? FEEDBACK_COUNTDOWN_SECONDS : 0));
+  const [releasedTopCoinsDismissed, setReleasedTopCoinsDismissed] = useState(false);
+  // Etapa intermediária de apresentação: ocorre na tentativa recém-concluída
+  // ou no resultado oficial aberto pela notificação de liberação do Evento.
+  // A contagem roda enquanto o resultado carrega por baixo.
+  const [feedbackCountdown, setFeedbackCountdown] = useState(() => (attemptId || releasedNotification ? FEEDBACK_COUNTDOWN_SECONDS : 0));
   const isPreparingFeedback = feedbackCountdown > 0;
 
   useEffect(() => {
@@ -566,6 +571,7 @@ export default function ResultadoClient({
 
   const r = payload.result;
   const isDisqualified = payload.attempt.status === "disqualified";
+  const releasedTopCoinsOpen = releasedNotification && feedbackCountdown === 0 && !releasedTopCoinsDismissed && typeof payload.earned_topcoins === "number";
   const timeSpent = r?.time_spent_seconds ?? payload.attempt.time_spent_seconds ?? 0;
   const totalQuestions = r?.total_questions ?? 0;
   const avgTime = totalQuestions > 0 ? timeSpent / totalQuestions : 0;
@@ -587,6 +593,7 @@ export default function ResultadoClient({
   return (
     <main className="et-laptop-density min-h-screen overflow-hidden bg-[radial-gradient(circle_at_12%_10%,rgba(255,138,0,0.045),transparent_28%),radial-gradient(circle_at_86%_18%,rgba(37,99,235,0.035),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#F4F7FB_100%)] px-4 py-5 text-slate-900 md:px-6">
       {preparingOverlay}
+      <TopCoinRewardModal amount={payload.earned_topcoins ?? 0} open={releasedTopCoinsOpen} onClose={() => setReleasedTopCoinsDismissed(true)} />
       <div className="mx-auto flex w-full max-w-[1560px] flex-col gap-[18px] pb-14">
         <section className="relative overflow-hidden rounded-[10px] border border-slate-200/95 bg-[radial-gradient(circle_at_7%_50%,rgba(255,138,0,0.10),transparent_21%),linear-gradient(135deg,#FFFFFF_0%,#FFF9F2_52%,#FFFFFF_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.075),0_2px_8px_rgba(15,23,42,0.035)]">
           <div className="h-[2px] bg-gradient-to-r from-[#FF5A00] to-[#FFB300]" />

@@ -373,7 +373,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const actionUrl = resultNotification.action_url;
     setResultNotification(null);
     setResultNotificationProcessing(null);
-    if (action === "read" && actionUrl?.startsWith("/") && !actionUrl.startsWith("//")) router.push(actionUrl);
+    if (action === "read" && actionUrl?.startsWith("/") && !actionUrl.startsWith("//")) {
+      const separator = actionUrl.includes("?") ? "&" : "?";
+      router.push(`${actionUrl}${separator}releasedNotification=1`);
+    }
   }
 
   if (awaitingStudentHome) {

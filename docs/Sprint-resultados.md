@@ -807,7 +807,7 @@ Nenhuma migration foi criada ou alterada nesta entrega.
 
 ## Atualização 2026-07-16 — Modal "Nossas corujas estão reunidas montando seu feedback"
 
-**Etapa intermediária pós-finalização.** Entre a exibição dos TopCoins ganhos e a apresentação do feedback, a página `/meus-simulados/[id]/resultado` exibe um modal premium de preparação quando (e somente quando) é aberta com `attemptId` na URL — ou seja, apenas no fluxo da tentativa recém-finalizada. Acessos oficiais (Meus Resultados, Jornada, link direto sem `attemptId`) não exibem o modal.
+**Etapa intermediária de apresentação.** A página `/meus-simulados/[id]/resultado` exibe o modal premium de preparação em dois contextos explícitos: com `attemptId`, no fluxo da tentativa recém-finalizada; ou com `event + releasedNotification=1`, quando o aluno chega pelo botão **Ver Agora** da notificação interna de liberação posterior do Evento. Acessos oficiais comuns por Meus Resultados, Jornada ou link direto sem esses marcadores continuam abrindo o resultado sem a etapa intermediária.
 
 Fluxo oficial:
 
@@ -821,12 +821,26 @@ Finalização do simulado
 → feedback da tentativa recém-finalizada
 ```
 
+Fluxo da liberação posterior de Evento, implementado em 2026-08-28:
+
+```text
+Professor/Admin libera o resultado antes bloqueado
+→ notificação interna individual
+→ aluno clica em Ver Agora
+→ resultado oficial contextual é carregado com ?event=...&releasedNotification=1
+→ modal de preparação (contagem 10 → 0)
+→ TopCoinRewardModal com o ganho já persistido da tentativa oficial
+→ resultado oficial do Evento
+```
+
+Nesse segundo fluxo, `releasedNotification` controla somente a experiência visual. A API continua resolvendo a tentativa oficial pelo contexto do Evento, valida `result_released_at` no servidor e retorna `earned_topcoins` por `attempt_id + student_id`. Nenhum TopCoin é recalculado ou concedido novamente.
+
 Regras implementadas (componente local `FeedbackPreparingModal` em `app/meus-simulados/[id]/resultado/page-client.tsx`):
 
 - Título oficial em duas linhas e texto complementar exatos da especificação; frase "Seu feedback estará pronto em X segundos" com singular automático em "1 segundo".
 - Contagem regressiva de **10 até 0** (ajustada de 5 para 10 segundos em 2026-07-16, constante `FEEDBACK_COUNTDOWN_SECONDS`), um passo por segundo (`setTimeout` encadeado com limpeza no cleanup); ao chegar a zero o modal desmonta imediatamente, com transição de saída de ~200 ms via `AnimatePresence` — sem clique, sem overlay residual, sem bloqueio de rolagem e sem timers vazando.
 - Visual premium clean: overlay escuro com blur, card branco com degradê quente, barra superior laranja, três corujinhas animadas em bounce, anel SVG de progresso que esvazia de forma contínua e número central com troca animada.
 - A contagem roda **enquanto** a API de resultado carrega por baixo (o fetch começa junto com a montagem da página) — nenhuma chamada de backend foi atrasada e nenhuma chamada nova de IA foi criada.
-- Nada mais mudou: cálculo de TC, regras de tentativas, resultado oficial da primeira tentativa, abas do resultado, Sidebar/Header/layout global permanecem intactos.
+- Nada mais mudou: cálculo de TC, regras de tentativas, resultado oficial da primeira tentativa e abas do resultado permanecem intactos. O `AppShell` apenas acrescenta `releasedNotification=1` à URL interna depois de marcar a notificação como lida.
 
 Nenhuma migration foi criada ou alterada.
