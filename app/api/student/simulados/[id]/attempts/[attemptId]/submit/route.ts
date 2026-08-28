@@ -346,7 +346,9 @@ export async function POST(
     const { data: event } = await supabase.from("simulado_events").select("result_policy").eq("id", attempt.event_id).maybeSingle();
     const { data: participant } = await supabase.from("simulado_event_participants").select("representative_attempt_id,result_released_at").eq("id", attempt.event_participant_id).maybeSingle();
     if (!participant?.representative_attempt_id) await supabase.from("simulado_event_participants").update({ representative_attempt_id: attemptId }).eq("id", attempt.event_participant_id);
-    if (event?.result_policy === "released" && !participant?.result_released_at) await releasePendingEventResults(supabase, attempt.event_id, request);
+    if (event?.result_policy === "released" && !participant?.result_released_at) {
+      await releasePendingEventResults(supabase, attempt.event_id, request, { createNotifications: false });
+    }
     eventResultReleased = Boolean(participant?.result_released_at || event?.result_policy === "released");
   }
   const resultAccess: "available" | "blocked_by_event" = isEventAttempt && !eventResultReleased ? "blocked_by_event" : "available";

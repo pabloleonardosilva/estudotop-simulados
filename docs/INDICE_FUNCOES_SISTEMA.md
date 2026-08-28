@@ -3592,3 +3592,10 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 
 - `/questoes/revisar` e `/questoes/[id]/editar` compartilham o `QuestionEditor`. Os estados vermelhos de **Errado**, **Gabarito: Errado**, remoção de imagem, descarte e confirmação destrutiva usam vermelho Ferrari `#FF2800`, borda luminosa `#FF6047`, texto branco e glow vermelho controlado.
 - O reforço é exclusivamente visual e semântico: seleção de gabarito, persistência, descarte, arquivamento, validação e permissões não foram modificados. Estados positivos continuam verdes e ações principais continuam laranja.
+
+## 32. Notificação interna de resultado liberado em Evento — 2026-08-28
+
+- **Banco:** `student_notifications`, criada pela migration `20260828100000_create_student_notifications.sql`; privada, sem acesso direto de `anon`/`authenticated`, sem backfill e idempotente por aluno/tipo/participação.
+- **Criação:** `releasePendingEventResults()` em `lib/server/simuladoEvents.ts`, somente na transição real de resultados antes pendentes; preserva e-mail e TopCoins mesmo se a notificação falhar.
+- **APIs:** `GET /api/student/notifications` retorna uma pendência por vez; `PATCH /api/student/notifications/[id]` registra `read_at` ou `dismissed_at`, sempre derivando e validando o aluno pelo token.
+- **Interface:** `AppShell` faz polling de 10 segundos apenas para aluno e em rota segura. Usa `PremiumModal theme="light"`, não interrompe prova/preview/resultado e coordena resultado, Central de Ajuda e tutorial sem overlays simultâneos. A ação abre o resultado oficial contextual via `?event=`.

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
+import { Menu, Trophy } from "lucide-react";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import MobileSidebar from "./MobileSidebar";
@@ -23,6 +23,14 @@ type UnseenHelpReply = {
   count: number;
 };
 
+type ResultNotification = {
+  id: string;
+  type: "event_result_released";
+  title: string;
+  action_url: string | null;
+  metadata: { event_name?: string; simulado_name?: string } | null;
+};
+
 const JOURNEY_EXPLAINER_AUTO_COUNT_LIMIT = 10;
 const JOURNEY_EXPLAINER_COUNT_PREFIX = "estudotop:journey-explainer:auto-open-count";
 const JOURNEY_EXPLAINER_LAST_LOGIN_PREFIX = "estudotop:journey-explainer:last-login";
@@ -37,6 +45,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [focusedHelpTicketId, setFocusedHelpTicketId] = useState<string | null>(null);
   const [journeyExplainerOpen, setJourneyExplainerOpen] = useState(false);
   const [unseenHelpReply, setUnseenHelpReply] = useState<UnseenHelpReply | null>(null);
+  const [resultNotification, setResultNotification] = useState<ResultNotification | null>(null);
+  const [resultNotificationProcessing, setResultNotificationProcessing] = useState<"read" | "dismiss" | null>(null);
+  const [resultNotificationError, setResultNotificationError] = useState<string | null>(null);
   const [topCoinsBalance, setTopCoinsBalance] = useState<number | null>(null);
   const [navAccessTimedOut, setNavAccessTimedOut] = useState(false);
 
@@ -204,6 +215,39 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading || !user?.id || profile?.role !== "student") return;
 
+    if (profile.must_change_password || isPublicRoute || isPublicViewRoute || isChangePasswordRoute || isStudentExamPage || isFocusRoute || isStudentSimulationRoute) return;
+    let cancelled = false;
+    let checking = false;
+
+    async function checkResultNotification() {
+      if (checking || resultNotification || helpOpen || unseenHelpReply) return;
+      checking = true;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || cancelled) return;
+        const res = await fetch("/api/student/notifications", { headers: { Authorization: `Bearer ${session.access_token}` } });
+        const json = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok || !json.ok) return;
+        if (json.notification?.type === "event_result_released") {
+          setJourneyExplainerOpen(false);
+          setResultNotification(json.notification as ResultNotification);
+        }
+      } finally {
+        checking = false;
+      }
+    }
+
+    void checkResultNotification();
+    const interval = window.setInterval(() => void checkResultNotification(), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [loading, user?.id, profile?.role, profile?.must_change_password, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, isStudentExamPage, isFocusRoute, isStudentSimulationRoute, resultNotification, helpOpen, unseenHelpReply]);
+
+  useEffect(() => {
+    if (loading || !user?.id || profile?.role !== "student") return;
+
     let cancelled = false;
 
     async function checkUnseenReply() {
@@ -300,6 +344,38 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }).catch(() => undefined);
   }
 
+  async function handleResultNotification(action: "read" | "dismiss") {
+    if (!resultNotification || resultNotificationProcessing) return;
+    setResultNotificationProcessing(action);
+    setResultNotificationError(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setResultNotificationError("Não foi possível concluir esta ação. Tente novamente.");
+      setResultNotificationProcessing(null);
+      return;
+    }
+    const res = await fetch(`/api/student/notifications/${resultNotification.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.status === 404) {
+      setResultNotification(null);
+      setResultNotificationProcessing(null);
+      return;
+    }
+    if (!res.ok || !json.ok) {
+      setResultNotificationError("Não foi possível concluir esta ação. Tente novamente.");
+      setResultNotificationProcessing(null);
+      return;
+    }
+    const actionUrl = resultNotification.action_url;
+    setResultNotification(null);
+    setResultNotificationProcessing(null);
+    if (action === "read" && actionUrl?.startsWith("/") && !actionUrl.startsWith("//")) router.push(actionUrl);
+  }
+
   if (awaitingStudentHome) {
     return <LoadingScreen message="Carregando ambiente..." />;
   }
@@ -348,11 +424,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <MobileSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
 
-        <HelpCenterModal open={helpOpen} initialTicketId={focusedHelpTicketId} onClose={() => { setHelpOpen(false); setFocusedHelpTicketId(null); }} />
-        <StudentJourneyExplainerModal open={journeyExplainerOpen} onClose={() => setJourneyExplainerOpen(false)} />
+        <HelpCenterModal open={helpOpen && !resultNotification} initialTicketId={focusedHelpTicketId} onClose={() => { setHelpOpen(false); setFocusedHelpTicketId(null); }} />
+        <StudentJourneyExplainerModal open={journeyExplainerOpen && !resultNotification && !unseenHelpReply} onClose={() => setJourneyExplainerOpen(false)} />
 
         <PremiumModal
-          open={Boolean(unseenHelpReply)}
+          open={Boolean(resultNotification)}
+          theme="light"
+          tone="success"
+          icon={<Trophy size={28} />}
+          title={resultNotification?.title || "Seu resultado foi liberado"}
+          message="O professor liberou o resultado do seu Evento de Simulado. Você já pode consultar seu desempenho completo."
+          dismissible={false}
+          onClose={() => undefined}
+          actions={
+            <>
+              <PremiumButton variant="secondary" disabled={Boolean(resultNotificationProcessing)} onClick={() => void handleResultNotification("dismiss")}>
+                {resultNotificationProcessing === "dismiss" ? "Salvando..." : "Ver depois"}
+              </PremiumButton>
+              <PremiumButton disabled={Boolean(resultNotificationProcessing)} onClick={() => void handleResultNotification("read")}>
+                {resultNotificationProcessing === "read" ? "Abrindo..." : "Ver Agora"}
+              </PremiumButton>
+            </>
+          }
+        >
+          {resultNotification && (
+            <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">Evento de Simulado</p>
+              <p className="mt-2 font-semibold text-slate-900">{resultNotification.metadata?.event_name || "Evento"}</p>
+              <p className="mt-1 text-sm text-slate-600">{resultNotification.metadata?.simulado_name || "Simulado"}</p>
+              {resultNotificationError && <p className="mt-3 text-sm font-semibold text-red-600">{resultNotificationError}</p>}
+            </div>
+          )}
+        </PremiumModal>
+
+        <PremiumModal
+          open={Boolean(unseenHelpReply) && !resultNotification && !helpOpen}
           theme="dark"
           tone="success"
           title={unseenHelpReply?.count === 1 ? "Você recebeu uma resposta" : `Você recebeu ${unseenHelpReply?.count || 0} novas respostas`}

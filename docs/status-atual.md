@@ -1307,7 +1307,9 @@ Escopo previsto:
 - Auditoria: cada tentativa encerrada gera registro em `logActivity` (`event_attempt_admin_terminated`).
 - Nenhuma migration foi criada, alterada ou executada. Nenhum arquivo de Jornada foi tocado. Validado: `npx tsc --noEmit` limpo, `npm run build` limpo, `eslint` limpo nos arquivos alterados, `git diff --check` sem problemas reais.
 
-### Resultados de Evento bloqueados aparecem em "Meus Resultados" — ✅ Implementado em 2026-08-24 (notificação interna: pendente de autorização)
+### Resultados de Evento bloqueados aparecem em "Meus Resultados" + notificação interna — ✅ Implementado (2026-08-24 / 2026-08-28)
+
+A liberação posterior pelo Professor/Admin agora cria uma notificação `event_result_released` individual e idempotente. O aluno recebe em rota segura um modal clean global, consultado a cada 10 segundos, com **Ver Agora** para o resultado oficial do Evento e **Ver depois** para dispensar definitivamente. A apresentação é suspensa durante provas e rotas de foco; não houve backfill. Migration versionada: `supabase/migrations/20260828100000_create_student_notifications.sql` (execução pendente).
 
 - **Causa raiz:** `GET /api/student/resultados` pulava (`continue`) inteiramente qualquer tentativa de Evento com `result_released_at = null`, tratando "bloqueado" como "inexistente" — podia até disparar o empty state incorreto "Você ainda não concluiu nenhum simulado."
 - **Correção:** Simulados de Evento concluídos passam a aparecer sempre. Fonte da tentativa oficial de Evento: **primeira tentativa `completed` com `counts_toward_limit=true`, por `event_participant_id`** — mesma heurística já usada por `GET /api/student/simulados/[id]/resultado` sem `attemptId`. **Decisão técnica registrada:** não foi usado `representative_attempt_id` isolado — em caso de desclassificação da tentativa representativa (foco ou encerramento administrativo) seguida de nova tentativa concluída, usar só esse campo esconderia um resultado real e acessível quando liberado. Validado com dado real do banco operacional (Evento "Inss - Simulado 2").

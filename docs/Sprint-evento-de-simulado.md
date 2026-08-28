@@ -2249,7 +2249,7 @@ Reproduzido com dado real (`Inss - Simulado 2`, Simulado "Teste 02 - Simulado de
 
 ---
 
-# 89. Resultados de Evento bloqueados aparecem em "Meus Resultados" + notificação interna: pendência de infraestrutura (2026-08-24)
+# 89. Resultados de Evento bloqueados aparecem em "Meus Resultados" + notificação interna (2026-08-24; concluída em 2026-08-28)
 
 **Problema:** um Simulado concluído dentro de um Evento com resultado bloqueado (`result_released_at = null`) desaparecia inteiramente de `/meus-resultados` — a rota `GET /api/student/resultados` pulava (`continue`) qualquer tentativa vinculada a `event_participant_id` sem `result_released_at`, tratando "bloqueado" como "inexistente". Podia inclusive deixar a tela exibindo o empty state "Você ainda não concluiu nenhum simulado." mesmo com atividade concluída.
 
@@ -2259,27 +2259,11 @@ Reproduzido com dado real (`Inss - Simulado 2`, Simulado "Teste 02 - Simulado de
 
 **`app/meus-resultados/page-client.tsx`:** mesma tabela (`PremiumTable`) reutilizada, sem componente novo — coluna "Jornada" renomeada para "Contexto" (mostra "Evento de Simulado" + nome do Evento quando `source === "event"`, preserva "Jornada"/"Simulado avulso" nos demais casos); coluna "Ação" mostra "Ver resultado" quando `can_view`, ou badge neutro (âmbar, ícone de relógio, texto "Resultado aguardando liberação") quando bloqueado — nunca vermelho, nunca aparência de erro. Empty state passa a considerar corretamente os itens bloqueados (não é mais acionado indevidamente).
 
-**Notificação interna de liberação — PARADO antes de criar migration, aguardando autorização:** não existe no projeto nenhuma infraestrutura de notificações genéricas de domínio (`notifications`/`announcements`/`unread`/`read_at`/`dismissed_at`) — confirmado por busca no código e no banco operacional (só existem `student_help_messages`/`student_help_ticket_messages`, sistema de chat de suporte aluno↔admin, semanticamente incompatível com "avisos do sistema", e `simulado_feedbacks`, avaliação do aluno sobre o simulado). Proposta mínima de schema (não criada):
+**Notificação interna de liberação — implementada em 2026-08-28:** a auditoria confirmou que ainda não existia infraestrutura genérica compatível. A migration `20260828100000_create_student_notifications.sql` cria `student_notifications`, sem backfill, com FK para `public.students`, RLS habilitado, grants revogados de `anon`/`authenticated`, índice de pendências e unicidade por `student_id + type + reference_id`. Para `event_result_released`, `reference_id` é `simulado_event_participants.id`.
 
-```sql
-create table if not exists public.student_notifications (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references auth.users(id) on delete cascade,
-  type text not null,                 -- ex.: 'event_result_released'
-  title text not null,
-  body text not null,
-  action_url text,
-  reference_type text,                -- ex.: 'simulado_event_participant'
-  reference_id uuid,                  -- garante idempotência (não duplica)
-  read_at timestamptz,
-  dismissed_at timestamptz,
-  created_at timestamptz not null default now()
-);
-create unique index if not exists unique_student_notifications_dedup
-  on public.student_notifications (student_id, type, reference_id);
-```
+`releasePendingEventResults()` cria a notificação apenas para participantes cuja transição `result_released_at: null → timestamp` aconteceu naquela execução. A criação usa upsert idempotente e falha isoladamente, sem reverter resultado, TopCoins ou e-mail. No submit de Evento configurado previamente com liberação imediata, o mesmo helper é chamado com `createNotifications: false`, evitando um aviso redundante logo após o aluno já receber o resultado.
 
-Ponto de integração natural (não implementado): `releasePendingEventResults()` em `lib/server/simuladoEvents.ts` já itera, de forma idempotente (`.is("result_released_at", null)`), exatamente os participantes recém-liberados nesta chamada — o mesmo loop que hoje dispara o e-mail de liberação seria o lugar de inserir a notificação, usando `reference_id = participant.id` para garantir que uma liberação repetida nunca gere duplicata.
+`GET /api/student/notifications` retorna somente a próxima pendência do aluno autenticado; `PATCH /api/student/notifications/[id]` marca, com ownership no servidor, `read_at` em **Ver Agora** ou `dismissed_at` em **Ver depois**. Ambas encerram a apresentação automática. O `AppShell` consulta a cada 10 segundos em rotas seguras, mostra uma notificação por vez em `PremiumModal theme="light"`, não abre durante execução/preview/resultado e coordena a prioridade com Ajuda e tutorial. **Ver Agora** usa a URL oficial `/meus-simulados/[simuladoId]/resultado?event=[eventId]`; **Ver depois** permanece na página. Não há localStorage nem backfill.
 
 ---
 

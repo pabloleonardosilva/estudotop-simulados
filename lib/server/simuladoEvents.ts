@@ -99,7 +99,7 @@ function resultReleasedEmail(input: { studentName: string; eventName: string; si
   return { html, text };
 }
 
-export async function releasePendingEventResults(supabase: SupabaseClient, eventId: string, request?: Request) {
+export async function releasePendingEventResults(supabase: SupabaseClient, eventId: string, request?: Request, options?: { createNotifications?: boolean }) {
   const releasedAt = new Date().toISOString();
   const { data: event, error: eventError } = await supabase
     .from("simulado_events")
@@ -118,15 +118,30 @@ export async function releasePendingEventResults(supabase: SupabaseClient, event
   if (error) throw error;
 
   const participants = (data || []) as unknown as ReleasedParticipant[];
+  const simulado = Array.isArray(event.simulados) ? event.simulados[0] : event.simulados;
   for (const participant of participants) {
     if (event.simulado_id) await resyncTopCoinEarnings(supabase, participant.student_id, event.simulado_id);
+    if (event.simulado_id && options?.createNotifications !== false) {
+      const { error: notificationError } = await supabase.from("student_notifications").upsert({
+        student_id: participant.student_id,
+        type: "event_result_released",
+        title: "Seu resultado foi liberado",
+        body: `O resultado do Simulado ${simulado?.title || "Simulado"}, do Evento ${event.name}, já está disponível para consulta.`,
+        action_url: `/meus-simulados/${event.simulado_id}/resultado?event=${eventId}`,
+        reference_type: "simulado_event_participant",
+        reference_id: participant.id,
+        metadata: { event_name: event.name, simulado_name: simulado?.title || "Simulado" },
+      }, { onConflict: "student_id,type,reference_id", ignoreDuplicates: true });
+      if (notificationError) {
+        void logSystemError({ source: "simulado_event.result_release_notification", error: notificationError, request, metadata: { event_id: eventId, participant_id: participant.id, student_id: participant.student_id, notification_type: "event_result_released" } });
+      }
+    }
     if (participant.result_release_email_sent_at) continue;
     const student = Array.isArray(participant.students) ? participant.students[0] : participant.students;
     try {
       if (!student?.email) throw new Error("Aluno sem e-mail disponível para notificação.");
       const resendApiKey = process.env.RESEND_API_KEY;
       if (!resendApiKey) throw new Error("RESEND_API_KEY não configurada.");
-      const simulado = Array.isArray(event.simulados) ? event.simulados[0] : event.simulados;
       const resultUrl = `${getPublicAppUrl()}/meus-eventos/${eventId}`;
       const template = resultReleasedEmail({ studentName: student.name || "Aluno", eventName: event.name, simuladoTitle: simulado?.title || "Simulado", resultUrl });
       const { error: emailError } = await new Resend(resendApiKey).emails.send({
