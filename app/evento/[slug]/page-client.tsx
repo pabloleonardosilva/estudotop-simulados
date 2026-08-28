@@ -142,7 +142,7 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
           </p>
           <form onSubmit={submit} className="mt-8 space-y-4">
             <PremiumInput variant="jornada" label="Seu e-mail" icon={<Mail size={16} />} type="email" required value={email} onChange={(change) => setEmail(change.target.value)} />
-            <PremiumButton variant="dark-primary" className="w-full shadow-lg shadow-orange-500/20" disabled={sending || !captchaReady}>{sending && <Loader2 size={16} className="animate-spin" />} Continuar</PremiumButton>
+            <PremiumButton type="submit" variant="dark-primary" className="w-full shadow-lg shadow-orange-500/20" disabled={sending}>{sending && <Loader2 size={16} className="animate-spin" />} Continuar</PremiumButton>
             <p className="text-center text-[10px] uppercase tracking-[0.12em] text-slate-500">Este site é protegido pelo reCAPTCHA.</p>
           </form>
         </> : null}
