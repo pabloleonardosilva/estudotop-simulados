@@ -42,7 +42,7 @@ export default function Sidebar() {
   return <SidebarContent />;
 }
 
-export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarContent({ onNavigate, studentDrawer = false }: { onNavigate?: () => void; studentDrawer?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile, user, studentNavAccess, refreshProfile } = useAuth();
@@ -439,38 +439,47 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <aside className="no-print w-[236px] px-4 pb-6 pt-6 text-white lg:pl-5 lg:pt-0">
-      <div className="relative isolate">
-        <div className="pointer-events-none absolute -inset-2 -z-10 rounded-[1.8rem] bg-[radial-gradient(circle_at_28%_0%,rgba(245,158,11,0.22),transparent_58%),radial-gradient(circle_at_72%_100%,rgba(249,115,22,0.12),transparent_55%)] blur-xl" />
-        <div className="rounded-[1.35rem] border border-white/[0.09] bg-[#020811]/80 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
-          <p className="px-3.5 pb-2.5 pt-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-400">Área do Aluno</p>
-          <nav className="space-y-1.5 text-sm">
-            <NavLink href={studentHomePath(studentNavAccess)} active={isActive(studentHomePath(studentNavAccess))} icon={<Home size={17} />} onNavigate={onNavigate} student>
+    <aside className={studentDrawer ? "no-print h-full w-full text-slate-900" : "no-print w-[236px] px-4 pb-6 pt-6 text-white lg:pl-5 lg:pt-0"}>
+      <div className={studentDrawer ? "relative h-full" : "relative isolate"}>
+        {!studentDrawer && <div className="pointer-events-none absolute -inset-2 -z-10 rounded-[1.8rem] bg-[radial-gradient(circle_at_28%_0%,rgba(245,158,11,0.22),transparent_58%),radial-gradient(circle_at_72%_100%,rgba(249,115,22,0.12),transparent_55%)] blur-xl" />}
+        <div className={studentDrawer ? "flex h-full flex-col overflow-y-auto rounded-[1.55rem] border border-white/90 bg-white/95 px-4 pb-5 pt-5 shadow-[0_24px_70px_rgba(15,23,42,0.20)] ring-1 ring-slate-200/80 backdrop-blur-xl" : "rounded-[1.35rem] border border-white/[0.09] bg-[#020811]/80 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl"}>
+          <div className={studentDrawer ? "mb-5 border-b border-slate-200/80 px-2 pb-5 pr-12" : ""}>
+            <p className={studentDrawer ? "text-[10px] font-bold uppercase tracking-[0.22em] text-orange-500" : "px-3.5 pb-2.5 pt-2 text-[10px] font-black uppercase tracking-[0.22em] text-amber-400"}>Área do Aluno</p>
+            {studentDrawer && <p className="mt-2 text-sm font-semibold leading-5 text-slate-500">Navegue pelo seu ambiente de estudos.</p>}
+          </div>
+          <nav className={studentDrawer ? "space-y-1 text-sm" : "space-y-1.5 text-sm"}>
+            <NavLink href={studentHomePath(studentNavAccess)} active={isActive(studentHomePath(studentNavAccess))} icon={<Home size={17} />} onNavigate={onNavigate} student studentDrawer={studentDrawer}>
               Painel
             </NavLink>
-            <NavLink href="/meu-perfil" active={isActive("/meu-perfil")} icon={<UserRound size={17} />} onNavigate={onNavigate} student>
+            <NavLink href="/meu-perfil" active={isActive("/meu-perfil")} icon={<UserRound size={17} />} onNavigate={onNavigate} student studentDrawer={studentDrawer}>
               Meu Perfil
             </NavLink>
             {Boolean(studentNavAccess?.hasJornadas) && (
-              <NavLink href="/minhas-jornadas" active={isActive("/minhas-jornadas")} icon={<MapPin size={17} />} onNavigate={onNavigate} student>
+              <NavLink href="/minhas-jornadas" active={isActive("/minhas-jornadas")} icon={<MapPin size={17} />} onNavigate={onNavigate} student studentDrawer={studentDrawer}>
                 Minhas Jornadas
               </NavLink>
             )}
             {Boolean(studentNavAccess && !studentNavAccess.hasEventOrigin) && (
-              <NavLink href="/meus-simulados" active={isActive("/meus-simulados")} icon={<ClipboardList size={17} />} onNavigate={onNavigate} student>
+              <NavLink href="/meus-simulados" active={isActive("/meus-simulados")} icon={<ClipboardList size={17} />} onNavigate={onNavigate} student studentDrawer={studentDrawer}>
                 Meus Simulados
               </NavLink>
             )}
-            {Boolean(studentNavAccess?.hasEvents) && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student>Meus Eventos</NavLink>}
+            {Boolean(studentNavAccess?.hasEvents) && <NavLink href="/meus-eventos" active={isActive("/meus-eventos")} icon={<CalendarClock size={17} />} onNavigate={onNavigate} student studentDrawer={studentDrawer}>Meus Eventos</NavLink>}
           </nav>
+          {studentDrawer && <div className="mt-auto px-2 pt-6 text-[11px] leading-5 text-slate-400">EstudoTOP Simulados</div>}
         </div>
       </div>
     </aside>
   );
 }
 
-function itemClass(active: boolean, student = false) {
+function itemClass(active: boolean, student = false, studentDrawer = false) {
   if (student) {
+    if (studentDrawer) {
+      return active
+        ? "flex h-12 items-center gap-3 rounded-xl border border-orange-500 bg-orange-500 px-3 text-sm font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.18)]"
+        : "flex h-12 items-center gap-3 rounded-xl border border-transparent px-3 text-sm font-semibold text-slate-600 transition hover:border-orange-100 hover:bg-orange-50/75 hover:text-slate-950";
+    }
     return active
       ? "student-nav-active flex h-11 items-center gap-3 rounded-xl px-3.5 text-sm font-bold"
       : "student-nav-idle flex h-11 items-center gap-3 rounded-xl px-3.5 text-sm font-bold transition";
@@ -488,6 +497,7 @@ function NavLink({
   children,
   onNavigate,
   student = false,
+  studentDrawer = false,
   badge,
 }: {
   href: string;
@@ -496,12 +506,13 @@ function NavLink({
   children: ReactNode;
   onNavigate?: () => void;
   student?: boolean;
+  studentDrawer?: boolean;
   badge?: number | null;
 }) {
   return (
-    <Link href={href} onClick={() => onNavigate?.()} className={`${itemClass(active, student)} justify-between`}>
+    <Link href={href} onClick={() => onNavigate?.()} className={`${itemClass(active, student, studentDrawer)} justify-between`}>
       <span className="relative z-10 flex min-w-0 items-center gap-3">
-        <span className={active && !student ? "text-white" : ""}>{icon}</span>
+        <span className={studentDrawer ? `flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"}` : active && !student ? "text-white" : ""}>{icon}</span>
         <span className="truncate">{children}</span>
       </span>
 

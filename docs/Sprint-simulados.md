@@ -951,6 +951,12 @@ Nenhuma migration foi criada, alterada ou executada.
 - Na tela de instruções de `/meus-simulados/[id]`, o botão **Voltar** deixou de apontar sempre para `/meus-simulados`.
 - Com contexto de Jornada (`?jornada=` na URL, presente quando o aluno abre o simulado a partir da Jornada), o Voltar leva para `/minhas-jornadas/[studentJornadaId]?tab=simulados`, abrindo a Jornada correta já com a **Etapa 02 · Simulados** ativa.
 - Simulado avulso (sem `?jornada=`) continua voltando para `/meus-simulados`.
+
+### Contexto de Evento disponível em Meus Simulados — 2026-08-28
+
+- A listagem `/meus-simulados` reconhece os três contextos operacionais: avulso, item de Jornada e participação em Evento ativo. Se houver Evento ativo para um Simulado que também seria avulso, o card do Evento substitui o avulso para evitar duplicidade visual.
+- O card de Evento leva `?event=` para a execução, portanto consulta e consome as tentativas do Evento. Os contadores permanecem independentes por desenho; nenhuma tentativa é somada ou transferida entre contextos.
+- A identificação e o rótulo do contador deixam explícito se as tentativas são avulsas, da Jornada ou do Evento.
 - Suporte novo: `/minhas-jornadas/[id]` aceita `?tab=` (`dados|simulados|resultados|info`) como aba inicial. O valor é validado no server component (`page.tsx`); valor ausente/inválido cai em `dados`, preservando o comportamento anterior.
 - Nada mais foi alterado: telas de erro/desqualificação, execução, APIs e regras de Jornada permanecem intactas.
 

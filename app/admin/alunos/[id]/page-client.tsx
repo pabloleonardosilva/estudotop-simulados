@@ -3541,7 +3541,7 @@ export default function AlunoAdminDetalheClient({
                             {isProcessingAttempts ? "Salvando…" : "Salvar"}
                           </button>
                         </div>
-                        <p className="mt-2 text-[11px] text-white/30">Total real: {scheduleModalEvent.attempts_total}</p>
+                        <p className="mt-2 text-[11px] text-white/30">Somente neste Evento · Total real: {scheduleModalEvent.attempts_total}. Tentativas avulsas e de Jornadas permanecem separadas.</p>
                       </div>
 
                       <div className="text-xs text-white/45 xl:relative xl:pl-6 xl:before:absolute xl:before:bottom-[18px] xl:before:left-0 xl:before:top-[18px] xl:before:w-px xl:before:bg-white/[0.075]">

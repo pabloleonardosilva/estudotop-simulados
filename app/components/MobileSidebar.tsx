@@ -22,22 +22,22 @@ export default function MobileSidebar({
         type="button"
         aria-label="Fechar menu"
         onClick={onClose}
-        className="animate-drawer-fade-in absolute inset-0 bg-slate-950/45"
+        className="animate-drawer-fade-in absolute inset-0 bg-slate-950/35 backdrop-blur-[3px]"
       />
 
       {isStudent ? (
-        <div className="absolute left-3 top-1/2 max-w-[86vw] -translate-y-1/2">
-          <div className="animate-drawer-in relative">
+        <div className="animate-drawer-in absolute inset-y-3 left-3 w-[min(320px,calc(100vw-24px))] sm:inset-y-5 sm:left-5">
+          <div className="relative h-full">
             <button
               type="button"
               onClick={onClose}
-              className="absolute -right-2 -top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#0A1322] text-white shadow-lg transition hover:bg-white/15"
+              className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/85 text-slate-500 shadow-sm backdrop-blur transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
               aria-label="Fechar menu"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <SidebarContent onNavigate={onClose} />
+            <SidebarContent onNavigate={onClose} studentDrawer />
           </div>
         </div>
       ) : (

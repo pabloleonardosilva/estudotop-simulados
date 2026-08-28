@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 
 type AttemptRow = {
   id: string;
@@ -16,6 +17,8 @@ type AttemptRow = {
   expires_at: string | null;
   counts_toward_limit: boolean;
   attempt_context: string;
+  event_id: string | null;
+  event_participant_id: string | null;
   student_jornada_simulado_id: string | null;
 };
 
@@ -113,24 +116,58 @@ export async function GET(request: Request) {
   }
 
   const releaseContexts = (releaseRows || []).map((row) => ({
+    type: "jornada" as const,
     id: row.id,
     simuladoId: row.simulado_id,
     released: ["available", "in_progress", "completed"].includes(row.status),
     releaseDate: row.scheduled_release_at,
     studentJornadaId: row.student_jornada_id,
     jornadaTitle: studentJornadaMeta.get(row.student_jornada_id)?.title || null,
+    eventId: null,
+    eventName: null,
+    eventResultReleased: null,
   }));
 
+  const { data: eventParticipants, error: eventParticipantsError } = await supabase
+    .from("simulado_event_participants")
+    .select("id,event_id,result_released_at,simulado_events:event_id(id,name,status,starts_at,ends_at,simulado_id)")
+    .eq("student_id", student.id);
+
+  if (eventParticipantsError) {
+    void logSystemError({ source: "api.student.simulados_list.events", error: eventParticipantsError, request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os simulados dos seus Eventos." }, { status: 500 });
+  }
+
+  const eventContexts = (eventParticipants || []).flatMap((participant) => {
+    const event = Array.isArray(participant.simulado_events) ? participant.simulado_events[0] : participant.simulado_events;
+    if (!event?.simulado_id || effectiveEventStatus(event) !== "active") return [];
+    return [{
+      type: "event" as const,
+      id: participant.id,
+      simuladoId: event.simulado_id,
+      released: true,
+      releaseDate: event.starts_at,
+      studentJornadaId: null,
+      jornadaTitle: null,
+      eventId: event.id,
+      eventName: event.name,
+      eventResultReleased: Boolean(participant.result_released_at),
+    }];
+  });
+
   type SimuladoRow = NonNullable<typeof simulados>[number];
-  type ReleaseContext = (typeof releaseContexts)[number];
-  const visibleSimulados: Array<{ simulado: SimuladoRow; release: ReleaseContext | null }> = [];
+  type SimuladoContext = (typeof releaseContexts)[number] | (typeof eventContexts)[number];
+  const visibleSimulados: Array<{ simulado: SimuladoRow; context: SimuladoContext | null }> = [];
   for (const simulado of simulados || []) {
-    if (!linkedToJornadaIds.has(simulado.id)) {
-      visibleSimulados.push({ simulado, release: null });
-      continue;
+    const matchingEventContexts = eventContexts.filter((context) => context.simuladoId === simulado.id);
+    if (!linkedToJornadaIds.has(simulado.id) && matchingEventContexts.length === 0) {
+      visibleSimulados.push({ simulado, context: null });
     }
     for (const release of releaseContexts) {
-      if (release.simuladoId === simulado.id) visibleSimulados.push({ simulado, release });
+      if (release.simuladoId === simulado.id) visibleSimulados.push({ simulado, context: release });
+    }
+    for (const eventContext of matchingEventContexts) {
+      visibleSimulados.push({ simulado, context: eventContext });
     }
   }
 
@@ -139,7 +176,7 @@ export async function GET(request: Request) {
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
     .select(
-      "id, simulado_id, status, attempt_number, answered_count, total_questions, progress_percent, started_at, submitted_at, expires_at, counts_toward_limit, attempt_context, student_jornada_simulado_id",
+      "id, simulado_id, status, attempt_number, answered_count, total_questions, progress_percent, started_at, submitted_at, expires_at, counts_toward_limit, attempt_context, event_id, event_participant_id, student_jornada_simulado_id",
     )
     .eq("student_id", student.id)
     .in("simulado_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
@@ -159,10 +196,12 @@ export async function GET(request: Request) {
     attemptsBySimulado.set(row.simulado_id, list);
   }
 
-  const items = visibleSimulados.map(({ simulado, release }) => {
-    const allAttempts = (attemptsBySimulado.get(simulado.id) || []).filter((attempt) => release
-      ? attempt.student_jornada_simulado_id === release.id
-      : attempt.attempt_context === "standalone" && !attempt.student_jornada_simulado_id);
+  const items = visibleSimulados.map(({ simulado, context }) => {
+    const allAttempts = (attemptsBySimulado.get(simulado.id) || []).filter((attempt) => context?.type === "event"
+      ? attempt.attempt_context === "event" && attempt.event_id === context.eventId && attempt.event_participant_id === context.id
+      : context?.type === "jornada"
+        ? attempt.attempt_context === "jornada" && attempt.student_jornada_simulado_id === context.id
+        : attempt.attempt_context === "standalone" && !attempt.event_id && !attempt.event_participant_id && !attempt.student_jornada_simulado_id);
     const inProgress = allAttempts.find((row) => row.status === "in_progress") || null;
     const limitAttempts = allAttempts.filter((row) => row.counts_toward_limit);
     const completed = limitAttempts.filter((row) => row.status === "completed");
@@ -179,7 +218,7 @@ export async function GET(request: Request) {
     if (total !== null && remaining === 0 && !inProgress && completed.length === 0)
       studentStatus = "no_attempts";
 
-    const locked = Boolean(release && !release.released);
+    const locked = Boolean(context?.type === "jornada" && !context.released);
 
     return {
       id: simulado.id,
@@ -201,9 +240,12 @@ export async function GET(request: Request) {
       last_completed_attempt: completed[0] || null,
       disqualified_count: disqualified.length,
       locked,
-      release_date: locked ? release?.releaseDate ?? null : null,
-      jornada_id: release?.studentJornadaId ?? null,
-      jornada_title: release?.jornadaTitle ?? null,
+      release_date: locked ? context?.releaseDate ?? null : null,
+      jornada_id: context?.studentJornadaId ?? null,
+      jornada_title: context?.jornadaTitle ?? null,
+      event_id: context?.eventId ?? null,
+      event_name: context?.eventName ?? null,
+      event_result_released: context?.eventResultReleased ?? null,
     };
   });
 

@@ -936,6 +936,27 @@ Escopo previsto:
 
 - `/assuntos` e `/disciplinas` passam a usar a mesma linguagem visual de `/topicos`: hero institucional, formulário lateral compacto, painel principal glass, filtros agrupados, botão laranja com microinteração, estados vazios e cards internos dark responsivos.
 - Os modais de feedback, confirmação, ativação/inativação e exclusão de `/topicos` declaram o tema black explicitamente; as confirmações de `/assuntos` permanecem no padrão black oficial e as de `/disciplinas` deixam o tema light para usar `PremiumModal theme="dark"` com ações dark.
+
+### Redesenho global dark da página Assuntos — 2026-08-28
+
+- [x] `/assuntos` passou a usar diretamente `et-admin-dark-hero`, `et-admin-dark-panel`, `et-admin-dark-card`, `et-admin-dark-list-card`, badges, caixas de ícone e botão primário globais, removendo a paleta, o gradiente, as sombras e os glows próprios da página.
+- [x] Composição reorganizada em hero horizontal, formulário lateral menor e painel maior com filtros e grade responsiva de cards em 3/2/1 colunas.
+- [x] Criação, verificação de duplicidade, busca, filtro por disciplina, expansão, edição, ativação/inativação, exclusão e modais foram preservados sem alteração de regra ou API.
+- [x] Nenhuma migration, asset, componente compartilhado ou serviço externo foi alterado.
+
+### Redesenho global dark da página Disciplinas — 2026-08-28
+
+- [x] `/disciplinas` passou a consumir diretamente hero, painéis, cards, badges, caixas de ícone e botões da família global `et-admin-dark-*`.
+- [x] A composição mantém hero horizontal, formulário de criação em coluna menor e painel de listagem em coluna maior, com busca e grade responsiva de disciplinas.
+- [x] Nome, descrição, busca, expansão, edição, ativação/inativação, contagens de assuntos/questões, navegação para Assuntos, exclusão e modais foram preservados.
+- [x] Nenhuma migration, asset, componente compartilhado ou serviço externo foi alterado.
+
+### Redesenho global dark da página Bancas — 2026-08-28
+
+- [x] `/bancas` passou a consumir diretamente hero, painéis, cards, métrica, badges, caixas de ícone e botões da família global `et-admin-dark-*`.
+- [x] O hero mantém **Nova banca**; o corpo usa painel lateral de busca/resultado e painel principal com grade responsiva 3/2/1 de bancas.
+- [x] Listagem, busca, contagem, status, quantidade de questões, acesso ao Banco de Questões, exclusão confirmada, loading e feedback foram preservados sem alteração de API.
+- [x] Nenhuma migration, asset, componente compartilhado ou serviço externo foi alterado.
 - Criação, edição, busca, filtros, status, contagens, vínculos, validações, APIs administrativas, autenticação e regras de exclusão foram preservados.
 - Nenhuma migration foi criada ou alterada nesta atualização.
 
@@ -1423,3 +1444,12 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - Auditoria em duas passagens concluída sobre o inventário de rotas administrativas e módulos dark: a primeira localizou superfícies e componentes legados; a segunda confirmou o escopo único do `AppShell` e a cobertura dos componentes compartilhados. Variações locais remanescentes representam estados semânticos, conteúdo especializado ou rotas de foco, e não outro canvas/tema dark.
 - A hierarquia textual, cards de estatística/lista, filtros, badges, tabelas e botão de alerta foram incorporados à família global. O radial do hero agora também é responsabilidade do token global, evitando repetição no `PageHeader`.
 - Em `/questoes/revisar` e `/questoes/[id]/editar`, o `QuestionEditor` passou a destacar estados destrutivos e o gabarito **Errado** com vermelho Ferrari `#FF2800`, borda `#FF6047`, texto branco e glow mais evidente. O ajuste cobre alternativa Certo/Errado, faixa de gabarito, remoção de imagem, descarte, confirmação destrutiva e métricas vermelhas, sem alterar lógica ou dados.
+
+## 28/08/2026 — Evento acessível em Meus Simulados e menu compacto do aluno
+
+- [x] Participações em Eventos ativos aparecem em `/meus-simulados` identificadas pelo nome do Evento e substituem o card avulso do mesmo Simulado, evitando duplicidade visual.
+- [x] Iniciar, retomar ou refazer por esse card preserva `?event=` e usa exclusivamente o contador `event_id + event_participant_id`; vidas avulsas e de Jornada continuam independentes.
+- [x] Resultado de Evento permanece oculto no card até a liberação individual pelo professor.
+- [x] O cronograma administrativo informa explicitamente que o total mostrado pertence somente ao Evento.
+- [x] Drawer mobile do aluno atualizado para composição clean premium, sem modificar permissões, rotas ou o menu desktop.
+- [x] Nenhuma migration foi criada, alterada ou executada.
