@@ -131,7 +131,10 @@ export async function releasePendingEventResults(supabase: SupabaseClient, event
         reference_type: "simulado_event_participant",
         reference_id: participant.id,
         metadata: { event_name: event.name, simulado_name: simulado?.title || "Simulado" },
-      }, { onConflict: "student_id,type,reference_id", ignoreDuplicates: true });
+        read_at: null,
+        dismissed_at: null,
+        created_at: releasedAt,
+      }, { onConflict: "student_id,type,reference_id" });
       if (notificationError) {
         void logSystemError({ source: "simulado_event.result_release_notification", error: notificationError, request, metadata: { event_id: eventId, participant_id: participant.id, student_id: participant.student_id, notification_type: "event_result_released" } });
       }

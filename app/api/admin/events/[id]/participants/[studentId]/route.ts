@@ -104,6 +104,7 @@ async function setEventParticipantAttemptsCount(
   // apagadas removem seus próprios ganhos por FK ON DELETE CASCADE
   // (topcoin_earnings.attempt_id); tentativas criadas aqui nascem "abandoned"
   // e não geram TopCoins, então não há inconsistência introduzida.
+  return { attempts_total: fresh.length, attempts_counting: shouldCount.size };
 }
 
 async function resetEventParticipantHistory(
@@ -250,6 +251,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         eventParticipantId: participant.id,
       });
 
+      const { error: notificationError } = await supabase
+        .from("student_notifications")
+        .delete()
+        .eq("student_id", studentId)
+        .eq("type", "event_result_released")
+        .eq("reference_id", participant.id);
+      if (notificationError) throw new Error(notificationError.message);
+
       const { error: clearError } = await supabase
         .from("simulado_event_participants")
         .update({ representative_attempt_id: null, result_released_at: null })
@@ -293,7 +302,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
     }
 
-    await setEventParticipantAttemptsCount(supabase, {
+    const adjustedAttempts = await setEventParticipantAttemptsCount(supabase, {
       studentId,
       eventId,
       eventParticipantId: participant.id,
@@ -312,7 +321,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       metadata: { event_id: eventId, event_name: event.name, student_id: studentId, target_attempts: attempts },
     });
 
-    return NextResponse.json({ ok: true, message: "Número de tentativas ajustado para este aluno neste Evento." });
+    return NextResponse.json({
+      ok: true,
+      message: "Número de tentativas ajustado para este aluno neste Evento.",
+      event_participation: { id: participant.id, ...adjustedAttempts },
+    });
   } catch (error) {
     void logSystemError({
       source: "api.admin.events.participant.set_attempts",

@@ -2085,10 +2085,10 @@ export default function AlunoAdminDetalheClient({
       };
       if (!data.ok) throw new Error(data.message || "Não foi possível ajustar as tentativas.");
 
-      if (attempts === 0 && data.event_participation) {
+      if (data.event_participation) {
         updateLocalEventParticipation(participation.id, data.event_participation);
         setScheduleModalEvent((current) => (current && current.id === participation.id ? { ...current, ...data.event_participation } : current));
-        setEventAttemptDrafts((current) => ({ ...current, [participation.id]: "0" }));
+        setEventAttemptDrafts((current) => ({ ...current, [participation.id]: String(data.event_participation?.attempts_counting ?? attempts) }));
       }
 
       setFeedback({ type: "success", message: data.message || "Tentativas ajustadas." });
