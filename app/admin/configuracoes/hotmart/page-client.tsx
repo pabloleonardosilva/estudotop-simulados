@@ -8,6 +8,7 @@ import MetricCard from "@/app/components/ui/MetricCard";
 import PremiumCard from "@/app/components/ui/PremiumCard";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
+import PremiumModal from "@/app/components/ui/PremiumModal";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 
@@ -20,12 +21,42 @@ type Data = { configured: boolean; readiness: Readiness; mappings: Mapping[]; tr
 
 const emptyReadiness: Readiness = { hottok: false, client_id: false, client_secret: false, basic_token: false, environment: null, resend: false, registration_token_secret: false };
 
+function processingStatusLabel(status: string, refundRequestState?: string | null) {
+  if (refundRequestState === "reconciliation_required") return "Pedido de reembolso recebido";
+  const labels: Record<string, string> = {
+    pending_mapping: "Aguardando vínculo com Jornada ou Evento",
+    pending_destination: "Destino indisponível para concessão",
+    pending_duplicate_purchase: "Compra duplicada aguardando decisão",
+    pending_duplicate_student: "Possível cadastro duplicado",
+    processing_error: "Falha no processamento",
+    refund_reconciliation_required: "Pedido de reembolso recebido",
+  };
+  return labels[status] || status;
+}
+
+function purchaseStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    APPROVED: "Compra aprovada",
+    COMPLETE: "Compra concluída",
+    DELAYED: "Pagamento em atraso",
+    DISPUTE: "Pedido de reembolso recebido",
+    REFUNDED: "Reembolso confirmado",
+    CHARGEBACK: "Chargeback confirmado",
+    CANCELED: "Compra cancelada",
+    EXPIRED: "Compra expirada",
+  };
+  return labels[status.toUpperCase()] || status;
+}
+
 export default function HotmartPageClient({ jornadas, events }: { jornadas: Destination[]; events: Destination[] }) {
   const [data, setData] = useState<Data>({ configured: false, readiness: emptyReadiness, mappings: [], transactions: [], history: [] });
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({ hotmart_product_ucode: "", hotmart_product_name: "", hotmart_product_id: "", destination_type: "jornada", destination_id: "" });
+  const [mappingTarget, setMappingTarget] = useState<Transaction | null>(null);
+  const [pendingMappingForm, setPendingMappingForm] = useState({ destination_type: "jornada", destination_id: "" });
+  const [savingPendingMapping, setSavingPendingMapping] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,12 +92,60 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     const json = await response.json(); setMessage(json.message); if (response.ok) await load();
   }
 
+  function openMappingModal(item: Transaction) {
+    setMappingTarget(item);
+    setPendingMappingForm({ destination_type: "jornada", destination_id: "" });
+  }
+
+  async function savePendingMapping(reprocess: boolean) {
+    if (!mappingTarget || !pendingMappingForm.destination_id) {
+      setMessage("Selecione uma Jornada ou Evento.");
+      return;
+    }
+    setSavingPendingMapping(true);
+    const mappingResponse = await adminFetch("/api/admin/hotmart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hotmart_product_ucode: mappingTarget.hotmart_product_ucode,
+        hotmart_product_name: mappingTarget.product_name_snapshot,
+        hotmart_product_id: "",
+        destination_type: pendingMappingForm.destination_type,
+        destination_id: pendingMappingForm.destination_id,
+      }),
+    });
+    const mappingJson = await mappingResponse.json();
+    if (!mappingResponse.ok) {
+      setMessage(mappingJson.message || "Não foi possível criar o vínculo.");
+      setSavingPendingMapping(false);
+      return;
+    }
+    if (!reprocess) {
+      setMessage(mappingJson.message || "Produto Hotmart vinculado.");
+      setMappingTarget(null);
+      setSavingPendingMapping(false);
+      await load();
+      return;
+    }
+    const reprocessResponse = await adminFetch(`/api/admin/hotmart/transactions/${mappingTarget.id}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reprocess" }),
+    });
+    const reprocessJson = await reprocessResponse.json();
+    setMessage(reprocessResponse.ok ? reprocessJson.message : `Vínculo criado, mas ${reprocessJson.message || "não foi possível reprocessar a transação."}`);
+    setMappingTarget(null);
+    setSavingPendingMapping(false);
+    await load();
+  }
+
   const pending = data.transactions
-    .filter((item) => item.processing_status.startsWith("pending") || item.processing_status === "processing_error" || item.processing_status === "refund_reconciliation_required" || item.refund_request_state === "reconciliation_required")
-    .map((item) => item.refund_request_state === "reconciliation_required" ? { ...item, processing_status: "Pedido de reembolso recebido" } : item);
+    .filter((item) => item.processing_status.startsWith("pending") || item.processing_status === "processing_error" || item.processing_status === "refund_reconciliation_required" || item.refund_request_state === "reconciliation_required");
   const duplicates = data.transactions.filter((item) => item.processing_status === "pending_duplicate_purchase");
   const duplicateStudents = data.transactions.filter((item) => item.possible_duplicate_student_id && !item.resolved_at);
   const destinations = form.destination_type === "jornada" ? jornadas : events;
+  const pendingMappingDestinations = (pendingMappingForm.destination_type === "jornada" ? jornadas : events)
+    .filter((item) => pendingMappingForm.destination_type === "jornada" ? item.status === "published" : ["scheduled", "active"].includes(item.status));
   const tabs = [["overview", "Visão geral"], ["mappings", "Produtos vinculados"], ["transactions", "Transações"], ["pending", "Pendências"], ["duplicates", "Compras em duplicidade"], ["students", "Possíveis cadastros duplicados"], ["history", "Histórico / Logs"]];
 
   return <PageBackground><PageHeader eyebrow="Configurações" title="Integração Hotmart" description="Produtos, transações e acessos comerciais vinculados aos motores oficiais do EstudoTOP." action={<PremiumButton variant="dark" icon={<RefreshCw size={16} />} onClick={() => void load()}>Atualizar</PremiumButton>} />
@@ -76,8 +155,11 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     {loading ? <PremiumCard><p className="et-admin-dark-text">Carregando...</p></PremiumCard> : null}
     {!loading && tab === "overview" ? <PremiumCard title="Estado operacional" icon={<CreditCard size={18} />}><p className="et-admin-dark-text">O webhook autentica, deduplica e processa cada produto isoladamente. Credenciais nunca são exibidas nesta tela.</p><div className="mt-4"><PremiumButton variant="dark" onClick={() => void recoverEmails()}>Recuperar e-mails pendentes</PremiumButton></div></PremiumCard> : null}
     {!loading && tab === "mappings" ? <div className="space-y-5"><PremiumCard title="Vincular produto"><div className="grid gap-4 md:grid-cols-2"><PremiumInput variant="jornada" label="Product ucode" value={form.hotmart_product_ucode} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_ucode: event.target.value })} /><PremiumInput variant="jornada" label="Nome do produto" value={form.hotmart_product_name} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_name: event.target.value })} /><PremiumSelect variant="jornada" label="Tipo" value={form.destination_type} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setForm({ ...form, destination_type: event.target.value, destination_id: "" })}><option value="jornada">Jornada</option><option value="event">Evento</option></PremiumSelect><PremiumSelect variant="jornada" label="Destino" value={form.destination_id} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setForm({ ...form, destination_id: event.target.value })}><option value="">Selecione</option>{destinations.map((item) => <option key={item.id} value={item.id}>{item.title || item.name} — {item.status}</option>)}</PremiumSelect></div><div className="mt-4"><PremiumButton variant="dark-primary" onClick={() => void createMapping()}>Salvar vínculo</PremiumButton></div></PremiumCard><PremiumCard title="Produtos vinculados"><div className="space-y-3">{data.mappings.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-white">{item.hotmart_product_name}</p><p className="text-xs text-slate-400">{item.hotmart_product_ucode} → {item.jornadas?.title || item.simulado_events?.name}</p></div><div className="flex gap-2"><PremiumButton variant="dark" onClick={() => void setMappingStatus(item.id, item.status === "active" ? "inactive" : "active")}>{item.status === "active" ? "Inativar" : "Ativar"}</PremiumButton><PremiumButton variant="dark-warning" onClick={() => void setMappingStatus(item.id, "archived")}>Arquivar</PremiumButton></div></div>)}{!data.mappings.length ? <p className="et-admin-dark-muted">Nenhum produto vinculado.</p> : null}</div></PremiumCard></div> : null}
-    {!loading && ["transactions","pending","duplicates"].includes(tab) ? <PremiumCard title={tab === "transactions" ? "Transações" : tab === "pending" ? "Pendências" : "Compras em duplicidade"}><div className="space-y-3">{(tab === "transactions" ? data.transactions : tab === "pending" ? pending : duplicates).map((item) => { const access = item.hotmart_access_links?.[0]; const enrollment = access?.student_jornadas; return <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="flex flex-wrap justify-between gap-2"><p className="font-semibold text-white">{item.product_name_snapshot}</p><span className="text-xs text-orange-300">{item.processing_status}</span></div><p className="mt-1 text-xs text-slate-400">{item.transaction_code} · {item.hotmart_product_ucode} · {item.buyer_email} · {item.purchase_status}</p><p className="mt-2 text-xs text-slate-300">Destino: {item.jornadas?.title || item.simulado_events?.name || "Aguardando mapping"} · Origem: {access?.current_origin || "—"}{enrollment ? ` · ${enrollment.started_at} até ${enrollment.expires_at}` : ""}</p><div className="mt-3 flex flex-wrap gap-2">{item.processing_status.startsWith("pending") ? <PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton> : null}{item.processing_status === "pending_duplicate_purchase" && item.destination_type === "jornada" ? <PremiumButton variant="dark-success" onClick={() => void transactionAction(item.id, "extend_jornada")}>Estender matrícula</PremiumButton> : null}{item.processing_status.startsWith("pending") ? <PremiumButton variant="dark-warning" onClick={() => void transactionAction(item.id, "refund")}>Solicitar estorno</PremiumButton> : null}</div></div>; })}{!(tab === "transactions" ? data.transactions : tab === "pending" ? pending : duplicates).length ? <p className="et-admin-dark-muted">Nenhum registro nesta seção.</p> : null}</div></PremiumCard> : null}
+    {!loading && ["transactions","pending","duplicates"].includes(tab) ? <PremiumCard title={tab === "transactions" ? "Transações" : tab === "pending" ? "Pendências" : "Compras em duplicidade"}><div className="space-y-3">{(tab === "transactions" ? data.transactions : tab === "pending" ? pending : duplicates).map((item) => { const access = item.hotmart_access_links?.[0]; const enrollment = access?.student_jornadas; const mapping = data.mappings.find((candidate) => candidate.hotmart_product_ucode === item.hotmart_product_ucode && candidate.status === "active"); if (tab === "pending") return <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><div className="flex flex-col gap-3 border-b border-white/10 pb-4 md:flex-row md:items-start md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-orange-300">Produto Hotmart</p><h3 className="mt-1 text-lg font-semibold text-white">{item.product_name_snapshot}</h3><p className="mt-2 break-all text-xs text-slate-400">Código do produto: {item.hotmart_product_ucode}</p></div><span className="w-fit rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">{processingStatusLabel(item.processing_status, item.refund_request_state)}</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-slate-500">Transação</p><p className="mt-1 text-sm font-medium text-slate-200">{item.transaction_code}</p></div><div><p className="text-xs text-slate-500">Comprador</p><p className="mt-1 text-sm font-medium text-slate-200">{item.students?.name || item.buyer_email}</p>{item.students?.name ? <p className="mt-1 text-xs text-slate-500">{item.buyer_email}</p> : null}</div><div><p className="text-xs text-slate-500">Situação da compra</p><p className="mt-1 text-sm font-medium text-slate-200">{purchaseStatusLabel(item.purchase_status)}</p></div><div><p className="text-xs text-slate-500">Destino atual</p><p className="mt-1 text-sm font-medium text-slate-200">{mapping?.jornadas?.title || mapping?.simulado_events?.name || item.jornadas?.title || item.simulado_events?.name || "Nenhum"}</p></div></div>{item.processing_status === "pending_mapping" ? <p className="mt-4 rounded-xl border border-orange-300/15 bg-orange-400/[0.06] px-4 py-3 text-sm text-orange-100">{mapping ? "Produto vinculado. Reprocesse a transação para concluir a concessão do acesso." : "Produto ainda não vinculado a uma Jornada ou Evento."}</p> : null}<div className="mt-4 flex flex-wrap gap-2">{item.processing_status === "pending_mapping" && !mapping ? <PremiumButton variant="dark-primary" icon={<Link2 size={16} />} onClick={() => openMappingModal(item)}>Vincular produto</PremiumButton> : null}{item.processing_status === "pending_mapping" && mapping ? <PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton> : null}{item.processing_status !== "pending_mapping" && item.processing_status.startsWith("pending") ? <PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton> : null}{item.processing_status.startsWith("pending") ? <PremiumButton variant="dark-warning" onClick={() => void transactionAction(item.id, "refund")}>Solicitar estorno</PremiumButton> : null}</div></div>; return <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><div className="flex flex-wrap justify-between gap-2"><p className="font-semibold text-white">{item.product_name_snapshot}</p><span className="text-xs text-orange-300">{item.processing_status}</span></div><p className="mt-1 text-xs text-slate-400">{item.transaction_code} · {item.hotmart_product_ucode} · {item.buyer_email} · {item.purchase_status}</p><p className="mt-2 text-xs text-slate-300">Destino: {item.jornadas?.title || item.simulado_events?.name || "Aguardando mapping"} · Origem: {access?.current_origin || "—"}{enrollment ? ` · ${enrollment.started_at} até ${enrollment.expires_at}` : ""}</p><div className="mt-3 flex flex-wrap gap-2">{item.processing_status.startsWith("pending") ? <PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton> : null}{item.processing_status === "pending_duplicate_purchase" && item.destination_type === "jornada" ? <PremiumButton variant="dark-success" onClick={() => void transactionAction(item.id, "extend_jornada")}>Estender matrícula</PremiumButton> : null}{item.processing_status.startsWith("pending") ? <PremiumButton variant="dark-warning" onClick={() => void transactionAction(item.id, "refund")}>Solicitar estorno</PremiumButton> : null}</div></div>; })}{!(tab === "transactions" ? data.transactions : tab === "pending" ? pending : duplicates).length ? <p className="et-admin-dark-muted">Nenhum registro nesta seção.</p> : null}</div></PremiumCard> : null}
     {!loading && tab === "students" ? <PremiumCard title="Possíveis cadastros duplicados"><div className="space-y-3">{duplicateStudents.map((item) => <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="font-semibold text-white">Conta Hotmart: {item.students?.name || item.students?.email}</p><p className="mt-1 text-xs text-slate-400">Possível cadastro existente: {item.possible_duplicate?.name || item.possible_duplicate?.email}</p><div className="mt-3 flex gap-2"><PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "keep_separate")}>Manter separados</PremiumButton><PremiumButton variant="dark-danger" disabled>Mesclar — bloqueado</PremiumButton></div></div>)}{!duplicateStudents.length ? <p className="et-admin-dark-muted">Nenhuma possível duplicidade pendente.</p> : null}<p className="et-admin-dark-muted mt-4">O merge permanece indisponível até que todas as relações críticas e o Supabase Auth possam ser migrados de forma transacional.</p></div></PremiumCard> : null}
     {!loading && tab === "history" ? <PremiumCard title="Histórico comercial" icon={<ScrollText size={18} />}><div className="space-y-2">{data.history.map((item) => <div key={item.id} className="flex justify-between rounded-xl border border-white/10 px-4 py-3 text-sm"><span className="text-slate-200">{item.action}</span><span className="text-slate-500">{new Date(item.created_at).toLocaleString("pt-BR")}</span></div>)}</div></PremiumCard> : null}
+    <PremiumModal open={Boolean(mappingTarget)} title="Vincular produto Hotmart" message="Escolha o destino EstudoTOP para esta compra. O produto e o código vieram da transação e não podem ser alterados neste fluxo." tone="info" dismissible={!savingPendingMapping} onClose={() => { if (!savingPendingMapping) setMappingTarget(null); }} actions={<><PremiumButton variant="dark" disabled={savingPendingMapping} onClick={() => setMappingTarget(null)}>Cancelar</PremiumButton><PremiumButton variant="dark" disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(false)}>{savingPendingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton><PremiumButton variant="dark-primary" disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(true)}>{savingPendingMapping ? "Processando..." : "Vincular e reprocessar"}</PremiumButton></>}>
+      <div className="grid gap-4 md:grid-cols-2"><PremiumInput variant="jornada" label="Produto Hotmart" value={mappingTarget?.product_name_snapshot || ""} readOnly /><PremiumInput variant="jornada" label="Código do produto" value={mappingTarget?.hotmart_product_ucode || ""} readOnly /><PremiumSelect variant="jornada" label="Tipo de destino" value={pendingMappingForm.destination_type} disabled={savingPendingMapping} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setPendingMappingForm({ destination_type: event.target.value, destination_id: "" })}><option value="jornada">Jornada</option><option value="event">Evento</option></PremiumSelect><PremiumSelect variant="jornada" label={pendingMappingForm.destination_type === "jornada" ? "Jornada" : "Evento"} value={pendingMappingForm.destination_id} disabled={savingPendingMapping} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setPendingMappingForm({ ...pendingMappingForm, destination_id: event.target.value })}><option value="">Selecione</option>{pendingMappingDestinations.map((item) => <option key={item.id} value={item.id}>{item.title || item.name}</option>)}</PremiumSelect></div>
+    </PremiumModal>
   </PageBackground>;
 }
