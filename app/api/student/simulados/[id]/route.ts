@@ -29,9 +29,9 @@ export async function GET(
   let studentJornadaSimuladoId: string | null = null;
 
   if (eventId) {
-    const { data: participant } = await supabase.from("simulado_event_participants").select("id,simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
+    const { data: participant } = await supabase.from("simulado_event_participants").select("id,access_status,simulado_events:event_id(simulado_id)").eq("event_id", eventId).eq("student_id", student.id).maybeSingle();
     const event = participant?.simulado_events as unknown as { simulado_id: string } | null;
-    if (!participant || event?.simulado_id !== id) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
+    if (!participant || participant.access_status !== "active" || event?.simulado_id !== id) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
     eventParticipantId = participant.id;
   } else {
     const accessError = await assertStudentCanAccessSimulado(student.id, id, supabase, request);

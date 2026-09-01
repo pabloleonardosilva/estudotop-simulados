@@ -72,14 +72,18 @@ export async function GET(
   if (requestedStudentJornadaId) {
     const { data: scheduleItem } = await supabase
       .from("student_jornada_simulados")
-      .select("id,student_jornadas:student_jornada_id(student_id)")
+      .select("id,student_jornadas:student_jornada_id(student_id,status,expires_at)")
       .eq("student_jornada_id", requestedStudentJornadaId)
       .eq("simulado_id", simuladoId)
       .maybeSingle();
-    const enrollment = scheduleItem?.student_jornadas as unknown as { student_id: string } | { student_id: string }[] | null;
-    const ownerId = Array.isArray(enrollment) ? enrollment[0]?.student_id : enrollment?.student_id;
+    const enrollment = scheduleItem?.student_jornadas as unknown as { student_id: string; status: string; expires_at: string | null } | { student_id: string; status: string; expires_at: string | null }[] | null;
+    const enrollmentData = Array.isArray(enrollment) ? enrollment[0] : enrollment;
+    const ownerId = enrollmentData?.student_id;
     if (!scheduleItem || ownerId !== student.id) {
       return NextResponse.json({ ok: false, message: "Resultado não encontrado nesta Jornada." }, { status: 404 });
+    }
+    if (!enrollmentData || enrollmentData.status !== "active" || (enrollmentData.expires_at && enrollmentData.expires_at <= new Date().toISOString().slice(0, 10))) {
+      return NextResponse.json({ ok: false, code: "JORNADA_ACCESS_BLOCKED", message: "Seu acesso a esta Jornada está bloqueado." }, { status: 403 });
     }
     requestedStudentJornadaSimuladoId = scheduleItem.id;
   }
@@ -87,7 +91,7 @@ export async function GET(
   if (requestedEventId) {
     const { data: participant, error: participantError } = await supabase
       .from("simulado_event_participants")
-      .select("id,representative_attempt_id,result_released_at")
+      .select("id,representative_attempt_id,result_released_at,access_status")
       .eq("event_id", requestedEventId)
       .eq("student_id", student.id)
       .maybeSingle();
@@ -97,6 +101,9 @@ export async function GET(
     }
     if (!participant) {
       return NextResponse.json({ ok: false, message: "Resultado não encontrado neste Evento." }, { status: 404 });
+    }
+    if (participant.access_status !== "active") {
+      return NextResponse.json({ ok: false, code: "EVENT_ACCESS_BLOCKED", message: "Seu acesso a este Evento está bloqueado." }, { status: 403 });
     }
     requestedEventParticipantId = participant.id;
     representativeEventAttemptId = participant.representative_attempt_id;
@@ -194,7 +201,8 @@ export async function GET(
 
   if (attempt.event_participant_id) {
     if (!requestedEventParticipantId) {
-      const { data: participant } = await supabase.from("simulado_event_participants").select("result_released_at").eq("id", attempt.event_participant_id).eq("student_id", student.id).maybeSingle();
+      const { data: participant } = await supabase.from("simulado_event_participants").select("result_released_at,access_status").eq("id", attempt.event_participant_id).eq("student_id", student.id).maybeSingle();
+      if (participant?.access_status !== "active") return NextResponse.json({ ok: false, code: "EVENT_ACCESS_BLOCKED", message: "Seu acesso a este Evento está bloqueado." }, { status: 403 });
       eventResultReleased = Boolean(participant?.result_released_at);
     }
     if (!eventResultReleased) {

@@ -9,12 +9,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!student) return NextResponse.json({ ok: false, message: "Não autenticado." }, { status: 401 });
   const { id } = await params;
   const supabase = createSupabaseAdminClient();
-  const { data: participant, error } = await supabase.from("simulado_event_participants").select("id,representative_attempt_id,result_released_at,simulado_events:event_id(id,name,status,starts_at,ends_at,started_at,simulado_id,result_policy,simulados:simulado_id(id,title,max_attempts,time_limit_minutes,anti_tab_switch_enabled,anti_window_blur_enabled),simulado_event_professors(professors:professor_id(name)))").eq("event_id", id).eq("student_id", student.id).maybeSingle();
+  const { data: participant, error } = await supabase.from("simulado_event_participants").select("id,representative_attempt_id,result_released_at,access_status,commercial_block_reason,simulado_events:event_id(id,name,status,starts_at,ends_at,started_at,simulado_id,result_policy,simulados:simulado_id(id,title,max_attempts,time_limit_minutes,anti_tab_switch_enabled,anti_window_blur_enabled),simulado_event_professors(professors:professor_id(name)))").eq("event_id", id).eq("student_id", student.id).maybeSingle();
   if (error) {
     void logSystemError({ source: "api.student.events.detail", error, request, metadata: { event_id: id, student_id: student.id } });
     return NextResponse.json({ ok: false, message: "Não foi possível carregar o Evento agora." }, { status: 500 });
   }
   if (!participant) return NextResponse.json({ ok: false, message: "Evento não encontrado para sua conta." }, { status: 404 });
+  if (participant.access_status !== "active") return NextResponse.json({ ok: false, code: "EVENT_ACCESS_BLOCKED", message: "Seu acesso a este Evento está bloqueado." }, { status: 403 });
   const event = participant.simulado_events as unknown as { id: string; status: string; starts_at: string; ends_at: string; started_at: string | null; simulado_id: string | null } & Record<string, unknown>;
   // Escopado pelo Simulado atualmente vinculado ao Evento: se o Admin trocar
   // o Simulado do Evento, tentativas do Simulado anterior não devem mais

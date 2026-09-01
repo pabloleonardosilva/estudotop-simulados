@@ -130,8 +130,9 @@ export async function GET(request: Request) {
 
   const { data: eventParticipants, error: eventParticipantsError } = await supabase
     .from("simulado_event_participants")
-    .select("id,event_id,result_released_at,simulado_events:event_id(id,name,status,starts_at,ends_at,simulado_id)")
-    .eq("student_id", student.id);
+    .select("id,event_id,result_released_at,access_status,simulado_events:event_id(id,name,status,starts_at,ends_at,simulado_id)")
+    .eq("student_id", student.id)
+    .eq("access_status", "active");
 
   if (eventParticipantsError) {
     void logSystemError({ source: "api.student.simulados_list.events", error: eventParticipantsError, request });

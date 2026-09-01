@@ -108,12 +108,12 @@ export async function POST(
   if (eventId) {
     const { data: participant } = await supabase
       .from("simulado_event_participants")
-      .select("id,event_id,simulado_events:event_id(id,simulado_id,status,starts_at,ends_at,started_at,result_policy)")
+      .select("id,event_id,access_status,simulado_events:event_id(id,simulado_id,status,starts_at,ends_at,started_at,result_policy)")
       .eq("event_id", eventId)
       .eq("student_id", student.id)
       .maybeSingle();
     const event = participant?.simulado_events as unknown as { id: string; simulado_id: string | null; status: string; starts_at: string; ends_at: string; started_at: string | null; result_policy: "blocked" | "released" } | null;
-    if (!participant || !event || !event.simulado_id || event.simulado_id !== simuladoId) return NextResponse.json({ ok: false, message: "Você não possui acesso a um Simulado vinculado a este Evento." }, { status: 403 });
+    if (!participant || participant.access_status !== "active" || !event || !event.simulado_id || event.simulado_id !== simuladoId) return NextResponse.json({ ok: false, message: "Você não possui acesso a um Simulado vinculado a este Evento." }, { status: 403 });
     eventCanStartNewAttempt = effectiveEventStatus(event) === "active";
     eventParticipant = { id: participant.id, event_id: participant.event_id };
     eventResultPolicy = event.result_policy;

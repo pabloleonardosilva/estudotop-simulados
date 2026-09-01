@@ -11,6 +11,7 @@ import {
 } from "@/app/lib/email/jornadaEmailTemplates";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -115,6 +116,8 @@ export async function POST(
       { status: 409 },
     );
   }
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   // Carrega questões do simulado para corrigir
   const { data: simuladoQuestions, error: sqError } = await supabase

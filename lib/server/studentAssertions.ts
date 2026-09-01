@@ -215,6 +215,32 @@ export async function assertStudentOwnsAttempt(
   return { attempt };
 }
 
+export async function assertAttemptCommercialAccess(
+  studentId: string,
+  attemptId: string,
+  supabase: Supabase,
+): Promise<NextResponse | null> {
+  const { data: attempt } = await supabase.from("simulado_attempts")
+    .select("event_participant_id,student_jornada_simulado_id")
+    .eq("id", attemptId).eq("student_id", studentId).maybeSingle();
+  if (!attempt) return NextResponse.json({ ok: false, message: "Tentativa não encontrada." }, { status: 404 });
+  if (attempt.event_participant_id) {
+    const { data: participant } = await supabase.from("simulado_event_participants")
+      .select("access_status").eq("id", attempt.event_participant_id).maybeSingle();
+    if (participant?.access_status !== "active") return NextResponse.json({ ok: false, code: "EVENT_ACCESS_BLOCKED", message: "Seu acesso a este Evento está bloqueado." }, { status: 403 });
+  }
+  if (attempt.student_jornada_simulado_id) {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: schedule } = await supabase.from("student_jornada_simulados")
+      .select("student_jornadas:student_jornada_id(status,expires_at)")
+      .eq("id", attempt.student_jornada_simulado_id).maybeSingle();
+    const enrollmentRef = schedule?.student_jornadas as unknown as { status: string; expires_at: string } | { status: string; expires_at: string }[] | null;
+    const enrollment = Array.isArray(enrollmentRef) ? enrollmentRef[0] : enrollmentRef;
+    if (!enrollment || enrollment.status !== "active" || enrollment.expires_at <= today) return NextResponse.json({ ok: false, code: "JORNADA_ACCESS_BLOCKED", message: "Seu acesso a esta Jornada está bloqueado." }, { status: 403 });
+  }
+  return null;
+}
+
 async function assertPublishedSimulado(
   simuladoId: string,
   supabase: Supabase,

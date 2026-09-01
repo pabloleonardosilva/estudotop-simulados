@@ -125,6 +125,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (error || !data || data.status === "cancelled") {
     return NextResponse.json({ ok: false, message: "Jornada não encontrada." }, { status: 404 });
   }
+  if (data.status !== "active") {
+    return NextResponse.json({ ok: false, code: "JORNADA_ACCESS_BLOCKED", message: "Seu acesso a esta Jornada está bloqueado." }, { status: 403 });
+  }
 
   const rows = [...((data as any).student_jornada_simulados || [])].sort(
     (a: any, b: any) => a.order_number - b.order_number,

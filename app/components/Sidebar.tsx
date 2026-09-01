@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  CreditCard,
   Home,
   GraduationCap,
   Layers,
@@ -417,6 +418,10 @@ export function SidebarContent({ onNavigate, studentDrawer = false }: { onNaviga
 
               <NavLink href="/admin/configuracoes/imagens-do-sistema" active={isActive("/admin/configuracoes/imagens-do-sistema")} icon={<LibraryBig size={16} />} onNavigate={onNavigate}>
                 Imagens do Sistema
+              </NavLink>
+
+              <NavLink href="/admin/configuracoes/hotmart" active={isActive("/admin/configuracoes/hotmart")} icon={<CreditCard size={16} />} onNavigate={onNavigate}>
+                Hotmart
               </NavLink>
             </AdminGroup>
           </nav>

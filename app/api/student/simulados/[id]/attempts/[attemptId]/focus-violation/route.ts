@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
 import { FOCUS_VIOLATION_LIMIT } from "@/lib/simulado-focus-violation";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 type ViolationPayload = {
   violation_number?: number;
@@ -22,6 +23,8 @@ export async function POST(
   const violationNumber = Math.max(1, Math.floor(body.violation_number || 1));
 
   const supabase = createSupabaseAdminClient();
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   const { data: attempt, error } = await supabase
     .from("simulado_attempts")
