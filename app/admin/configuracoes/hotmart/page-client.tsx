@@ -9,6 +9,7 @@ import PremiumCard from "@/app/components/ui/PremiumCard";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import { adminFetch } from "@/lib/supabase/adminFetch";
 
 type Destination = { id: string; title?: string; name?: string; status: string };
 type Mapping = { id: string; hotmart_product_ucode: string; hotmart_product_name: string; destination_type: string; status: string; jornadas?: { title?: string } | null; simulado_events?: { name?: string } | null };
@@ -28,7 +29,7 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
 
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch("/api/admin/hotmart");
+    const response = await adminFetch("/api/admin/hotmart");
     const json = await response.json();
     if (response.ok && json.ok) setData(json);
     else setMessage(json.message || "Não foi possível carregar.");
@@ -40,23 +41,23 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
   }, [load]);
 
   async function createMapping() {
-    const response = await fetch("/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const response = await adminFetch("/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     const json = await response.json();
     setMessage(json.message);
     if (response.ok) { setForm({ ...form, hotmart_product_ucode: "", hotmart_product_name: "", hotmart_product_id: "", destination_id: "" }); await load(); }
   }
   async function setMappingStatus(id: string, status: string) {
-    const response = await fetch(`/api/admin/hotmart/mappings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    const response = await adminFetch(`/api/admin/hotmart/mappings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
     const json = await response.json(); setMessage(json.message); if (response.ok) await load();
   }
   async function transactionAction(id: string, action: string) {
     const response = action === "refund"
-      ? await fetch(`/api/admin/hotmart/transactions/${id}/refund`, { method: "POST" })
-      : await fetch(`/api/admin/hotmart/transactions/${id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      ? await adminFetch(`/api/admin/hotmart/transactions/${id}/refund`, { method: "POST" })
+      : await adminFetch(`/api/admin/hotmart/transactions/${id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     const json = await response.json(); setMessage(json.message); if (response.ok) await load();
   }
   async function recoverEmails() {
-    const response = await fetch("/api/admin/hotmart/recover-emails", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 20 }) });
+    const response = await adminFetch("/api/admin/hotmart/recover-emails", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 20 }) });
     const json = await response.json(); setMessage(json.message); if (response.ok) await load();
   }
 
