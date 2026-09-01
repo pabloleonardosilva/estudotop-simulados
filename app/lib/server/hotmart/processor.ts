@@ -29,6 +29,19 @@ export function isHotmartRefundAlreadyConfirmed(refundStatus: string | null, ref
   return refundStatus === "confirmed" && refundRequestState === "confirmed";
 }
 
+export function shouldRegisterHotmartProtest(refundStatus: string | null, refundRequestState: string | null) {
+  return refundStatus !== "confirmed" && !["requesting", "accepted", "manual_required", "reconciliation_required", "confirmed"].includes(refundRequestState || "");
+}
+
+const HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE = ["received", "pending_mapping", "pending_destination", "processing_error", "refund_reconciliation_required"];
+
+export function getHotmartCommercialProcessingDecision(processingStatus: string) {
+  if (processingStatus === "processing") return "wait" as const;
+  if (processingStatus === "processed") return "complete" as const;
+  if (HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE.includes(processingStatus)) return "process" as const;
+  return "preserve" as const;
+}
+
 function isoDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
@@ -210,6 +223,58 @@ async function reactivateOverdueAccess(supabase: SupabaseClient, transactionId: 
   return true;
 }
 
+async function waitForHotmartCommercialProcessing(supabase: SupabaseClient, transactionId: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const { data } = await supabase.from("hotmart_transactions").select("processing_status").eq("id", transactionId).maybeSingle();
+    if (data?.processing_status && data.processing_status !== "processing") return data.processing_status as string;
+  }
+  return "processing";
+}
+
+async function claimHotmartCommercialProcessing(supabase: SupabaseClient, transactionId: string) {
+  const { data, error } = await supabase.from("hotmart_transactions")
+    .update({ processing_status: "processing" })
+    .eq("id", transactionId)
+    .in("processing_status", HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function registerHotmartProtest(supabase: SupabaseClient, transaction: {
+  id: string;
+  student_id: string | null;
+  refund_status: string | null;
+  refund_request_state: string | null;
+}) {
+  if (!shouldRegisterHotmartProtest(transaction.refund_status, transaction.refund_request_state)) {
+    return transaction.refund_request_state === "confirmed" ? "blocked_financial" : "refund_reconciliation_required";
+  }
+  const receivedAt = new Date().toISOString();
+  const { data: registered, error } = await supabase.from("hotmart_transactions").update({
+    processing_status: "refund_reconciliation_required",
+    refund_request_state: "reconciliation_required",
+    refund_requested_at: receivedAt,
+    processed_at: receivedAt,
+  }).eq("id", transaction.id)
+    .is("refund_request_state", null)
+    .or("refund_status.is.null,refund_status.neq.confirmed")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!registered) return "refund_reconciliation_required";
+  await recordHotmartHistory(supabase, {
+    action: "refund_request_received",
+    actorType: "hotmart",
+    studentId: transaction.student_id,
+    transactionId: transaction.id,
+    metadata: { purchase_status: "DISPUTE" },
+  });
+  return "refund_reconciliation_required";
+}
+
 export async function processHotmartEvent(supabase: SupabaseClient, event: NormalizedHotmartEvent) {
   const transactionPayload = {
     transaction_code: event.transactionCode,
@@ -234,6 +299,8 @@ export async function processHotmartEvent(supabase: SupabaseClient, event: Norma
     .upsert(transactionPayload, { onConflict: "transaction_code" }).select("id,student_id,processing_status,refund_status,refund_request_state,refund_confirmed_at").single();
   if (error || !transaction) throw error || new Error("Falha ao registrar transação Hotmart.");
 
+  if (event.event === "PURCHASE_PROTEST") return registerHotmartProtest(supabase, transaction);
+
   if (["PURCHASE_DELAYED", "PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK", "PURCHASE_CANCELED"].includes(event.event)) {
     if (event.event === "PURCHASE_REFUNDED" && isHotmartRefundAlreadyConfirmed(transaction.refund_status, transaction.refund_request_state)) {
       return "blocked_financial";
@@ -246,26 +313,46 @@ export async function processHotmartEvent(supabase: SupabaseClient, event: Norma
   if (!["PURCHASE_APPROVED", "PURCHASE_COMPLETE"].includes(event.event)) return "received";
   if (transaction.processing_status === "processed") return "processed";
   if (await reactivateOverdueAccess(supabase, transaction.id)) return "processed";
-
-  const student = transaction.student_id
-    ? { id: transaction.student_id, created: false, possibleDuplicate: false }
-    : await resolveStudent(supabase, event, transaction.id);
-  const { data: mapping } = await supabase.from("hotmart_product_mappings")
-    .select("id,status,destination_type,jornada_id,event_id").eq("hotmart_product_ucode", event.product.ucode).maybeSingle();
-  if (!mapping || mapping.status !== "active") {
-    const status = "pending_mapping";
-    await supabase.from("hotmart_transactions").update({ student_id: student.id, processing_status: status }).eq("id", transaction.id);
-    return status;
+  if (transaction.refund_request_state === "reconciliation_required") {
+    const { data: existingAccess } = await supabase.from("hotmart_access_links").select("id").eq("hotmart_transaction_id", transaction.id).maybeSingle();
+    if (existingAccess) return "refund_reconciliation_required";
   }
-  await supabase.from("hotmart_transactions").update({
-    student_id: student.id, mapping_id: mapping.id, destination_type: mapping.destination_type,
-    jornada_id: mapping.jornada_id, event_id: mapping.event_id,
-  }).eq("id", transaction.id);
-  const result = mapping.destination_type === "jornada"
-    ? await grantJornada(supabase, event, transaction.id, mapping as Mapping, student.id)
-    : await grantEvent(supabase, transaction.id, mapping as Mapping, student.id);
-  await supabase.from("hotmart_transactions").update({ processing_status: result.status, processed_at: result.status === "processed" ? new Date().toISOString() : null }).eq("id", transaction.id);
-  return result.status;
+  const processingDecision = getHotmartCommercialProcessingDecision(transaction.processing_status);
+  if (processingDecision === "preserve") return transaction.processing_status;
+  if (processingDecision === "complete") return "processed";
+  if (processingDecision === "wait") return waitForHotmartCommercialProcessing(supabase, transaction.id);
+  if (!(await claimHotmartCommercialProcessing(supabase, transaction.id))) {
+    return waitForHotmartCommercialProcessing(supabase, transaction.id);
+  }
+
+  try {
+    const student = transaction.student_id
+      ? { id: transaction.student_id, created: false, possibleDuplicate: false }
+      : await resolveStudent(supabase, event, transaction.id);
+    const { data: mapping } = await supabase.from("hotmart_product_mappings")
+      .select("id,status,destination_type,jornada_id,event_id").eq("hotmart_product_ucode", event.product.ucode).maybeSingle();
+    if (!mapping || mapping.status !== "active") {
+      const status = "pending_mapping";
+      await supabase.from("hotmart_transactions").update({ student_id: student.id, processing_status: status }).eq("id", transaction.id);
+      return status;
+    }
+    await supabase.from("hotmart_transactions").update({
+      student_id: student.id, mapping_id: mapping.id, destination_type: mapping.destination_type,
+      jornada_id: mapping.jornada_id, event_id: mapping.event_id,
+    }).eq("id", transaction.id);
+    const result = mapping.destination_type === "jornada"
+      ? await grantJornada(supabase, event, transaction.id, mapping as Mapping, student.id)
+      : await grantEvent(supabase, transaction.id, mapping as Mapping, student.id);
+    await supabase.from("hotmart_transactions").update({ processing_status: result.status, processed_at: result.status === "processed" ? new Date().toISOString() : null }).eq("id", transaction.id);
+    return result.status;
+  } catch (error) {
+    await supabase.from("hotmart_transactions").update({
+      processing_status: "processing_error",
+      processing_error_code: "COMMERCIAL_PROCESSING_FAILED",
+      processing_error_message: "Falha no processamento comercial do evento.",
+    }).eq("id", transaction.id);
+    throw error;
+  }
 }
 
 export async function reprocessHotmartTransaction(supabase: SupabaseClient, transactionId: string) {

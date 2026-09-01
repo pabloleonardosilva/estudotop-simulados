@@ -56,12 +56,16 @@ function payload(event) {
   };
 }
 
-for (const event of ["PURCHASE_APPROVED", "PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK", "PURCHASE_DELAYED", "PURCHASE_CANCELED"]) {
+for (const event of ["PURCHASE_APPROVED", "PURCHASE_COMPLETE", "PURCHASE_PROTEST", "PURCHASE_REFUNDED", "PURCHASE_CHARGEBACK", "PURCHASE_DELAYED", "PURCHASE_CANCELED", "PURCHASE_EXPIRED"]) {
   const result = normalize.normalizeHotmartPayload(payload(event));
   assert.equal(result.event, event);
   assert.equal(result.product.ucode, "UCODE-1");
   assert.equal(result.buyer.email, "aluno@example.com");
 }
+
+const protestPayload = payload("PURCHASE_PROTEST");
+protestPayload.data.purchase.status = "DISPUTE";
+assert.equal(normalize.normalizeHotmartPayload(protestPayload).purchase.status, "DISPUTE");
 
 const optional = payload("PURCHASE_APPROVED");
 delete optional.data.buyer.phone;
@@ -163,6 +167,24 @@ assert.equal(hotmartProcessor.shouldApplyHotmartFinancialTransition("hotmart", "
 assert.equal(hotmartProcessor.shouldApplyHotmartFinancialTransition("hotmart", "cancelled", "hotmart_cancelled", "cancelled", "hotmart_cancelled"), false);
 assert.equal(hotmartProcessor.isHotmartRefundAlreadyConfirmed(null, null), false);
 assert.equal(hotmartProcessor.isHotmartRefundAlreadyConfirmed("confirmed", "confirmed"), true);
+assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, null), true);
+assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, "reconciliation_required"), false);
+assert.equal(hotmartProcessor.shouldRegisterHotmartProtest("confirmed", "confirmed"), false);
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("received"), "process");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("pending_mapping"), "process");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("refund_reconciliation_required"), "process");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("processing"), "wait");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("processed"), "complete");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("blocked_financial"), "preserve");
+let commercialState = "received";
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision(commercialState), "process");
+commercialState = "processed";
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision(commercialState), "complete");
+assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("received"), "process");
+assert.equal(processorSource.includes('action: "refund_request_received"'), true);
+assert.equal(processorSource.includes('refund_request_state: "reconciliation_required"'), true);
+assert.equal(processorSource.includes('processing_status: "processing"'), true);
+assert.equal(processorSource.includes('.in("processing_status", HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE)'), true);
 
 const hotmartEnvNames = ["HOTMART_ENVIRONMENT", "HOTMART_CLIENT_ID", "HOTMART_CLIENT_SECRET", "HOTMART_BASIC_TOKEN"];
 const previousHotmartEnv = Object.fromEntries(hotmartEnvNames.map((name) => [name, process.env[name]]));

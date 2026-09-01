@@ -6,6 +6,7 @@ export const HOTMART_PURCHASE_EVENTS = [
   "PURCHASE_CHARGEBACK",
   "PURCHASE_EXPIRED",
   "PURCHASE_DELAYED",
+  "PURCHASE_PROTEST",
 ] as const;
 
 export type HotmartPurchaseEvent = (typeof HOTMART_PURCHASE_EVENTS)[number];

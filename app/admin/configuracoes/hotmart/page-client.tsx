@@ -12,7 +12,7 @@ import PremiumSelect from "@/app/components/ui/PremiumSelect";
 
 type Destination = { id: string; title?: string; name?: string; status: string };
 type Mapping = { id: string; hotmart_product_ucode: string; hotmart_product_name: string; destination_type: string; status: string; jornadas?: { title?: string } | null; simulado_events?: { name?: string } | null };
-type Transaction = { id: string; transaction_code: string; hotmart_product_ucode: string; product_name_snapshot: string; buyer_email: string; purchase_status: string; processing_status: string; amount: number | null; currency: string | null; created_at: string; destination_type: string | null; possible_duplicate_student_id?: string | null; resolved_at?: string | null; jornadas?: { title?: string } | null; simulado_events?: { name?: string } | null; students?: { name?: string; email?: string } | null; possible_duplicate?: { name?: string; email?: string } | null; hotmart_access_links?: Array<{ current_origin: string; access_state: string; access_expires_at?: string | null; student_jornadas?: { started_at?: string; expires_at?: string; status?: string } | null }> };
+type Transaction = { id: string; transaction_code: string; hotmart_product_ucode: string; product_name_snapshot: string; buyer_email: string; purchase_status: string; processing_status: string; refund_request_state?: string | null; amount: number | null; currency: string | null; created_at: string; destination_type: string | null; possible_duplicate_student_id?: string | null; resolved_at?: string | null; jornadas?: { title?: string } | null; simulado_events?: { name?: string } | null; students?: { name?: string; email?: string } | null; possible_duplicate?: { name?: string; email?: string } | null; hotmart_access_links?: Array<{ current_origin: string; access_state: string; access_expires_at?: string | null; student_jornadas?: { started_at?: string; expires_at?: string; status?: string } | null }> };
 type History = { id: string; action: string; actor_type: string; created_at: string };
 type Readiness = { hottok: boolean; client_id: boolean; client_secret: boolean; basic_token: boolean; environment: "sandbox" | "production" | null; resend: boolean; registration_token_secret: boolean };
 type Data = { configured: boolean; readiness: Readiness; mappings: Mapping[]; transactions: Transaction[]; history: History[] };
@@ -60,7 +60,9 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     const json = await response.json(); setMessage(json.message); if (response.ok) await load();
   }
 
-  const pending = data.transactions.filter((item) => item.processing_status.startsWith("pending") || item.processing_status === "processing_error" || item.processing_status === "refund_reconciliation_required");
+  const pending = data.transactions
+    .filter((item) => item.processing_status.startsWith("pending") || item.processing_status === "processing_error" || item.processing_status === "refund_reconciliation_required" || item.refund_request_state === "reconciliation_required")
+    .map((item) => item.refund_request_state === "reconciliation_required" ? { ...item, processing_status: "Pedido de reembolso recebido" } : item);
   const duplicates = data.transactions.filter((item) => item.processing_status === "pending_duplicate_purchase");
   const duplicateStudents = data.transactions.filter((item) => item.possible_duplicate_student_id && !item.resolved_at);
   const destinations = form.destination_type === "jornada" ? jornadas : events;
