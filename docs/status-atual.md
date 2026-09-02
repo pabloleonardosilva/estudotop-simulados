@@ -1462,3 +1462,11 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Cooldown de 60 segundos, reCAPTCHA, normalização do e-mail, token com hash, validade de 24 horas e índice único parcial foram preservados.
 - [x] Intenção expirada continua sendo substituída por nova intent e novo token; intenção consumida permanece fora do recorte pendente e segue o fluxo oficial existente.
 - [x] Nenhuma migration foi criada, alterada ou executada.
+
+## 02/09/2026 — Questões, assuntos e compatibilidade da inscrição pública
+
+- [x] Importador, gerador por IA e criação manual usam interface clara clean e permitem excluir alternativas excedentes, preservando o mínimo de quatro.
+- [x] O importador reconhece linhas de seis ou mais `x` como separador opcional e extrai o cabeçalho estruturado de prova sem alterar o splitter legado.
+- [x] Assuntos passam a ser únicos por disciplina pela migration `20260902180000_scope_subject_name_uniqueness_by_discipline.sql`, criada e não executada nesta etapa.
+- [x] A página pública de Evento apresenta fallback e nova tentativa quando seu carregamento inicial falha, com ajustes seguros de viewport e fonte para iOS.
+- [x] Nenhum fluxo de autenticação, confirmação ou reCAPTCHA foi enfraquecido.

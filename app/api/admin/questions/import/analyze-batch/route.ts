@@ -88,6 +88,21 @@ function extractAgencyNameFromText(text: string): string {
   return "";
 }
 
+function extractStructuredQuestionMetadata(text: string) {
+  for (const line of text.replace(/\r/g, "").split("\n")) {
+    const parts = line.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 4 || !/^(?:19\d{2}|20\d{2}|2100)$/.test(parts[0])) continue;
+
+    return {
+      year: Number(parts[0]),
+      boardName: parts[1],
+      agencyName: parts[2],
+    };
+  }
+
+  return null;
+}
+
 
 type ParsedAlternative = {
   label: string;
@@ -298,6 +313,22 @@ function coalesceContinuationBlocks(blocks: string[]) {
   return merged;
 }
 
+function isQuestionSeparatorLine(line: string) {
+  const compact = line.trim().replace(/\s+/g, "");
+  return /^x{6,}$/i.test(compact);
+}
+
+function cleanSeparatorDelimitedBlock(value: string) {
+  const lines = value.split("\n");
+  const firstContentIndex = lines.findIndex((line) => line.trim());
+
+  if (firstContentIndex >= 0 && /^\d{1,4}\)\s*$/.test(lines[firstContentIndex].trim())) {
+    lines.splice(firstContentIndex, 1);
+  }
+
+  return lines.join("\n").trim();
+}
+
 function isPreMetadataContextLine(line: string) {
   const trimmed = line.trim();
 
@@ -328,6 +359,26 @@ function splitIntoQuestionBlocks(text: string) {
   const normalized = sanitizeImportedText(text);
 
   if (!normalized) return [];
+
+  const normalizedLines = normalized.split("\n");
+  if (normalizedLines.some(isQuestionSeparatorLine)) {
+    const separatorBlocks: string[] = [];
+    let current: string[] = [];
+
+    for (const line of normalizedLines) {
+      if (isQuestionSeparatorLine(line)) {
+        const block = cleanSeparatorDelimitedBlock(current.join("\n"));
+        if (block) separatorBlocks.push(block);
+        current = [];
+        continue;
+      }
+      current.push(line);
+    }
+
+    const lastBlock = cleanSeparatorDelimitedBlock(current.join("\n"));
+    if (lastBlock) separatorBlocks.push(lastBlock);
+    return separatorBlocks;
+  }
 
   const markedRegex =
     /\(?IN[IÍ]CIO DA QUEST(?:ÃO|AO)\)?([\s\S]*?)\(?FIM DA QUEST(?:ÃO|AO)\)?/gi;
@@ -1289,9 +1340,10 @@ ${text}
         if (!("text" in alt)) return alt;
         return { ...alt, text: formatStatementForDisplay((alt as ParsedAlternative).text) };
       });
+      const structuredMetadata = extractStructuredQuestionMetadata(rawBlock);
       const rawBoardName = extractBoardNameFromText(rawBlock);
-      const boardName = normalizeBoardName(rawBoardName || question.board_name || "");
-      const agencyName = clean(extractAgencyNameFromText(rawBlock) || question.orgao || question.agency_name || "");
+      const boardName = normalizeBoardName(rawBoardName || structuredMetadata?.boardName || question.board_name || "");
+      const agencyName = clean(extractAgencyNameFromText(rawBlock) || structuredMetadata?.agencyName || question.orgao || question.agency_name || "");
       const existingBoard = boardName
         ? await findBoardByName(supabase, boardName)
         : null;
@@ -1299,6 +1351,7 @@ ${text}
       const detectedYear =
         extractYearFromText(rawBlock) ||
         extractYearFromText(statement) ||
+        structuredMetadata?.year ||
         (isValidYear(question.year) ? Number(question.year) : null) ||
         defaultYear;
 

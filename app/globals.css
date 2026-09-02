@@ -264,20 +264,28 @@ mark {
   overflow: auto;
   vertical-align: middle;
   cursor: nwse-resize;
-  border-radius: 0.625rem;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+img[data-pasted-image="true"] {
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
 
 .richtext-editor img:hover,
 .richtext-editor img[data-pasted-image="true"]:hover {
-  outline: 2px solid rgba(249, 115, 22, 0.35);
-  outline-offset: 2px;
+  outline: 0;
 }
 
 .richtext-editor img[data-resizing-selected="true"],
 .richtext-editor img[data-pasted-image="true"][data-resizing-selected="true"] {
-  outline: 2px solid rgba(249, 115, 22, 0.85);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.12), 0 14px 30px rgba(15, 23, 42, 0.16);
+  outline: 0;
+  box-shadow: none;
   cursor: nwse-resize;
 }
 
@@ -702,6 +710,105 @@ button:disabled,
 
 .et-admin-dark-content :where(input, textarea)::placeholder {
   color: rgba(148, 163, 184, 0.65) !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content {
+  min-height: 100%;
+  color: #334155;
+  background: #eef0f4;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.bg-white) {
+  background-color: #ffffff !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.bg-white\/70) {
+  background-color: rgb(255 255 255 / 0.7) !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.bg-white\/90) {
+  background-color: rgb(255 255 255 / 0.9) !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.bg-slate-50) {
+  background-color: #f8fafc !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.bg-slate-50\/70) {
+  background-color: rgb(248 250 252 / 0.7) !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.border-slate-100) {
+  border-color: #f1f5f9 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.border-slate-200, .border-slate-200\/80) {
+  border-color: #e2e8f0 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.ring-slate-100) {
+  --tw-ring-color: #f1f5f9 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-950) {
+  color: #020617 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-900) {
+  color: #0f172a !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-800) {
+  color: #1e293b !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-700) {
+  color: #334155 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-600) {
+  color: #475569 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-500) {
+  color: #64748b !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(.text-slate-400) {
+  color: #94a3b8 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+  border-color: #e2e8f0 !important;
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+  color-scheme: light;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea):focus {
+  border-color: #fb923c !important;
+  --tw-ring-color: rgb(255 237 213 / 0.9) !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content select option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(input, textarea)::placeholder {
+  color: #94a3b8 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(button, a).border-slate-200.bg-white {
+  border-color: #e2e8f0 !important;
+  background-color: #ffffff !important;
+  color: #475569 !important;
+}
+
+.et-admin-dark-content .et-admin-clean-content :where(button, a).border-slate-200.bg-white:hover {
+  border-color: #fdba74 !important;
+  background-color: #fff7ed !important;
+  color: #c2410c !important;
 }
 
 .et-admin-dark-content :where(button, a).rounded-2xl.px-5.py-3 {

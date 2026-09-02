@@ -2031,6 +2031,8 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 ### 13.1 Normalização de nomes de Assuntos — exibição e persistência (atualizado em 2026-06-10)
 
+**Unicidade por disciplina (02/09/2026):** nomes de assuntos são únicos pelo par `(discipline_id, name)`. Disciplinas distintas podem possuir um assunto chamado **Geral**, enquanto duplicatas na mesma disciplina permanecem bloqueadas. Migration: `20260902180000_scope_subject_name_uniqueness_by_discipline.sql`.
+
 **Função:** garantir que nomes de assuntos sejam exibidos com conectivos/preposições em minúsculo, sem depender de saneamento imediato do banco.
 
 **Arquivos envolvidos:**

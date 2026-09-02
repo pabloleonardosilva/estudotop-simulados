@@ -2199,23 +2199,25 @@ export default function QuestoesClient({
                                     ? isCerto
                                       ? "border-emerald-500/40 bg-emerald-500/10"
                                       : "border-red-500/40 bg-red-500/10"
-                                    : editingAnswer
-                                      ? "border-white/[0.08] bg-white/[0.03] hover:border-orange-400/30 hover:bg-orange-400/[0.07]"
-                                      : "border-white/[0.07] bg-white/[0.03]"
+                                    : isCerto
+                                      ? "border-emerald-500/30 bg-emerald-500/[0.08]"
+                                      : "border-red-500/30 bg-red-500/[0.08]"
                                 }`}>
                                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 ${
                                     isMarkedCorrect
                                       ? isCerto
                                         ? "border-emerald-500 bg-emerald-500/20"
                                         : "border-red-500 bg-red-500/20"
-                                      : "border-white/[0.15] bg-white/[0.06]"
+                                      : isCerto
+                                        ? "border-emerald-500/40 bg-emerald-500/10"
+                                        : "border-red-500/40 bg-red-500/10"
                                   }`}>
                                     {isMarkedCorrect && <span className="text-base leading-none">{OWL_MARK}</span>}
                                   </span>
                                   <span className={`font-bold text-sm ${
                                     isMarkedCorrect
                                       ? isCerto ? "text-emerald-300" : "text-red-300"
-                                      : "text-white/40"
+                                      : isCerto ? "text-emerald-300" : "text-red-300"
                                   }`}>
                                     {isCerto ? "Certo" : "Errado"}
                                   </span>
@@ -3249,20 +3251,22 @@ function InlineQuestionEditor({
                         ? isCerto
                           ? "border-emerald-500/40 bg-emerald-500/10"
                           : "border-red-500/40 bg-red-500/10"
-                        : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.05]"
+                        : isCerto
+                          ? "border-emerald-500/30 bg-emerald-500/[0.08] hover:border-emerald-500/50 hover:bg-emerald-500/[0.14]"
+                          : "border-red-500/30 bg-red-500/[0.08] hover:border-red-500/50 hover:bg-red-500/[0.14]"
                     }`}
                   >
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 ${
                       alt.is_correct
                         ? isCerto ? "border-emerald-500 bg-emerald-500/20" : "border-red-500 bg-red-500/20"
-                        : "border-white/[0.15] bg-white/[0.05]"
+                        : isCerto ? "border-emerald-500/40 bg-emerald-500/10" : "border-red-500/40 bg-red-500/10"
                     }`}>
                       {alt.is_correct && <span className="text-base leading-none">{OWL_MARK}</span>}
                     </span>
                     <span className={`text-sm font-bold ${
                       alt.is_correct
                         ? isCerto ? "text-emerald-300" : "text-red-300"
-                        : "text-white/50"
+                        : isCerto ? "text-emerald-300" : "text-red-300"
                     }`}>
                       {isCerto ? "Certo" : "Errado"}
                     </span>

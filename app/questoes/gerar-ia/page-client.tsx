@@ -485,7 +485,8 @@ export default function GerarQuestoesIAClient({
   }
 
   return (
-    <PageBackground>
+    <div className="et-admin-clean-content">
+    <PageBackground variant="light">
       <DraftRestoreModal
         open={Boolean(pendingDraft)}
         savedAt={pendingDraft?.savedAt}
@@ -514,6 +515,7 @@ export default function GerarQuestoesIAClient({
       )}
 
       <PageHeader
+        variant="light"
         title="Gerar questões com IA"
         description="Gere questões inéditas, revise na tela e envie para revisão apenas quando estiver tudo certo."
         action={
@@ -530,6 +532,7 @@ export default function GerarQuestoesIAClient({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
           <PremiumCard
+            variant="light"
             title="Parâmetros da geração"
             description="A IA gera a prévia; o banco só recebe o que você enviar para revisão."
             icon={<Bot size={18} />}
@@ -679,6 +682,7 @@ export default function GerarQuestoesIAClient({
           </PremiumCard>
 
           <PremiumCard
+            variant="light"
             title="Questões geradas"
             description={`${pendingCount} pendente(s) na tela. ${duplicateCount} duplicada(s). ${selectedIds.length} selecionada(s).`}
             icon={<FileQuestion size={18} />}
@@ -727,6 +731,7 @@ export default function GerarQuestoesIAClient({
 
         <div className="space-y-6">
           <PremiumCard
+            variant="light"
             title="Resumo"
             description="Acompanhe o funil antes de salvar no banco."
             icon={<ShieldAlert size={18} />}
@@ -754,6 +759,7 @@ export default function GerarQuestoesIAClient({
           </PremiumCard>
 
           <PremiumCard
+            variant="light"
             title="Como funciona"
             description="Nada é salvo automaticamente."
             icon={<FileQuestion size={18} />}
@@ -797,6 +803,7 @@ export default function GerarQuestoesIAClient({
         </div>
       )}
     </PageBackground>
+    </div>
   );
 }
 
@@ -829,64 +836,64 @@ function GeneratedQuestionCard({
     <article
       className={`overflow-hidden rounded-[2rem] border backdrop-blur-sm transition-all duration-300 ${
         question.is_duplicate
-          ? "border-red-500/40 bg-red-500/[0.06] shadow-xl shadow-black/30"
+          ? "border-red-300 bg-red-50 shadow-lg shadow-red-950/5"
           : selected
-            ? "border-orange-400/40 bg-white/[0.04] shadow-xl shadow-black/30 ring-1 ring-orange-400/20"
+            ? "border-orange-300 bg-orange-50/60 shadow-lg shadow-orange-950/5 ring-1 ring-orange-100"
             : isQuestionImagePending(question)
-              ? "border-blue-400/60 bg-white/[0.03] shadow-2xl shadow-blue-900/40 ring-2 ring-blue-400/25"
+              ? "border-blue-300 bg-blue-50/60 shadow-lg shadow-blue-950/5 ring-2 ring-blue-100"
               : topicsPending
-                ? "border-amber-400/60 bg-white/[0.03] shadow-2xl shadow-amber-900/40 ring-2 ring-amber-400/25"
-                : "border-white/[0.07] bg-white/[0.03] shadow-xl shadow-black/30 hover:-translate-y-0.5 hover:border-white/[0.12]"
+                ? "border-amber-300 bg-amber-50/60 shadow-lg shadow-amber-950/5 ring-2 ring-amber-100"
+                : "border-slate-200 bg-white shadow-lg shadow-slate-950/5 hover:-translate-y-0.5 hover:border-slate-300"
       }`}
     >
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={onToggleSelected}
             disabled={Boolean(question.is_duplicate) || disabled}
             aria-label={selected ? "Desmarcar questão" : "Selecionar questão"}
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition ${selected ? "border-orange-400 bg-orange-400 text-white" : "border-white/[0.15] bg-white/[0.04] text-transparent hover:border-orange-400/50 hover:bg-orange-400/[0.08] hover:text-orange-400/60"} disabled:cursor-not-allowed disabled:opacity-40`}
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition ${selected ? "border-orange-500 bg-orange-500 text-white" : "border-slate-300 bg-white text-transparent hover:border-orange-400 hover:bg-orange-50 hover:text-orange-400"} disabled:cursor-not-allowed disabled:opacity-40`}
           >
             <Check size={12} />
           </button>
 
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-500/30 bg-orange-500/[0.12] px-3 py-1 text-xs font-bold text-orange-300">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">
             {question.board_name}
           </span>
 
           {question.inspiring_board_name && (
-            <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/50">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
               Inspirado: {question.inspiring_board_name}
             </span>
           )}
 
-          <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/50">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
             {question.question_type === "true_false" ? "Assertiva" : "Alternativas"}
           </span>
 
-          <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/50">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
             {question.discipline_name} / {question.subject_name}
           </span>
 
           <PremiumDifficultyStars value={question.difficulty_level} compact />
 
           {question.is_duplicate && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/[0.12] px-3 py-1 text-xs font-bold text-red-300">
+            <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
               <AlertTriangle size={13} />
               Duplicada
             </span>
           )}
 
           {isQuestionImagePending(question) && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/60 bg-blue-500/25 px-3 py-1 text-xs font-bold text-blue-200">
-              <ImageIcon size={12} className="text-blue-300" /> Imagem ausente
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+              <ImageIcon size={12} className="text-blue-600" /> Imagem ausente
             </span>
           )}
 
           {topicsPending && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/60 bg-amber-500/25 px-3 py-1 text-xs font-bold text-amber-200">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
               ⚠ Sem tópicos avaliados
             </span>
           )}
@@ -894,25 +901,25 @@ function GeneratedQuestionCard({
       </div>
 
       {/* Statement */}
-      <div className="border-b border-white/[0.06] px-6 py-5">
+      <div className="border-b border-slate-200 px-6 py-5">
         <RichTextEditor
           value={question.statement}
           onChange={(value) => onChange({ statement: value })}
           placeholder="Enunciado da questão"
           disabled={disabled}
           minRows={3}
-          className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm leading-6 text-white/70 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
+          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
         />
 
         {question.is_duplicate && question.duplicate_message && (
-          <p className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/[0.08] px-4 py-3 text-sm font-semibold text-red-300">
+          <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
             {question.duplicate_message}
           </p>
         )}
       </div>
 
       {/* Alternatives */}
-      <div className="border-b border-white/[0.06] px-6 py-5">
+      <div className="border-b border-slate-200 px-6 py-5">
         {question.question_type === "true_false" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {question.alternatives.map((alternative, index) => {
@@ -929,12 +936,12 @@ function GeneratedQuestionCard({
                   }}
                   className={
                     isSelected && isWrong
-                      ? "rounded-2xl border-2 border-red-500/40 bg-red-500/[0.10] px-5 py-4 text-left text-sm font-bold text-red-300"
+                      ? "rounded-2xl border-2 border-red-300 bg-red-50 px-5 py-4 text-left text-sm font-bold text-red-700"
                       : isSelected
-                        ? "rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/[0.10] px-5 py-4 text-left text-sm font-bold text-emerald-300"
+                        ? "rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-5 py-4 text-left text-sm font-bold text-emerald-700"
                         : isWrong
-                          ? "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-red-500/30 hover:bg-red-500/[0.08] hover:text-red-300"
-                          : "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-emerald-500/30 hover:bg-emerald-500/[0.08] hover:text-emerald-300"
+                          ? "rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                          : "rounded-2xl border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-left text-sm font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50"
                   }
                 >
                   <span className="flex items-center gap-2">
@@ -970,18 +977,18 @@ function GeneratedQuestionCard({
         </p>
       </div>
 
-      <div className="border-b border-white/[0.06] px-6 py-5">
+      <div className="border-b border-slate-200 px-6 py-5">
         <div className="relative isolate">
           <div className="pointer-events-none absolute -inset-[3px] -z-10 rounded-2xl bg-gradient-to-b from-blue-400/25 via-blue-400/[0.06] to-transparent blur-[10px]" />
-          <div className="rounded-2xl border border-blue-400/30 bg-blue-500/[0.05] p-4 shadow-inner shadow-blue-950/20">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-200">Tópicos avaliados</p>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
             <EvaluatedTopicsInput
               value={question.evaluated_topics}
               onChange={(evaluated_topics) => onChange({ evaluated_topics })}
               subjectId={question.subject_id || null}
               required
               disabled={disabled}
-              variant="dark"
+              variant="light"
               placeholder="Ex.: Memória RAM, Placa-mãe"
             />
           </div>
@@ -990,9 +997,9 @@ function GeneratedQuestionCard({
 
       {/* Explanation */}
       {question.explanation_text && (
-        <div className="border-b border-white/[0.06] px-6 py-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/30">Explicação</p>
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-sm leading-6 text-white/50">
+        <div className="border-b border-slate-200 px-6 py-5">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Explicação</p>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
             {question.explanation_text}
           </div>
         </div>
@@ -1047,13 +1054,13 @@ function GeneratedAlternativeEditor({
         onClick={!disabled ? onMarkCorrect : undefined}
         className={`cursor-pointer transition ${isEliminated ? "opacity-60" : ""} ${
           isCorrect
-            ? "rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] p-3"
-            : "rounded-2xl border border-white/[0.06] bg-white/[0.03] p-3 hover:border-emerald-500/25 hover:bg-emerald-500/[0.05]"
+            ? "rounded-2xl border border-emerald-300 bg-emerald-50 p-3"
+            : "rounded-2xl border border-slate-200 bg-white p-3 hover:border-emerald-300 hover:bg-emerald-50"
         }`}
       >
         <div className="flex items-start gap-2">
           {isCorrect ? (
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-lg">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-100 text-lg">
               <span className="block font-normal leading-none">{OWL_MARK}</span>
             </span>
           ) : (
@@ -1062,7 +1069,7 @@ function GeneratedAlternativeEditor({
               onClick={(event) => { event.stopPropagation(); onMarkCorrect(); }}
               disabled={disabled}
               title="Marcar como correta"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.15] bg-white/[0.04] text-xs font-black text-white/50 transition hover:border-emerald-500/40 hover:bg-emerald-500/[0.10] hover:text-emerald-300 disabled:opacity-40"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-bold text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40"
             >
               {label}
             </button>
@@ -1075,7 +1082,7 @@ function GeneratedAlternativeEditor({
               disabled={disabled}
               minRows={3}
               compact
-              className={`w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white/70 outline-none focus:ring-2 focus:ring-orange-400/[0.08] ${isEliminated ? "line-through decoration-red-500 decoration-2 [&_*]:line-through [&_*]:decoration-red-500 [&_*]:decoration-2" : ""}`}
+              className={`w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100 ${isEliminated ? "line-through decoration-red-500 decoration-2 [&_*]:line-through [&_*]:decoration-red-500 [&_*]:decoration-2" : ""}`}
             />
           </div>
         </div>

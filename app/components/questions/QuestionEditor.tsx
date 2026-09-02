@@ -365,10 +365,10 @@ function TrueFalseEditor({ alternatives, onMarkCorrect }: {
               isSelected && isWrong
                 ? "rounded-2xl border-2 border-[#ff6047] bg-[linear-gradient(135deg,rgba(255,40,0,0.48),rgba(183,0,0,0.34))] px-5 py-4 text-left text-sm font-bold text-white shadow-[0_0_34px_rgba(255,40,0,0.52),inset_0_1px_0_rgba(255,255,255,0.16)]"
               : isSelected
-                ? "rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/[0.10] px-5 py-4 text-left text-sm font-bold text-emerald-300"
+                ? "rounded-2xl border-2 border-[#34d399] bg-[linear-gradient(135deg,rgba(16,185,129,0.48),rgba(4,120,87,0.34))] px-5 py-4 text-left text-sm font-bold text-white shadow-[0_0_34px_rgba(16,185,129,0.52),inset_0_1px_0_rgba(255,255,255,0.16)]"
               : isWrong
                 ? "rounded-2xl border border-[#ff2800]/45 bg-[#ff2800]/10 px-5 py-4 text-left text-sm font-semibold text-[#ffb4a6] transition hover:border-[#ff6047] hover:bg-[#ff2800]/30 hover:text-white hover:shadow-[0_0_28px_rgba(255,40,0,0.42)]"
-                : "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-emerald-500/30 hover:bg-emerald-500/[0.08] hover:text-emerald-300"
+                : "rounded-2xl border border-[#10b981]/45 bg-[#10b981]/10 px-5 py-4 text-left text-sm font-semibold text-[#a7f3d0] transition hover:border-[#34d399] hover:bg-[#10b981]/30 hover:text-white hover:shadow-[0_0_28px_rgba(16,185,129,0.42)]"
             }
           >
             <span className="flex items-center justify-between gap-3">
@@ -438,6 +438,11 @@ function AlternativeEditor({ alternative, index, total, isCorrect, onChange, onR
             </span>
             <ChevronDown size={13} className="mt-0.5 shrink-0 text-white/30" />
           </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 4}
+            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Excluir alternativa"}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white/35 hover:bg-red-500/[0.12] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-20">
+            <Trash2 size={13} /> Excluir
+          </button>
         </div>
       </div>
     );
@@ -455,9 +460,10 @@ function AlternativeEditor({ alternative, index, total, isCorrect, onChange, onR
           </div>
         )}
         <div className="flex items-start gap-2">
-          <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 2}
-            className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/25 hover:bg-red-500/[0.12] hover:text-red-400 disabled:opacity-20">
-            <X size={16} />
+          <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 4}
+            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Excluir alternativa"}
+            className="mt-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white/35 hover:bg-red-500/[0.12] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-20">
+            <Trash2 size={13} /> Excluir
           </button>
           {isCorrect ? (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-lg">
@@ -589,6 +595,7 @@ export default function QuestionEditor({
   );
   const isWrongTrueFalseAnswer =
     isTrueFalse && (correctAlternative?.label === "E" || String(correctAlternative?.text || "").trim().toLowerCase() === "errado");
+  const isCorrectTrueFalseAnswer = isTrueFalse && Boolean(correctAlternative) && !isWrongTrueFalseAnswer;
 
   const selectedDiscipline = useMemo(
     () => disciplines.find((d) => d.id === question.discipline_id),
@@ -660,7 +667,7 @@ export default function QuestionEditor({
 
   const removeAlternative = useCallback((i: number) => {
     setQuestion((current) => {
-      if (current.question_type !== "multiple_choice" || current.alternatives.length <= 2) return current;
+      if (current.question_type !== "multiple_choice" || current.alternatives.length <= 4) return current;
       return { ...current, alternatives: relabelAlternatives(current.alternatives.filter((_, idx) => idx !== i)) };
     });
   }, []);
@@ -1097,10 +1104,10 @@ export default function QuestionEditor({
             )}
 
             {/* Gabarito */}
-            <div className={`mt-5 flex items-center gap-3 rounded-xl border px-4 py-3 ${isWrongTrueFalseAnswer ? "border-[#ff6047] bg-[linear-gradient(90deg,rgba(255,40,0,0.42),rgba(190,0,0,0.28))] shadow-[0_0_32px_rgba(255,40,0,0.46)]" : "border-emerald-500/25 bg-emerald-500/[0.08]"}`}>
-              <ShieldCheck size={16} className={`shrink-0 ${isWrongTrueFalseAnswer ? "text-red-200 drop-shadow-[0_0_7px_rgba(248,113,113,0.85)]" : "text-emerald-400"}`} />
-              <span className={`text-sm font-bold ${isWrongTrueFalseAnswer ? "text-red-50" : "text-emerald-300"}`}>Gabarito:</span>
-              <span className={`text-sm ${isWrongTrueFalseAnswer ? "text-red-100" : "text-emerald-300/80"}`}>
+            <div className={`mt-5 flex items-center gap-3 rounded-xl border px-4 py-3 ${isWrongTrueFalseAnswer ? "border-[#ff6047] bg-[linear-gradient(90deg,rgba(255,40,0,0.42),rgba(190,0,0,0.28))] shadow-[0_0_32px_rgba(255,40,0,0.46)]" : isCorrectTrueFalseAnswer ? "border-[#34d399] bg-[linear-gradient(90deg,rgba(16,185,129,0.42),rgba(4,120,87,0.28))] shadow-[0_0_32px_rgba(16,185,129,0.46)]" : "border-emerald-500/25 bg-emerald-500/[0.08]"}`}>
+              <ShieldCheck size={16} className={`shrink-0 ${isWrongTrueFalseAnswer ? "text-red-200 drop-shadow-[0_0_7px_rgba(248,113,113,0.85)]" : isCorrectTrueFalseAnswer ? "text-emerald-100 drop-shadow-[0_0_7px_rgba(52,211,153,0.85)]" : "text-emerald-400"}`} />
+              <span className={`text-sm font-bold ${isWrongTrueFalseAnswer ? "text-red-50" : isCorrectTrueFalseAnswer ? "text-emerald-50" : "text-emerald-300"}`}>Gabarito:</span>
+              <span className={`text-sm ${isWrongTrueFalseAnswer ? "text-red-100" : isCorrectTrueFalseAnswer ? "text-emerald-100" : "text-emerald-300/80"}`}>
                 {isTrueFalse
                   ? correctAlternative?.label === "C" ? "Certo" : (correctAlternative?.label === "E" || String(correctAlternative?.text || "").trim().toLowerCase() === "errado") ? "Errado" : "Não informado"
                   : correctAlternative?.label ? `Alternativa ${correctAlternative.label}` : "Não informado"}
