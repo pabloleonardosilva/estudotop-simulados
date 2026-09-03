@@ -312,7 +312,41 @@ button:disabled,
   cursor: not-allowed;
 }
 
-/* Única interface dark administrativa — referência: /admin/jornadas/[id]. */
+/* ==========================================================================
+   ESTUDOTOP — SISTEMA OFICIAL DE INTERFACES
+
+   O produto possui exatamente duas bases visuais: Dark Premium e Clean
+   Premium. Toda página deve declarar uma delas; particularidades locais podem
+   complementar a base, mas não recriar o design system. Mudanças permanentes
+   pertencem a estes contratos globais. Os aliases históricos permanecem para
+   compatibilidade e migração progressiva, sem alteração visual.
+   ========================================================================== */
+.et-interface-dark {
+  --et-interface-canvas: #010308;
+  --et-interface-surface: #040a12;
+  --et-interface-surface-elevated: rgba(4, 10, 18, 0.92);
+  --et-interface-border: rgba(255, 255, 255, 0.065);
+  --et-interface-text: rgb(241, 245, 249);
+  --et-interface-muted: rgba(148, 163, 184, 0.72);
+  --et-interface-accent: #f97316;
+  --et-interface-shadow: 0 18px 65px rgba(0, 0, 0, 0.42);
+  --et-interface-radius: 1.5rem;
+}
+
+.et-interface-clean {
+  --et-interface-canvas: #f3f6fb;
+  --et-interface-surface: #ffffff;
+  --et-interface-surface-elevated: rgba(255, 255, 255, 0.94);
+  --et-interface-border: rgba(203, 213, 225, 0.82);
+  --et-interface-text: #07111f;
+  --et-interface-muted: #64748b;
+  --et-interface-accent: #ff8500;
+  --et-interface-accent-secondary: #2f7cf6;
+  --et-interface-shadow: 0 20px 60px rgba(15, 23, 42, 0.10);
+  --et-interface-radius: 1.6rem;
+}
+
+/* Dark Premium — referência visual preservada: /admin/jornadas/[id]. */
 .et-admin-dark-content,
 .et-admin-dark-page {
   color: rgb(241, 245, 249);
@@ -648,10 +682,9 @@ button:disabled,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 24px rgba(16, 185, 129, 0.12);
 }
 
-.et-admin-dark-content > main,
-.et-admin-dark-content > div,
-.et-admin-dark-page > main,
-.et-admin-dark-page > div {
+/* O shell neutraliza somente o wrapper de página declarado; fullscreens,
+   overlays e painéis descendentes preservam seus próprios backgrounds. */
+.et-admin-dark-content > .et-admin-dark-page {
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -913,9 +946,9 @@ button:disabled,
 }
 
 /* ==========================================================================
-   ESTUDOTOP — DESIGN SYSTEM DA ÁREA DO ALUNO
-   Escopo estritamente isolado por .student-theme. Não reutilizar estas classes
-   no admin; o admin mantém o seu sistema visual dark operacional.
+   CLEAN PREMIUM — ALIASES DE COMPATIBILIDADE DO ALUNO E PROFESSOR
+   .student-theme e .teacher-theme preservam composições aprovadas, mas a base
+   Clean Premium pertence ao produto e pode ser usada por qualquer perfil.
    ========================================================================== */
 .student-theme {
   --student-dark-950: #020711;

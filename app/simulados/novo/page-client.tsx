@@ -415,8 +415,8 @@ function Toggle({ label, value, onChange, children }: { label: string; value: bo
           className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold"
         >
           <span>{label}</span>
-          <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-500" : "bg-slate-700"}`}>
-            <span className={`block h-4 w-4 rounded-full bg-white transition ${value ? "translate-x-4" : ""}`} />
+          <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-600 shadow-md shadow-orange-500/20" : "bg-[#2b3f59]"}`}>
+            <span className={`block h-4 w-4 rounded-full transition ${value ? "translate-x-4 bg-orange-400" : "bg-[#405875]"}`} />
           </span>
         </button>
         <div className="border-t border-orange-200/10 bg-black/10 px-4 py-3">{children}</div>
@@ -431,8 +431,8 @@ function Toggle({ label, value, onChange, children }: { label: string; value: bo
       className={`flex min-h-12 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${activeClass}`}
     >
       <span>{label}</span>
-      <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-500" : "bg-slate-700"}`}>
-        <span className={`block h-4 w-4 rounded-full bg-white transition ${value ? "translate-x-4" : ""}`} />
+      <span className={`h-5 w-9 rounded-full p-0.5 transition ${value ? "bg-orange-600 shadow-md shadow-orange-500/20" : "bg-[#2b3f59]"}`}>
+        <span className={`block h-4 w-4 rounded-full transition ${value ? "translate-x-4 bg-orange-400" : "bg-[#405875]"}`} />
       </span>
     </button>
   );

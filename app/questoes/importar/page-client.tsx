@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
@@ -538,6 +539,10 @@ export default function ImportarQuestoesClient({
   subjects: any[];
   initialBoards: any[];
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const simuladoId = searchParams.get("simulado")?.trim() || null;
+  const importingForSimulado = Boolean(simuladoId);
   const stopRef = useRef(false);
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const currentQuestionsForBatchRef = useRef<ImportedQuestion[]>([]);
@@ -1857,6 +1862,7 @@ export default function ImportarQuestoesClient({
           subject_id: globalSubjectIds[0] || null,
           subject_ids: globalSubjectIds,
           year: parseValidYear(year),
+          simulado_id: simuladoId,
         }),
       });
 
@@ -1983,6 +1989,12 @@ export default function ImportarQuestoesClient({
       await wait(900);
       setSendReviewModal(null);
 
+      if (importingForSimulado && !partialSend && simuladoId) {
+        router.push(`/simulados/${encodeURIComponent(simuladoId)}/editar`);
+        router.refresh();
+        return;
+      }
+
       if (firstRemainingId) {
         setTimeout(() => {
           questionRefs.current[firstRemainingId]?.scrollIntoView({
@@ -2072,10 +2084,10 @@ export default function ImportarQuestoesClient({
 
       <PageHeader
         variant="light"
-        title="Importar questões com IA"
-        description="Configure os padrões, cole o texto bruto das questões e acompanhe a análise inteligente em lotes."
+        title={importingForSimulado ? "Importar questões para o simulado" : "Importar questões com IA"}
+        description={importingForSimulado ? "Use o importador oficial para salvar as questões no Banco e adicioná-las diretamente ao simulado." : "Configure os padrões, cole o texto bruto das questões e acompanhe a análise inteligente em lotes."}
         action={
-          <Link href="/questoes">
+          <Link href={importingForSimulado && simuladoId ? `/simulados/${encodeURIComponent(simuladoId)}/editar` : "/questoes"}>
             <PremiumButton variant="secondary" icon={<ArrowLeft size={18} />}>
               Voltar
             </PremiumButton>
@@ -2279,7 +2291,7 @@ export default function ImportarQuestoesClient({
                   onClick={() => sendToReview(selectedQuestions)}
                   disabled={sendingToReview || selectedQuestions.length === 0}
                 >
-                  Enviar selecionadas para revisão
+                  {importingForSimulado ? "Adicionar selecionadas ao simulado" : "Enviar selecionadas para revisão"}
                 </PremiumButton>
               </div>
                             <div className="grid gap-5">
@@ -2844,7 +2856,7 @@ export default function ImportarQuestoesClient({
                             onClick={() => sendToReview([question])}
                             disabled={sendingToReview}
                           >
-                              Enviar para revisão
+                              {importingForSimulado ? "Adicionar ao simulado" : "Enviar para revisão"}
                             </PremiumButton>
                           )}
                         </div>
@@ -2861,7 +2873,7 @@ export default function ImportarQuestoesClient({
       <SelectionGhostBar
         count={selectedIds.length}
         actions={[
-          { label: "Enviar para revisão", icon: <Send size={14} />, onClick: () => sendToReview(selectedQuestions), variant: "primary", disabled: sendingToReview || selectedQuestions.length === 0 },
+          { label: importingForSimulado ? "Adicionar ao simulado" : "Enviar para revisão", icon: <Send size={14} />, onClick: () => sendToReview(selectedQuestions), variant: "primary", disabled: sendingToReview || selectedQuestions.length === 0 },
           { label: "Limpar seleção", icon: <BrushCleaning size={14} />, onClick: () => setSelectedIds([]), variant: "secondary", disabled: sendingToReview },
           { label: "Descartar", icon: <Trash2 size={14} />, onClick: discardSelectedQuestions, variant: "danger", disabled: sendingToReview },
         ]}

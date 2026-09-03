@@ -1,5 +1,9 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Sistema oficial de interfaces
+
+O EstudoTOP possui exatamente duas bases visuais: **Dark Premium** (`.et-interface-dark`) e **Clean Premium** (`.et-interface-clean`). A fonte da verdade é `app/globals.css`; `AppShell.tsx` declara a base dos shells e `PageBackground.tsx` a aplica em páginas administrativas. `.et-admin-dark-*`, `.et-admin-clean-content`, `.student-theme` e `.teacher-theme` permanecem como aliases e camadas de compatibilidade. Contrato completo: `docs/Sprint-interface-grafica.md`.
+
 **Projeto:** EstudoTOP Simulados  
 **Arquivo:** `docs/INDICE_FUNCOES_SISTEMA.md`  
 **Status:** versão inicial — mapa funcional para manutenção  
@@ -159,6 +163,7 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 - **Componentes-base do Admin:** `PageHeader` e `PremiumCard` adotam `jornada` como variante padrão; `MetricCard` reproduz diretamente o card compacto da referência (superfície `#040A12/90`, borda `.065`, ícone Lucide em caixa de gradiente 40px, label 10px, valor 20px e descrição 12px). A camada do shell normaliza também a geometria e os acabamentos dark/laranja do `PremiumButton` apenas dentro do Admin.
 - **Cobertura visual completa:** `et-admin-dark-content` normaliza, dentro do ramo Admin, superfícies claras residuais, rings, textos, campos, selects e opções, estados de foco, tabelas completas (head, body, zebra e hover), botões e suavização tipográfica. `PageHeader` e `PremiumCard` usam literalmente o painel `#040A12/92`, borda `white/[.065]`, raio 24px, sombra e glow radial laranja da referência — não existe tema azul paralelo nesses componentes.
 - **Aplicação concreta em Alunos:** `/admin/alunos` e `/admin/alunos/[id]` utilizam o mesmo canvas em camadas, grade de `.045`, hero `#040A12/92`, cards `#040A12/90`, bordas `white/[.065]`, sombras e composição métrica compacta da referência de Jornada (Lucide 20px, caixa em gradiente 40px, label 10px, valor 20px e descrição 12px). O detalhe individual deixou de declarar canvas, gradientes e cards azuis próprios; nenhuma regra de filtro, busca, edição, atribuição, status, paginação ou acesso foi alterada.
+- **Composição e fullscreen Dark (corrigido em 2026-09-02):** o shell neutraliza exclusivamente o background do filho direto que declara `.et-admin-dark-page`. A normalização não alcança mais todo `main`/`div` descendente, preservando backgrounds legítimos de fullscreens, overlays, drawers, painéis fixos e camadas decorativas. Modais mantêm backdrop translúcido intencional; fullscreens de trabalho usam superfície opaca, viewport integral e rolagem própria contida. Contrato completo em `docs/Sprint-interface-grafica.md`.
 - **Glows e visualizações:** caixas de ícone usam obrigatoriamente `et-admin-dark-icon-box` com variações semânticas laranja, ciano, verde, vermelho e roxo. O token ilumina a borda, o halo da caixa e o próprio traço do SVG via `drop-shadow`; caixas Lucide em gradiente existentes dentro do Admin também são alcançadas globalmente. Gráficos e barras reutilizam `et-admin-dark-chart`, `et-admin-dark-chart-bar` e `et-admin-dark-progress-*`. No Recharts, grid, labels e tooltip são normalizados e o glow cobre barras, retângulos, áreas, curvas, linhas, pontos e símbolos; gráficos SVG próprios podem declarar `data-admin-chart` para consumir o mesmo acabamento. Cor semântica local continua permitida somente para comunicar estado funcional, sem substituir ou desligar os efeitos globais.
 - **Footer da área do aluno (adicionado 2026-07-12):** o ramo compartilhado de aluno no `AppShell.tsx` renderiza um rodapé claro após o conteúdo, com fundo `#faf8f5`, cartão branco translúcido, borda slate e identificação institucional em laranja. Ele aparece nas páginas comuns da área do aluno; rotas de execução e resultado que usam layout focado continuam sem o shell global.
 - **Regra para páginas novas:** páginas administrativas comuns devem montar o `AppShell` e reutilizar `PageHeader`, `PremiumCard`, `MetricCard`, `PremiumInput`, `PremiumSelect`, `PremiumTable` e `PremiumButton`; não criar canvas, paleta ou tema dark paralelo. Apenas rotas funcionalmente focadas que já bypassam o shell podem manter layout próprio.
@@ -679,6 +684,10 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 **Arquivos principais:**
 
 - `app/questoes/gerar-ia/page-client.tsx`
+
+**Padrão visual (02/09/2026):** `/questoes/importar`, `/questoes/gerar-ia` e `/questoes/nova` utilizam interface clara clean em todo o fluxo, incluindo formulários, dropdowns, editores, cards de prévia e modais locais; estados semânticos preservam suas cores funcionais.
+
+**Alternativas (02/09/2026):** criação manual, edição/revisão pelo `QuestionEditor` e importação com IA permitem excluir alternativas excedentes, preservando o mínimo de quatro na múltipla escolha e renumerando as letras após a remoção.
 - `app/questoes/gerar-ia/page.tsx`
 - `app/api/admin/questions/generate-ai/route.ts`
 - `app/api/admin/questions/import/save/route.ts`
@@ -2031,7 +2040,7 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 ### 13.1 Normalização de nomes de Assuntos — exibição e persistência (atualizado em 2026-06-10)
 
-**Unicidade por disciplina (02/09/2026):** nomes de assuntos são únicos pelo par `(discipline_id, name)`. Disciplinas distintas podem possuir um assunto chamado **Geral**, enquanto duplicatas na mesma disciplina permanecem bloqueadas. Migration: `20260902180000_scope_subject_name_uniqueness_by_discipline.sql`.
+**Unicidade por disciplina (02/09/2026):** nomes de assuntos deixam de ser únicos globalmente e passam a ser únicos pelo par `(discipline_id, name)`. Assim, disciplinas distintas podem possuir um assunto chamado **Geral**, enquanto duplicatas dentro da mesma disciplina continuam bloqueadas. Migration: `20260902180000_scope_subject_name_uniqueness_by_discipline.sql`.
 
 **Função:** garantir que nomes de assuntos sejam exibidos com conectivos/preposições em minúsculo, sem depender de saneamento imediato do banco.
 
@@ -3259,6 +3268,26 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - Não aplicar merge/recoalescência sobre blocos explícitos enviados pelo frontend.
 - Em ajustes futuros do importador em lote, manter a relação operacional: `N blocos enviados ao lote` → `N questões normalizadas retornadas`, salvo bloco vazio/ilegível.
 
+### 19.25 Importar com IA — separador por linha de X e cabeçalho estruturado (2026-09-02)
+
+**Arquivos envolvidos:**
+- `app/questoes/importar/page-client.tsx`
+- `app/api/admin/questions/import/analyze-batch/route.ts`
+
+**Regra adicional de separação:**
+- Se o texto bruto contiver uma linha formada exclusivamente por 6 ou mais letras `x`, ignorando espaços e diferença entre maiúsculas/minúsculas, essa linha separa questões.
+- A estratégia é condicional. Sem esse delimitador, o splitter antigo continua sendo executado sem mudança, preservando QConcursos, `Ano:`/`Banca:`/`Órgão:`, numeração comum, alternativas, Certo/Errado e afirmativas I/II/III.
+- Nos blocos delimitados por X, somente a numeração inicial isolada (`01)`, `2)`) e as linhas separadoras são removidas.
+
+**Cabeçalho `ANO - BANCA - ÓRGÃO - CARGO`:**
+- A divisão dos campos usa apenas hífen cercado por espaços, preservando nomes internos como `DESENVOLVE-SP`.
+- O backend usa o cabeçalho como fallback determinístico para ano, banca e órgão.
+- Quando aparece abaixo da numeração, o cabeçalho permanece integralmente no início do `statement`; ele é metadado e também conteúdo editorial visível.
+
+**Preservação do lote e regra visual:**
+- `body.blocks` em `analyze-batch` continua preservando cada item como uma unidade individual, sem recoalescência.
+- Os dropdowns dos padrões de importação devem abrir acima do card de texto bruto. O card dos campos usa `overflow-visible` e camada superior local; o card seguinte permanece em camada inferior.
+
 
 ### Atualização Raio-X Relatório Final — 2026-06-06
 
@@ -3533,6 +3562,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - **Ingresso sem enumeração:** a solicitação pública exige reCAPTCHA v3 e sempre responde de forma neutra. Um link opaco de confirmação comprova posse do e-mail antes de o sistema decidir entre login/recuperação e cadastro. O contexto permanece em cookie `HttpOnly` até o vínculo definitivo.
 - **Controle de intenções:** cooldown de 60 segundos e índice único parcial por Evento/e-mail impedem spam simples e múltiplas intenções pendentes concorrentes. Migration: `20260820170000_limit_event_join_intents.sql`.
 - **Reentrada com intenção pendente (2026-08-28):** `POST /api/events/[slug]` responde explicitamente `confirmation_email_sent` quando o Resend confirma um novo envio e `confirmation_pending` quando uma solicitação válida está em cooldown ou vence uma corrida concorrente. Em `/evento/[slug]`, **Continuar** é um submit real; o clique sempre entra na rotina e, se o reCAPTCHA ainda não estiver disponível, apresenta erro explícito em vez de manter um botão silenciosamente desabilitado. O cliente reconhece ambos os estados de sucesso e abre **Confira seu e-mail**, preservando cooldown, anti-enumeração, reenvio e troca de e-mail.
+- **reCAPTCHA em desenvolvimento local:** `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` e `RECAPTCHA_SECRET_KEY` continuam obrigatórias. A chave usada no localhost deve autorizar explicitamente o domínio `localhost` no console do Google; recomenda-se uma chave separada para desenvolvimento. Não desabilitar validação de domínio nem criar bypass de captcha no código.
 - **Cooldown baseado em envio confirmado (2026-08-22):** em `POST /api/events/[slug]`, a intent é gravada em `simulado_event_join_intents` **antes** do Resend ser chamado (delete da anterior + insert) — grava-la depois do envio abriria uma corrida real entre "e-mail entregue/clicado" e "token persistido no banco", fazendo `/confirm` rejeitar como inválido um link que na verdade tinha sido enviado com sucesso (corrigido no mesmo dia, ver abaixo). Se o Resend falhar depois do insert, a intent é invalidada no mesmo instante via `UPDATE` de `expires_at` para o passado — nunca por `DELETE` sem verificação de erro. Isso garante que uma intent só tem `expires_at` no futuro quando o Resend de fato confirmou o envio para ela, eliminando a janela em que uma falha silenciosa do provedor deixava uma intent "fantasma" fazendo o cooldown de 60s responder sucesso sem reenviar nada. Mensagem do cooldown real informa explicitamente o tempo restante, distinta da mensagem de sucesso. A exclusão de aluno (`app/api/admin/students/[id]/route.ts` e `.../hard-delete/route.ts`) passou a remover as intents **não consumidas** do e-mail excluído (intents consumidas são preservadas como histórico de auditoria, sem risco de bloquear recadastro).
 - **Aluno:** link `/evento/[slug]`, intenção persistente via cookie `HttpOnly` e hash server-side, vínculo idempotente por `(event_id, student_id)`, `/meus-eventos` e `/meus-eventos/[id]`.
 - **Detalhe do Evento e regra de foco (correção 2026-08-23):** `GET /api/student/events/[id]` nunca selecionou `simulados.focus_violation_limit` corretamente — essa coluna nunca existiu em `simulados`; a query falhava e o erro do Supabase era descartado e tratado como "sem participação" (404 incorreto). Corrigido: a query não referencia mais essa coluna; `error` da consulta é capturado e logado via `logSystemError` (`source: "api.student.events.detail"`), respondendo 500 genérico — 404 ("Evento não encontrado para sua conta.") só ocorre quando a query teve sucesso e não há participação real. A regra oficial e fixa de controle de foco (`simulado_attempts.focus_violation_count >= 3` desclassifica a tentativa) foi extraída para `FOCUS_VIOLATION_LIMIT` em `lib/simulado-focus-violation.ts`, usada pelas rotas `.../attempts/[attemptId]/focus-violation` e `.../attempts/[attemptId]` (que já aplicavam `>= 3` de forma duplicada) e pelo texto exibido em `/meus-eventos/[id]`.
@@ -3605,3 +3635,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - **Ajuste administrativo de tentativas:** ao salvar o número de tentativas no cadastro do aluno, a API retorna `attempts_counting` e `attempts_total` atualizados, e o cronograma do Evento reflete imediatamente o mesmo contador usado pela área do aluno. O denominador permanece o `max_attempts` configurado no Simulado.
 - **Evento em Meus Simulados:** participações em Eventos ativos também aparecem como cards contextuais em `/meus-simulados`. O card do Evento substitui o avulso equivalente, evitando duplicidade; os CTAs carregam `?event=`, usando o saldo do Evento sem misturá-lo com tentativas avulsas ou de Jornada. Resultado só é oferecido depois da liberação individual.
 - **Menu compacto do aluno:** o drawer mobile usa painel claro de altura útil, overlay suave, fechamento integrado e estados ativo/hover institucionais, preservando a mesma matriz de permissões e destinos do menu existente.
+- `app/simulados/[id]/editar/page-client.tsx`: **Adicionar questões** centraliza as origens manual, Banco e importação com IA; o editor manual contextual suporta várias questões e vínculo direto.
+- `app/questoes/importar/page-client.tsx` + `app/api/admin/questions/import/save/route.ts`: o parâmetro `simulado` ativa publicação e vínculo direto; sem ele, permanece `pending_review`.
+- `app/simulados/[id]/editar/page-client.tsx` (`QuestionRelationCard`): renderiza todas as questões vinculadas com o tema Dark Premium da página; origem no Banco, criação manual ou importação por IA não altera a aparência do card.
+- `app/simulados/novo/page-client.tsx` e `app/simulados/[id]/editar/page-client.tsx` (`Toggle`): switches locais da Dark Premium usam contraste reforçado no trilho desligado e no marcador, sem alteração funcional ou impacto na Clean Premium.

@@ -646,6 +646,14 @@ Fonte de verdade para o visual de cards de questão. Usar sempre `qCard.*` ao re
 ---
 
 *Documento gerado ao final da Sprint Simulados — EstudoTOP, maio de 2026.*
+
+## Fluxo unificado “Adicionar questões” (2026-09-03)
+
+Na edição de um simulado, a ação **Adicionar questões** abre um seletor de origem com três caminhos: criação manual, seleção do Banco de Questões e importação com IA. O seletor existente do Banco foi preservado.
+
+A criação manual contextual aceita várias questões em sequência, permite adicionar e excluir alternativas, mantém os rascunhos durante a edição e salva cada questão como publicada no Banco antes de vinculá-la ao simulado. O importador oficial é reutilizado com o parâmetro `simulado`; nesse contexto, questões válidas são publicadas, vinculadas ao simulado e o usuário retorna à edição. Fora desse contexto, o importador mantém o fluxo normal de revisão pendente.
+
+O tema visual pertence à superfície que renderiza a questão, nunca à origem ou à entidade. Assim, o importador e o editor manual contextual permanecem Clean Premium durante o trabalho, enquanto toda questão vinculada em `/simulados/[id]/editar` — antiga, selecionada do Banco, criada manualmente ou importada por IA — usa o mesmo card Dark Premium.
 ### Atualização 2026-06-08 — Envio de questão para outro simulado e índice de acertos
 
 Na edição do simulado (`/simulados/[id]/editar`), cada questão já vinculada pode ser enviada para outro simulado sem sair da página atual. Essa ação cria o vínculo no simulado de destino e mantém a questão no simulado original.

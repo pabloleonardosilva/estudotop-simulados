@@ -53,6 +53,7 @@ type ImportedQuestion = {
 
 type ImportSaveBody = {
   questions?: ImportedQuestion[];
+  simulado_id?: string | null;
 
   subject_id?: string | null;
   subject_ids?: unknown;
@@ -239,6 +240,7 @@ export async function POST(
       realSubjectIds(normalizeSubjectIds(body));
 
     const defaultYear = parseValidYear(body.year);
+    const simuladoId = clean(body.simulado_id || "") || null;
 
     if (!questions.length) {
       return NextResponse.json(
@@ -268,6 +270,17 @@ export async function POST(
     const supabase =
       createSupabaseAdminClient();
 
+    if (simuladoId) {
+      const { data: simulado, error: simuladoError } = await supabase
+        .from("simulados")
+        .select("id")
+        .eq("id", simuladoId)
+        .maybeSingle();
+      if (simuladoError || !simulado) {
+        return NextResponse.json({ ok: false, message: "Simulado não encontrado." }, { status: 404 });
+      }
+    }
+
     // Pre-compute difficulty levels in one batch call instead of one AI call per question
     const needsPrediction = questions.map((q) => !q.difficulty_level);
     const toPredict = questions
@@ -289,6 +302,7 @@ export async function POST(
     let ignoredCount = 0;
 
     const savedIds: string[] = [];
+    const targetQuestionIds: string[] = [];
     const savedTempIds: string[] = [];
     const ignoredTempIds: string[] = [];
     const failedItems: Array<{ temp_id?: string | null; message: string }> = [];
@@ -301,6 +315,11 @@ export async function POST(
         if (question.is_duplicate) {
           ignoredCount++;
           if (tempId) ignoredTempIds.push(tempId);
+          continue;
+        }
+
+        if (simuladoId && question.status_override === "annulled") {
+          failedItems.push({ temp_id: tempId, message: "Questões anuladas não podem ser adicionadas ao simulado." });
           continue;
         }
 
@@ -437,6 +456,7 @@ export async function POST(
           if (blockingDuplicate) {
             ignoredCount++;
             if (tempId) ignoredTempIds.push(tempId);
+            if (simuladoId) targetQuestionIds.push(blockingDuplicate.id);
             continue;
           }
 
@@ -486,7 +506,7 @@ export async function POST(
                 "import_ai",
 
               status:
-                question.status_override === "annulled" ? "annulled" : "pending_review",
+                question.status_override === "annulled" ? "annulled" : simuladoId ? "published" : "pending_review",
             })
             .select("id")
             .single();
@@ -503,6 +523,7 @@ export async function POST(
             savedIds.push(
               inserted.id
             );
+            if (simuladoId) targetQuestionIds.push(inserted.id);
             if (tempId) savedTempIds.push(tempId);
 
             await syncQuestionSubjects({
@@ -601,6 +622,30 @@ export async function POST(
     const failedCount = failedItems.length;
     const processedCount = savedCount + ignoredCount;
 
+    if (simuladoId && failedCount === 0) {
+      const uniqueTargetIds = Array.from(new Set(targetQuestionIds));
+      const { data: existing, error: existingError } = await supabase
+        .from("simulado_questions")
+        .select("question_id, order_number")
+        .eq("simulado_id", simuladoId)
+        .order("order_number", { ascending: false });
+      if (existingError) {
+        return NextResponse.json({ ok: false, message: "As questões foram salvas, mas não foi possível consultar os vínculos do simulado.", ids: savedIds }, { status: 400 });
+      }
+
+      const existingIds = new Set((existing || []).map((item: { question_id: string }) => item.question_id));
+      const maxOrder = existing?.[0]?.order_number || 0;
+      const rows = uniqueTargetIds
+        .filter((questionId) => !existingIds.has(questionId))
+        .map((questionId, index) => ({ simulado_id: simuladoId, question_id: questionId, order_number: maxOrder + index + 1, points: 1, status: "active", is_required: true }));
+      if (rows.length > 0) {
+        const { error: linkError } = await supabase.from("simulado_questions").insert(rows);
+        if (linkError) {
+          return NextResponse.json({ ok: false, message: "As questões foram salvas no Banco, mas não foi possível vinculá-las ao simulado.", ids: savedIds }, { status: 400 });
+        }
+      }
+    }
+
     void logAdminAction({ adminUserId: admin.id, action: "admin.question.imported", entityType: "question", request, metadata: { saved_count: savedCount, ignored_count: ignoredCount, failed_count: failedCount, question_ids: savedIds } });
 
     return NextResponse.json({
@@ -609,7 +654,9 @@ export async function POST(
       message:
         failedCount > 0
           ? `${savedCount} questão(ões) enviada(s), ${ignoredCount} já estavam no banco/foram ignorada(s) e ${failedCount} ficaram com erro.`
-          : `${savedCount} questão(ões) enviada(s) para revisão.${ignoredCount > 0 ? ` ${ignoredCount} questão(ões) já estavam no banco e foram removida(s) da prévia.` : ""}`,
+          : simuladoId
+            ? `${savedCount} questão(ões) salva(s) no Banco e adicionada(s) ao simulado.${ignoredCount > 0 ? ` ${ignoredCount} questão(ões) já existente(s) foi(ram) reutilizada(s).` : ""}`
+            : `${savedCount} questão(ões) enviada(s) para revisão.${ignoredCount > 0 ? ` ${ignoredCount} questão(ões) já estavam no banco e foram removida(s) da prévia.` : ""}`,
 
       saved_count:
         savedCount,

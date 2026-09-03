@@ -12,6 +12,7 @@ import {
   BarChart3,
   Check,
   CheckCircle2,
+  ClipboardPaste,
   Clock3,
   ChevronDown,
   CopyCheck,
@@ -47,6 +48,7 @@ import SimuladoCard from "../../components/SimuladoCard";
 import SimuladoShell from "../../components/SimuladoShell";
 import QuestionActionModal, { type QuestionActionModalState } from "../../../components/questions/QuestionActionModal";
 import EvaluatedTopicsInput from "../../../components/questions/EvaluatedTopicsInput";
+import RichTextEditor from "../../../components/questions/RichTextEditor";
 import { isQuestionImagePending } from "@/lib/questions/image-pending";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
@@ -360,6 +362,7 @@ export default function EditarSimuladoClient({
   }, [initialRelations]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showQuestionOriginModal, setShowQuestionOriginModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
@@ -881,6 +884,21 @@ export default function EditarSimuladoClient({
         onClose={() => setFeedback(null)}
       />
 
+      {showQuestionOriginModal && (
+        <QuestionOriginModal
+          simuladoId={simulado.id}
+          onClose={() => setShowQuestionOriginModal(false)}
+          onManual={() => {
+            setShowQuestionOriginModal(false);
+            void openManualModal();
+          }}
+          onBank={() => {
+            setShowQuestionOriginModal(false);
+            void openBankModal();
+          }}
+        />
+      )}
+
       {showBankModal && (
         <QuestionBankModal
           questions={filteredQuestions}
@@ -928,7 +946,7 @@ export default function EditarSimuladoClient({
       )}
 
       {showManualModal && (
-        <ManualQuestionModal
+        <ManualQuestionsModal
           simuladoId={simulado.id}
           disciplines={disciplines}
           subjects={subjects}
@@ -939,22 +957,22 @@ export default function EditarSimuladoClient({
             setShowManualModal(false);
             setTemplateQuestionForManual(null);
           }}
-          onCreated={(question) => {
+          onCreated={(questions) => {
             setRelations((current) => [
               ...current,
-              {
+              ...questions.map((question, index) => ({
                 id: `temp-${question.id}`,
                 simulado_id: simulado.id,
                 question_id: question.id,
-                order_number: current.length + 1,
+                order_number: current.length + index + 1,
                 points: 1,
-                status: "active",
+                status: "active" as const,
                 questions: question,
-              },
+              })),
             ]);
             setShowManualModal(false);
             setTemplateQuestionForManual(null);
-            setFeedback({ type: "success", title: "Questão criada", message: "A questão foi salva no banco e vinculada ao simulado." });
+            setFeedback({ type: "success", title: "Questões adicionadas", message: `${questions.length} questão(ões) salva(s) no Banco e vinculada(s) ao simulado.` });
             router.refresh();
           }}
         />
@@ -1178,8 +1196,7 @@ export default function EditarSimuladoClient({
               icon={<FileQuestion size={18} />}
               action={
                 <div className="flex flex-wrap gap-3">
-                  <PremiumButton icon={<Plus size={16} />} onClick={() => void openBankModal()} disabled={loadingBankQuestions}>Selecionar questões</PremiumButton>
-                  <PremiumButton variant="secondary" icon={<Pencil size={16} />} onClick={() => void openManualModal()} disabled={loadingBankQuestions} className="border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">Criar questão</PremiumButton>
+                  <PremiumButton icon={<Plus size={16} />} onClick={() => setShowQuestionOriginModal(true)} disabled={loadingBankQuestions}>Adicionar questões</PremiumButton>
                 </div>
               }
             >
@@ -1328,6 +1345,54 @@ export default function EditarSimuladoClient({
   );
 }
 
+function QuestionOriginModal({ simuladoId, onClose, onManual, onBank }: {
+  simuladoId: string;
+  onClose: () => void;
+  onManual: () => void;
+  onBank: () => void;
+}) {
+  const options = [
+    {
+      title: "Criar questões manualmente",
+      description: "Crie uma ou várias novas questões e adicione-as diretamente a este simulado.",
+      icon: <Pencil size={25} />,
+      onClick: onManual,
+    },
+    {
+      title: "Selecionar do banco",
+      description: "Escolha questões já existentes no Banco de Questões.",
+      icon: <ListPlus size={25} />,
+      onClick: onBank,
+    },
+    {
+      title: "Importar com IA",
+      description: "Importe várias questões com auxílio da IA e adicione-as diretamente a este simulado.",
+      icon: <ClipboardPaste size={25} />,
+      href: `/questoes/importar?simulado=${encodeURIComponent(simuladoId)}`,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-md" onClick={onClose}>
+      <div className="relative w-full max-w-6xl overflow-hidden rounded-[2rem] border border-orange-400/25 bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-950 p-7 text-white shadow-2xl shadow-orange-950/40" onClick={(event) => event.stopPropagation()}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-400 to-yellow-300" />
+        <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-orange-500/15 blur-3xl" />
+        <button type="button" onClick={onClose} aria-label="Fechar" className="absolute right-6 top-6 rounded-2xl p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"><X size={20} /></button>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">Adicionar questões</p>
+        <h2 className="mt-3 text-3xl font-bold text-white">Como você quer adicionar as questões?</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-300">Escolha a origem. Todos os caminhos mantêm as questões no Banco e vinculadas ao simulado.</p>
+        <div className="mt-8 grid gap-5 md:grid-cols-3">
+          {options.map((option) => {
+            const content = <><div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-400/10 text-orange-300 ring-1 ring-orange-400/20">{option.icon}</div><h3 className="text-lg font-bold text-white">{option.title}</h3><p className="mt-4 text-sm leading-6 text-slate-300">{option.description}</p></>;
+            const className = "block h-full rounded-[2rem] border border-white/10 bg-white/[0.05] p-6 text-left transition hover:-translate-y-0.5 hover:border-orange-300/40 hover:bg-white/[0.09]";
+            return option.href ? <Link key={option.title} href={option.href} onClick={onClose} className={className}>{content}</Link> : <button key={option.title} type="button" onClick={option.onClick} className={className}>{content}</button>;
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PremiumSection({ eyebrow, title, description, icon, action, children }: {
   eyebrow: string;
   title: string;
@@ -1424,8 +1489,8 @@ function Toggle({ label, value, onChange, children }: { label: string; value: bo
           className="flex min-h-16 w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-bold"
         >
           <span className="leading-5">{label}</span>
-          <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-500 shadow-lg shadow-orange-500/25" : "bg-slate-700"}`}>
-            <span className={`block h-5 w-5 rounded-full bg-white transition ${value ? "translate-x-5" : ""}`} />
+          <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-600 shadow-md shadow-orange-500/20" : "bg-[#2b3f59]"}`}>
+            <span className={`block h-5 w-5 rounded-full transition ${value ? "translate-x-5 bg-orange-400" : "bg-[#405875]"}`} />
           </span>
         </button>
         <div className="border-t border-orange-200/10 bg-black/10 px-4 py-3">{children}</div>
@@ -1440,8 +1505,8 @@ function Toggle({ label, value, onChange, children }: { label: string; value: bo
       className={`group flex min-h-16 items-center justify-between gap-4 rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${activeClass}`}
     >
       <span className="leading-5">{label}</span>
-      <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-500 shadow-lg shadow-orange-500/25" : "bg-slate-700"}`}>
-        <span className={`block h-5 w-5 rounded-full bg-white transition ${value ? "translate-x-5" : ""}`} />
+      <span className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${value ? "bg-orange-600 shadow-md shadow-orange-500/20" : "bg-[#2b3f59]"}`}>
+        <span className={`block h-5 w-5 rounded-full transition ${value ? "translate-x-5 bg-orange-400" : "bg-[#405875]"}`} />
       </span>
     </button>
   );
@@ -1488,7 +1553,7 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
   const topicsPending = !hasEvaluatedTopics(question?.evaluated_topics);
 
   return (
-    <article className={`group relative overflow-hidden rounded-[1.6rem] border bg-[linear-gradient(135deg,rgba(248,250,252,0.98),rgba(241,245,249,0.94))] p-4 text-slate-900 shadow-xl transition hover:-translate-y-0.5 hover:shadow-2xl md:p-5 ${topicsPending ? "border-amber-300 shadow-amber-200/50 ring-2 ring-amber-200" : "border-white/10 shadow-black/20"}`}>
+    <article className={`group relative overflow-hidden rounded-[1.6rem] border bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(8,15,28,0.98))] p-4 text-slate-100 shadow-xl shadow-black/25 transition hover:-translate-y-0.5 hover:border-white/15 hover:shadow-2xl md:p-5 ${topicsPending ? "border-amber-400/40 ring-2 ring-amber-400/15" : "border-white/10"}`}>
       <div className={`absolute left-0 top-0 h-full w-1 bg-gradient-to-b shadow-[0_0_24px_rgba(255,138,0,0.34)] ${topicsPending ? "from-amber-400 via-amber-500 to-amber-700" : "from-orange-400 via-amber-400 to-orange-700"}`} />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_56px]">
         <div className="min-w-0">
@@ -1498,20 +1563,20 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
               <QuestionCodePopupLink
                 questionId={question.id}
                 code={question?.code || "Sem código"}
-                className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-black text-orange-700 transition hover:border-orange-300 hover:bg-orange-100"
+                className="rounded-full border border-orange-300/25 bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-200 transition hover:border-orange-300/45 hover:bg-orange-500/15"
                 onSaved={onQuestionSaved}
               />
             )}
-            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">{question?.exam_boards?.name || "Sem banca"}</span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+            <span className="rounded-full border border-orange-300/25 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-200">{question?.exam_boards?.name || "Sem banca"}</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-slate-300">
               {question?.subjects?.disciplines?.name || "Sem disciplina"} / {question?.subjects?.name || "Sem assunto"}
             </span>
             <PremiumDifficultyStars value={question?.difficulty_level} compact />
-            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700" title={accuracyStats.fullLabel}>
+            <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-bold text-sky-200" title={accuracyStats.fullLabel}>
               {accuracyStats.label}
             </span>
             {topicsPending && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200">
                 ⚠ Sem tópicos avaliados
               </span>
             )}
@@ -1519,14 +1584,14 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
           {!topicsPending && (
             <div className="mb-3 flex flex-wrap gap-1.5">
               {normalizeEvaluatedTopics(question?.evaluated_topics).map((topic) => (
-                <span key={topic} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                <span key={topic} className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-200">
                   {topic}
                 </span>
               ))}
             </div>
           )}
           <div
-            className="richtext-editor rounded-2xl border border-slate-200/80 bg-white/85 px-5 py-5 text-base leading-8 text-slate-800 shadow-sm"
+            className="richtext-editor rounded-2xl border border-white/[0.08] bg-black/15 px-5 py-5 text-base leading-8 text-slate-200 shadow-sm shadow-black/20"
             dangerouslySetInnerHTML={{ __html: richHtml(question?.statement) }}
           />
           {alternatives.length > 0 && (
@@ -1535,8 +1600,8 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
                 const isWrongTrueFalse = isTrueFalseWrongAlternative(question?.question_type, alt);
 
                 return (
-                  <div key={alt.id} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm transition ${isWrongTrueFalse ? "border-red-200 bg-red-50 text-red-900" : alt.is_correct ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-600"}`}>
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${isWrongTrueFalse ? "bg-red-500 text-white" : alt.is_correct ? "bg-emerald-500 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>
+                  <div key={alt.id} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm transition ${isWrongTrueFalse ? "border-red-400/25 bg-red-500/10 text-red-200" : alt.is_correct ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100" : "border-white/[0.08] bg-white/[0.035] text-slate-300"}`}>
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${isWrongTrueFalse ? "bg-red-500 text-white" : alt.is_correct ? "bg-emerald-500 text-white" : "border border-white/15 bg-white/[0.07] text-slate-300"}`}>
                       {alternativeCircleContent(question?.question_type, alt, alt.label || "")}
                     </span>
                     <span className="richtext-editor min-w-0 flex-1 leading-6" dangerouslySetInnerHTML={{ __html: richHtml(alt.text) }} />
@@ -1547,16 +1612,16 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
           )}
         </div>
         <div className="flex gap-2 lg:flex-col lg:items-end">
-          <button type="button" disabled={index === 0} onClick={() => onMove(index, "up")} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40" title="Subir">
+          <button type="button" disabled={index === 0} onClick={() => onMove(index, "up")} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-slate-300 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300/30 hover:bg-orange-500/10 hover:text-orange-200 disabled:cursor-not-allowed disabled:opacity-40" title="Subir">
             <ArrowUp size={17} />
           </button>
-          <button type="button" disabled={index === total - 1} onClick={() => onMove(index, "down")} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40" title="Descer">
+          <button type="button" disabled={index === total - 1} onClick={() => onMove(index, "down")} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-slate-300 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300/30 hover:bg-orange-500/10 hover:text-orange-200 disabled:cursor-not-allowed disabled:opacity-40" title="Descer">
             <ArrowDown size={17} />
           </button>
-          <button type="button" onClick={() => onSend(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 text-orange-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-orange-100" title="Enviar para outro simulado">
+          <button type="button" onClick={() => onSend(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-300/25 bg-orange-500/10 text-orange-200 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300/40 hover:bg-orange-500/15" title="Enviar para outro simulado">
             <Send size={17} />
           </button>
-          <button type="button" onClick={() => onRemove(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-red-200 bg-red-50 text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-red-100" title="Remover">
+          <button type="button" onClick={() => onRemove(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-red-400/25 bg-red-500/10 text-red-300 shadow-sm transition hover:-translate-y-0.5 hover:border-red-400/40 hover:bg-red-500/15" title="Remover">
             <Trash2 size={17} />
           </button>
         </div>
@@ -2032,7 +2097,7 @@ function QuestionBankModal(props: {
   }
 
   return (
-    <div className="animate-fullscreen-in fixed inset-0 z-[9999] overflow-y-auto bg-[#03070D] text-white">
+    <div className="animate-fullscreen-in fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-[#03070D] text-white">
       <div className="pointer-events-none absolute inset-0 et-admin-dark-bg" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,.75)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.75)_1px,transparent_1px)] [background-size:42px_42px]" />
       <div className="relative min-h-full p-5 sm:p-6">
@@ -2535,6 +2600,209 @@ function MetaSimulationLine({ titles }: { titles: string[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+type ManualQuestionDraft = {
+  localId: string;
+  disciplineId: string;
+  subjectId: string;
+  boardId: string;
+  statement: string;
+  explanation: string;
+  year: string;
+  difficulty: string;
+  evaluatedTopics: string[];
+  alternatives: ManualAlternative[];
+  persisted?: { id: string; code: string };
+};
+
+function createManualDraft(disciplines: Discipline[], boards: ExamBoard[]): ManualQuestionDraft {
+  return {
+    localId: crypto.randomUUID(),
+    disciplineId: disciplines[0]?.id || "",
+    subjectId: "",
+    boardId: boards[0]?.id || "",
+    statement: "",
+    explanation: "",
+    year: String(new Date().getFullYear()),
+    difficulty: "3",
+    evaluatedTopics: [],
+    alternatives: defaultAlternatives.map((alternative) => ({ ...alternative })),
+  };
+}
+
+function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, modelQuestions, initialTemplateQuestion, onClose, onCreated }: {
+  simuladoId: string;
+  disciplines: Discipline[];
+  subjects: Subject[];
+  boards: ExamBoard[];
+  modelQuestions: TemplateQuestion[];
+  initialTemplateQuestion?: TemplateQuestion | null;
+  onClose: () => void;
+  onCreated: (questions: BankQuestion[]) => void;
+}) {
+  const [drafts, setDrafts] = useState<ManualQuestionDraft[]>(() => [createManualDraft(disciplines, boards)]);
+  const [activeDraftId, setActiveDraftId] = useState("");
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function updateDraft(localId: string, patch: Partial<ManualQuestionDraft>) {
+    setDrafts((current) => current.map((draft) => draft.localId === localId ? { ...draft, ...patch } : draft));
+  }
+
+  function applyTemplate(question: TemplateQuestion) {
+    const targetId = activeDraftId || drafts[0]?.localId;
+    const alternatives = getTemplateAlternatives(question).map((alternative) => ({ label: alternative.label, text: alternative.text, is_correct: alternative.is_correct }));
+    updateDraft(targetId, {
+      disciplineId: getTemplateDisciplineId(question) || disciplines[0]?.id || "",
+      subjectId: getTemplateSubjectIds(question)[0] || "",
+      boardId: question.exam_boards?.id || question.exam_board_id || boards[0]?.id || "",
+      statement: question.statement || "",
+      explanation: question.explanation_text || "",
+      year: question.year ? String(question.year) : String(new Date().getFullYear()),
+      difficulty: String(question.difficulty_level || 3),
+      evaluatedTopics: normalizeEvaluatedTopics((question as TemplateQuestion & { evaluated_topics?: string[] | null }).evaluated_topics),
+      alternatives: alternatives.length ? alternatives : defaultAlternatives.map((alternative) => ({ ...alternative })),
+    });
+    setShowTemplatePicker(false);
+  }
+
+  useEffect(() => {
+    if (!initialTemplateQuestion || !drafts[0]) return;
+    const timeout = window.setTimeout(() => {
+      setActiveDraftId(drafts[0].localId);
+      applyTemplate(initialTemplateQuestion);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTemplateQuestion?.id]);
+
+  function removeDraft(draft: ManualQuestionDraft) {
+    if (drafts.length === 1 || draft.persisted) return;
+    const hasContent = Boolean(draft.statement.trim() || draft.explanation.trim() || draft.evaluatedTopics.length || draft.alternatives.some((alternative) => alternative.text.trim()));
+    if (hasContent && !window.confirm("Descartar o conteúdo desta questão ainda não salva?")) return;
+    setDrafts((current) => current.filter((item) => item.localId !== draft.localId));
+  }
+
+  function validateDraft(draft: ManualQuestionDraft, index: number) {
+    const prefix = `Questão ${index + 1}:`;
+    if (!draft.subjectId || !draft.boardId) return `${prefix} selecione assunto e banca.`;
+    if (!draft.statement.trim()) return `${prefix} informe o enunciado.`;
+    if (!/^\d{4}$/.test(draft.year)) return `${prefix} informe um ano válido.`;
+    if (normalizeEvaluatedTopics(draft.evaluatedTopics).length === 0) return `${prefix} informe pelo menos um tópico avaliado.`;
+    if (draft.alternatives.length < 4 || draft.alternatives.some((alternative) => !alternative.text.trim())) return `${prefix} preencha pelo menos quatro alternativas.`;
+    if (draft.alternatives.filter((alternative) => alternative.is_correct).length !== 1) return `${prefix} marque exatamente uma alternativa correta.`;
+    return null;
+  }
+
+  async function createAll() {
+    setError("");
+    const validationError = drafts.map(validateDraft).find(Boolean);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSaving(true);
+    const persistedDrafts = [...drafts];
+    try {
+      for (let index = 0; index < persistedDrafts.length; index++) {
+        const draft = persistedDrafts[index];
+        if (draft.persisted) continue;
+        const response = await adminFetch("/api/admin/questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question_type: "multiple_choice",
+            subject_id: draft.subjectId,
+            subject_ids: [draft.subjectId],
+            exam_board_id: draft.boardId,
+            statement: draft.statement,
+            explanation_text: draft.explanation,
+            year: Number(draft.year),
+            difficulty_level: Number(draft.difficulty),
+            status: "published",
+            evaluated_topics: normalizeEvaluatedTopics(draft.evaluatedTopics),
+            alternatives: draft.alternatives,
+            source_origin: "simulado_admin",
+            is_in_question_bank: true,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(`Questão ${index + 1}: ${result.message || "erro ao salvar."}`);
+        persistedDrafts[index] = { ...draft, persisted: { id: result.questionId, code: result.questionCode } };
+        setDrafts([...persistedDrafts]);
+      }
+
+      const questionIds = persistedDrafts.map((draft) => draft.persisted?.id).filter((id): id is string => Boolean(id));
+      const addResponse = await adminFetch(`/api/admin/simulados/${simuladoId}/questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question_ids: questionIds }),
+      });
+      const addResult = await addResponse.json();
+      if (!addResponse.ok || !addResult.ok) throw new Error(addResult.message || "As questões foram salvas, mas não foi possível vinculá-las ao simulado.");
+
+      onCreated(persistedDrafts.map((draft) => ({
+        id: draft.persisted!.id,
+        code: draft.persisted!.code,
+        statement: draft.statement,
+        explanation_text: draft.explanation,
+        status: "published",
+        evaluated_topics: normalizeEvaluatedTopics(draft.evaluatedTopics),
+        difficulty_level: Number(draft.difficulty),
+        year: Number(draft.year),
+        exam_boards: boards.find((board) => board.id === draft.boardId) || null,
+        subjects: { ...(subjects.find((subject) => subject.id === draft.subjectId) as Subject), disciplines: disciplines.find((discipline) => discipline.id === draft.disciplineId) || null },
+        question_alternatives: draft.alternatives.map((alternative, index) => ({ id: `${draft.persisted!.id}-${alternative.label}`, order_number: index + 1, ...alternative })),
+      })));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Não foi possível adicionar as questões.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="et-admin-clean-content fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-[#eef0f4] px-4 py-6" onClick={onClose}>
+      <QuestionTemplatePicker open={showTemplatePicker} questions={modelQuestions} disciplines={disciplines} subjects={subjects} boards={boards} onClose={() => setShowTemplatePicker(false)} onSelect={applyTemplate} />
+      <div className="mx-auto w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
+          <ModalHeader title="Criar questões manualmente" subtitle="Monte uma ou várias questões. Todas serão salvas no Banco e vinculadas ao simulado." onClose={onClose} icon={<Pencil size={22} />} />
+          {error && <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
+          <div className="space-y-6">
+            {drafts.map((draft, draftIndex) => {
+              const availableSubjects = subjects.filter((subject) => subject.discipline_id === draft.disciplineId);
+              return (
+                <section key={draft.localId} className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">Questão {draftIndex + 1}</p>{draft.persisted && <p className="mt-1 text-xs font-semibold text-emerald-600">Salva no Banco · {draft.persisted.code}</p>}</div>
+                    <div className="flex gap-2"><PremiumButton variant="secondary" icon={<CopyCheck size={16} />} onClick={() => { setActiveDraftId(draft.localId); setShowTemplatePicker(true); }} disabled={saving || Boolean(draft.persisted)}>Usar modelo</PremiumButton>{drafts.length > 1 && !draft.persisted && <PremiumButton variant="danger" icon={<Trash2 size={16} />} onClick={() => removeDraft(draft)} disabled={saving}>Remover questão</PremiumButton>}</div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <PremiumSelect label="Disciplina" value={draft.disciplineId} onChange={(event: any) => updateDraft(draft.localId, { disciplineId: event.target.value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)}>{disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</PremiumSelect>
+                    <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto" value={draft.subjectId} onChange={(value) => updateDraft(draft.localId, { subjectId: value })} options={[{ value: "", label: "Selecione" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Selecione" /></div>
+                    <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Banca" value={draft.boardId} onChange={(value) => updateDraft(draft.localId, { boardId: value })} options={boards.map((item) => ({ value: item.id, label: item.name }))} placeholder="Selecione" /></div>
+                    <PremiumSelect label="Dificuldade" value={draft.difficulty} onChange={(event: any) => updateDraft(draft.localId, { difficulty: event.target.value })} disabled={saving || Boolean(draft.persisted)}>{[1,2,3,4,5].map((item) => <option key={item} value={item}>{item}</option>)}</PremiumSelect>
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    <PremiumInput label="Ano" value={draft.year} onChange={(event: any) => updateDraft(draft.localId, { year: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={saving || Boolean(draft.persisted)} />
+                    <RichTextEditor label="Enunciado" value={draft.statement} onChange={(statement) => updateDraft(draft.localId, { statement })} placeholder="Digite o enunciado da questão." minRows={7} disabled={saving || Boolean(draft.persisted)} />
+                    {draft.alternatives.map((alternative, alternativeIndex) => <div key={`${draft.localId}-${alternative.label}`} className={`grid gap-3 rounded-2xl border p-3 md:grid-cols-[64px_1fr_auto] ${alternative.is_correct ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)} className={`flex h-11 w-11 items-center justify-center rounded-full font-bold ${alternative.is_correct ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-700"}`}>{alternative.label}</button><RichTextEditor value={alternative.text} onChange={(text) => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => index === alternativeIndex ? { ...item, text } : item) })} placeholder={`Alternativa ${alternative.label}`} compact disabled={saving || Boolean(draft.persisted)} /><div className="flex items-center gap-2"><PremiumButton variant={alternative.is_correct ? "primary" : "secondary"} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)}>{alternative.is_correct ? "Gabarito" : "Marcar"}</PremiumButton>{draft.alternatives.length > 4 && <PremiumButton variant="danger" icon={<Trash2 size={14} />} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.filter((_, index) => index !== alternativeIndex).map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })) })} disabled={saving || Boolean(draft.persisted)}>Excluir</PremiumButton>}</div></div>)}
+                    {draft.alternatives.length < 5 && <PremiumButton variant="secondary" icon={<Plus size={16} />} onClick={() => updateDraft(draft.localId, { alternatives: [...draft.alternatives, { label: String.fromCharCode(65 + draft.alternatives.length), text: "", is_correct: false }] })} disabled={saving || Boolean(draft.persisted)}>Adicionar alternativa</PremiumButton>}
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"><p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p><EvaluatedTopicsInput value={draft.evaluatedTopics} onChange={(evaluatedTopics) => updateDraft(draft.localId, { evaluatedTopics })} subjectId={draft.subjectId || null} required variant="light" disabled={saving || Boolean(draft.persisted)} /></div>
+                    <RichTextEditor label="Comentário do professor" value={draft.explanation} onChange={(explanation) => updateDraft(draft.localId, { explanation })} placeholder="Explique a resposta correta." minRows={4} disabled={saving || Boolean(draft.persisted)} />
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+          <div className="mt-6 flex flex-col justify-between gap-3 border-t border-slate-200 pt-5 sm:flex-row"><PremiumButton variant="secondary" icon={<Plus size={17} />} onClick={() => setDrafts((current) => [...current, createManualDraft(disciplines, boards)])} disabled={saving}>Criar mais uma questão</PremiumButton><div className="flex justify-end gap-3"><PremiumButton variant="secondary" onClick={onClose} disabled={saving}>Cancelar</PremiumButton><PremiumButton icon={<CheckCircle2 size={18} />} onClick={createAll} disabled={saving}>{saving ? "Adicionando..." : "Adicionar questões ao simulado"}</PremiumButton></div></div>
+        </div>
+      </div>
     </div>
   );
 }

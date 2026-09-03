@@ -1,5 +1,14 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 02/09/2026 — Consolidação oficial das interfaces
+
+- [x] Formalizadas exatamente duas bases visuais: Dark Premium e Clean Premium.
+- [x] `app/globals.css` centraliza contratos neutros e preserva classes históricas como compatibilidade.
+- [x] `AppShell` declara Clean Premium para Aluno/Professor e Dark Premium para Admin sem alterar a composição existente.
+- [x] `PageBackground` declara explicitamente a base selecionada.
+- [x] Nenhuma página foi convertida ou redesenhada; APIs, regras de negócio e banco permaneceram inalterados.
+- [x] Nenhuma migration foi criada, alterada ou executada nesta Sprint.
+
 _Atualizado automaticamente pelo agente a cada implementação concluída._
 
 ---
@@ -1454,15 +1463,59 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Drawer mobile do aluno atualizado para composição clean premium, sem modificar permissões, rotas ou o menu desktop.
 - [x] Nenhuma migration foi criada, alterada ou executada.
 
+## 02/09/2026 — Correção estrutural de composição da Interface Dark Premium
+
+- [x] A normalização global deixou de apagar o background de todos os `main` e `div` diretos do conteúdo administrativo; somente o wrapper explícito `.et-admin-dark-page` é neutralizado pelo canvas do `AppShell`.
+- [x] Fullscreens, overlays, drawers, painéis fixos e camadas decorativas Dark preservam seus backgrounds próprios; modais mantêm o backdrop translúcido deliberado.
+- [x] O fullscreen **Selecionar questões** de `/simulados/[id]/editar` mantém superfície opaca e contém sua rolagem, sem encadear o scroll para a página inferior.
+- [x] Nenhuma funcionalidade, API, migration, asset, `Sidebar` ou `Header` foi alterado.
+
+## 02/09/2026 — Importador com IA: provas separadas por linhas de X
+
+- [x] O importador reconhece condicionalmente linhas com 6 ou mais `x` como separadores, inclusive maiúsculas e caracteres espaçados, sem alterar o splitter usado quando o delimitador não existe.
+- [x] A numeração inicial isolada é removida dos novos blocos, enquanto o cabeçalho `ANO - BANCA - ÓRGÃO - CARGO` permanece no enunciado.
+- [x] Ano, banca e órgão recebem fallback pelo cabeçalho estruturado, preservando hífens internos no nome do órgão.
+- [x] `body.blocks` continua sem recoalescência no `analyze-batch`.
+- [x] Os dropdowns dos padrões de importação receberam camada local acima do card de texto bruto, sem alteração dos componentes compartilhados.
+- [x] Nenhuma migration foi criada, alterada ou executada.
+
+## 02/09/2026 — Interface clara nas ferramentas de criação de questões
+
+- [x] `/questoes/importar`, `/questoes/gerar-ia` e `/questoes/nova` usam canvas, cabeçalho, cards, campos, dropdowns e áreas de edição em tema claro clean.
+- [x] Cards de prévia, metadados, alternativas, tópicos avaliados e modais locais foram harmonizados com superfícies brancas, bordas suaves e contraste em tons de slate.
+- [x] Cores de erro, alerta, informação e sucesso permanecem reservadas aos respectivos estados funcionais.
+- [x] APIs, persistência, autenticação e regras de criação/importação não foram alteradas.
+- [x] Nenhuma migration foi criada, alterada ou executada nesta atualização visual.
+
+## 02/09/2026 — Exclusão de alternativas nos editores de questões
+
+- [x] Criação manual, edição/revisão e importação com IA exibem ação visível **Excluir** em alternativas de múltipla escolha.
+- [x] A exclusão fica disponível somente acima do mínimo de quatro alternativas; questões Certo/Errado preservam suas duas assertivas fixas.
+- [x] Após excluir, as alternativas restantes são renumeradas em sequência e o gabarito continua vinculado ao item correto remanescente.
+- [x] Nenhuma API, migration ou regra de persistência foi alterada.
+
+## 02/09/2026 — Unicidade de assuntos por disciplina
+
+- [x] O mesmo nome de assunto pode existir em disciplinas diferentes.
+- [x] A unicidade continua obrigatória dentro da mesma disciplina pelo par `(discipline_id, name)`.
+- [x] Migration `20260902180000_scope_subject_name_uniqueness_by_discipline.sql` criada e não executada nesta etapa.
+
+## 02/09/2026 — Compatibilidade da inscrição pública de Evento
+
+- [x] Falhas no carregamento inicial deixam de produzir card vazio e passam a exibir mensagem com tentativa novamente.
+- [x] A página possui fallback de viewport para navegadores anteriores a `dvh` e campo de e-mail com 16 px em telas móveis.
+- [x] Proxy público, API, confirmação por token e reCAPTCHA permaneceram inalterados.
+- [x] Nenhuma migration foi necessária para esta correção.
+
 ## 28/08/2026 — Feedback idempotente na reentrada da pré-inscrição de Evento
 
 - [x] Reenviar o mesmo e-mail enquanto existe uma intenção válida não deixa mais o fluxo dependente de um sucesso sem estado: a API retorna `confirmation_pending` e a interface abre explicitamente **Confira seu e-mail**.
 - [x] O botão **Continuar** passou a declarar `type="submit"`; antes, o tipo padrão `button` do componente compartilhado fazia o clique não disparar request. O botão também deixa de ficar silenciosamente desabilitado enquanto o reCAPTCHA carrega e passa a exibir o erro explícito já previsto.
+- [x] Diagnóstico de localhost documentado: as variáveis reCAPTCHA estão configuradas, mas a chave usada em desenvolvimento deve autorizar explicitamente o domínio `localhost`. Nenhum bypass, segredo versionado ou alteração externa foi realizado.
 - [x] Novo envio confirmado pelo Resend retorna `confirmation_email_sent`; ambos os estados usam mensagem pública genérica, sem revelar se existe conta.
 - [x] Cooldown de 60 segundos, reCAPTCHA, normalização do e-mail, token com hash, validade de 24 horas e índice único parcial foram preservados.
 - [x] Intenção expirada continua sendo substituída por nova intent e novo token; intenção consumida permanece fora do recorte pendente e segue o fluxo oficial existente.
 - [x] Nenhuma migration foi criada, alterada ou executada.
-
 ## 02/09/2026 — Questões, assuntos e compatibilidade da inscrição pública
 
 - [x] Importador, gerador por IA e criação manual usam interface clara clean e permitem excluir alternativas excedentes, preservando o mínimo de quatro.
@@ -1470,3 +1523,5 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Assuntos passam a ser únicos por disciplina pela migration `20260902180000_scope_subject_name_uniqueness_by_discipline.sql`, criada e não executada nesta etapa.
 - [x] A página pública de Evento apresenta fallback e nova tentativa quando seu carregamento inicial falha, com ajustes seguros de viewport e fonte para iOS.
 - [x] Nenhum fluxo de autenticação, confirmação ou reCAPTCHA foi enfraquecido.
+- [x] `/simulados/[id]/editar` possui fluxo unificado **Adicionar questões**, com criação manual em sequência, seletor do Banco preservado e importador de IA contextual que publica e vincula diretamente ao simulado.
+- [x] O importador de IA continua enviando para revisão quando aberto diretamente, sem o parâmetro de contexto do simulado.
