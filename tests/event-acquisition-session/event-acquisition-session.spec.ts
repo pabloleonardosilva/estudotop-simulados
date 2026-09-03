@@ -23,11 +23,77 @@ test("AppShell never redirects an existing session away from the event/cadastro 
 
 test("event confirmation exposes the securely validated intent email instead of trusting client input", () => {
   const confirmRoute = read("app/api/events/[slug]/confirm/route.ts");
+  // CASO A: sem student, segue para /cadastro com o e-mail da intenção (nunca do body).
   expect(confirmRoute).toContain(
-    "const next = student ? `/login?event=${encodeURIComponent(slug)}` : `/cadastro?event=${encodeURIComponent(slug)}&email=${encodeURIComponent(intent.email)}`;",
+    "let next = `/cadastro?event=${encodeURIComponent(slug)}&email=${encodeURIComponent(intent.email)}`;",
   );
   expect(confirmRoute).toContain("email: intent.email");
   expect(confirmRoute).not.toContain("consumed_at: new Date()");
+  // Esta rota nunca mexe em participante — evita duplicar o upsert que já
+  // ocorre em confirm-registration na primeira conclusão bem-sucedida.
+  expect(confirmRoute).not.toContain("simulado_event_participants");
+});
+
+test("existence in students alone never decides /login — must_change_password does", () => {
+  const confirmRoute = read("app/api/events/[slug]/confirm/route.ts");
+
+  const profileSelectIndex = confirmRoute.indexOf('supabase.from("profiles").select("role,must_change_password")');
+  const casoBIndex = confirmRoute.indexOf('profile.must_change_password === false');
+  const loginAssignIndex = confirmRoute.indexOf('next = `/login?event=${encodeURIComponent(slug)}`;', casoBIndex);
+  expect(profileSelectIndex).toBeGreaterThan(-1);
+  expect(casoBIndex).toBeGreaterThan(profileSelectIndex);
+  expect(loginAssignIndex).toBeGreaterThan(casoBIndex);
+
+  // CASO C: must_change_password=true nunca vai para /login.
+  const casoCIndex = confirmRoute.indexOf("profile.must_change_password === true");
+  expect(casoCIndex).toBeGreaterThan(casoBIndex);
+  const casoCBlock = confirmRoute.slice(casoCIndex, confirmRoute.indexOf("} else {", casoCIndex));
+  expect(casoCBlock).not.toContain("/login");
+});
+
+test("caso C issues a brand new first_access token, invalidating any pending one first, without ever reusing raw tokens", () => {
+  const confirmRoute = read("app/api/events/[slug]/confirm/route.ts");
+
+  const casoCIndex = confirmRoute.indexOf("profile.must_change_password === true");
+  const invalidateIndex = confirmRoute.indexOf('.eq("purpose", "first_access")', casoCIndex);
+  const newTokenIndex = confirmRoute.indexOf("const newToken = generateSecureToken();", invalidateIndex);
+  const insertIndex = confirmRoute.indexOf('purpose: "first_access"', newTokenIndex);
+  const hashIndex = confirmRoute.indexOf("token_hash: hashEmailActionToken(newToken)", insertIndex);
+  const primeiroAcessoIndex = confirmRoute.indexOf("next = `/primeiro-acesso?token=${encodeURIComponent(newToken)}`;", hashIndex);
+
+  // Ordem: invalida o pendente ANTES de gerar/gravar o novo — nunca dois
+  // first_access válidos ao mesmo tempo.
+  expect(invalidateIndex).toBeGreaterThan(casoCIndex);
+  expect(newTokenIndex).toBeGreaterThan(invalidateIndex);
+  expect(insertIndex).toBeGreaterThan(newTokenIndex);
+  expect(hashIndex).toBeGreaterThan(insertIndex);
+  expect(primeiroAcessoIndex).toBeGreaterThan(hashIndex);
+
+  // Só o hash do novo token é persistido — o valor bruto nunca é gravado em
+  // nenhuma coluna, só usado para computar o hash e compor a URL de resposta.
+  expect(confirmRoute).not.toMatch(/token:\s*newToken[^_]/);
+  expect(confirmRoute).not.toContain("raw_token");
+
+  // O token do link JÁ VALIDADO (da intenção do Evento) nunca é reaproveitado
+  // como first_access — usamos sempre newToken, nunca `token` (o do confirm).
+  expect(confirmRoute).not.toContain("token_hash: hashEmailActionToken(token)");
+});
+
+test("caso D falls back to password recovery only when resuming first_access is not safe", () => {
+  const confirmRoute = read("app/api/events/[slug]/confirm/route.ts");
+
+  const invalidateErrorIndex = confirmRoute.indexOf("if (invalidateError) {");
+  const insertErrorIndex = confirmRoute.indexOf("if (insertError) {");
+  const inconsistentElseIndex = confirmRoute.indexOf("// CASO D: students existe");
+
+  expect(invalidateErrorIndex).toBeGreaterThan(-1);
+  expect(insertErrorIndex).toBeGreaterThan(invalidateErrorIndex);
+  expect(inconsistentElseIndex).toBeGreaterThan(insertErrorIndex);
+
+  const recoveryFallbackCount = (confirmRoute.match(/next = `\/esqueci-senha\?email=\$\{encodeURIComponent\(intent\.email\)\}`;/g) || []).length;
+  // As três origens de CASO D (falha ao invalidar, falha ao inserir, profile
+  // inconsistente) caem todas no mesmo fallback seguro.
+  expect(recoveryFallbackCount).toBe(3);
 });
 
 test("event page compares the server-validated intent email against any active session before navigating", () => {
@@ -64,64 +130,92 @@ test("a session/intent conflict requires explicit sign-out and the intent surviv
   expect(page.slice(0, handlerIndex)).not.toContain("signOut");
 });
 
-test("public registration blocks a mismatched event intent email before any side effect", () => {
+test("public registration never inspects the event intent cookie for a submission that doesn't declare an event (CASO 1/2/3)", () => {
   const registerRoute = read("app/api/auth/register/route.ts");
 
+  const eventSlugIndex = registerRoute.indexOf('const eventSlug = typeof body.event === "string" ? body.event.trim() : "";');
+  const gateIndex = registerRoute.indexOf("if (eventSlug) {", eventSlugIndex);
+  const cookiesCallIndex = registerRoute.indexOf("await cookies();", gateIndex);
+  const duplicateCheckIndex = registerRoute.indexOf('supabase.from("students").select("id, email, cpf")');
+
+  expect(eventSlugIndex).toBeGreaterThan(-1);
+  // O gate inteiro (incluindo a leitura do cookie) só existe DENTRO do "if
+  // (eventSlug)" — cadastro comum (eventSlug vazio) nunca lê o cookie
+  // estudotop_event_intent, então um cookie residual de um teste/Evento
+  // anterior não é sequer consultado, muito menos aplicado (CASO 1: sem
+  // cookie; CASO 2: cookie inválido/expirado; CASO 3: cookie residual
+  // válido de outro Evento — os três caem no mesmo caminho "cadastro
+  // comum" porque eventSlug está vazio).
+  expect(gateIndex).toBeGreaterThan(eventSlugIndex);
+  expect(cookiesCallIndex).toBeGreaterThan(gateIndex);
+  expect(duplicateCheckIndex).toBeGreaterThan(cookiesCallIndex);
+  // Só existe uma chamada a cookies() no arquivo inteiro, e ela está
+  // condicionada ao contexto declarado.
+  expect((registerRoute.match(/await cookies\(\);/g) || []).length).toBe(1);
+});
+
+test("declared event context (CASO 4/5/6/7) requires the intent to match both the exact event and the exact email before linking", () => {
+  const registerRoute = read("app/api/auth/register/route.ts");
+
+  const gateIndex = registerRoute.indexOf("if (eventSlug) {");
+  const intentSelectIndex = registerRoute.indexOf('supabase.from("simulado_event_join_intents")', gateIndex);
+  const eventSlugCompareIndex = registerRoute.indexOf("event.public_slug !== eventSlug", intentSelectIndex);
+  const invalidContextReturnIndex = registerRoute.indexOf("EVENT_CONTEXT_INVALID_MESSAGE", eventSlugCompareIndex);
   const emailNormalizationIndex = registerRoute.indexOf("const email = body.email?.trim().toLowerCase();");
-  const intentSelectIndex = registerRoute.indexOf('supabase.from("simulado_event_join_intents")');
-  const mismatchCheckIndex = registerRoute.indexOf("intent.email.trim().toLowerCase() !== email");
-  const mismatchReturnIndex = registerRoute.indexOf(
-    'return NextResponse.json({ ok: false, message: "Não foi possível iniciar o cadastro." }, { status: 400 });',
-    mismatchCheckIndex,
-  );
+  const mismatchCheckIndex = registerRoute.indexOf("intent.email.trim().toLowerCase() !== email", invalidContextReturnIndex);
+  const mismatchReturnIndex = registerRoute.indexOf("EVENT_CONTEXT_INVALID_MESSAGE", mismatchCheckIndex);
   const eventIdAssignIndex = registerRoute.indexOf("eventId = intent.event_id;");
   const duplicateCheckIndex = registerRoute.indexOf('supabase.from("students").select("id, email, cpf")');
   const codeGenerationIndex = registerRoute.indexOf("generateNumericCode(6)");
   const confirmationInsertIndex = registerRoute.indexOf('supabase.from("student_registration_confirmations").insert(');
   const resendCallIndex = registerRoute.indexOf("resend.emails.send(");
 
-  // Caso correto (item 9): a mesma variável `email`, já normalizada com
-  // trim().toLowerCase() no topo da rota, é comparada contra
-  // intent.email.trim().toLowerCase() — case-insensitive dos dois lados,
-  // seguindo o normalizador já usado no resto do arquivo.
+  // CASO 5/6: sem intent válida, ou intent de um Evento diferente do
+  // declarado pela página → bloqueia (mesmo fallback genérico), antes de
+  // qualquer coisa relacionada a e-mail/duplicidade/Resend.
+  expect(intentSelectIndex).toBeGreaterThan(gateIndex);
+  expect(eventSlugCompareIndex).toBeGreaterThan(intentSelectIndex);
+  expect(invalidContextReturnIndex).toBeGreaterThan(eventSlugCompareIndex);
+
+  // CASO 7: mesmo Evento, mas e-mail da intenção diferente do body → bloqueia
+  // antes de qualquer efeito colateral (item 9: normalização
+  // trim().toLowerCase() nos dois lados, igual ao body já normalizado no
+  // topo do arquivo).
   expect(emailNormalizationIndex).toBeGreaterThan(-1);
-  expect(intentSelectIndex).toBeGreaterThan(emailNormalizationIndex);
-  expect(mismatchCheckIndex).toBeGreaterThan(intentSelectIndex);
+  expect(mismatchCheckIndex).toBeGreaterThan(invalidContextReturnIndex);
   expect(mismatchReturnIndex).toBeGreaterThan(mismatchCheckIndex);
 
-  // Caso de mismatch (item 8): o bloqueio ocorre antes de qualquer efeito
-  // colateral — vínculo ao Evento, checagem de duplicidade, geração de
-  // código, gravação da confirmation e envio pelo Resend.
   expect(eventIdAssignIndex).toBeGreaterThan(mismatchReturnIndex);
-  expect(duplicateCheckIndex).toBeGreaterThan(mismatchReturnIndex);
-  expect(codeGenerationIndex).toBeGreaterThan(mismatchReturnIndex);
-  expect(confirmationInsertIndex).toBeGreaterThan(mismatchReturnIndex);
-  expect(resendCallIndex).toBeGreaterThan(mismatchReturnIndex);
+  expect(duplicateCheckIndex).toBeGreaterThan(eventIdAssignIndex);
+  expect(codeGenerationIndex).toBeGreaterThan(eventIdAssignIndex);
+  expect(confirmationInsertIndex).toBeGreaterThan(eventIdAssignIndex);
+  expect(resendCallIndex).toBeGreaterThan(eventIdAssignIndex);
 
-  // A intenção nunca é marcada como consumida por esta rota, em nenhum dos
-  // dois casos — consumo continua sendo responsabilidade exclusiva de
+  // A intenção nunca é marcada como consumida por esta rota, em nenhum
+  // caso — consumo continua sendo responsabilidade exclusiva de
   // /api/auth/confirm-registration, após o código ser confirmado.
   expect(registerRoute).not.toContain('simulado_event_join_intents").update({ consumed_at');
 
-  // A resposta pública de mismatch é a mesma mensagem genérica já usada para
-  // outra falha silenciosa nesta rota (falha de insert) — não menciona
-  // e-mail nem Evento, não revelando a quem o link pertence (item 6).
-  expect(registerRoute).toContain(
-    'message: "Não foi possível iniciar o cadastro."',
-  );
-
-  // Intenção inválida/expirada/já consumida (itens de teste correspondentes):
-  // a própria query de leitura já as exclui (is consumed_at null + expires_at
-  // no futuro), então esses três casos caem no mesmo ramo de "sem intenção" —
-  // cadastro comum, sem vínculo ao Evento, comportamento inalterado por esta
-  // correção.
-  expect(registerRoute).toContain('.is("consumed_at", null).gt("expires_at", new Date().toISOString())');
+  // Contexto declarado sem intent válida, intent de outro Evento e
+  // mismatch de e-mail usam todos a mesma mensagem genérica (não revela
+  // qual verificação falhou nem a quem o link pertence — item 6).
+  const genericMessageCount = (registerRoute.match(/message: EVENT_CONTEXT_INVALID_MESSAGE/g) || []).length;
+  expect(genericMessageCount).toBe(2);
+  expect(registerRoute).toContain('const EVENT_CONTEXT_INVALID_MESSAGE = "Não foi possível iniciar o cadastro.";');
 });
 
-test("regular /cadastro flow outside of an Evento link stays untouched", () => {
+test("regular /cadastro flow outside of an Evento link stays untouched, and only declares event context when ?event= is present (CASO 8: casing)", () => {
   const cadastroPage = read("app/cadastro/page.tsx");
-  expect(cadastroPage).toContain('setEventSignup(Boolean(query.get("event")))');
+  expect(cadastroPage).toContain('setEventSignup(Boolean(eventParam))');
+  expect(cadastroPage).toContain('setEventSlug(eventParam)');
   expect(cadastroPage).toContain('fetch("/api/auth/register"');
+  // O campo event só é incluído no corpo do POST quando a página realmente
+  // tem um Evento declarado — cadastro comum nunca o envia.
+  expect(cadastroPage).toContain('...(eventSlug ? { event: eventSlug } : {})');
+
   const registerRoute = read("app/api/auth/register/route.ts");
   expect(registerRoute).toContain("RECAPTCHA_ACTION, { minScore: 0.3 }");
+  // Comparação de e-mail é case-insensitive dos dois lados (CASO 8: só
+  // diferença de casing entre intent.email e body.email deve ser aceita).
+  expect(registerRoute).toContain("intent.email.trim().toLowerCase() !== email");
 });

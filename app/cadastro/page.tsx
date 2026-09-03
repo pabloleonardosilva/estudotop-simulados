@@ -51,6 +51,7 @@ export default function CadastroPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [invalidFields, setInvalidFields] = useState<RegistrationField[]>([]);
   const [eventSignup, setEventSignup] = useState(false);
+  const [eventSlug, setEventSlug] = useState<string | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
   const [passwordSetupToken, setPasswordSetupToken] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -67,7 +68,9 @@ export default function CadastroPage() {
     const timer = window.setTimeout(() => {
       const query = new URLSearchParams(window.location.search);
       const eventEmail = query.get("email");
-      setEventSignup(Boolean(query.get("event")));
+      const eventParam = query.get("event");
+      setEventSignup(Boolean(eventParam));
+      setEventSlug(eventParam);
       if (eventEmail) setEmail(eventEmail);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -144,6 +147,7 @@ export default function CadastroPage() {
           cpf: cpfDigits,
           desiredContests,
           captcha_token: captchaToken,
+          ...(eventSlug ? { event: eventSlug } : {}),
         }),
       });
 

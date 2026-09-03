@@ -25,6 +25,7 @@ type RegisterPayload = {
   desiredContests?: string;
   concursosDesejados?: string;
   captcha_token?: string;
+  event?: string;
 };
 
 export async function POST(request: Request) {
@@ -100,32 +101,51 @@ export async function POST(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const cookieStore = await cookies();
-    const eventIntentToken = cookieStore.get("estudotop_event_intent")?.value;
     let eventId: string | null = null;
-    if (eventIntentToken) {
-      const { data: intent } = await supabase.from("simulado_event_join_intents").select("event_id,email,simulado_events:event_id(status,starts_at,ends_at,started_at)").eq("token_hash", hashEmailActionToken(eventIntentToken)).is("consumed_at", null).gt("expires_at", new Date().toISOString()).maybeSingle();
-      if (intent) {
-        // A intenção segura do Evento vincula EVENTO + E-MAIL + TOKEN. Um
-        // cadastro submetido com um e-mail diferente do e-mail validado pelo
-        // token não pode prosseguir de forma alguma — nem como cadastro comum
-        // desvinculado do Evento — para que o link de A nunca possa ser usado
-        // para iniciar o cadastro de B. A mensagem permanece genérica para não
-        // revelar a qual e-mail o link pertence.
-        if (intent.email.trim().toLowerCase() !== email) {
-          void logSecurityEvent({
-            event: "event_registration_intent_mismatch",
-            actorType: "system",
-            severity: "warning",
-            resourceType: "simulado_event_join_intents",
-            resourceId: intent.event_id,
-          });
-          return NextResponse.json({ ok: false, message: "Não foi possível iniciar o cadastro." }, { status: 400 });
-        }
-        const event = intent.simulado_events as unknown as { status: string; starts_at: string; ends_at: string; started_at?: string | null } | null;
-        const status = event ? effectiveEventStatus(event) : null;
-        if (status !== "closed" && status !== "archived") eventId = intent.event_id;
+
+    // O cookie estudotop_event_intent sozinho NUNCA define contexto de
+    // Evento para este cadastro — ele pode ser residual de um teste/link
+    // anterior em outra aba, e continua "válido" por até 24h independente
+    // da página que o navegador está mostrando agora. Só tratamos esta
+    // submissão como parte de um fluxo de Evento quando a própria página
+    // atual declara explicitamente qual Evento (event_slug, vindo de
+    // ?event= na URL de /cadastro) — cadastro público comum nunca envia
+    // esse campo e, portanto, nunca consulta nem aplica a intenção.
+    const eventSlug = typeof body.event === "string" ? body.event.trim() : "";
+    if (eventSlug) {
+      const EVENT_CONTEXT_INVALID_MESSAGE = "Não foi possível iniciar o cadastro.";
+      const cookieStore = await cookies();
+      const eventIntentToken = cookieStore.get("estudotop_event_intent")?.value;
+      const { data: intent } = eventIntentToken
+        ? await supabase.from("simulado_event_join_intents").select("event_id,email,simulado_events:event_id(public_slug,status,starts_at,ends_at,started_at)").eq("token_hash", hashEmailActionToken(eventIntentToken)).is("consumed_at", null).gt("expires_at", new Date().toISOString()).maybeSingle()
+        : { data: null };
+      const event = intent?.simulado_events as unknown as { public_slug: string; status: string; starts_at: string; ends_at: string; started_at?: string | null } | null;
+
+      // A intenção precisa existir, estar válida (não expirada/consumida) e
+      // pertencer exatamente ao Evento declarado pela página atual — uma
+      // intenção residual de outro Evento não autoriza nada aqui.
+      if (!intent || !event || event.public_slug !== eventSlug) {
+        return NextResponse.json({ ok: false, message: EVENT_CONTEXT_INVALID_MESSAGE }, { status: 400 });
       }
+
+      // A intenção segura do Evento vincula EVENTO + E-MAIL + TOKEN. Um
+      // cadastro submetido com um e-mail diferente do e-mail validado pelo
+      // token não pode prosseguir de forma alguma — para que o link de A
+      // nunca possa ser usado para iniciar o cadastro de B. A mensagem
+      // permanece genérica para não revelar a quem o link pertence.
+      if (intent.email.trim().toLowerCase() !== email) {
+        void logSecurityEvent({
+          event: "event_registration_intent_mismatch",
+          actorType: "system",
+          severity: "warning",
+          resourceType: "simulado_event_join_intents",
+          resourceId: intent.event_id,
+        });
+        return NextResponse.json({ ok: false, message: EVENT_CONTEXT_INVALID_MESSAGE }, { status: 400 });
+      }
+
+      const status = effectiveEventStatus(event);
+      if (status !== "closed" && status !== "archived") eventId = intent.event_id;
     }
 
     const [{ data: emailMatches }, { data: cpfMatches }] = await Promise.all([
