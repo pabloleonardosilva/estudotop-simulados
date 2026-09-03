@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { FormEvent, useEffect, useState } from "react";
 import { BookOpen, Eye, EyeOff, GraduationCap, KeyRound, MailCheck, ShieldCheck, Trophy } from "lucide-react";
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
@@ -11,6 +12,16 @@ import { validatePassword } from "@/lib/auth/passwordPolicy";
 
 type Step = "form" | "code" | "password" | "done";
 type RegistrationField = "fullName" | "whatsapp" | "email" | "cpf" | "desiredContests";
+const RECAPTCHA_ACTION = "public_registration";
+
+declare global {
+  interface Window {
+    grecaptcha?: {
+      ready(callback: () => void): void;
+      execute(siteKey: string, options: { action: string }): Promise<string>;
+    };
+  }
+}
 
 const FIELD_LABELS: Record<RegistrationField, string> = {
   fullName: "nome completo",
@@ -48,6 +59,8 @@ export default function CadastroPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordViolations, setPasswordViolations] = useState<string[]>([]);
   const [passwordCreated, setPasswordCreated] = useState(false);
+  const [captchaReady, setCaptchaReady] = useState(false);
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
   const passwordValidation = validatePassword(password, { fullName, email });
   const canCreatePassword = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
 
@@ -100,7 +113,28 @@ export default function CadastroPage() {
       return;
     }
 
+    if (!recaptchaSiteKey || !captchaReady || !window.grecaptcha) {
+      setLoading(false);
+      setErrorMessage("Não foi possível validar o envio. Tente novamente.");
+      return;
+    }
+
     try {
+      const grecaptcha = window.grecaptcha;
+      const captchaToken = await new Promise<string>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => reject(new Error("recaptcha_timeout")), 10_000);
+        grecaptcha.ready(() => {
+          grecaptcha.execute(recaptchaSiteKey, { action: RECAPTCHA_ACTION })
+            .then((token) => {
+              window.clearTimeout(timeoutId);
+              resolve(token);
+            })
+            .catch((error) => {
+              window.clearTimeout(timeoutId);
+              reject(error);
+            });
+        });
+      });
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,6 +144,7 @@ export default function CadastroPage() {
           email,
           cpf: cpfDigits,
           desiredContests,
+          captcha_token: captchaToken,
         }),
       });
 
@@ -232,6 +267,15 @@ export default function CadastroPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#04060b] text-white">
+      {recaptchaSiteKey && (
+        <Script
+          id="public-registration-recaptcha"
+          src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
+          strategy="afterInteractive"
+          onReady={() => setCaptchaReady(true)}
+          onError={() => setCaptchaReady(false)}
+        />
+      )}
       <div
         className="absolute inset-0 bg-cover bg-center opacity-95"
         style={{ backgroundImage: "url('/images/cadastro-wallpaper-estudotop.png')" }}

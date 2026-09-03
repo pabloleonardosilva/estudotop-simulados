@@ -1775,6 +1775,8 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 ### 10.0 Interface dark premium — Cadastro e perfil (implementada 2026-05-28, consolidada 2026-05-29)
 
+**Proteção do cadastro público (2026-09-03):** `/cadastro` executa reCAPTCHA v3 com action `public_registration` antes de chamar `POST /api/auth/register`. A API exige o token e o valida por `lib/server/recaptcha.ts` com threshold específico `0.3`; `success = true`, score presente e action exata continuam obrigatórios. O threshold padrão do helper permanece `0.5`, inclusive para a Central de Ajuda. A validação ocorre antes de consultas, gravação de confirmação e envio pelo Resend; confirmação por e-mail, aprovação, regras de duplicidade e demais proteções existentes permanecem inalteradas.
+
 **Função:** visual dark premium para cadastro e visualização/edição de aluno, idêntico ao padrão das telas de Questões e Revisar Questões.
 
 **Rota única consolidada em 2026-05-29:** a rota `app/alunos/` foi eliminada. Toda a gestão de alunos está em `app/admin/alunos/`.
@@ -3503,7 +3505,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 
 **Fluxo do aluno:** `app/components/HelpCenterModal.tsx` é aberto pelo item **Ajuda** do `Header`, via estado mantido no `AppShell`. O aluno escolhe um motivo, escreve até 2.000 caracteres e envia sem mudar de rota. `GET/POST /api/student/help-messages` e `POST /api/student/help-messages/mark-seen` usam `getStudentFromRequest`; o `student_id` sempre é derivado no servidor.
 
-**Proteção anti-spam:** o cliente executa reCAPTCHA v3 com a ação `help_ticket_submit`; `lib/server/recaptcha.ts` valida token, ação e pontuação no servidor. Variáveis: `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` e `RECAPTCHA_SECRET_KEY`. Falha ou ausência da validação impede a gravação.
+**Proteção anti-spam:** o cliente executa reCAPTCHA v3 com a ação `help_ticket_submit`; `lib/server/recaptcha.ts` valida token, ação e pontuação no servidor. Variáveis: `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` e `RECAPTCHA_SECRET_KEY`. Falha ou ausência da validação impede a gravação. Essa action preserva o threshold padrão `0.5`.
 
 **Fluxo administrativo:** `/admin/ajuda` apresenta **Tickets de Ajuda**, abas por status e filtro por motivo. `GET /api/admin/help-messages` e `PATCH /api/admin/help-messages/[id]` exigem `requireAdmin`. A resposta aceita no máximo 5.000 caracteres, usa o admin autenticado como `replied_by` e só altera ticket ainda aberto. O badge de `app/components/Sidebar.tsx` consulta essa API protegida; não lê a tabela diretamente no navegador.
 
@@ -3559,7 +3561,7 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - **Presença e visão geral:** heartbeat estudantil a cada 30 segundos reutiliza `user_sessions`; uma janela de 90 segundos alimenta inscritos online. Métricas agregadas usam somente a tentativa representativa do Evento.
 - **Arquivo histórico:** Eventos arquivados ficam organizados no histórico do professor e em modo somente leitura no Admin e nas APIs; duplicação permanece permitida.
 - **Presença autenticada:** `POST /api/student/events/[id]/heartbeat` não aceita identidade no payload; deriva o aluno do Bearer, valida a participação e reutiliza `user_sessions`. Intervalo do cliente: 30 segundos; janela online: 90 segundos.
-- **Ingresso sem enumeração:** a solicitação pública exige reCAPTCHA v3 e sempre responde de forma neutra. Um link opaco de confirmação comprova posse do e-mail antes de o sistema decidir entre login/recuperação e cadastro. O contexto permanece em cookie `HttpOnly` até o vínculo definitivo.
+- **Ingresso sem enumeração:** a solicitação pública exige reCAPTCHA v3 com action `event_join_request` e threshold específico `0.3`, mantendo `success = true`, score presente e action exata como requisitos obrigatórios. A resposta permanece neutra. Um link opaco de confirmação comprova posse do e-mail antes de o sistema decidir entre login/recuperação e cadastro. O contexto permanece em cookie `HttpOnly` até o vínculo definitivo.
 - **Controle de intenções:** cooldown de 60 segundos e índice único parcial por Evento/e-mail impedem spam simples e múltiplas intenções pendentes concorrentes. Migration: `20260820170000_limit_event_join_intents.sql`.
 - **Reentrada com intenção pendente (2026-08-28):** `POST /api/events/[slug]` responde explicitamente `confirmation_email_sent` quando o Resend confirma um novo envio e `confirmation_pending` quando uma solicitação válida está em cooldown ou vence uma corrida concorrente. Em `/evento/[slug]`, **Continuar** é um submit real; o clique sempre entra na rotina e, se o reCAPTCHA ainda não estiver disponível, apresenta erro explícito em vez de manter um botão silenciosamente desabilitado. O cliente reconhece ambos os estados de sucesso e abre **Confira seu e-mail**, preservando cooldown, anti-enumeração, reenvio e troca de e-mail.
 - **reCAPTCHA em desenvolvimento local:** `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` e `RECAPTCHA_SECRET_KEY` continuam obrigatórias. A chave usada no localhost deve autorizar explicitamente o domínio `localhost` no console do Google; recomenda-se uma chave separada para desenvolvimento. Não desabilitar validação de domínio nem criar bypass de captcha no código.

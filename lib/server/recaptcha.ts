@@ -1,7 +1,7 @@
 import "server-only";
 
 const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
-const RECAPTCHA_MIN_SCORE = 0.5;
+const DEFAULT_RECAPTCHA_MIN_SCORE = 0.5;
 
 type RecaptchaResponse = {
   success?: boolean;
@@ -19,9 +19,14 @@ type RecaptchaDiagnostics = {
   errorCodes: string[];
 };
 
-export async function verifyRecaptchaToken(token: string, expectedAction: string) {
+export async function verifyRecaptchaToken(
+  token: string,
+  expectedAction: string,
+  options: { minScore?: number } = {},
+) {
   const secret = process.env.RECAPTCHA_SECRET_KEY;
   if (!secret) return { ok: false as const, reason: "recaptcha_not_configured" };
+  const minScore = options.minScore ?? DEFAULT_RECAPTCHA_MIN_SCORE;
 
   try {
     const body = new URLSearchParams({ secret, response: token });
@@ -46,7 +51,7 @@ export async function verifyRecaptchaToken(token: string, expectedAction: string
       && result?.success
       && result.action === expectedAction
       && typeof result.score === "number"
-      && result.score >= RECAPTCHA_MIN_SCORE,
+      && result.score >= minScore,
     );
 
     return ok

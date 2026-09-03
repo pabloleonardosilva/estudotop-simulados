@@ -568,6 +568,14 @@ Escopo previsto:
 - O erro local `Erro inesperado ao iniciar cadastro` foi identificado como ausência de `REGISTRATION_TOKEN_SECRET`; o segredo dedicado foi configurado somente no `.env.local` da estação, sem fallback para service role e sem versionar ou documentar seu valor.
 - Nenhuma migration foi criada, alterada ou executada neste ajuste.
 
+### Threshold específico do reCAPTCHA em fluxos públicos de aquisição — 2026-09-03
+
+- O helper `lib/server/recaptcha.ts` passou a aceitar `minScore` por chamada, preservando `0.5` como default.
+- O ingresso público em Evento (`event_join_request`) e o cadastro público normal (`public_registration`) usam explicitamente `0.3`. A Central de Ajuda (`help_ticket_submit`) continua em `0.5`.
+- O cadastro público passou a gerar o token v3 no cliente e validá-lo em `POST /api/auth/register` antes de qualquer consulta, gravação ou envio de e-mail. Token ausente, `success = false`, score ausente, action incorreta ou score abaixo do limite continuam bloqueados.
+- A redução responde ao diagnóstico real de Production no Evento: token válido, action e hostname corretos, score `0.3` e nenhum erro do Google. A instrumentação segura do Evento permanece temporariamente para confirmar a aceitação em Production e deve ser removida em tarefa posterior.
+- Nenhuma regra de confirmação, aprovação, duplicidade, Event intent, cooldown, associação ou envio de e-mail foi alterada. Nenhuma migration foi criada ou executada.
+
 ### Rastreabilidade de e-mails das Jornadas — 2026-07-13
 
 - O cadastro do aluno passou a listar no card **Sistema** os e-mails de entrada em Jornadas e de liberação de simulados, além do e-mail de boas-vindas da conta.

@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ ok: false, message: "Informe um e-mail válido." }, { status: 400 });
   const captchaToken = typeof body?.captcha_token === "string" ? body.captcha_token : "";
-  const captcha = await verifyRecaptchaToken(captchaToken, RECAPTCHA_ACTION);
+  const captcha = await verifyRecaptchaToken(captchaToken, RECAPTCHA_ACTION, { minScore: 0.3 });
   if (!captcha.ok) {
     void logSecurityEvent({
       request,

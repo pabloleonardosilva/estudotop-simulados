@@ -8,10 +8,12 @@ import { addMinutes, generateNumericCode, hashEmailActionToken, hashRegistration
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
+import { verifyRecaptchaToken } from "@/lib/server/recaptcha";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
+const RECAPTCHA_ACTION = "public_registration";
 
 type RegisterPayload = {
   name?: string;
@@ -22,6 +24,7 @@ type RegisterPayload = {
   cpf?: string;
   desiredContests?: string;
   concursosDesejados?: string;
+  captcha_token?: string;
 };
 
 export async function POST(request: Request) {
@@ -70,6 +73,21 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { ok: false, code: "STUDENT_CPF_INVALID", message: "O CPF informado não é válido.", field: "cpf" },
         { status: 400 }
+      );
+    }
+
+    const captchaToken = typeof body.captcha_token === "string" ? body.captcha_token.trim() : "";
+    if (!captchaToken) {
+      return NextResponse.json(
+        { ok: false, message: "Não foi possível validar o envio. Tente novamente." },
+        { status: 400 },
+      );
+    }
+    const captcha = await verifyRecaptchaToken(captchaToken, RECAPTCHA_ACTION, { minScore: 0.3 });
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { ok: false, message: "Não foi possível validar o envio. Tente novamente." },
+        { status: 400 },
       );
     }
 

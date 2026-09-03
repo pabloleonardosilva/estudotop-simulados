@@ -2401,3 +2401,11 @@ Nenhuma migration foi necessária.
 - O branch pendente não chama o Resend durante o cooldown: isso é intencional para impedir spam. Passado o cooldown, a intent anterior é substituída, o último token passa a ser o válido e um novo e-mail é enviado. Intents expiradas são renovadas; intents consumidas continuam no fluxo oficial de login/cadastro e não geram participação duplicada.
 - Permanecem inalterados reCAPTCHA v3, normalização `trim().toLowerCase()`, validade de 24 horas, hash do token, resposta anti-enumeração e unicidade por Evento/e-mail. Nenhuma migration foi necessária.
 - O carregamento inicial da página pública passou a tratar falha de rede, status HTTP inválido e resposta não JSON, exibindo mensagem e **Tentar novamente** em vez de deixar o card vazio. A viewport mantém fallback `100vh` e o e-mail usa 16 px em telas móveis para compatibilidade com Safari/iOS. O reCAPTCHA e os fluxos de confirmação permaneceram inalterados.
+
+## 98. Threshold específico do reCAPTCHA no ingresso público — 2026-09-03
+
+- Uma tentativa real em Production retornou `success = true`, score `0.3`, action `event_join_request`, hostname `simulados.estudotop.com.br` e nenhum `error-code`; o bloqueio ocorria exclusivamente porque o helper exigia o threshold padrão `0.5`.
+- `POST /api/events/[slug]` passou a solicitar explicitamente score mínimo `0.3`. Continuam obrigatórias a resposta `success = true`, a presença de score e a igualdade exata da action; token ausente, indisponibilidade do Google, action divergente e `success = false` continuam bloqueados.
+- O threshold padrão compartilhado permanece `0.5`. A Central de Ajuda e qualquer consumidor que não informe um valor específico não receberam redução.
+- A instrumentação temporária segura `event_join_recaptcha_accepted`/`event_join_recaptcha_rejected` permanece somente até a confirmação da correção em Production e registra exclusivamente `captchaSuccess`, `score`, `action`, `hostname` e `errorCodes`, sem token, secret, e-mail ou payload.
+- Cooldown, resposta anti-enumeração, intenção de ingresso, confirmação por e-mail, token, associação ao Evento e Resend não foram alterados. Nenhuma migration foi necessária.
