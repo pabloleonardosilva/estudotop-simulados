@@ -7,6 +7,16 @@ type RecaptchaResponse = {
   success?: boolean;
   score?: number;
   action?: string;
+  hostname?: string;
+  "error-codes"?: string[];
+};
+
+type RecaptchaDiagnostics = {
+  captchaSuccess: boolean;
+  score: number | null;
+  action: string | null;
+  hostname: string | null;
+  errorCodes: string[];
 };
 
 export async function verifyRecaptchaToken(token: string, expectedAction: string) {
@@ -22,6 +32,15 @@ export async function verifyRecaptchaToken(token: string, expectedAction: string
       cache: "no-store",
     });
     const result = (await response.json().catch(() => null)) as RecaptchaResponse | null;
+    const diagnostics: RecaptchaDiagnostics = {
+      captchaSuccess: result?.success === true,
+      score: typeof result?.score === "number" ? result.score : null,
+      action: typeof result?.action === "string" ? result.action : null,
+      hostname: typeof result?.hostname === "string" ? result.hostname : null,
+      errorCodes: Array.isArray(result?.["error-codes"])
+        ? result["error-codes"].filter((code): code is string => typeof code === "string")
+        : [],
+    };
     const ok = Boolean(
       response.ok
       && result?.success
@@ -30,7 +49,9 @@ export async function verifyRecaptchaToken(token: string, expectedAction: string
       && result.score >= RECAPTCHA_MIN_SCORE,
     );
 
-    return ok ? { ok: true as const } : { ok: false as const, reason: "recaptcha_rejected" };
+    return ok
+      ? { ok: true as const, diagnostics }
+      : { ok: false as const, reason: "recaptcha_rejected", diagnostics };
   } catch {
     return { ok: false as const, reason: "recaptcha_unavailable" };
   }

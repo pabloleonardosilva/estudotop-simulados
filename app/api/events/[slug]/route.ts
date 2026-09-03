@@ -30,9 +30,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const captchaToken = typeof body?.captcha_token === "string" ? body.captcha_token : "";
   const captcha = await verifyRecaptchaToken(captchaToken, RECAPTCHA_ACTION);
   if (!captcha.ok) {
-    void logSecurityEvent({ request, eventType: "event_join_recaptcha_rejected", actorType: "system", riskLevel: "medium", blocked: true, reason: captcha.reason, metadata: { event_slug: slug } });
+    void logSecurityEvent({
+      request,
+      eventType: "event_join_recaptcha_rejected",
+      actorType: "system",
+      riskLevel: "medium",
+      blocked: true,
+      reason: captcha.reason,
+      metadata: captcha.reason === "recaptcha_rejected" ? captcha.diagnostics : {},
+    });
     return NextResponse.json({ ok: false, message: "Não foi possível validar o envio. Tente novamente." }, { status: 400 });
   }
+  void logSecurityEvent({
+    request,
+    eventType: "event_join_recaptcha_accepted",
+    actorType: "system",
+    riskLevel: "low",
+    blocked: false,
+    metadata: captcha.diagnostics,
+  });
   const { data: event } = await getEventBySlug(slug);
   if (!event) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
   if (!eventAcceptsEntries(event) && effectiveEventStatus(event) !== "scheduled") return NextResponse.json({ ok: false, message: "Este Evento não aceita novas participações." }, { status: 409 });
