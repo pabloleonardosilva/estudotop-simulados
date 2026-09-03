@@ -18,6 +18,38 @@ function normalizedRequestIp(request: Request) {
   ).trim().toLowerCase().slice(0, 128);
 }
 
+// TODO(diagnóstico temporário): remover após identificar a exceção entre a
+// elegibilidade e a RPC create_password_recovery_request em Production.
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    const code = (error as { code?: unknown }).code;
+    return {
+      name: error.name,
+      message: error.message,
+      ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+    };
+  }
+  if (error && typeof error === "object") {
+    const maybe = error as { name?: unknown; message?: unknown; code?: unknown };
+    return {
+      name: typeof maybe.name === "string" ? maybe.name : undefined,
+      message: typeof maybe.message === "string" ? maybe.message : String(error),
+      code: typeof maybe.code === "string" || typeof maybe.code === "number" ? maybe.code : undefined,
+    };
+  }
+  return { message: String(error) };
+}
+
+function logRecoveryDebugStage(stage: string, accountId: string, extra?: Record<string, unknown>) {
+  void logSecurityEvent({
+    event: "password_recovery_debug",
+    actorType: "system",
+    actorId: accountId,
+    severity: "info",
+    metadata: { stage, ...extra },
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const { email: rawEmail } = (await request.json()) as { email?: string };
@@ -46,9 +78,23 @@ export async function POST(request: Request) {
     });
 
     const token = generateSecureToken();
+    logRecoveryDebugStage("token_generated", account.id);
+
     const tokenHash = hashEmailActionToken(token);
-    const fingerprintHash = hashPasswordRecoveryFingerprint(email, normalizedRequestIp(request));
+    logRecoveryDebugStage("token_hashed", account.id);
+
+    const ip = normalizedRequestIp(request);
+    logRecoveryDebugStage("ip_normalized", account.id, {
+      fingerprintPepperConfigured: Boolean(process.env.REGISTRATION_TOKEN_SECRET),
+    });
+
+    const fingerprintHash = hashPasswordRecoveryFingerprint(email, ip);
+    logRecoveryDebugStage("fingerprint_generated", account.id);
+
     const expiresAt = new Date(Date.now() + RECOVERY_EXPIRATION_MINUTES * 60_000).toISOString();
+    logRecoveryDebugStage("expiry_ready", account.id);
+
+    logRecoveryDebugStage("before_create_rpc", account.id);
     const { data: createRows, error: createError } = await supabase.rpc("create_password_recovery_request", {
       p_user_id: account.id,
       p_token_hash: tokenHash,
@@ -122,7 +168,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, message: PUBLIC_MESSAGE });
   } catch (error) {
-    void logSystemError({ source: "api.auth.forgot_password", error, request });
+    void logSystemError({ source: "api.auth.forgot_password", error, request, metadata: serializeError(error) });
     return NextResponse.json({ ok: true, message: PUBLIC_MESSAGE });
   }
 }
