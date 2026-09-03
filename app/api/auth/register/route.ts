@@ -6,7 +6,7 @@ import { isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
 import { addMinutes, generateNumericCode, hashEmailActionToken, hashRegistrationValue } from "@/lib/security/registrationTokens";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
-import { logSystemError } from "@/app/lib/server/auditLogger";
+import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { verifyRecaptchaToken } from "@/lib/server/recaptcha";
 
@@ -105,9 +105,27 @@ export async function POST(request: Request) {
     let eventId: string | null = null;
     if (eventIntentToken) {
       const { data: intent } = await supabase.from("simulado_event_join_intents").select("event_id,email,simulado_events:event_id(status,starts_at,ends_at,started_at)").eq("token_hash", hashEmailActionToken(eventIntentToken)).is("consumed_at", null).gt("expires_at", new Date().toISOString()).maybeSingle();
-      const event = intent?.simulado_events as unknown as { status: string; starts_at: string; ends_at: string; started_at?: string | null } | null;
-      const status = event ? effectiveEventStatus(event) : null;
-      if (intent && intent.email.toLowerCase() === email && status !== "closed" && status !== "archived") eventId = intent.event_id;
+      if (intent) {
+        // A intenção segura do Evento vincula EVENTO + E-MAIL + TOKEN. Um
+        // cadastro submetido com um e-mail diferente do e-mail validado pelo
+        // token não pode prosseguir de forma alguma — nem como cadastro comum
+        // desvinculado do Evento — para que o link de A nunca possa ser usado
+        // para iniciar o cadastro de B. A mensagem permanece genérica para não
+        // revelar a qual e-mail o link pertence.
+        if (intent.email.trim().toLowerCase() !== email) {
+          void logSecurityEvent({
+            event: "event_registration_intent_mismatch",
+            actorType: "system",
+            severity: "warning",
+            resourceType: "simulado_event_join_intents",
+            resourceId: intent.event_id,
+          });
+          return NextResponse.json({ ok: false, message: "Não foi possível iniciar o cadastro." }, { status: 400 });
+        }
+        const event = intent.simulado_events as unknown as { status: string; starts_at: string; ends_at: string; started_at?: string | null } | null;
+        const status = event ? effectiveEventStatus(event) : null;
+        if (status !== "closed" && status !== "archived") eventId = intent.event_id;
+      }
     }
 
     const [{ data: emailMatches }, { data: cpfMatches }] = await Promise.all([

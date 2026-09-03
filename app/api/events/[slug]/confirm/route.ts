@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   if (status === "closed" || status === "archived") return NextResponse.json({ ok: false, message: "Este Evento não aceita novas participações." }, { status: 409 });
   const { data: student } = await supabase.from("students").select("id").eq("email", intent.email).maybeSingle();
   const next = student ? `/login?event=${encodeURIComponent(slug)}` : `/cadastro?event=${encodeURIComponent(slug)}&email=${encodeURIComponent(intent.email)}`;
-  const response = NextResponse.json({ ok: true, message: student ? "Já existe uma conta EstudoTOP para este e-mail." : "E-mail confirmado. Continue seu cadastro.", account_exists: Boolean(student), next });
+  const response = NextResponse.json({ ok: true, message: student ? "Já existe uma conta EstudoTOP para este e-mail." : "E-mail confirmado. Continue seu cadastro.", account_exists: Boolean(student), next, email: intent.email });
   response.cookies.set(COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 86400 });
   return response;
 }

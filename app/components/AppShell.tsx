@@ -61,6 +61,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
   const publicRoutes = ["/login", "/esqueci-senha", "/redefinir-senha", "/cadastro", "/primeiro-acesso"];
   const isPublicRoute = publicRoutes.includes(pathname) || pathname.startsWith("/cadastro/confirmar") || pathname.startsWith("/evento/");
+  // Rotas de aquisição/continuação de cadastro (link de e-mail do Evento e o
+  // próprio /cadastro): uma sessão já autenticada no navegador não pode
+  // sequestrar essas rotas — nem para a home do usuário logado, nem para
+  // /alterar-senha. A própria página resolve a intenção do link (inclusive
+  // conflito de sessão) antes de qualquer navegação.
+  const isEventAcquisitionRoute = pathname === "/cadastro" || pathname.startsWith("/cadastro/confirmar") || pathname.startsWith("/evento/");
   const isPublicViewRoute = pathname.startsWith("/r/");
   const isChangePasswordRoute = pathname === "/alterar-senha";
   const isStudentExamPage = pathname.startsWith("/aluno/simulado");
@@ -75,7 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // /meus-eventos sem piscar uma tela e trocar para outra. Um timeout de
   // segurança evita travar indefinidamente se a chamada nunca resolver.
   const isResolvingStudentHome = Boolean(
-    user && profile?.role === "student" && !profile.must_change_password && isPublicRoute && !studentNavAccess,
+    user && profile?.role === "student" && !profile.must_change_password && isPublicRoute && !isEventAcquisitionRoute && !studentNavAccess,
   );
   const awaitingStudentHome = isResolvingStudentHome && !navAccessTimedOut;
 
@@ -115,12 +121,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (user && profile?.must_change_password && !isChangePasswordRoute) {
+    if (user && profile?.must_change_password && !isChangePasswordRoute && !isEventAcquisitionRoute) {
       router.replace("/alterar-senha");
       return;
     }
 
-    if (user && profile && isPublicRoute && pathname !== "/cadastro" && !pathname.startsWith("/cadastro/confirmar")) {
+    if (user && profile && isPublicRoute && !isEventAcquisitionRoute) {
       if (profile.role === "student") {
         // Aguarda studentNavAccess resolver (ou o timeout de segurança) antes de
         // decidir entre /aluno e /meus-eventos, evitando piscar uma home errada.
@@ -142,16 +148,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       pathname.startsWith("/meu-perfil") ||
       pathname.startsWith("/extrato-topcoins");
 
-    if (user && profile?.role === "student" && !isChangePasswordRoute && !isAllowedStudentRoute) {
+    if (user && profile?.role === "student" && !isChangePasswordRoute && !isAllowedStudentRoute && !isEventAcquisitionRoute) {
       // Aluno exclusivamente de Evento cai em /meus-eventos; demais mantêm o
       // destino padrão já existente (/minhas-jornadas) — comportamento inalterado.
       router.replace(isEventOnlyStudent(studentNavAccess) ? "/meus-eventos" : "/minhas-jornadas");
     }
 
-    if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor")) {
+    if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor") && !isEventAcquisitionRoute) {
       router.replace("/professor/eventos");
     }
-  }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router, awaitingStudentHome, studentNavAccess]);
+  }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router, awaitingStudentHome, studentNavAccess, isEventAcquisitionRoute]);
 
   useEffect(() => {
     if (loading || !user?.id || profile?.role !== "student" || profile?.must_change_password) return;
