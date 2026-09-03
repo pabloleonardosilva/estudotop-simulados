@@ -40,6 +40,11 @@ async function verify(result, action, minScore) {
   assert.match(registrationRoute, /RECAPTCHA_ACTION, \{ minScore: 0\.3 \}/);
   assert.match(registrationPage, /execute\(recaptchaSiteKey, \{ action: RECAPTCHA_ACTION \}\)/);
   assert.match(registrationPage, /captcha_token: captchaToken/);
+  assert.match(registrationPage, /if \(!recaptchaSiteKey \|\| !window\.grecaptcha\) \{/);
+  assert.doesNotMatch(registrationPage, /captchaReady/);
+  const readyIndex = registrationPage.indexOf("grecaptcha.ready(");
+  const executeIndex = registrationPage.indexOf("grecaptcha.execute(recaptchaSiteKey, { action: RECAPTCHA_ACTION })");
+  assert.ok(readyIndex > -1 && executeIndex > readyIndex, "execute must run only after grecaptcha.ready() resolves, not a stale React state");
   assert.match(helpRoute, /verifyRecaptchaToken\(captchaToken, RECAPTCHA_ACTION\)/);
   assert.doesNotMatch(helpRoute, /minScore: 0\.3/);
   assert.equal((await verify({ success: true, score: 0.29, action: "event_join_request" }, "event_join_request", 0.3)).ok, false);

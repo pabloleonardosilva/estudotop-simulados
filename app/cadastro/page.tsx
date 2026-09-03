@@ -59,7 +59,6 @@ export default function CadastroPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordViolations, setPasswordViolations] = useState<string[]>([]);
   const [passwordCreated, setPasswordCreated] = useState(false);
-  const [captchaReady, setCaptchaReady] = useState(false);
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
   const passwordValidation = validatePassword(password, { fullName, email });
   const canCreatePassword = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
@@ -113,7 +112,7 @@ export default function CadastroPage() {
       return;
     }
 
-    if (!recaptchaSiteKey || !captchaReady || !window.grecaptcha) {
+    if (!recaptchaSiteKey || !window.grecaptcha) {
       setLoading(false);
       setErrorMessage("Não foi possível validar o envio. Tente novamente.");
       return;
@@ -272,8 +271,6 @@ export default function CadastroPage() {
           id="public-registration-recaptcha"
           src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
           strategy="afterInteractive"
-          onReady={() => setCaptchaReady(true)}
-          onError={() => setCaptchaReady(false)}
         />
       )}
       <div
