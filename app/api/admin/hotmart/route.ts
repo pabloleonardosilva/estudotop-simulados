@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getHotmartReadiness } from "@/app/lib/server/hotmart/config";
+import { HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
 
 export async function GET(request: Request) {
   const admin = await requireAdmin(request);
@@ -9,14 +10,14 @@ export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient();
   const [{ data: mappings, error: mappingsError }, enhancedTransactions, { data: history, error: historyError }] = await Promise.all([
     supabase.from("hotmart_product_mappings").select("id,hotmart_product_ucode,hotmart_product_id,hotmart_product_name,destination_type,jornada_id,event_id,status,created_at,jornadas:jornada_id(title),simulado_events:event_id(name)").order("created_at", { ascending: false }),
-    supabase.from("hotmart_transactions").select("id,transaction_code,hotmart_product_ucode,product_name_snapshot,buyer_email,buyer_document,buyer_phone,purchase_status,processing_status,refund_request_state,amount,currency,created_at,purchase_approved_at,student_id,destination_type,jornada_id,event_id,possible_duplicate_student_id,duplicate_match_reason,resolved_at,students:student_id(name,email,cpf,phone),possible_duplicate:possible_duplicate_student_id(name,email,cpf,phone),jornadas:jornada_id(title,duration_days,duration_months),simulado_events:event_id(name),hotmart_access_links(id,current_origin,access_state,student_jornada_id,event_participant_id,access_started_at,access_expires_at,student_jornadas:student_jornada_id(started_at,expires_at,status),simulado_event_participants:event_participant_id(access_status))").order("created_at", { ascending: false }).limit(100),
+    supabase.from("hotmart_transactions").select("id,transaction_code,hotmart_product_ucode,product_name_snapshot,buyer_email,buyer_document,buyer_phone,purchase_status,processing_status,processing_error_code,processing_error_message,refund_request_state,amount,currency,created_at,purchase_approved_at,student_id,destination_type,jornada_id,event_id,possible_duplicate_student_id,duplicate_match_reason,resolved_at,students:student_id(name,email,cpf,phone),possible_duplicate:possible_duplicate_student_id(name,email,cpf,phone),jornadas:jornada_id(title,duration_days,duration_months),simulado_events:event_id(name),hotmart_access_links(id,current_origin,access_state,student_jornada_id,event_participant_id,access_started_at,access_expires_at,student_jornadas:student_jornada_id(started_at,expires_at,status),simulado_event_participants:event_participant_id(access_status))").order("created_at", { ascending: false }).limit(100),
     supabase.from("hotmart_history").select("id,action,actor_type,transaction_id,student_id,created_at,metadata").order("created_at", { ascending: false }).limit(100),
   ]);
   let transactions: unknown = enhancedTransactions.data;
   let transactionsError = enhancedTransactions.error;
   let adminWorkflowsReady = true;
   if (transactionsError) {
-    const fallback = await supabase.from("hotmart_transactions").select("id,transaction_code,hotmart_product_ucode,product_name_snapshot,buyer_email,buyer_document,buyer_phone,purchase_status,processing_status,amount,currency,created_at,purchase_approved_at,student_id,destination_type,jornada_id,event_id,students:student_id(name,email,cpf,phone),jornadas:jornada_id(title,duration_days,duration_months),simulado_events:event_id(name),hotmart_access_links(id,current_origin,access_state,student_jornada_id,event_participant_id,access_started_at,access_expires_at,student_jornadas:student_jornada_id(started_at,expires_at,status),simulado_event_participants:event_participant_id(access_status))").order("created_at", { ascending: false }).limit(100);
+    const fallback = await supabase.from("hotmart_transactions").select("id,transaction_code,hotmart_product_ucode,product_name_snapshot,buyer_email,buyer_document,buyer_phone,purchase_status,processing_status,processing_error_code,processing_error_message,amount,currency,created_at,purchase_approved_at,student_id,destination_type,jornada_id,event_id,students:student_id(name,email,cpf,phone),jornadas:jornada_id(title,duration_days,duration_months),simulado_events:event_id(name),hotmart_access_links(id,current_origin,access_state,student_jornada_id,event_participant_id,access_started_at,access_expires_at,student_jornadas:student_jornada_id(started_at,expires_at,status),simulado_event_participants:event_participant_id(access_status))").order("created_at", { ascending: false }).limit(100);
     transactions = fallback.data;
     transactionsError = fallback.error;
     adminWorkflowsReady = false;
@@ -31,11 +32,25 @@ export async function POST(request: Request) {
   if (admin instanceof NextResponse) return admin;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const ucode = typeof body?.hotmart_product_ucode === "string" ? body.hotmart_product_ucode.trim() : "";
-  const name = typeof body?.hotmart_product_name === "string" ? body.hotmart_product_name.trim() : "";
+  const submittedName = typeof body?.hotmart_product_name === "string" ? body.hotmart_product_name.trim() : "";
+  const verifyWithHotmart = body?.verify_product_with_hotmart === true;
   const type = body?.destination_type === "jornada" || body?.destination_type === "event" ? body.destination_type : null;
   const destinationId = typeof body?.destination_id === "string" ? body.destination_id.trim() : "";
-  if (!ucode || !name || !type || !destinationId) return NextResponse.json({ ok: false, message: "Informe ucode, nome, tipo e destino." }, { status: 400 });
+  if (!ucode || (!submittedName && !verifyWithHotmart) || !type || !destinationId) return NextResponse.json({ ok: false, message: "Informe ucode, produto, tipo e destino." }, { status: 400 });
   const supabase = createSupabaseAdminClient();
+  const { data: existingMapping, error: existingMappingError } = await supabase.from("hotmart_product_mappings").select("id").eq("hotmart_product_ucode", ucode).maybeSingle();
+  if (existingMappingError) return NextResponse.json({ ok: false, message: "Não foi possível verificar os vínculos existentes." }, { status: 500 });
+  if (existingMapping) return NextResponse.json({ ok: false, message: "Este produto já possui um vínculo." }, { status: 409 });
+  let name = submittedName;
+  if (verifyWithHotmart) {
+    try {
+      name = (await lookupHotmartProductByUcode(ucode)).name;
+    } catch (error) {
+      if (error instanceof HotmartProductLookupError && error.code === "not_found") return NextResponse.json({ ok: false, message: "Produto não encontrado na sua conta Hotmart." }, { status: 404 });
+      if (error instanceof HotmartProductLookupError && ["not_configured", "unauthorized"].includes(error.code)) return NextResponse.json({ ok: false, message: "A integração Hotmart não está configurada corretamente." }, { status: 503 });
+      return NextResponse.json({ ok: false, message: "Não foi possível validar o produto na Hotmart agora." }, { status: error instanceof HotmartProductLookupError && error.code === "timeout" ? 504 : 502 });
+    }
+  }
   const destinationTable = type === "jornada" ? "jornadas" : "simulado_events";
   const { data: destination } = await supabase.from(destinationTable).select("id").eq("id", destinationId).maybeSingle();
   if (!destination) return NextResponse.json({ ok: false, message: "Destino não encontrado." }, { status: 404 });

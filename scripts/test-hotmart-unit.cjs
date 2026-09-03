@@ -29,6 +29,7 @@ const refund = loadTypeScript("app/lib/server/hotmart/refund.ts");
 const hotmartConfig = loadTypeScript("app/lib/server/hotmart/config.ts");
 const hotmartEmail = loadTypeScript("app/lib/server/hotmart/email.ts");
 const hotmartProcessor = loadTypeScript("app/lib/server/hotmart/processor.ts");
+const hotmartProducts = loadTypeScript("app/lib/server/hotmart/products.ts");
 
 const previousSecret = process.env.HOTMART_HOTTOK;
 delete process.env.HOTMART_HOTTOK;
@@ -171,6 +172,21 @@ assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, null), true);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, "reconciliation_required"), false);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest("confirmed", "confirmed"), false);
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("received"), "process");
+const contemporaryDates = hotmartProcessor.evaluateHotmartJornadaCommercialDates("2026-09-01T12:00:00Z", 15, new Date("2026-09-02T12:00:00Z"));
+assert.equal(contemporaryDates.ok, true);
+assert.equal(contemporaryDates.expiresAt, "2026-09-16T12:00:00.000Z");
+const expiredDates = hotmartProcessor.evaluateHotmartJornadaCommercialDates("2017-11-27T11:49:06Z", 15, new Date("2026-09-02T12:00:00Z"));
+assert.deepEqual(expiredDates, { ok: false, reason: "expired", approvedAt: "2017-11-27T11:49:06.000Z", expiresAt: "2017-12-12T11:49:06.000Z" });
+assert.equal(hotmartProcessor.evaluateHotmartJornadaCommercialDates(null, 15).reason, "missing_approved_at");
+assert.equal(processorSource.includes('action: "commercial_date_requires_review"'), true);
+assert.equal(processorSource.includes('errorCode: "COMMERCIAL_DATE_REQUIRES_REVIEW"'), true);
+assert.equal(processorSource.indexOf("const commercialDates = evaluateHotmartJornadaCommercialDates") < processorSource.indexOf('from("student_jornadas")'), true);
+const productLookupRouteSource = fs.readFileSync("app/api/admin/hotmart/products/lookup/route.ts", "utf8");
+const hotmartAdminRouteSource = fs.readFileSync("app/api/admin/hotmart/route.ts", "utf8");
+assert.equal(productLookupRouteSource.includes("requireAdmin(request)"), true);
+assert.equal(productLookupRouteSource.includes("lookupHotmartProductByUcode"), true);
+assert.equal(hotmartAdminRouteSource.includes("verify_product_with_hotmart"), true);
+assert.equal(hotmartAdminRouteSource.includes("name = (await lookupHotmartProductByUcode(ucode)).name"), true);
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("pending_mapping"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("refund_reconciliation_required"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("processing"), "wait");
@@ -281,6 +297,43 @@ async function testHotmartExternalClient() {
     refund.resetHotmartAccessTokenCache();
     await assert.rejects(() => refund.requestHotmartRefund("TX-NO-ENV"), /HOTMART_ENVIRONMENT_NOT_CONFIGURED/);
     assert.equal(calls, 0);
+
+    configureHotmart("sandbox");
+    const lookupRequests = [];
+    global.fetch = async (input) => {
+      lookupRequests.push(String(input));
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-product", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" }], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(await hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" });
+    assert.equal(lookupRequests.some((url) => url.startsWith("https://sandbox.hotmart.com/products/api/v1/products")), true);
+
+    configureHotmart("production");
+    let productionLookupUrl = "";
+    global.fetch = async (input) => {
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-product-production", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      productionLookupUrl = String(input);
+      return new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    await assert.rejects(() => hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), (error) => error.code === "not_found");
+    assert.equal(productionLookupUrl.startsWith("https://developers.hotmart.com/products/api/v1/products"), true);
+
+    configureHotmart("sandbox");
+    delete process.env.HOTMART_CLIENT_SECRET;
+    calls = 0;
+    global.fetch = async () => { calls += 1; throw new Error("unexpected fetch"); };
+    refund.resetHotmartAccessTokenCache();
+    await assert.rejects(() => hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), (error) => error.code === "not_configured");
+    assert.equal(calls, 0);
+
+    configureHotmart("sandbox");
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(null, { status: 401 })
+      : new Response(JSON.stringify({ items: [] }), { status: 200 });
+    refund.resetHotmartAccessTokenCache();
+    await assert.rejects(() => hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), (error) => error.code === "not_configured");
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();

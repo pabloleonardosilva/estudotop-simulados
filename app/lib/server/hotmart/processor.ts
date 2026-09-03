@@ -46,6 +46,18 @@ function isoDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+export function evaluateHotmartJornadaCommercialDates(approvedAt: string | null, durationDays: number, processingTime = new Date()) {
+  if (!approvedAt) return { ok: false as const, reason: "missing_approved_at" as const, approvedAt: null, expiresAt: null };
+  const approved = new Date(approvedAt);
+  if (Number.isNaN(approved.getTime())) return { ok: false as const, reason: "invalid_approved_at" as const, approvedAt: null, expiresAt: null };
+  const expires = new Date(approved);
+  expires.setUTCDate(expires.getUTCDate() + durationDays);
+  if (expires.getTime() < processingTime.getTime()) {
+    return { ok: false as const, reason: "expired" as const, approvedAt: approved.toISOString(), expiresAt: expires.toISOString() };
+  }
+  return { ok: true as const, approvedAt: approved.toISOString(), expiresAt: expires.toISOString() };
+}
+
 async function resolveStudent(supabase: SupabaseClient, event: NormalizedHotmartEvent, transactionId: string) {
   const { data: existing, error } = await supabase
     .from("students")
@@ -97,6 +109,30 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
     .eq("id", mapping.jornada_id).maybeSingle();
   if (!jornada || jornada.status !== "published") return { status: "pending_destination" as const };
 
+  const durationDays = Number(jornada.duration_days || jornada.duration_months * 30);
+  const commercialDates = evaluateHotmartJornadaCommercialDates(event.purchase.approvedAt, durationDays);
+  if (!commercialDates.ok) {
+    await recordHotmartHistory(supabase, {
+      action: "commercial_date_requires_review",
+      actorType: "hotmart",
+      studentId,
+      transactionId,
+      mappingId: mapping.id,
+      metadata: {
+        approved_at: commercialDates.approvedAt,
+        calculated_expires_at: commercialDates.expiresAt,
+        destination_type: "jornada",
+        jornada_id: jornada.id,
+        reason: commercialDates.reason,
+      },
+    });
+    return {
+      status: "processing_error" as const,
+      errorCode: "COMMERCIAL_DATE_REQUIRES_REVIEW",
+      errorMessage: "A data de aprovação informada pela Hotmart requer verificação antes da concessão do acesso.",
+    };
+  }
+
   const { data: existing } = await supabase.from("student_jornadas")
     .select("id,status,access_origin,started_at,expires_at")
     .eq("student_id", studentId).eq("jornada_id", jornada.id).maybeSingle();
@@ -104,11 +140,9 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
     return { status: "pending_duplicate_purchase" as const };
   }
 
-  const approvedAt = new Date(event.purchase.approvedAt || event.creationDate || new Date().toISOString());
+  const approvedAt = new Date(commercialDates.approvedAt);
   const startedAt = isoDate(approvedAt);
-  const durationDays = Number(jornada.duration_days || jornada.duration_months * 30);
-  const expires = new Date(approvedAt);
-  expires.setUTCDate(expires.getUTCDate() + durationDays);
+  const expires = new Date(commercialDates.expiresAt);
 
   const { data: schedule } = await supabase.from("jornada_simulados")
     .select("id,simulado_id,order_number")
@@ -343,7 +377,12 @@ export async function processHotmartEvent(supabase: SupabaseClient, event: Norma
     const result = mapping.destination_type === "jornada"
       ? await grantJornada(supabase, event, transaction.id, mapping as Mapping, student.id)
       : await grantEvent(supabase, transaction.id, mapping as Mapping, student.id);
-    await supabase.from("hotmart_transactions").update({ processing_status: result.status, processed_at: result.status === "processed" ? new Date().toISOString() : null }).eq("id", transaction.id);
+    await supabase.from("hotmart_transactions").update({
+      processing_status: result.status,
+      processing_error_code: "errorCode" in result ? result.errorCode : null,
+      processing_error_message: "errorMessage" in result ? result.errorMessage : null,
+      processed_at: result.status === "processed" ? new Date().toISOString() : null,
+    }).eq("id", transaction.id);
     return result.status;
   } catch (error) {
     await supabase.from("hotmart_transactions").update({

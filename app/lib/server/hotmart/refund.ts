@@ -15,7 +15,7 @@ export function classifyHotmartRefundHttpStatus(status: number): "accepted" | "r
   return "uncertain";
 }
 
-async function getAccessToken(forceRefresh = false) {
+export async function getHotmartAccessToken(forceRefresh = false) {
   if (!forceRefresh && cachedToken && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.value;
   let config: ReturnType<typeof getHotmartExternalConfig>;
   try {
@@ -50,7 +50,7 @@ export async function requestHotmartRefund(transactionCode: string) {
   } catch {
     throw new HotmartRefundRequestError("HOTMART_ENVIRONMENT_NOT_CONFIGURED", "not_sent");
   }
-  let accessToken = await getAccessToken();
+  let accessToken = await getHotmartAccessToken();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
@@ -59,7 +59,7 @@ export async function requestHotmartRefund(transactionCode: string) {
     let response = await send();
     if (response.status === 401) {
       cachedToken = null;
-      accessToken = await getAccessToken(true);
+      accessToken = await getHotmartAccessToken(true);
       response = await send();
     }
     const outcome = classifyHotmartRefundHttpStatus(response.status);
