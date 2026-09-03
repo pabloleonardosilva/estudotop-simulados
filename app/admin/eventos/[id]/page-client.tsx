@@ -11,6 +11,7 @@ import SearchableSelect from "@/app/components/ui/SearchableSelect";
 import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
 import type { SystemImage } from "@/lib/system-images";
 import BannerPositionModal from "../BannerPositionModal";
+import ProfessorAssignmentPicker from "./ProfessorAssignmentPicker";
 
 type EventData = {
   id: string;
@@ -460,9 +461,11 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={form.bannerImageId} onChange={(value) => setForm((current) => current ? { ...current, bannerImageId: value, bannerPositionX: 50, bannerPositionY: 50 } : current)} allowEmpty />{form.bannerImageId && <div className="mt-3"><PremiumButton type="button" variant="dark" onClick={() => setPositioningBanner(true)} icon={<ImageIcon size={16} />}>Ajustar enquadramento</PremiumButton></div>}</fieldset>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
-                <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {professors.length ? professors.map((professor) => { const selected = form.professorIds.includes(professor.id); return <label key={professor.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 transition ${selected ? "border-orange-400/40 bg-orange-500/10 text-orange-100" : "border-white/[0.07] bg-white/[0.03] text-slate-300 hover:border-white/15"}`}><input type="checkbox" checked={selected} onChange={() => updateForm("professorIds", selected ? form.professorIds.filter((professorId) => professorId !== professor.id) : [...form.professorIds, professor.id])} className="h-4 w-4 accent-orange-500" /><span className="min-w-0"><span className="block truncate text-sm font-bold">{professor.name}</span><span className="block truncate text-xs text-slate-500">{professor.email}</span></span></label>; }) : <p className="p-2 text-sm text-slate-500">Nenhum professor cadastrado.</p>}
-                </div>
+                <ProfessorAssignmentPicker
+                  professors={professors}
+                  selectedIds={form.professorIds}
+                  onChange={(ids) => updateForm("professorIds", ids)}
+                />
               </fieldset>
             </div>
             <div className="mt-6 flex justify-end"><PremiumButton type="submit" variant="dark-primary" disabled={saving} icon={saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>{saving ? "Salvando..." : "Salvar alterações"}</PremiumButton></div>
