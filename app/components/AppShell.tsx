@@ -407,7 +407,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (profile.role === "professor") {
     return (
-      <div className="teacher-theme et-teacher-font min-h-dvh bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_48%,#f1f5f9_100%)] text-slate-900">
+      <div className="et-interface-clean teacher-theme et-teacher-font min-h-dvh bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_48%,#f1f5f9_100%)] text-slate-900">
         <main className="min-h-dvh">{children}</main>
       </div>
     );
@@ -417,7 +417,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const isPainel = pathname === "/aluno";
 
     return (
-      <div className="student-theme et-student-font student-dark-shell min-h-dvh">
+      <div className="et-interface-clean student-theme et-student-font student-dark-shell min-h-dvh">
         <Header
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onOpenHelp={() => { setFocusedHelpTicketId(unseenHelpReply?.id || null); setUnseenHelpReply(null); setHelpOpen(true); }}
@@ -514,7 +514,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-dvh bg-[#03070D] lg:h-dvh lg:overflow-hidden">
+    <div className="et-interface-dark min-h-dvh bg-[#03070D] lg:h-dvh lg:overflow-hidden">
       <div className="flex min-h-dvh lg:h-dvh">
         <div className="et-admin-sidebar-slot hidden lg:block lg:h-dvh lg:shrink-0">
           <Sidebar />

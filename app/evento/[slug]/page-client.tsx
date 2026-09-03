@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { CalendarClock, Loader2, Mail, MailCheck } from "lucide-react";
@@ -29,7 +29,30 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
   const [captchaReady, setCaptchaReady] = useState(false);
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
-  useEffect(() => { void fetch(`/api/events/${slug}`).then((response) => response.json()).then((json) => { if (json.ok) setEvent(json.event); else setMessage(json.message); }).finally(() => setLoading(false)); }, [slug]);
+  const loadEvent = useCallback(async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/events/${encodeURIComponent(slug)}`);
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.ok || !json.event) {
+        setEvent(null);
+        setMessage(json.message || "Não foi possível carregar este Evento.");
+        return;
+      }
+      setEvent(json.event);
+    } catch {
+      setEvent(null);
+      setMessage("Não foi possível carregar este Evento. Verifique sua conexão e tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadEvent(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadEvent]);
   useEffect(() => {
     const timer = window.setTimeout(async () => {
       try {
@@ -98,7 +121,7 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
   async function submit(submitEvent: FormEvent) { submitEvent.preventDefault(); await requestConfirmation(); }
 
   if (sent) {
-    return <main className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-[#fffaf4] via-[#fbfaf8] to-[#f5f7fa] px-4 py-10">
+    return <main className="flex min-h-screen min-h-dvh items-center justify-center bg-gradient-to-br from-[#fffaf4] via-[#fbfaf8] to-[#f5f7fa] px-4 py-10">
       <section className="w-full max-w-lg rounded-[2rem] border border-orange-100/90 bg-white p-8 text-center shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:p-10">
         <span className="mx-auto inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50 text-orange-600">
           <MailCheck size={26} />
@@ -124,7 +147,7 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
     </main>;
   }
 
-  return <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#050b14] px-4 py-10 text-white">
+  return <main className="relative flex min-h-screen min-h-dvh items-center justify-center overflow-hidden bg-[#050b14] px-4 py-10 text-white">
     <div className="pointer-events-none absolute left-1/3 top-0 h-80 w-80 rounded-full bg-orange-500/[0.07] blur-[110px]" />
     <div className="pointer-events-none absolute right-0 top-40 h-72 w-72 rounded-full bg-amber-300/[0.04] blur-[120px]" />
     {recaptchaSiteKey && <Script id="event-join-recaptcha" src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`} strategy="afterInteractive" onReady={() => setCaptchaReady(true)} onError={() => setCaptchaReady(false)} />}
@@ -141,12 +164,15 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
             <span className="font-semibold text-orange-300">Horário de Brasília</span>
           </p>
           <form onSubmit={submit} className="mt-8 space-y-4">
-            <PremiumInput variant="jornada" label="Seu e-mail" icon={<Mail size={16} />} type="email" required value={email} onChange={(change) => setEmail(change.target.value)} />
+            <PremiumInput className="text-base sm:text-sm" variant="jornada" label="Seu e-mail" icon={<Mail size={16} />} type="email" required value={email} onChange={(change) => setEmail(change.target.value)} />
             <PremiumButton type="submit" variant="dark-primary" className="w-full shadow-lg shadow-orange-500/20" disabled={sending}>{sending && <Loader2 size={16} className="animate-spin" />} Continuar</PremiumButton>
             <p className="text-center text-[10px] uppercase tracking-[0.12em] text-slate-500">Este site é protegido pelo reCAPTCHA.</p>
           </form>
-        </> : null}
-        {message && <p className="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200 shadow-[0_0_24px_rgba(239,68,68,0.06)]">{message}</p>}
+        </> : <div className="mt-6">
+          <p className="text-sm leading-6 text-slate-300">{message || "Não foi possível carregar este Evento."}</p>
+          <PremiumButton type="button" variant="dark-primary" className="mt-5 w-full" onClick={() => void loadEvent()}>Tentar novamente</PremiumButton>
+        </div>}
+        {message && event && <p className="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200 shadow-[0_0_24px_rgba(239,68,68,0.06)]">{message}</p>}
       </div>
     </section>
   </main>;

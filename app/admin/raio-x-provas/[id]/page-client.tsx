@@ -3754,7 +3754,7 @@ function CloneReviewPanel({
                                   ? "rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/[0.10] px-5 py-4 text-left text-sm font-bold text-emerald-300"
                                   : isWrong
                                     ? "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-red-500/30 hover:bg-red-500/[0.08] hover:text-red-300"
-                                    : "rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-left text-sm font-semibold text-white/50 hover:border-emerald-500/30 hover:bg-emerald-500/[0.08] hover:text-emerald-300"
+                                    : "rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.08] px-5 py-4 text-left text-sm font-semibold text-emerald-300 transition hover:border-emerald-500/50 hover:bg-emerald-500/[0.14]"
                             }>
                             <span className="flex items-center gap-2">
                               {isSelected && <span className="font-normal leading-none">{OWL_MARK}</span>}

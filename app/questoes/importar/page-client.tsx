@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
@@ -376,10 +377,46 @@ function coalesceContinuationBlocks(blocks: string[]) {
   return merged;
 }
 
+function isQuestionSeparatorLine(line: string) {
+  const compact = line.trim().replace(/\s+/g, "");
+  return /^x{6,}$/i.test(compact);
+}
+
+function cleanSeparatorDelimitedBlock(value: string) {
+  const lines = value.split("\n");
+  const firstContentIndex = lines.findIndex((line) => line.trim());
+
+  if (firstContentIndex >= 0 && /^\d{1,4}\)\s*$/.test(lines[firstContentIndex].trim())) {
+    lines.splice(firstContentIndex, 1);
+  }
+
+  return lines.join("\n").trim();
+}
+
 function splitIntoQuestionBlocks(text: string) {
   const normalized = sanitizeImportedText(text);
 
   if (!normalized) return [];
+
+  const normalizedLines = normalized.split("\n");
+  if (normalizedLines.some(isQuestionSeparatorLine)) {
+    const separatorBlocks: string[] = [];
+    let current: string[] = [];
+
+    for (const line of normalizedLines) {
+      if (isQuestionSeparatorLine(line)) {
+        const block = cleanSeparatorDelimitedBlock(current.join("\n"));
+        if (block) separatorBlocks.push(block);
+        current = [];
+        continue;
+      }
+      current.push(line);
+    }
+
+    const lastBlock = cleanSeparatorDelimitedBlock(current.join("\n"));
+    if (lastBlock) separatorBlocks.push(lastBlock);
+    return separatorBlocks;
+  }
 
   const markedRegex =
     /\(?IN[IÍ]CIO DA QUEST(?:ÃO|AO)\)?([\s\S]*?)\(?FIM DA QUEST(?:ÃO|AO)\)?/gi;
@@ -502,6 +539,10 @@ export default function ImportarQuestoesClient({
   subjects: any[];
   initialBoards: any[];
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const simuladoId = searchParams.get("simulado")?.trim() || null;
+  const importingForSimulado = Boolean(simuladoId);
   const stopRef = useRef(false);
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const currentQuestionsForBatchRef = useRef<ImportedQuestion[]>([]);
@@ -1149,6 +1190,38 @@ export default function ImportarQuestoesClient({
     );
   }
 
+  function removeAlternative(questionId: string, index: number) {
+    setQuestions((current) =>
+      current.map((question) => {
+        if (
+          question.temp_id !== questionId ||
+          question.question_type !== "multiple_choice" ||
+          question.alternatives.length <= 4
+        ) {
+          return question;
+        }
+
+        return {
+          ...question,
+          alternatives: question.alternatives
+            .filter((_, altIndex) => altIndex !== index)
+            .map((alternative, altIndex) => ({
+              ...alternative,
+              label: String.fromCharCode(65 + altIndex),
+            })),
+        };
+      }),
+    );
+
+    setEliminatedAltKeys((current) => {
+      const next = new Set(current);
+      for (const key of next) {
+        if (key.startsWith(`${questionId}-`)) next.delete(key);
+      }
+      return next;
+    });
+  }
+
   function applyBoardToQuestion(questionId: string, board: BoardOption) {
     if (!board?.id) return;
 
@@ -1789,6 +1862,7 @@ export default function ImportarQuestoesClient({
           subject_id: globalSubjectIds[0] || null,
           subject_ids: globalSubjectIds,
           year: parseValidYear(year),
+          simulado_id: simuladoId,
         }),
       });
 
@@ -1915,6 +1989,12 @@ export default function ImportarQuestoesClient({
       await wait(900);
       setSendReviewModal(null);
 
+      if (importingForSimulado && !partialSend && simuladoId) {
+        router.push(`/simulados/${encodeURIComponent(simuladoId)}/editar`);
+        router.refresh();
+        return;
+      }
+
       if (firstRemainingId) {
         setTimeout(() => {
           questionRefs.current[firstRemainingId]?.scrollIntoView({
@@ -1953,7 +2033,8 @@ export default function ImportarQuestoesClient({
   }
 
     return (
-    <PageBackground>
+    <div className="et-admin-clean-content">
+    <PageBackground variant="light">
       <DraftRestoreModal
         open={Boolean(remotePendingDraft || pendingDraft)}
         savedAt={remotePendingDraft?.savedAt || pendingDraft?.savedAt}
@@ -2002,10 +2083,11 @@ export default function ImportarQuestoesClient({
       />
 
       <PageHeader
-        title="Importar questões com IA"
-        description="Configure os padrões, cole o texto bruto das questões e acompanhe a análise inteligente em lotes."
+        variant="light"
+        title={importingForSimulado ? "Importar questões para o simulado" : "Importar questões com IA"}
+        description={importingForSimulado ? "Use o importador oficial para salvar as questões no Banco e adicioná-las diretamente ao simulado." : "Configure os padrões, cole o texto bruto das questões e acompanhe a análise inteligente em lotes."}
         action={
-          <Link href="/questoes">
+          <Link href={importingForSimulado && simuladoId ? `/simulados/${encodeURIComponent(simuladoId)}/editar` : "/questoes"}>
             <PremiumButton variant="secondary" icon={<ArrowLeft size={18} />}>
               Voltar
             </PremiumButton>
@@ -2016,9 +2098,11 @@ export default function ImportarQuestoesClient({
       {feedback && <Notice feedback={feedback} />}
 
       <PremiumCard
+        variant="light"
         title="1. Padrões de importação"
         description="Defina disciplina e assunto. O ano padrão é opcional; quando vazio, o sistema tenta detectar o ano em cada questão."
         icon={<Bot size={18} />}
+        className="z-20 overflow-visible"
       >
         <div className="grid gap-5 md:grid-cols-3">
           <SearchableSelect
@@ -2055,9 +2139,11 @@ export default function ImportarQuestoesClient({
 
       <div className="mt-6">
         <PremiumCard
+          variant="light"
           title="2. Texto bruto"
           description="Cole o texto bruto vindo da internet, PDF, Word ou ChatGPT. O sistema tentará identificar as questões automaticamente."
           icon={<ClipboardPaste size={18} />}
+          className="z-10"
         >
           <div className="grid gap-5">
             <PremiumInput
@@ -2163,6 +2249,7 @@ export default function ImportarQuestoesClient({
 
       <div className="mt-6">
         <PremiumCard
+          variant="light"
           title="3. Prévia das questões"
           description={`${questions.length} questão(ões) na tela. ${duplicateCount} duplicada(s). ${selectedIds.length} selecionada(s).`}
           icon={<FileQuestion size={18} />}
@@ -2204,7 +2291,7 @@ export default function ImportarQuestoesClient({
                   onClick={() => sendToReview(selectedQuestions)}
                   disabled={sendingToReview || selectedQuestions.length === 0}
                 >
-                  Enviar selecionadas para revisão
+                  {importingForSimulado ? "Adicionar selecionadas ao simulado" : "Enviar selecionadas para revisão"}
                 </PremiumButton>
               </div>
                             <div className="grid gap-5">
@@ -2366,10 +2453,10 @@ export default function ImportarQuestoesClient({
                         </span>
                       </div>
 
-                      <div className="mb-5 rounded-[1.5rem] border border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-orange-950 p-3 text-white shadow-lg shadow-slate-950/10">
+                      <div className="mb-5 rounded-[1.5rem] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-3 text-slate-700 shadow-sm">
                         <div className="flex flex-wrap items-end gap-3">
                           <label className="grid w-[72px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-200">Ano</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Ano</span>
                             <input
                               type="number"
                               min="1990"
@@ -2385,12 +2472,12 @@ export default function ImportarQuestoesClient({
                                     : question.year || null,
                                 )
                               }
-                              className="h-10 w-full rounded-xl border border-white/10 bg-white/95 px-3 text-sm font-semibold text-slate-900 outline-none transition focus:ring-4 focus:ring-orange-400/30"
+                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                             />
                           </label>
 
                           <div className="relative grid w-[160px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-200">Banca</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Banca</span>
                             <input
                               value={boardSearches[question.temp_id] || ""}
                               onChange={(event) =>
@@ -2400,7 +2487,7 @@ export default function ImportarQuestoesClient({
                                 handleBoardSearchKeyDown(question.temp_id, boardSuggestionsForQuestion, canCreateBoardForQuestion, event)
                               }
                               placeholder="Buscar banca"
-                              className="h-10 w-full rounded-xl border border-white/10 bg-white/95 px-3 text-sm font-semibold text-slate-900 outline-none transition focus:ring-4 focus:ring-orange-400/30"
+                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                               role="combobox"
                               aria-expanded={boardSuggestionsForQuestion.length > 0}
                               aria-controls={`board-listbox-${question.temp_id}`}
@@ -2430,7 +2517,7 @@ export default function ImportarQuestoesClient({
                           </div>
 
                           <label className="grid w-[150px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-200">Órgão</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Órgão</span>
                             <input
                               value={question.orgao || ""}
                               onChange={(event) =>
@@ -2441,7 +2528,7 @@ export default function ImportarQuestoesClient({
                                 )
                               }
                               placeholder="Ex.: PC-RR"
-                              className="h-10 w-full rounded-xl border border-white/10 bg-white/95 px-3 text-sm font-semibold text-slate-900 outline-none transition focus:ring-4 focus:ring-orange-400/30"
+                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
                             />
                           </label>
 
@@ -2453,17 +2540,16 @@ export default function ImportarQuestoesClient({
                               onChange={(ids) => applySubjectsToQuestion(question.temp_id, ids)}
                               emptyLabel="Redefinir assunto"
                               disciplineId={disciplineId}
-                              dark
                             />
                           </div>
 
                           <div className="grid w-[120px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-200">Dificuldade</span>
-                            <div className="flex h-10 items-center gap-1 rounded-xl border border-white/10 bg-white/[0.06] px-3">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Dificuldade</span>
+                            <div className="flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3">
                               {[1, 2, 3, 4, 5].map((star) => (
                                 <button key={star} type="button"
                                   onClick={() => updateQuestion(question.temp_id, "difficulty_level", question.difficulty_level === star ? null : star)}
-                                  className={question.difficulty_level && star <= question.difficulty_level ? "text-amber-400 transition hover:scale-110" : "text-white/20 transition hover:text-amber-400/60 hover:scale-110"}>
+                                  className={question.difficulty_level && star <= question.difficulty_level ? "text-amber-500 transition hover:scale-110" : "text-slate-300 transition hover:text-amber-400 hover:scale-110"}>
                                   <Star size={16} fill={question.difficulty_level && star <= question.difficulty_level ? "currentColor" : "none"} />
                                 </button>
                               ))}
@@ -2471,13 +2557,13 @@ export default function ImportarQuestoesClient({
                           </div>
 
                           <div className="grid w-[110px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-200">Tipo</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Tipo</span>
                             <button type="button"
                               onClick={() => updateQuestion(question.temp_id, "question_type", question.question_type === "true_false" ? "multiple_choice" : "true_false")}
                               title="Clique para alternar o tipo"
-                              className="flex h-10 items-center justify-between rounded-xl border border-white/10 bg-white/10 px-3 text-xs font-bold text-white transition hover:border-orange-400/30 hover:bg-orange-500/10 hover:text-orange-200">
+                              className="flex h-10 items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700">
                               {question.question_type === "true_false" ? "Assertivas" : "Alternativas"}
-                              <span className="ml-1 text-white/30">⇄</span>
+                              <span className="ml-1 text-slate-400">⇄</span>
                             </button>
                           </div>
 
@@ -2629,7 +2715,9 @@ export default function ImportarQuestoesClient({
 
                           <div className="grid gap-2.5">
                             {question.alternatives.map((alternative, altIndex) => {
-                              const isWrongTrueFalse = question.question_type === "true_false" && alternative.is_correct && (alternative.label === "E" || String(alternative.text || "").trim().toLowerCase() === "errado");
+                              const isTrueFalseAlternative = question.question_type === "true_false";
+                              const isWrongOption = isTrueFalseAlternative && (alternative.label === "E" || String(alternative.text || "").trim().toLowerCase() === "errado");
+                              const isWrongTrueFalse = isWrongOption && alternative.is_correct;
                               const elimKey = `${question.temp_id}-${altIndex}`;
                               const isEliminated = eliminatedAltKeys.has(elimKey);
                               const label = alternative.label || String.fromCharCode(65 + altIndex);
@@ -2660,6 +2748,10 @@ export default function ImportarQuestoesClient({
                                       ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-3"
                                     : alternative.is_correct
                                       ? "flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3"
+                                      : isTrueFalseAlternative
+                                        ? isWrongOption
+                                          ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-3 hover:border-red-300 hover:bg-red-50"
+                                          : "flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 hover:border-emerald-300 hover:bg-emerald-50"
                                         : "flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3 hover:border-emerald-300 hover:bg-emerald-50/70"
                                   }`}>
                                     {/* Badge de letra / coruja */}
@@ -2671,8 +2763,12 @@ export default function ImportarQuestoesClient({
                                         isWrongTrueFalse
                                           ? "border-2 border-red-500 bg-red-500 text-white"
                                           : alternative.is_correct
-                                            ? "border-2 border-emerald-500 bg-emerald-500/20 text-lg"
-                                            : "border border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
+                                            ? "border-2 border-emerald-500 bg-emerald-500 text-lg text-white"
+                                            : isTrueFalseAlternative
+                                              ? isWrongOption
+                                                ? "border border-red-300 bg-red-50 text-red-700 hover:border-red-400"
+                                                : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
+                                              : "border border-slate-300 bg-white text-slate-600 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
                                       }`}
                                     >
                                       {alternative.is_correct
@@ -2690,6 +2786,22 @@ export default function ImportarQuestoesClient({
                                         className={`min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm leading-6 text-slate-800 outline-none focus:ring-4 focus:ring-orange-100 ${isEliminated ? "line-through decoration-red-400 decoration-2" : ""}`}
                                       />
                                     </div>
+                                    {!isTrueFalseAlternative && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          removeAlternative(question.temp_id, altIndex);
+                                        }}
+                                        disabled={question.alternatives.length <= 4}
+                                        title={question.alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : `Excluir alternativa ${label}`}
+                                        className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                                      >
+                                        <Trash2 size={14} />
+                                        <span className="hidden xl:inline">Excluir</span>
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -2744,7 +2856,7 @@ export default function ImportarQuestoesClient({
                             onClick={() => sendToReview([question])}
                             disabled={sendingToReview}
                           >
-                              Enviar para revisão
+                              {importingForSimulado ? "Adicionar ao simulado" : "Enviar para revisão"}
                             </PremiumButton>
                           )}
                         </div>
@@ -2761,12 +2873,13 @@ export default function ImportarQuestoesClient({
       <SelectionGhostBar
         count={selectedIds.length}
         actions={[
-          { label: "Enviar para revisão", icon: <Send size={14} />, onClick: () => sendToReview(selectedQuestions), variant: "primary", disabled: sendingToReview || selectedQuestions.length === 0 },
+          { label: importingForSimulado ? "Adicionar ao simulado" : "Enviar para revisão", icon: <Send size={14} />, onClick: () => sendToReview(selectedQuestions), variant: "primary", disabled: sendingToReview || selectedQuestions.length === 0 },
           { label: "Limpar seleção", icon: <BrushCleaning size={14} />, onClick: () => setSelectedIds([]), variant: "secondary", disabled: sendingToReview },
           { label: "Descartar", icon: <Trash2 size={14} />, onClick: discardSelectedQuestions, variant: "danger", disabled: sendingToReview },
         ]}
       />
     </PageBackground>
+    </div>
   );
 }
 
@@ -2802,7 +2915,7 @@ function BoardCreateProgressModal({
           transition={{ duration: 0.22, ease: "easeOut" }}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="relative bg-[#080b12] p-6 text-white">
+          <div className="relative border-b border-orange-100 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-6 text-slate-900">
             <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-orange-500/25 blur-3xl" />
             <div className="relative flex items-center gap-4">
               <div
@@ -2824,7 +2937,7 @@ function BoardCreateProgressModal({
               </div>
 
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-600">
                   Cadastro de banca
                 </p>
                 <h2 className="mt-1 text-xl font-semibold tracking-tight">

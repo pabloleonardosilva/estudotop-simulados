@@ -99,7 +99,7 @@ function sanitizeHtml(input: string) {
 
 
 function createInlineImageHtml(src: string) {
-  return `<img src="${src}" alt="Imagem colada" style="display:inline-block;max-width:100%;height:auto;resize:both;overflow:auto;vertical-align:middle;cursor:nwse-resize;border-radius:10px;" data-pasted-image="true" draggable="false" />`;
+  return `<img src="${src}" alt="Imagem colada" style="display:inline-block;max-width:100%;height:auto;resize:both;overflow:auto;vertical-align:middle;cursor:nwse-resize;" data-pasted-image="true" draggable="false" />`;
 }
 
 function insertHtmlAtCursor(html: string) {
