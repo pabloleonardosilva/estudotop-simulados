@@ -28,6 +28,13 @@ export function hashEmailActionToken(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+export function hashPasswordRecoveryFingerprint(normalizedEmail: string, normalizedIp: string) {
+  return crypto
+    .createHmac("sha256", getTokenSecret())
+    .update(`password-recovery:${normalizedEmail}:${normalizedIp}`)
+    .digest("hex");
+}
+
 export function emailActionTokenHashCandidates(value: string) {
   const candidates = [hashEmailActionToken(value)];
   try {

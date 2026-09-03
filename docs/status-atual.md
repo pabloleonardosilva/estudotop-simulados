@@ -608,15 +608,18 @@ Escopo previsto:
 - Não foram implementadas blacklist de senhas comuns nem expiração periódica. Reutilização não é comparada porque o Supabase não fornece verificação segura da senha anterior sem autenticação; nenhuma senha/hash paralelo é armazenado.
 - Não existe atualmente alteração voluntária de senha no perfil; fluxo futuro deverá reutilizar a política central.
 
-### Recuperação de senha somente para alunos aprovados — 2026-07-13
+### Recuperação pública de senha via Resend — 2026-09-03
 
-- [x] `/esqueci-senha` passou a usar `POST /api/auth/forgot-password`, sem chamada direta ao Supabase Auth no navegador.
+- [x] `/esqueci-senha` usa `POST /api/auth/forgot-password`, sem chamada direta ao Supabase Auth no navegador e sem depender de `resetPasswordForEmail()`/SMTP do Supabase para entrega.
 - [x] O envio só ocorre para aluno `active`, com `approved_at`, perfil `student` e perfil ativo; pendentes e contas incompatíveis não recebem link.
 - [x] A resposta pública é genérica para não revelar se uma conta existe ou está pendente.
-- [x] O link usa a URL pública canônica de `NEXT_PUBLIC_APP_URL` e aponta para `/redefinir-senha`, sem origem local da janela.
-- [x] `POST /api/auth/reset-password` revalida a aprovação antes de alterar a senha e não modifica status, ativação ou `must_change_password`.
-- [x] Cobertura específica adicionada em `tests/password-recovery/password-recovery.spec.ts`.
-- [x] A tela de redefinição processa e aguarda os formatos de callback do Supabase (`code` PKCE, `token_hash`, hash implícito e evento `PASSWORD_RECOVERY`) antes de enviar a nova senha, evitando a falsa mensagem de sessão expirada após abrir um link válido.
+- [x] Token próprio de 256 bits, hash único, validade de 30 minutos, uso único e URL canônica `${NEXT_PUBLIC_APP_URL}/redefinir-senha?token=...`; o token puro existe somente no request/e-mail.
+- [x] `password_recovery_requests` e RPCs server-only aplicam cooldown persistente de 60 segundos, limite de 5 pedidos por hora, token anterior encerrado, claim atômico e lease fail-closed de 5 minutos. Migration criada em `supabase/migrations/20260903120000_create_password_recovery_requests.sql`, aplicada manualmente no Supabase e validada em banco (tabela, constraints, 7 índices, 6 RPCs, RLS e grants conferidos).
+- [x] Resend usa o shell institucional, `EstudoTOP <estudotop@estudotop.com.br>` e reply-to oficial. O pedido só aceita claim depois de `email_sent_at`; falha de envio marca `failed`.
+- [x] `POST /api/auth/reset-password` revalida elegibilidade e política de senha, altera a credencial via Auth Admin, marca o token usado depois do sucesso e não modifica status, ativação ou `must_change_password`.
+- [x] Compatibilidade de transição preservada para callbacks Supabase (`code` PKCE, `token_hash`, hash implícito e evento `PASSWORD_RECOVERY`). Reset Admin, first access, cadastro e Evento mantêm seus fluxos próprios.
+- [x] Logs sanitizados diferenciam solicitação, elegibilidade, rate limit, envio, falha, token inválido e conclusão sem armazenar token, senha, link completo, e-mail ou IP bruto.
+- [x] Cobertura específica atualizada em `tests/password-recovery/password-recovery.spec.ts`.
 
 ### Mensagem de login para aluno bloqueado — 2026-07-13
 

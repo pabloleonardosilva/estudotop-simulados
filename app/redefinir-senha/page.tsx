@@ -20,17 +20,35 @@ export default function ResetPasswordPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [serverViolations, setServerViolations] = useState<string[]>([]);
   const [recoveryAccessToken, setRecoveryAccessToken] = useState("");
+  const [privateRecoveryToken, setPrivateRecoveryToken] = useState("");
   const [checkingRecovery, setCheckingRecovery] = useState(true);
   const passwordValidation = validatePassword(password);
-  const canSubmit = Boolean(recoveryAccessToken) && passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading && !checkingRecovery;
+  const canSubmit = Boolean(recoveryAccessToken || privateRecoveryToken) && passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading && !checkingRecovery;
 
   useEffect(() => {
     let mounted = true;
     const url = new URL(window.location.href);
     const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+    const privateToken = url.searchParams.get("token");
     const code = url.searchParams.get("code");
     const tokenHash = url.searchParams.get("token_hash");
     const recoveryType = url.searchParams.get("type") || hashParams.get("type");
+
+    if (privateToken) {
+      queueMicrotask(() => {
+        if (!mounted) return;
+        if (/^[0-9a-f]{64}$/i.test(privateToken)) {
+          setPrivateRecoveryToken(privateToken);
+          setCheckingRecovery(false);
+          window.history.replaceState({}, "", "/redefinir-senha");
+        } else {
+          setErrorMessage("Este link é inválido ou expirou. Solicite uma nova redefinição de senha.");
+          setCheckingRecovery(false);
+          window.history.replaceState({}, "", "/redefinir-senha");
+        }
+      });
+      return () => { mounted = false; };
+    }
 
     function acceptRecoverySession(session: Session | null) {
       if (!mounted || !session?.access_token) return false;
@@ -93,7 +111,7 @@ export default function ResetPasswordPage() {
     }
 
     const accessToken = recoveryAccessToken;
-    if (!accessToken) {
+    if (!accessToken && !privateRecoveryToken) {
       setLoading(false);
       setErrorMessage("Sua sessão de alteração de senha expirou. Solicite um novo acesso.");
       return;
@@ -101,20 +119,28 @@ export default function ResetPasswordPage() {
 
     const response = await fetch("/api/auth/reset-password", {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ password, confirmPassword }),
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password, confirmPassword, ...(privateRecoveryToken ? { token: privateRecoveryToken } : {}) }),
     });
-    const result = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
+    const result = (await response.json()) as { ok: boolean; code?: string; message: string; violations?: string[] };
 
     setLoading(false);
 
     if (!result.ok) {
       setServerViolations(result.violations || []);
+      if (result.code === "PASSWORD_TOKEN_INVALID") {
+        setPrivateRecoveryToken("");
+        window.history.replaceState({}, "", "/redefinir-senha");
+      }
       setErrorMessage(result.message || "Não foi possível alterar a senha. Abra novamente o link recebido por e-mail ou solicite outro link.");
       return;
     }
 
     setMessage("Senha alterada com sucesso. Redirecionando para o login...");
+    window.history.replaceState({}, "", "/redefinir-senha");
 
     setTimeout(async () => {
       await supabase.auth.signOut();
@@ -178,6 +204,11 @@ export default function ResetPasswordPage() {
 
           {message && <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</div>}
           {errorMessage && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</div>}
+          {errorMessage && !checkingRecovery && !recoveryAccessToken && !privateRecoveryToken && (
+            <Link href="/esqueci-senha" className="block text-center text-sm font-semibold text-orange-300 hover:text-orange-200">
+              Solicitar novo link
+            </Link>
+          )}
 
           <button
             type="submit"
