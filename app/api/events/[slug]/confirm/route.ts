@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
+import { logSecurityEvent } from "@/app/lib/server/auditLogger";
 
 const COOKIE = "estudotop_event_intent";
 const FIRST_ACCESS_EXPIRATION_HOURS = 72;
@@ -11,11 +12,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   const { slug } = await params;
   const body = await request.json().catch(() => null) as { token?: unknown } | null;
   const token = typeof body?.token === "string" ? body.token.trim() : "";
-  if (!/^[a-f0-9]{64}$/.test(token)) return NextResponse.json({ ok: false, message: "Link de confirmação inválido ou expirado." }, { status: 400 });
+  if (!/^[a-f0-9]{64}$/.test(token)) {
+    void logSecurityEvent({ event: "event_join_confirmation_rejected", actorType: "system", severity: "warning", metadata: { reason: "malformed", slug } });
+    return NextResponse.json({ ok: false, message: "Link de confirmação inválido ou expirado." }, { status: 400 });
+  }
   const supabase = createSupabaseAdminClient();
-  const { data: intent } = await supabase.from("simulado_event_join_intents").select("id,email,event_id,simulado_events:event_id(id,public_slug,status,starts_at,ends_at,started_at,simulado_id)").eq("token_hash", hashEmailActionToken(token)).is("consumed_at", null).gt("expires_at", new Date().toISOString()).maybeSingle();
+  const { data: intent } = await supabase.from("simulado_event_join_intents").select("id,email,event_id,expires_at,consumed_at,simulado_events:event_id(id,public_slug,status,starts_at,ends_at,started_at,simulado_id)").eq("token_hash", hashEmailActionToken(token)).maybeSingle();
   const event = intent?.simulado_events as unknown as { id: string; public_slug: string; status: string; starts_at: string; ends_at: string; started_at: string | null; simulado_id: string | null } | null;
-  if (!intent || !event || event.public_slug !== slug) return NextResponse.json({ ok: false, message: "Link de confirmação inválido ou expirado." }, { status: 400 });
+  const rejectionReason = !intent
+    ? "not_found"
+    : intent.consumed_at
+      ? "consumed"
+      : new Date(intent.expires_at).getTime() <= Date.now()
+        ? "expired"
+        : !event
+          ? "event_missing"
+          : event.public_slug !== slug
+            ? "slug_mismatch"
+            : null;
+  if (rejectionReason) {
+    void logSecurityEvent({ event: "event_join_confirmation_rejected", actorType: "system", severity: "warning", resourceType: "simulado_event_join_intents", resourceId: intent?.id, metadata: { reason: rejectionReason, event_id: intent?.event_id, slug } });
+    return NextResponse.json({ ok: false, message: "Link de confirmação inválido ou expirado." }, { status: 400 });
+  }
+  if (!intent || !event) return NextResponse.json({ ok: false, message: "Link de confirmação inválido ou expirado." }, { status: 400 });
   const status = effectiveEventStatus(event);
   if (status === "closed" || status === "archived") return NextResponse.json({ ok: false, message: "Este Evento não aceita novas participações." }, { status: 409 });
 

@@ -13,6 +13,8 @@ const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 const PUBLIC_CODE_EXPIRATION_MINUTES = 30;
 const INVALID_CODE_RESEND_COOLDOWN_SECONDS = 60;
 const EVENT_PASSWORD_SETUP_EXPIRATION_HOURS = 72;
+const FIRST_ACCESS_COOKIE = "estudotop_first_access";
+const FIRST_ACCESS_COOKIE_PATH = "/api/auth/first-access";
 
 type ConfirmPayload = {
   email: string;
@@ -153,6 +155,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const claimedAt = new Date().toISOString();
+    const { data: claimedConfirmation, error: claimError } = await supabase
+      .from("student_registration_confirmations")
+      .update({ used_at: claimedAt })
+      .eq("id", confirmation.id)
+      .is("used_at", null)
+      .select("id")
+      .maybeSingle();
+    if (claimError || !claimedConfirmation) {
+      return NextResponse.json({ ok: false, message: "Este código já está sendo processado ou foi utilizado." }, { status: 409 });
+    }
+
     const { data: existingStudent } = await supabase
       .from("students")
       .select("id, email, cpf")
@@ -161,11 +175,6 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existingStudent) {
-      await supabase
-        .from("student_registration_confirmations")
-        .update({ used_at: new Date().toISOString() })
-        .eq("id", confirmation.id);
-
       // Cenário E — students existe sem conta Auth correspondente: inconsistência
       // operacional; o Auth Admin API não permite recriar usuário com o mesmo UUID.
       if (!(await authUserExists(supabase, existingStudent.id))) {
@@ -190,7 +199,10 @@ export async function POST(request: Request) {
       const { data: event } = await supabase.from("simulado_events").select("status,starts_at,ends_at,started_at").eq("id", eventId).maybeSingle();
       const now = Date.now();
       eventSignup = Boolean(event && event.status !== "archived" && event.status !== "closed" && new Date(event.ends_at).getTime() > now);
-      if (!eventSignup) return NextResponse.json({ ok: false, message: "O Evento não aceita mais novos cadastros." }, { status: 409 });
+      if (!eventSignup) {
+        await supabase.from("student_registration_confirmations").update({ used_at: null }).eq("id", confirmation.id).eq("used_at", claimedAt);
+        return NextResponse.json({ ok: false, message: "O Evento não aceita mais novos cadastros." }, { status: 409 });
+      }
     }
 
     const temporaryPassword = generateTemporaryPassword();
@@ -208,22 +220,12 @@ export async function POST(request: Request) {
       });
       userId = account.userId;
     } catch (error) {
+      await supabase.from("student_registration_confirmations").update({ used_at: null }).eq("id", confirmation.id).eq("used_at", claimedAt);
       void logSystemError({ source: "api.auth.confirm_registration.account", error, request });
       return NextResponse.json(studentAccountErrorResponse(error, true), { status: 409 });
     }
 
-    await supabase
-      .from("student_registration_confirmations")
-      .update({ used_at: new Date().toISOString(), user_id: userId })
-      .eq("id", confirmation.id);
-
     if (eventSignup && eventId) {
-      await Promise.all([
-        supabase.from("profiles").update({ is_active: true }).eq("id", userId),
-        supabase.from("simulado_event_participants").upsert({ event_id: eventId, student_id: userId, source: "registration" }, { onConflict: "event_id,student_id", ignoreDuplicates: true }),
-        supabase.from("simulado_event_join_intents").update({ consumed_at: new Date().toISOString() }).eq("event_id", eventId).eq("email", email).is("consumed_at", null),
-      ]);
-
       // Cadastro originado por Evento define a senha imediatamente na própria
       // experiência, sem um terceiro e-mail. O token reutiliza exatamente o
       // mecanismo seguro de primeiro acesso (mesma tabela/propósito consumido
@@ -233,6 +235,11 @@ export async function POST(request: Request) {
       // senha, a conta permanece recuperável pelo fluxo convencional "Esqueci
       // minha senha" (students.approved_at foi definido acima).
       const passwordSetupToken = generateSecureToken();
+      const { error: invalidateTokenError } = await supabase.from("student_registration_confirmations").update({ used_at: new Date().toISOString() }).eq("user_id", userId).eq("purpose", "first_access").is("used_at", null);
+      if (invalidateTokenError) {
+        void logSystemError({ source: "api.auth.confirm_registration.invalidate_first_access", error: invalidateTokenError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "FIRST_ACCESS_PREPARATION_FAILED", message: "Sua conta foi criada, mas não foi possível preparar a definição de senha. Abra novamente o link do Evento para continuar." }, { status: 500 });
+      }
       const { error: passwordTokenError } = await supabase.from("student_registration_confirmations").insert({
         purpose: "first_access",
         user_id: userId,
@@ -244,14 +251,48 @@ export async function POST(request: Request) {
       });
       if (passwordTokenError) {
         void logSystemError({ source: "api.auth.confirm_registration.event_password_token", error: passwordTokenError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "FIRST_ACCESS_CREATION_FAILED", message: "Sua conta foi criada, mas não foi possível preparar a definição de senha. Abra novamente o link do Evento para continuar." }, { status: 500 });
       }
 
-      return NextResponse.json({
+      const { data: activatedProfile, error: profileError } = await supabase.from("profiles").update({ is_active: true }).eq("id", userId).select("id").maybeSingle();
+      if (profileError || !activatedProfile) {
+        void logSystemError({ source: "api.auth.confirm_registration.event_profile", error: profileError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "EVENT_PROFILE_ACTIVATION_FAILED", message: "Sua conta foi criada, mas o acesso ao Evento não pôde ser concluído. Abra novamente o link do Evento para continuar." }, { status: 500 });
+      }
+
+      const { error: participantError } = await supabase.from("simulado_event_participants").upsert({ event_id: eventId, student_id: userId, source: "registration" }, { onConflict: "event_id,student_id", ignoreDuplicates: true });
+      if (participantError) {
+        void logSystemError({ source: "api.auth.confirm_registration.event_participant", error: participantError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "EVENT_PARTICIPANT_FAILED", message: "Sua conta foi criada, mas a participação no Evento não pôde ser concluída. Abra novamente o link do Evento para continuar." }, { status: 500 });
+      }
+
+      const { data: finalizedConfirmation, error: confirmationUpdateError } = await supabase.from("student_registration_confirmations").update({ user_id: userId }).eq("id", confirmation.id).eq("used_at", claimedAt).select("id").maybeSingle();
+      if (confirmationUpdateError || !finalizedConfirmation) {
+        void logSystemError({ source: "api.auth.confirm_registration.confirmation", error: confirmationUpdateError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "REGISTRATION_CONFIRMATION_FINALIZE_FAILED", message: "Sua conta foi criada, mas o cadastro não pôde ser finalizado. Abra novamente o link do Evento para continuar." }, { status: 500 });
+      }
+
+      const { data: consumedIntent, error: intentError } = await supabase.from("simulado_event_join_intents").update({ consumed_at: new Date().toISOString() }).eq("event_id", eventId).eq("email", email).is("consumed_at", null).select("id").maybeSingle();
+      if (intentError || !consumedIntent) {
+        void logSystemError({ source: "api.auth.confirm_registration.event_intent", error: intentError, request, metadata: { user_id: userId, event_id: eventId } });
+        return NextResponse.json({ ok: false, code: "EVENT_INTENT_CONSUME_FAILED", message: "Sua conta foi criada, mas o ingresso no Evento não pôde ser finalizado. Abra novamente o link do Evento para continuar." }, { status: 500 });
+      }
+
+      const response = NextResponse.json({
         ok: true,
         message: "E-mail confirmado. Sua conta está ativa. Defina sua senha para continuar.",
         event_id: eventId,
-        password_setup_token: passwordTokenError ? null : passwordSetupToken,
+        password_setup_ready: true,
       });
+      response.cookies.set(FIRST_ACCESS_COOKIE, passwordSetupToken, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: FIRST_ACCESS_COOKIE_PATH, maxAge: EVENT_PASSWORD_SETUP_EXPIRATION_HOURS * 60 * 60 });
+      response.cookies.set("estudotop_event_intent", "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+      return response;
+    }
+
+    const { data: finalizedConfirmation, error: confirmationUpdateError } = await supabase.from("student_registration_confirmations").update({ user_id: userId }).eq("id", confirmation.id).eq("used_at", claimedAt).select("id").maybeSingle();
+    if (confirmationUpdateError || !finalizedConfirmation) {
+      void logSystemError({ source: "api.auth.confirm_registration.confirmation", error: confirmationUpdateError, request, metadata: { user_id: userId } });
+      return NextResponse.json({ ok: false, message: "Não foi possível finalizar o cadastro." }, { status: 500 });
     }
 
     return NextResponse.json({

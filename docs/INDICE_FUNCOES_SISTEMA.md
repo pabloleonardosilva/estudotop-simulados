@@ -3644,3 +3644,11 @@ Questões com afirmativas no formato "I.Navegadores funcionam exclusivamente..."
 - `app/questoes/importar/page-client.tsx` + `app/api/admin/questions/import/save/route.ts`: o parâmetro `simulado` ativa publicação e vínculo direto; sem ele, permanece `pending_review`.
 - `app/simulados/[id]/editar/page-client.tsx` (`QuestionRelationCard`): renderiza todas as questões vinculadas com o tema Dark Premium da página; origem no Banco, criação manual ou importação por IA não altera a aparência do card.
 - `app/simulados/novo/page-client.tsx` e `app/simulados/[id]/editar/page-client.tsx` (`Toggle`): switches locais da Dark Premium usam contraste reforçado no trilho desligado e no marcador, sem alteração funcional ou impacto na Clean Premium.
+
+### 32.1 Estabilização do cadastro por Evento (2026-09-04)
+
+- `app/evento/[slug]/page-client.tsx`: sessão local divergente é encerrada automaticamente somente após a intent ser validada server-side; o destino continua vindo da resposta segura.
+- `app/api/auth/confirm-registration/route.ts`: reivindica o código contra concorrência, verifica cada write crítico, cria first-access antes de consumir a intent e entrega o token apenas em cookie HttpOnly escopado.
+- `GET/POST app/api/auth/first-access/route.ts`: recupera o contexto inline após refresh, aceita o cookie ou o token legado da URL, preserva retomada em falha posterior à senha e apaga o cookie no sucesso completo.
+- `app/cadastro/page.tsx`: restaura a etapa de senha pelo contexto server-side e trata explicitamente falha de login automático.
+- O reenvio do Evento continua hash-only e substitui o link anterior, agora com mensagem explícita e logs internos sanitizados. Sem migration; cadastro comum, recovery, reCAPTCHA, Hotmart, Admin, Professor e Jornadas permanecem inalterados.

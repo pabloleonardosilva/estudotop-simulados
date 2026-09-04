@@ -27,8 +27,6 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [captchaReady, setCaptchaReady] = useState(false);
-  const [sessionConflict, setSessionConflict] = useState<{ next: string; email: string } | null>(null);
-  const [leavingSession, setLeavingSession] = useState(false);
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
   const loadEvent = useCallback(async () => {
@@ -87,8 +85,11 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
         const sessionEmail = auth.session?.user.email?.trim().toLowerCase();
         const intentEmail = typeof json.email === "string" ? json.email.trim().toLowerCase() : "";
         if (sessionEmail && intentEmail && sessionEmail !== intentEmail) {
-          setSessionConflict({ next: json.next, email: intentEmail });
-          return;
+          const { error: signOutError } = await supabase.auth.signOut();
+          if (signOutError) {
+            setMessage("Não foi possível encerrar a conta conectada neste navegador. Tente abrir o link novamente.");
+            return;
+          }
         }
         router.replace(json.next);
       } catch {
@@ -99,23 +100,6 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [router, slug]);
-
-  async function handleLeaveSessionAndContinue() {
-    if (!sessionConflict || leavingSession) return;
-    setLeavingSession(true);
-    try {
-      await supabase.auth.signOut();
-      // A intenção não depende da sessão Supabase: fica em
-      // simulado_event_join_intents (server-side) e no cookie HttpOnly
-      // estudotop_event_intent, já emitido pela confirmação acima — o logout
-      // não a apaga, então navegar direto para o next já resolvido preserva o
-      // cadastro/login pendente sem exigir revalidar o token novamente.
-      router.replace(sessionConflict.next);
-    } catch {
-      setLeavingSession(false);
-      setMessage("Não foi possível sair da conta atual agora. Tente novamente.");
-    }
-  }
 
   async function requestConfirmation() {
     setSending(true); setMessage("");
@@ -150,29 +134,6 @@ export default function EventoPublicClient({ slug }: { slug: string }) {
   }
 
   async function submit(submitEvent: FormEvent) { submitEvent.preventDefault(); await requestConfirmation(); }
-
-  if (sessionConflict) {
-    return <main className="relative flex min-h-screen min-h-dvh items-center justify-center overflow-hidden bg-[#050b14] px-4 py-10 text-white">
-      <div className="pointer-events-none absolute left-1/3 top-0 h-80 w-80 rounded-full bg-orange-500/[0.07] blur-[110px]" />
-      <section className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-orange-300/15 bg-[#0b1422]/95 p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-9">
-        <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-400/20 bg-orange-500/10 text-orange-300">
-          <Mail size={24} />
-        </span>
-        <p className="mt-6 text-xs font-black uppercase tracking-[0.22em] text-orange-400">Há outra conta conectada</p>
-        <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Este link é para outro acesso</h1>
-        <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-slate-300">
-          Este link de cadastro foi enviado para <span className="font-semibold text-white">{maskEmail(sessionConflict.email)}</span>, mas há outra conta conectada neste navegador. Para continuar com este cadastro, saia da conta atual.
-        </p>
-        <div className="mt-7 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-          <PremiumButton variant="dark-primary" disabled={leavingSession} onClick={() => void handleLeaveSessionAndContinue()}>
-            {leavingSession && <Loader2 size={16} className="animate-spin" />} {leavingSession ? "Saindo..." : "Sair e continuar cadastro"}
-          </PremiumButton>
-          <PremiumButton variant="ghost" disabled={leavingSession} onClick={() => router.replace(`/evento/${encodeURIComponent(slug)}`)}>Cancelar</PremiumButton>
-        </div>
-        {message && <p className="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">{message}</p>}
-      </section>
-    </main>;
-  }
 
   if (sent) {
     return <main className="flex min-h-screen min-h-dvh items-center justify-center bg-gradient-to-br from-[#fffaf4] via-[#fbfaf8] to-[#f5f7fa] px-4 py-10">

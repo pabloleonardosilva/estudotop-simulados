@@ -2409,3 +2409,12 @@ Nenhuma migration foi necessária.
 - O threshold padrão compartilhado permanece `0.5`. A Central de Ajuda e qualquer consumidor que não informe um valor específico não receberam redução.
 - A instrumentação temporária segura `event_join_recaptcha_accepted`/`event_join_recaptcha_rejected` permanece somente até a confirmação da correção em Production e registra exclusivamente `captchaSuccess`, `score`, `action`, `hostname` e `errorCodes`, sem token, secret, e-mail ou payload.
 - Cooldown, resposta anti-enumeração, intenção de ingresso, confirmação por e-mail, token, associação ao Evento e Resend não foram alterados. Nenhuma migration foi necessária.
+
+## 91. Continuidade retomável do cadastro por Evento (2026-09-04)
+
+- Depois de `POST /api/events/[slug]/confirm` validar token, hash, validade, consumo, slug e e-mail server-side, uma sessão local de outro e-mail é encerrada automaticamente antes do redirecionamento. O cookie HttpOnly da intent é independente da sessão Supabase e o Evento continua sem jamais ser vinculado ao usuário anterior.
+- O cadastro inline deixou de devolver ou guardar `password_setup_token` em React state. `POST /api/auth/confirm-registration` grava o token bruto somente em cookie HttpOnly `estudotop_first_access`, `SameSite=Lax`, seguro em produção, restrito a `/api/auth/first-access` e com TTL de 72 horas; apenas o SHA-256 permanece no banco. `GET /api/auth/first-access` recupera o contexto validado para que refresh em `/cadastro?event=...` retome a etapa de senha.
+- A confirmação do código reivindica atomicamente a confirmação antes de criar a conta, bloqueando duplo submit. No fluxo de Evento, first-access é garantido antes de profile, participante e consumo da intent; todos os writes críticos são verificados e nenhuma falha de token retorna sucesso.
+- `POST /api/auth/first-access` preserva token/cookie em falhas posteriores à alteração da senha, informa que a senha já foi atualizada e permite reconciliação idempotente. O cookie é apagado somente no sucesso completo.
+- O login automático agora verifica erro e sessão. Se falhar depois da senha criada, a tela informa o sucesso da senha e oferece entrada normal, preservando a participação já idempotente.
+- Reenvio continua substituindo o token anterior, sem armazenar token raw e sem migration. A mensagem de reenvio passa a orientar o uso do e-mail mais recente; logs sanitizados distinguem rejeição por formato, ausência, expiração, consumo, slug e Evento, além da substituição e falhas de invalidação.

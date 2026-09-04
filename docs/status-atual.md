@@ -1536,3 +1536,13 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Nenhum fluxo de autenticação, confirmação ou reCAPTCHA foi enfraquecido.
 - [x] `/simulados/[id]/editar` possui fluxo unificado **Adicionar questões**, com criação manual em sequência, seletor do Banco preservado e importador de IA contextual que publica e vincula diretamente ao simulado.
 - [x] O importador de IA continua enviando para revisão quando aberto diretamente, sem o parâmetro de contexto do simulado.
+
+## Correção do fluxo de inscrição por Evento — 2026-09-04
+
+- [x] Sessão conflitante é encerrada automaticamente somente depois da validação server-side da intent.
+- [x] First-access inline usa cookie HttpOnly escopado e sobrevive a refresh.
+- [x] `confirm-registration` verifica writes críticos, bloqueia duplo submit e não retorna sucesso sem caminho de senha.
+- [x] Falhas posteriores à mudança de senha preservam retomada e informam o estado correto.
+- [x] Login automático trata erro e ausência de sessão.
+- [x] Reenvio orienta uso do link mais recente e possui observabilidade sanitizada.
+- [x] Nenhuma migration foi necessária.

@@ -113,21 +113,20 @@ test("event page compares the server-validated intent email against any active s
   expect(page.slice(confirmIndex, replaceIndex)).not.toContain('query.get("email")');
 });
 
-test("a session/intent conflict requires explicit sign-out and the intent survives it", () => {
+test("a validated session conflict signs out automatically before continuing", () => {
   const page = read("app/evento/[slug]/page-client.tsx");
-  expect(page).toContain("setSessionConflict({ next: json.next, email: intentEmail })");
-  expect(page).toContain("Sair e continuar cadastro");
-  expect(page).toContain('variant="ghost" disabled={leavingSession} onClick={() => router.replace(`/evento/${encodeURIComponent(slug)}`)}>Cancelar');
+  expect(page).not.toContain("setSessionConflict");
+  expect(page).not.toContain("Sair e continuar cadastro");
 
-  const handlerIndex = page.indexOf("async function handleLeaveSessionAndContinue");
-  const signOutIndex = page.indexOf("await supabase.auth.signOut()", handlerIndex);
-  const nextReplaceIndex = page.indexOf("router.replace(sessionConflict.next)", signOutIndex);
-  expect(handlerIndex).toBeGreaterThan(-1);
-  expect(signOutIndex).toBeGreaterThan(handlerIndex);
+  const compareIndex = page.indexOf("sessionEmail !== intentEmail");
+  const signOutIndex = page.indexOf("await supabase.auth.signOut()", compareIndex);
+  const nextReplaceIndex = page.indexOf("router.replace(json.next)", signOutIndex);
+  expect(compareIndex).toBeGreaterThan(-1);
+  expect(signOutIndex).toBeGreaterThan(compareIndex);
   expect(nextReplaceIndex).toBeGreaterThan(signOutIndex);
 
-  // Nenhum signOut automático fora do handler explícito de "sair e continuar".
-  expect(page.slice(0, handlerIndex)).not.toContain("signOut");
+  // O logout só aparece depois da resposta segura de /confirm e da comparação.
+  expect(page.indexOf("fetch(`/api/events/${slug}/confirm`")).toBeLessThan(signOutIndex);
 });
 
 test("public registration never inspects the event intent cookie for a submission that doesn't declare an event (CASO 1/2/3)", () => {
@@ -218,4 +217,110 @@ test("regular /cadastro flow outside of an Evento link stays untouched, and only
   // Comparação de e-mail é case-insensitive dos dois lados (CASO 8: só
   // diferença de casing entre intent.email e body.email deve ser aceita).
   expect(registerRoute).toContain("intent.email.trim().toLowerCase() !== email");
+});
+
+test("event inline first access uses a scoped HttpOnly cookie and survives a cadastro remount", () => {
+  const confirmRegistration = read("app/api/auth/confirm-registration/route.ts");
+  const firstAccess = read("app/api/auth/first-access/route.ts");
+  const cadastro = read("app/cadastro/page.tsx");
+  expect(confirmRegistration).toContain("response.cookies.set(FIRST_ACCESS_COOKIE, passwordSetupToken");
+  expect(confirmRegistration).toContain('httpOnly: true, sameSite: "lax"');
+  expect(confirmRegistration).not.toContain("password_setup_token:");
+  expect(firstAccess).toContain("export async function GET()");
+  expect(firstAccess).toContain("cookieStore.get(FIRST_ACCESS_COOKIE)?.value");
+  expect(cadastro).toContain('fetch("/api/auth/first-access", { cache: "no-store" })');
+  expect(cadastro).not.toContain("setPasswordSetupToken");
+  expect(cadastro).not.toContain("localStorage");
+});
+
+test("confirm-registration claims the code and never succeeds when first-access creation fails", () => {
+  const route = read("app/api/auth/confirm-registration/route.ts");
+  const claimIndex = route.indexOf(".update({ used_at: claimedAt })");
+  const accountIndex = route.indexOf("createStudentAccount", claimIndex);
+  const tokenIndex = route.indexOf('purpose: "first_access"', accountIndex);
+  const participantIndex = route.indexOf('from("simulado_event_participants").upsert', tokenIndex);
+  const intentIndex = route.indexOf('from("simulado_event_join_intents").update({ consumed_at', participantIndex);
+  expect(claimIndex).toBeGreaterThan(-1);
+  expect(accountIndex).toBeGreaterThan(claimIndex);
+  expect(tokenIndex).toBeGreaterThan(accountIndex);
+  expect(participantIndex).toBeGreaterThan(tokenIndex);
+  expect(intentIndex).toBeGreaterThan(participantIndex);
+  expect(route).toContain('code: "FIRST_ACCESS_CREATION_FAILED"');
+  expect(route).not.toContain("passwordTokenError ? null : passwordSetupToken");
+});
+
+test("first-access keeps retry context on post-password failures and clears it after full success", () => {
+  const route = read("app/api/auth/first-access/route.ts");
+  expect((route.match(/PASSWORD_UPDATED_POST_STEP_FAILED/g) || []).length).toBe(3);
+  const tokenUsedIndex = route.indexOf(".update({ used_at: new Date().toISOString() })");
+  const clearCookieIndex = route.indexOf('response.cookies.set(FIRST_ACCESS_COOKIE, ""');
+  expect(tokenUsedIndex).toBeGreaterThan(route.indexOf("updateUserById"));
+  expect(clearCookieIndex).toBeGreaterThan(tokenUsedIndex);
+});
+
+test("automatic login distinguishes success from failure after password creation", () => {
+  const page = read("app/cadastro/page.tsx");
+  expect(page).toContain("const { data: authData, error: signInError }");
+  expect(page).toContain("if (!signInError && authData.session && eventId)");
+  expect(page).toContain("Senha criada com sucesso. Entre para continuar no Evento.");
+});
+
+test("event resend reuses an unconsumed intent with a conditional token swap", () => {
+  const route = read("app/api/events/[slug]/route.ts");
+  expect(route).toContain('select("id,token_hash,expires_at,created_at")');
+  expect(route).toContain('.is("consumed_at", null).maybeSingle()');
+  expect(route).toContain("if (pendingIntent) {");
+  expect(route).toContain("update({ token_hash: tokenHash, expires_at: expiresAt, created_at: issuedAt })");
+  expect(route).toContain('.eq("id", pendingIntent.id).eq("token_hash", pendingIntent.token_hash).is("consumed_at", null).select("id").maybeSingle()');
+  expect(route).toContain("if (!replacedIntent) {");
+  expect(route).not.toContain('.from("simulado_event_join_intents").delete()');
+});
+
+test("a successful event resend keeps B and tells the user to use the latest link", () => {
+  const route = read("app/api/events/[slug]/route.ts");
+  const replaceIndex = route.indexOf("intentId = replacedIntent.id;");
+  const sendIndex = route.indexOf("emails.send({", replaceIndex);
+  const successIndex = route.indexOf('state: "confirmation_email_sent"', sendIndex);
+  expect(replaceIndex).toBeGreaterThan(-1);
+  expect(sendIndex).toBeGreaterThan(replaceIndex);
+  expect(successIndex).toBeGreaterThan(sendIndex);
+  expect(route).toContain("use o link da mensagem mais recente");
+});
+
+test("an explicit resend failure conditionally restores A and confirms exactly one rollback row", () => {
+  const route = read("app/api/events/[slug]/route.ts");
+  const emailFailureIndex = route.indexOf("if (emailError) {");
+  const rollbackIndex = route.indexOf("update({ token_hash: pendingIntent.token_hash, expires_at: pendingIntent.expires_at, created_at: pendingIntent.created_at })", emailFailureIndex);
+  const rollbackGuardIndex = route.indexOf('.eq("id", pendingIntent.id).eq("token_hash", tokenHash).is("consumed_at", null).select("id").maybeSingle()', rollbackIndex);
+  const rollbackCheckIndex = route.indexOf("if (rollbackError || !rolledBackIntent)", rollbackGuardIndex);
+  expect(emailFailureIndex).toBeGreaterThan(-1);
+  expect(rollbackIndex).toBeGreaterThan(emailFailureIndex);
+  expect(rollbackGuardIndex).toBeGreaterThan(rollbackIndex);
+  expect(rollbackCheckIndex).toBeGreaterThan(rollbackGuardIndex);
+  expect(route).toContain('eventType: "event_join_intent_rollback_success"');
+  expect(route).toContain('eventType: "event_join_intent_rollback_failed"');
+});
+
+test("a concurrent resend conflict sends no second email", () => {
+  const route = read("app/api/events/[slug]/route.ts");
+  const conflictIndex = route.indexOf("if (!replacedIntent) {");
+  const pendingResponseIndex = route.indexOf('state: "confirmation_pending"', conflictIndex);
+  const sendIndex = route.indexOf("emails.send({", conflictIndex);
+  expect(conflictIndex).toBeGreaterThan(-1);
+  expect(pendingResponseIndex).toBeGreaterThan(conflictIndex);
+  expect(sendIndex).toBeGreaterThan(pendingResponseIndex);
+});
+
+test("expired intents are renewed while consumed intents and first emissions use insert", () => {
+  const route = read("app/api/events/[slug]/route.ts");
+  const selectIndex = route.indexOf('select("id,token_hash,expires_at,created_at")');
+  const expiryCheckIndex = route.indexOf("pendingIntent.expires_at > now", selectIndex);
+  const updateIndex = route.indexOf("if (pendingIntent) {", expiryCheckIndex);
+  const insertIndex = route.indexOf("} else {", updateIndex);
+  expect(selectIndex).toBeGreaterThan(-1);
+  expect(expiryCheckIndex).toBeGreaterThan(selectIndex);
+  expect(updateIndex).toBeGreaterThan(expiryCheckIndex);
+  expect(insertIndex).toBeGreaterThan(updateIndex);
+  expect(route.slice(selectIndex, expiryCheckIndex)).toContain('.is("consumed_at", null)');
+  expect(route.slice(insertIndex)).toContain('.insert({ event_id: event.id, email, token_hash: tokenHash, expires_at: expiresAt })');
 });

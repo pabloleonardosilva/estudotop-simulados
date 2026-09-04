@@ -53,13 +53,13 @@ export default function CadastroPage() {
   const [eventSignup, setEventSignup] = useState(false);
   const [eventSlug, setEventSlug] = useState<string | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
-  const [passwordSetupToken, setPasswordSetupToken] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordViolations, setPasswordViolations] = useState<string[]>([]);
   const [passwordCreated, setPasswordCreated] = useState(false);
+  const [passwordAlreadyUpdated, setPasswordAlreadyUpdated] = useState(false);
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
   const passwordValidation = validatePassword(password, { fullName, email });
   const canCreatePassword = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
@@ -72,6 +72,27 @@ export default function CadastroPage() {
       setEventSignup(Boolean(eventParam));
       setEventSlug(eventParam);
       if (eventEmail) setEmail(eventEmail);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const eventParam = new URLSearchParams(window.location.search).get("event");
+    if (!eventParam) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/auth/first-access", { cache: "no-store" });
+        const data = await response.json().catch(() => null) as { ok?: boolean; email?: string; event_id?: string; event_slug?: string } | null;
+        if (response.ok && data?.ok && data.event_slug === eventParam && data.email && data.event_id) {
+          setEventSignup(true);
+          setEventSlug(eventParam);
+          setEmail(data.email);
+          setEventId(data.event_id);
+          setStep("password");
+        }
+      } catch {
+        // Sem contexto retomável, a página permanece no fluxo declarado pela URL.
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -198,7 +219,7 @@ export default function CadastroPage() {
         resend_message?: string;
         clear_code?: boolean;
         event_id?: string | null;
-        password_setup_token?: string | null;
+        password_setup_ready?: boolean;
       };
 
       if (!data.ok) {
@@ -209,9 +230,8 @@ export default function CadastroPage() {
       }
 
       setSuccessMessage(data.message);
-      if (data.event_id && data.password_setup_token) {
+      if (data.event_id && data.password_setup_ready) {
         setEventId(data.event_id);
-        setPasswordSetupToken(data.password_setup_token);
         setStep("password");
         return;
       }
@@ -227,10 +247,6 @@ export default function CadastroPage() {
     event.preventDefault();
     setErrorMessage("");
 
-    if (!passwordSetupToken) {
-      setErrorMessage("Sua sessão de definição de senha expirou. Solicite um novo cadastro.");
-      return;
-    }
     if (!passwordValidation.valid || password !== confirmPassword) {
       setErrorMessage(password !== confirmPassword ? "A confirmação da senha está diferente da nova senha." : "A senha não atende aos requisitos de segurança.");
       return;
@@ -241,25 +257,27 @@ export default function CadastroPage() {
       const response = await fetch("/api/auth/first-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: passwordSetupToken, password, confirmPassword }),
+        body: JSON.stringify({ password, confirmPassword }),
       });
 
-      const data = (await response.json()) as { ok: boolean; message: string; violations?: string[] };
+      const data = (await response.json()) as { ok: boolean; code?: string; password_updated?: boolean; message: string; violations?: string[] };
 
       if (!data.ok) {
+        if (data.password_updated) setPasswordAlreadyUpdated(true);
         setPasswordViolations(data.violations || []);
         setErrorMessage(data.message || "Não foi possível definir sua senha.");
         return;
       }
 
       setPasswordCreated(true);
-      const { data: authData } = await supabase.auth.signInWithPassword({ email, password });
-      setSuccessMessage("Cadastro concluído.");
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (authData?.session && eventId) {
+      if (!signInError && authData.session && eventId) {
+        setSuccessMessage("Cadastro concluído.");
         router.replace(`/meus-eventos/${eventId}`);
         return;
       }
+      setSuccessMessage("Senha criada com sucesso. Entre para continuar no Evento.");
       setStep("done");
     } catch {
       setErrorMessage("Não foi possível concluir agora. Verifique sua conexão e tente novamente.");
@@ -382,7 +400,7 @@ export default function CadastroPage() {
                 </div>
                 {confirmPassword.length > 0 && password !== confirmPassword && <p className="text-xs font-semibold text-red-300">A confirmação da senha está diferente da nova senha.</p>}
                 <button type="submit" disabled={!canCreatePassword} className="flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-5 py-4 text-sm font-semibold text-slate-950 shadow-lg shadow-orange-500/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60">
-                  {loading ? "Salvando..." : "Criar senha e continuar"}
+                  {loading ? "Salvando..." : passwordAlreadyUpdated ? "Concluir acesso" : "Criar senha e continuar"}
                 </button>
               </form>
             )}
