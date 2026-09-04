@@ -2418,3 +2418,60 @@ Nenhuma migration foi necessária.
 - `POST /api/auth/first-access` preserva token/cookie em falhas posteriores à alteração da senha, informa que a senha já foi atualizada e permite reconciliação idempotente. O cookie é apagado somente no sucesso completo.
 - O login automático agora verifica erro e sessão. Se falhar depois da senha criada, a tela informa o sucesso da senha e oferece entrada normal, preservando a participação já idempotente.
 - Reenvio continua substituindo o token anterior, sem armazenar token raw e sem migration. A mensagem de reenvio passa a orientar o uso do e-mail mais recente; logs sanitizados distinguem rejeição por formato, ausência, expiração, consumo, slug e Evento, além da substituição e falhas de invalidação.
+
+## 92. Automação, operação, acesso, lembretes e participantes (2026-09-04)
+
+### Operação temporal
+
+- O sistema já usava `effectiveEventStatus()` (`lib/server/simuladoEvents.ts`) como fonte de verdade em tempo real, calculada a partir de `status`, `starts_at`, `ends_at` e `started_at` — não da coluna `status` isolada. Todas as rotas críticas (ingresso, início de tentativa, dashboards admin/professor, resultado) já consultavam essa função antes desta Sprint. Isso já garantia início e encerramento **funcionais** por horário, mesmo sem nenhuma página aberta e sem depender de React.
+- O gap real era o `status` **persistido**: sem nenhuma ação manual, um Evento cruzava `starts_at`/`ends_at` sem que a linha em `simulado_events` refletisse isso (ficava "scheduled"/"active" indefinidamente até alguém clicar "Iniciar agora"/"Encerrar"). Isso foi fechado com `GET /api/admin/events/status-job` (novo cron diário — ver `docs/SEGURANCA_ENV_CRON_STORAGE.md`), que persiste `status`/`started_at`/`closed_at` de forma condicional e idempotente (`UPDATE ... WHERE status = 'scheduled'` / `WHERE status NOT IN ('closed','archived')`, confirmado por presença de linha).
+- **Ação manual sempre prevalece**: como o job só atualiza linhas que ainda estão no status anterior esperado, uma ação manual já aplicada (`started_at`/`closed_at` já setados, `status` já mudado) nunca é sobrescrita, duplicada em log ou reprocessada pelo cron.
+- **Plano Vercel = Hobby**: cron só roda 1x/dia por job (confirmado com o usuário). Isso significa que o `status` persistido pode ficar até ~24h defasado da realidade em casos raros — mas o **acesso real nunca fica**, porque toda rota crítica recalcula `effectiveEventStatus()` a cada request, inclusive se o cron atrasar ou nunca rodar.
+
+### Controles (comportamento real auditado)
+
+| Ação | Admin | Professor atribuído | Professor não atribuído |
+|---|---|---|---|
+| Iniciar | Sim | Sim | Não (403) |
+| Encerrar | Sim | Sim | Não (403) |
+| Reabrir | Sim | Sim | Não (403) |
+
+Este comportamento **já existia** antes desta Sprint (`requireEventManager` em `lib/server/authGuard.ts` já aceitava Admin ou professor atribuído para as três ações, em `app/api/admin/events/[id]/route.ts` e `app/api/professor/events/[id]/route.ts`) e não foi alterado — só confirmado e documentado, pois a documentação anterior estava desatualizada quanto a "professor não pode encerrar/reabrir".
+
+### Admin no painel operacional
+
+- Novo guard de página `requireEventManagerPage(eventId)` (`lib/server/authGuard.ts`), espelhando `requireEventManager` (rotas de API): Admin acompanha qualquer Evento sem precisar de linha em `simulado_event_professors` e sem nenhuma forma de impersonation (permanece autenticado como `role = admin`); professor só entra se estiver atribuído a este Evento.
+- `app/professor/eventos/[id]/page.tsx` e `.../preview/page.tsx` passaram a usar esse guard em vez de `requireProfessorPage` — é **a mesma dashboard e a mesma preview**, nenhuma tela nova foi criada.
+- `/admin/eventos/[id]` ganhou o botão "Acompanhar Evento", que abre `/professor/eventos/[id]?popup=1` em **nova guia** (`target="_blank" rel="noopener noreferrer"`, suporte novo e opcional em `PremiumButton`), sem substituir a página Admin atual.
+- O parâmetro `?popup=1` aciona o mecanismo **já existente** em `app/components/AppShell.tsx` (`isPopupRoute`) que renderiza somente `{children}` — sem sidebar, sem header, sem nenhum menu, Admin ou não. Nenhum layout novo foi criado; o próprio conteúdo de `app/professor/eventos/[id]/page-client.tsx` já é autocontido (não depende das classes `.teacher-theme`/`.et-teacher-*` do wrapper normal), então o resultado visual na nova guia é idêntico ao que o professor vê.
+
+### Entrada do aluno
+
+- Novo campo `event_destination` em `GET /api/student/nav-access`, calculado a partir dos Eventos com participação real e `effective_status` `active`/`scheduled` (closed/archived nunca contam).
+- `lib/student-nav.ts` (`studentHomePath`) passou a priorizar: exatamente 1 Evento relevante → vai direto para `/meus-eventos/[id]` (serve tanto o Evento `active` quanto a tela de espera do `scheduled`); mais de 1 → sempre `/meus-eventos`, nunca escolhe automaticamente; 0 → comportamento histórico inalterado. A prioridade vale só para o destino inicial (login e `AppShell`); depois disso a navegação é livre, sem middleware de captura.
+- `/meus-eventos` (`page-client.tsx`) ordena os cards: `active` primeiro, depois `scheduled` por `starts_at` mais próximo, resto mantém a ordem histórica (`joined_at desc`, já resolvida pela API). O primeiro `active`/`scheduled` da lista recebe glow discreto (classe `.student-journey-card--priority`, aditiva em `app/globals.css`, reaproveitando os tokens de cor já usados no card).
+
+### Lembretes
+
+**Decisão de produto (2026-09-04): o EstudoTOP NÃO envia lembretes automaticamente.** A versão anterior desta Sprint havia implementado um lembrete automático (~12h antes, via cron diário) — foi **removida por completo** antes de qualquer publicação: sem cron de lembrete, sem janela T-12h/24h, sem `source` automatic/manual, sem status `suppressed`. O `GET /api/admin/events/status-job` (cron diário) permanece existindo, mas **só** para a reconciliação de status (início/encerramento automático do Evento, seção "Operação temporal" acima) — nunca mais envia e-mail.
+
+- O envio é **exclusivamente manual**: botão "Enviar lembrete agora" em `/admin/eventos/[id]`, só Admin (a rota `app/api/professor/events/[id]/route.ts` não ganhou essa ação), só enquanto o Evento está `scheduled` (é um lembrete pré-evento; Evento já `active`, `closed` ou `archived` nunca envia por aqui).
+- Tabelas (migration ajustada nesta revisão para o modelo manual-only; **aplicada em produção em 2026-09-04**): `simulado_event_reminders` (um registro por operação/lote — `status` sending/sent/failed, contadores de destinatários, `completed_at`, `triggered_by`) e `simulado_event_reminder_recipients` (um registro por aluno, para auditoria/retry pontual). A coluna `source` e o status `suppressed` foram removidos da migration (nunca haviam sido aplicados em produção) — sem essa distinção não haveria mais que um único valor possível, então a coluna deixou de ter propósito; ver `lib/server/eventReminders.ts`.
+- Cooldown **global de 6h por Evento**, contado a partir do último lote MANUAL bem-sucedido: lido de `max(completed_at) where status = 'sent'` em `simulado_event_reminders`. Uma tentativa que falhou (`status = 'failed'`) nunca inicia cooldown.
+- Concorrência: índice único parcial `(event_id) where status = 'sending'` impede duplo clique, retry HTTP e duas abas concorrentes — só uma operação por Evento por vez.
+- Um clique bloqueado pelo cooldown **não cria nenhum registro no ledger** — o servidor apenas responde `blocked: true` + `next_available_at`; só um `logSecurityEvent` administrativo sanitizado (`event_reminder_cooldown_blocked`) é registrado.
+- Botão permanece sempre visível durante o cooldown (nunca escondido), com cronômetro regressivo calculado a partir de `next_available_at` devolvido pelo servidor (não um horário inventado no cliente), habilitando automaticamente ao chegar em zero. O endpoint manual revalida o cooldown no servidor (`now >= last_successful_reminder_at + 6h`) independentemente do estado do botão no cliente.
+- Elegibilidade: participantes reais do Evento com `students.status = 'active'`.
+- Conteúdo do e-mail (`eventReminderTemplate`/`eventReminderPlainText`, `lib/email/studentRegistrationTemplates.ts`) usa linguagem temporal neutra ("Lembrete do Evento" / "está chegando") — nunca menciona "faltam 12 horas" ou qualquer frase que dependa de automação.
+- Nenhuma migration foi executada.
+
+**Máquina de estados do lote (`getReminderStatusInfo`, `lib/server/eventReminders.ts`) — corrigida em 2026-09-04.** A UI reconhece três estados: `available` (botão habilitado), `cooldown` (disabled + cronômetro, último lote `sent` há menos de 6h) e `sending` (disabled + "Envio de lembrete em andamento...", sem cronômetro — ainda não existe `completed_at`). `GET /api/admin/events/[id]` sempre recalcula esse estado no servidor antes de responder; a página faz polling discreto (`setInterval` de 4s) enquanto `sending`, sem WebSocket.
+- **`sending` nunca é eterno.** Um registro `sending` mais velho que `STALE_SENDING_MINUTES` (5 minutos — margem generosa acima do tempo real de um lote de ~100 destinatários em série) é considerado abandonado (processo morto: crash, timeout de função serverless, restart) e reconciliado sob demanda para `failed` (`reason: "stale_sending_recovered"`) sempre que o estado é consultado ou um novo envio é tentado — **sem cron**, conforme decisão de produto. Recipients já marcados `sent` pelo lote abandonado são preservados e excluídos do próximo lote (não recebem de novo); recipients pendentes/falhos voltam a ser elegíveis.
+- O `INSERT` de reserva do lote (`status='sending'`) só é interpretado como "envio já em andamento" quando o erro do Postgres é `23505` (violação real do índice único). Qualquer outro erro (ex.: tabela ausente) é reportado como falha genuína, nunca mascarado como concorrência — bug real corrigido nesta revisão (a implementação anterior tratava todo erro de INSERT como conflito).
+- Sucesso parcial (parte dos destinatários recebeu, parte falhou) **inicia cooldown normalmente** — semântica já implementada desde a primeira versão da funcionalidade, apenas confirmada aqui: `sentCount > 0` já bastava para `status = 'sent'`.
+- Exceção inesperada depois de reservar o lote é capturada e o lote é fechado como `failed` antes de propagar o erro — nunca fica `sending` esperando o lease expirar se ainda é possível fechar imediatamente.
+
+### Participantes
+
+- `/admin/eventos/[id]`: campo de busca por nome/e-mail sobre a lista de participantes já inscritos (a busca do professor, por ranking/score, já existia e não foi alterada). Ordenação sempre A→Z (`localeCompare("pt-BR", { sensitivity: "base" })`, desempate por e-mail e depois por id). Busca e ordenação são puramente visuais — não alteram vínculo, status, notas, tentativas, TopCoins ou resultado.
+- `/admin/eventos` (listagem, 2026-09-04): cada card mostra o número de participantes inscritos. `GET /api/admin/events` agrega com `simulado_event_participants(count)` no embed do PostgREST — uma única query para toda a listagem, sem N+1. Toda linha de `simulado_event_participants` já representa participação válida (não há status cancelado/pausado na tabela); Evento sem participante mostra `0`, nunca esconde a informação.

@@ -1,7 +1,13 @@
+export type EventDestination =
+  | { type: "none" }
+  | { type: "single"; eventId: string }
+  | { type: "multiple" };
+
 export type StudentNavAccess = {
   hasJornadas: boolean;
   hasEventOrigin: boolean;
   hasEvents: boolean;
+  eventDestination: EventDestination;
 };
 
 // Aluno "exclusivamente de Evento": possui participação real em Evento, não
@@ -15,9 +21,17 @@ export function isEventOnlyStudent(access: StudentNavAccess | null): boolean {
   return access.hasEvents && !access.hasJornadas && access.hasEventOrigin;
 }
 
-// Home contextual do aluno: para quem é exclusivamente de Evento, a lista de
-// Eventos é a home funcional — nunca o Painel genérico, que não tem conteúdo
-// relevante para esse contexto.
+// Home contextual do aluno logo após o login. Prioridade:
+// 1. Exatamente um Evento relevante (active ou scheduled) → vai direto para
+//    ele, independentemente de o aluno também ter Jornada — a prioridade vale
+//    só para este destino inicial, nunca aprisiona a navegação depois.
+// 2. Mais de um Evento relevante → sempre /meus-eventos, nunca escolhe um
+//    automaticamente.
+// 3. Nenhum Evento relevante → comportamento histórico já existente (aluno
+//    exclusivamente de Evento, sem Eventos ativos no momento, cai em
+//    /meus-eventos; os demais vão para o Painel /aluno).
 export function studentHomePath(access: StudentNavAccess | null): string {
+  if (access?.eventDestination.type === "single") return `/meus-eventos/${access.eventDestination.eventId}`;
+  if (access?.eventDestination.type === "multiple") return "/meus-eventos";
   return isEventOnlyStudent(access) ? "/meus-eventos" : "/aluno";
 }

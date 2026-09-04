@@ -7,6 +7,8 @@ export default function PremiumButton({
   variant = "primary",
   full = false,
   href,
+  target,
+  rel,
   className = "",
   onClick,
   type = "button",
@@ -17,6 +19,8 @@ export default function PremiumButton({
   variant?: "primary" | "secondary" | "ghost" | "danger" | "dark" | "dark-danger" | "dark-warning" | "dark-success" | "dark-primary";
   full?: boolean;
   href?: string;
+  target?: string;
+  rel?: string;
   className?: string;
   onClick?: () => void;
   type?: "button" | "submit" | "reset";
@@ -61,6 +65,8 @@ export default function PremiumButton({
     return (
       <Link
         href={href}
+        target={target}
+        rel={rel}
         onClick={disabled ? undefined : onClick}
         aria-disabled={disabled}
         className={`${buttonClass} ${disabled ? "pointer-events-none" : ""}`}

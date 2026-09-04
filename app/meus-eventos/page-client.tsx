@@ -51,6 +51,30 @@ function eventStatusModifierClass(status: string) {
   return "student-status-expired";
 }
 
+// Prioridade dos cards em /meus-eventos: ACTIVE primeiro, depois SCHEDULED por
+// starts_at mais próximo, depois os demais mantêm a ordem já existente
+// (joined_at desc, decidida pela API). Eventos closed/archived nunca sobem.
+function sortEventRows(rows: Row[]): Row[] {
+  const rank = (status: string) => (status === "active" ? 0 : status === "scheduled" ? 1 : 2);
+  return [...rows].sort((left, right) => {
+    const leftStatus = left.simulado_events.effective_status;
+    const rightStatus = right.simulado_events.effective_status;
+    const rankDiff = rank(leftStatus) - rank(rightStatus);
+    if (rankDiff !== 0) return rankDiff;
+    if (leftStatus === "scheduled" && rightStatus === "scheduled") {
+      return new Date(left.simulado_events.starts_at).getTime() - new Date(right.simulado_events.starts_at).getTime();
+    }
+    return 0;
+  });
+}
+
+// Evento prioritário para o glow: o primeiro da ordenação acima que seja
+// active ou scheduled (desempate estável, já resolvido por sortEventRows).
+function priorityEventId(rows: Row[]): string | null {
+  const candidate = rows.find((row) => ["active", "scheduled"].includes(row.simulado_events.effective_status));
+  return candidate ? candidate.id : null;
+}
+
 export default function MeusEventosClient() {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
@@ -64,7 +88,7 @@ export default function MeusEventosClient() {
     if (!data.session) return;
     const response = await fetch("/api/student/events", { headers: { Authorization: `Bearer ${data.session.access_token}` } });
     const json = await response.json();
-    if (json.ok) setRows(json.events);
+    if (json.ok) setRows(sortEventRows(json.events || []));
     setLoading(false);
   }, []);
 
@@ -118,6 +142,7 @@ export default function MeusEventosClient() {
                 key={row.id}
                 row={row}
                 index={index}
+                isPriority={row.id === priorityEventId(rows)}
                 onOpenRefazer={() => setRefazerTarget(row)}
               />
             ))}
@@ -155,7 +180,7 @@ export default function MeusEventosClient() {
   );
 }
 
-function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onOpenRefazer: () => void }) {
+function EventCard({ row, index, isPriority, onOpenRefazer }: { row: Row; index: number; isPriority: boolean; onOpenRefazer: () => void }) {
   const event = row.simulado_events;
   const running = row.attempts.some((attempt) => attempt.status === "in_progress");
   const completed = row.attempts.some((attempt) => ["completed", "disqualified", "expired"].includes(attempt.status));
@@ -194,7 +219,7 @@ function EventCard({ row, index, onOpenRefazer }: { row: Row; index: number; onO
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.38, delay: Math.min(index * 0.04, 0.2) }}
-      className={`student-journey-card group relative w-full max-w-[440px] overflow-hidden rounded-[1.6rem] transition duration-300 hover:-translate-y-1 ${isClosed ? "opacity-90" : ""}`}
+      className={`student-journey-card group relative w-full max-w-[440px] overflow-hidden rounded-[1.6rem] transition duration-300 hover:-translate-y-1 ${isPriority ? "student-journey-card--priority" : ""} ${isClosed ? "opacity-90" : ""}`}
     >
       <div className="relative aspect-[16/8.2] overflow-hidden bg-[#07111F]">
         <div

@@ -19,11 +19,22 @@ export async function GET(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.from("simulado_events").select("*,simulados:simulado_id(id,title),simulado_event_professors(professor_id,professors:professor_id(id,name))").order("starts_at", { ascending: false });
+  // simulado_event_participants(count) agrega no próprio banco (1 query, sem
+  // N+1) — toda linha da tabela já representa participação válida, não há
+  // status cancelado/pausado a filtrar.
+  const { data, error } = await supabase.from("simulado_events").select("*,simulados:simulado_id(id,title),simulado_event_professors(professor_id,professors:professor_id(id,name)),simulado_event_participants(count)").order("starts_at", { ascending: false });
   if (error) return NextResponse.json({ ok: false, message: "Não foi possível carregar os Eventos." }, { status: 500 });
   let publicAppUrl: string | null = null;
   try { publicAppUrl = getPublicAppUrl(); } catch { publicAppUrl = null; }
-  return NextResponse.json({ ok: true, message: "Eventos carregados.", events: (data || []).map((event) => ({ ...event, effective_status: effectiveEventStatus(event), registration_url: publicAppUrl ? `${publicAppUrl}/evento/${event.public_slug}` : null })) });
+  return NextResponse.json({
+    ok: true,
+    message: "Eventos carregados.",
+    events: (data || []).map((event) => {
+      const { simulado_event_participants, ...rest } = event;
+      const participantCount = Array.isArray(simulado_event_participants) ? Number(simulado_event_participants[0]?.count || 0) : 0;
+      return { ...rest, effective_status: effectiveEventStatus(event), registration_url: publicAppUrl ? `${publicAppUrl}/evento/${event.public_slug}` : null, participant_count: participantCount };
+    }),
+  });
 }
 
 export async function POST(request: Request) {

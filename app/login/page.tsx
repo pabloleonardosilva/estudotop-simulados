@@ -199,12 +199,18 @@ export default function LoginPage() {
           has_jornadas?: boolean;
           has_event_origin?: boolean;
           has_events?: boolean;
+          event_destination?: { type?: string; event_id?: string };
         } | null;
         if (navAccessResponse.ok && navAccessResult?.ok) {
           destination = studentHomePath({
             hasJornadas: Boolean(navAccessResult.has_jornadas),
             hasEventOrigin: Boolean(navAccessResult.has_event_origin),
             hasEvents: Boolean(navAccessResult.has_events),
+            eventDestination: navAccessResult.event_destination?.type === "single" && navAccessResult.event_destination.event_id
+              ? { type: "single", eventId: navAccessResult.event_destination.event_id }
+              : navAccessResult.event_destination?.type === "multiple"
+                ? { type: "multiple" }
+                : { type: "none" },
           });
         }
       }

@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Archive, ArrowLeft, Ban, CalendarClock, CheckCircle2, ClipboardCopy, Copy, ImageIcon, Loader2, Pencil, PlayCircle, RotateCcw, Save, Search, ShieldCheck, Square, Unlock, UserPlus, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, Ban, CalendarClock, CheckCircle2, ClipboardCopy, Copy, ImageIcon, LayoutDashboard, Loader2, Pencil, PlayCircle, RotateCcw, Save, Search, ShieldCheck, Square, Unlock, UserPlus, X } from "lucide-react";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
@@ -12,6 +12,7 @@ import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/
 import type { SystemImage } from "@/lib/system-images";
 import BannerPositionModal from "../BannerPositionModal";
 import ProfessorAssignmentPicker from "./ProfessorAssignmentPicker";
+import ReminderButton, { type ReminderInfo } from "./ReminderButton";
 
 type EventData = {
   id: string;
@@ -97,6 +98,7 @@ function openDateTimePicker(event: MouseEvent<HTMLInputElement>) {
 
 export default function EventoAdminDetailClient({ id }: { id: string }) {
   const [event, setEvent] = useState<EventData | null>(null);
+  const [reminder, setReminder] = useState<ReminderInfo | null>(null);
   const [simulados, setSimulados] = useState<Simulado[]>([]);
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [form, setForm] = useState<EditForm | null>(null);
@@ -114,6 +116,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
   const [participants, setParticipants] = useState<Participant[] | null>(null);
   const [eligibleStudents, setEligibleStudents] = useState<EligibleStudent[]>([]);
   const [participantSearch, setParticipantSearch] = useState("");
+  const [existingParticipantSearch, setExistingParticipantSearch] = useState("");
   const [addingParticipantId, setAddingParticipantId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Participant | null>(null);
   const [removingParticipant, setRemovingParticipant] = useState(false);
@@ -149,6 +152,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
     if (eventJson.ok) {
       setEvent(eventJson.event);
       setForm(formFromEvent(eventJson.event));
+      setReminder(eventJson.reminder || null);
     } else {
       setMessage(eventJson.message);
       setIsError(true);
@@ -162,11 +166,39 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
     return () => window.clearTimeout(timer);
   }, [load, loadParticipants]);
 
+  // Enquanto um lote de lembrete está "sending", faz polling discreto para
+  // descobrir quando termina (sent/failed) e atualizar o botão sem exigir
+  // refresh. Sem WebSocket — reaproveita o mesmo load() já usado em toda a
+  // página.
+  useEffect(() => {
+    if (reminder?.state !== "sending") return;
+    const interval = window.setInterval(() => void load(), 4000);
+    return () => window.clearInterval(interval);
+  }, [reminder?.state, load]);
+
   const filteredEligibleStudents = useMemo(() => {
     const term = participantSearch.toLowerCase().trim();
     if (!term) return eligibleStudents;
     return eligibleStudents.filter((student) => student.name.toLowerCase().includes(term) || student.email.toLowerCase().includes(term));
   }, [eligibleStudents, participantSearch]);
+
+  // Participantes já inscritos: busca por nome/e-mail (client-side, a lista
+  // completa já chega em cada load()) e ordem A→Z estável — nome, depois
+  // e-mail, depois id como desempate final.
+  const sortedParticipants = useMemo(() => {
+    const term = existingParticipantSearch.toLowerCase().trim();
+    const base = participants || [];
+    const filtered = term
+      ? base.filter((participant) => (participant.students?.name || "").toLowerCase().includes(term) || (participant.students?.email || "").toLowerCase().includes(term))
+      : base;
+    return [...filtered].sort((left, right) => {
+      const nameCompare = (left.students?.name || "").localeCompare(right.students?.name || "", "pt-BR", { sensitivity: "base" });
+      if (nameCompare !== 0) return nameCompare;
+      const emailCompare = (left.students?.email || "").localeCompare(right.students?.email || "", "pt-BR", { sensitivity: "base" });
+      if (emailCompare !== 0) return emailCompare;
+      return left.id.localeCompare(right.id);
+    });
+  }, [participants, existingParticipantSearch]);
 
   async function addParticipant(studentId: string) {
     setAddingParticipantId(studentId);
@@ -251,6 +283,20 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function sendReminder() {
+    const response = await adminFetch(`/api/admin/events/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send_reminder" }),
+    });
+    const json = await response.json();
+    // Sempre recarrega do servidor (sucesso ou falha): o estado exibido
+    // (available/cooldown/sending) é sempre recalculado lá, nunca inferido
+    // localmente a partir da resposta deste único clique.
+    await load();
+    return { ok: Boolean(json.ok), message: json.message as string };
   }
 
   async function reopenEvent(eventSubmit: FormEvent<HTMLFormElement>) {
@@ -428,6 +474,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
+            {event.simulado_id && <PremiumButton href={`/professor/eventos/${id}?popup=1`} target="_blank" rel="noopener noreferrer" variant="dark" icon={<LayoutDashboard size={17} />}>Acompanhar Evento</PremiumButton>}
             {event.effective_status === "scheduled" && event.simulado_id && <PremiumButton variant="dark-primary" disabled={saving} onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}
             {event.effective_status === "active" && <PremiumButton variant="dark-danger" disabled={saving} onClick={() => void action("close")} icon={<Square size={17} />}>Encerrar</PremiumButton>}
             {event.effective_status === "closed" && <PremiumButton variant="dark-primary" disabled={saving} onClick={() => { const suggested = new Date(Date.now() + 2 * 60 * 60 * 1000); setReopenEndsAt(toDateTimeLocal(suggested)); setReopening(true); }} icon={<RotateCcw size={17} />}>Reabrir evento</PremiumButton>}
@@ -436,6 +483,11 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
             <PremiumButton variant="dark" disabled={saving} onClick={() => void action("duplicate")} icon={<Copy size={17} />}>Duplicar</PremiumButton>
             {event.effective_status !== "archived" && <PremiumButton variant="dark-warning" disabled={saving} onClick={() => void action("archive")} icon={<Archive size={17} />}>Arquivar</PremiumButton>}
           </div>
+          {reminder?.can_send && (
+            <div className="mt-5">
+              <ReminderButton reminder={reminder} participantCount={participants?.length ?? event.simulado_event_participants.length} onSend={sendReminder} />
+            </div>
+          )}
           {!event.simulado_id && <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 font-semibold text-amber-200">Evento sem Simulado vinculado. Início e aplicação estão bloqueados até a configuração ser concluída.</div>}
           {event.effective_status === "archived" && <div className="mt-5 rounded-2xl border border-slate-400/20 bg-white/[0.04] p-4 text-slate-300">Evento arquivado em modo histórico e somente leitura. A duplicação permanece disponível.</div>}
         </section>
@@ -481,13 +533,27 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
           <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-2xl border border-white/[0.07] bg-black/15 p-4">
               <h3 className="text-sm font-bold text-white">Participantes atuais</h3>
+              {participants && participants.length > 0 && (
+                <div className="relative mt-3">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={existingParticipantSearch}
+                    onChange={(event) => setExistingParticipantSearch(event.target.value)}
+                    placeholder="Buscar participante por nome ou e-mail..."
+                    className="h-11 w-full rounded-xl border border-white/10 bg-black/20 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/50"
+                  />
+                </div>
+              )}
               {!participants ? (
                 <p className="mt-4 text-sm text-slate-500">Carregando...</p>
               ) : participants.length === 0 ? (
                 <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-500">Nenhum aluno participa deste Evento ainda.</p>
+              ) : sortedParticipants.length === 0 ? (
+                <p className="mt-4 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-slate-500">Nenhum participante encontrado para esta busca.</p>
               ) : (
                 <div className="mt-4 max-h-[420px] space-y-2.5 overflow-y-auto pr-1">
-                  {participants.map((participant) => {
+                  {sortedParticipants.map((participant) => {
                     const hasHistory = participant.attempts_count > 0;
                     return (
                       <div key={participant.id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">

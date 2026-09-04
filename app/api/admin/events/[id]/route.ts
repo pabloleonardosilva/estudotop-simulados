@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { closeSimuladoEvent, effectiveEventStatus, releasePendingEventResults, reopenSimuladoEvent } from "@/lib/server/simuladoEvents";
+import { eventAcceptsReminder, getReminderStatusInfo, sendEventReminderBatch } from "@/lib/server/eventReminders";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { logActivity } from "@/lib/logging/activity-log";
 
@@ -21,8 +22,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (error || !data) return NextResponse.json({ ok: false, message: "Evento não encontrado." }, { status: 404 });
   let registrationUrl: string | null = null;
   try { registrationUrl = `${getPublicAppUrl()}/evento/${data.public_slug}`; } catch { registrationUrl = null; }
+  const reminderStatus = await getReminderStatusInfo(supabase, id);
   return NextResponse.json(
-    { ok: true, message: "Evento carregado.", event: { ...data, effective_status: effectiveEventStatus(data), registration_url: registrationUrl } },
+    {
+      ok: true,
+      message: "Evento carregado.",
+      event: { ...data, effective_status: effectiveEventStatus(data), registration_url: registrationUrl },
+      reminder: {
+        can_send: eventAcceptsReminder(data),
+        state: reminderStatus.state,
+        last_sent_at: reminderStatus.lastSentAt,
+        next_available_at: reminderStatus.nextAvailableAt,
+      },
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -65,6 +77,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (body.action === "release_results") {
     const released = await releasePendingEventResults(supabase, id, request);
     return NextResponse.json({ ok: true, message: "Resultados pendentes liberados.", released_count: released.releasedCount });
+  }
+  if (body.action === "send_reminder") {
+    // Só faz sentido enquanto o Evento ainda não começou: é um lembrete
+    // pré-evento, não um comunicado genérico. Evento já iniciado
+    // (antecipadamente ou não), encerrado ou arquivado nunca envia por aqui.
+    if (!eventAcceptsReminder(current)) {
+      return NextResponse.json({ ok: false, message: "O lembrete só pode ser enviado enquanto o Evento está agendado." }, { status: 409 });
+    }
+    const result = await sendEventReminderBatch(supabase, current, admin.id, request);
+    if (result.ok && result.state === "sent") {
+      return NextResponse.json({ ok: true, message: `Lembrete enviado a ${result.recipientsSent} de ${result.recipientsTotal} participante(s).`, recipients_sent: result.recipientsSent, recipients_total: result.recipientsTotal });
+    }
+    if (!result.ok && result.state === "blocked") {
+      return NextResponse.json({ ok: false, message: "Um lembrete já foi enviado recentemente. Aguarde o cooldown terminar.", blocked: true, next_available_at: result.nextAvailableAt }, { status: 429 });
+    }
+    if (!result.ok && result.state === "in_progress") {
+      return NextResponse.json({ ok: false, message: "Já existe um envio de lembrete em andamento para este Evento." }, { status: 409 });
+    }
+    if (!result.ok && result.state === "no_recipients") {
+      return NextResponse.json({ ok: false, message: "Não há participantes elegíveis para receber o lembrete." }, { status: 409 });
+    }
+    if (!result.ok && result.state === "error") {
+      return NextResponse.json({ ok: false, message: result.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: false, message: "Não foi possível enviar o lembrete agora. Tente novamente." }, { status: 500 });
   }
   if (body.action === "duplicate") {
     const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();

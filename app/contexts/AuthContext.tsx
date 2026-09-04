@@ -190,7 +190,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((response) => response.json())
       .then((json) => {
         if (cancelled || !json.ok) return;
-        setStudentNavAccess({ hasJornadas: Boolean(json.has_jornadas), hasEventOrigin: Boolean(json.has_event_origin), hasEvents: Boolean(json.has_events) });
+        setStudentNavAccess({
+          hasJornadas: Boolean(json.has_jornadas),
+          hasEventOrigin: Boolean(json.has_event_origin),
+          hasEvents: Boolean(json.has_events),
+          eventDestination: json.event_destination?.type === "single"
+            ? { type: "single", eventId: json.event_destination.event_id }
+            : json.event_destination?.type === "multiple"
+              ? { type: "multiple" }
+              : { type: "none" },
+        });
       })
       .catch(() => undefined);
 

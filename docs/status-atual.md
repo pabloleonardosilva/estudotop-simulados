@@ -1546,3 +1546,20 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Login automático trata erro e ausência de sessão.
 - [x] Reenvio orienta uso do link mais recente e possui observabilidade sanitizada.
 - [x] Nenhuma migration foi necessária.
+
+## Automação, operação, acesso, lembretes e participantes dos Eventos — 2026-09-04
+
+**Implementada localmente / aguardando publicação.**
+
+- [x] Início e encerramento automático por horário — já garantidos em tempo real por `effectiveEventStatus()` (pré-existente); novo cron diário `GET /api/admin/events/status-job` fecha o gap de persistência de `status`/`started_at`/`closed_at`, de forma idempotente e sem nunca sobrescrever ação manual.
+- [x] Controles (iniciar/encerrar/reabrir) do Admin e do professor atribuído — comportamento pré-existente, auditado e documentado (não alterado).
+- [x] Admin acompanha qualquer Evento no mesmo painel operacional do professor, via novo guard `requireEventManagerPage` — sem dashboard duplicada, sem professor artificial, sem impersonation (Admin permanece `role=admin`). Abre em **nova guia** (`?popup=1`), sem sidebar/menu Admin, reaproveitando o mecanismo já existente em `AppShell.tsx`.
+- [x] Destino inicial do aluno prioriza Evento único relevante (`/meus-eventos/[id]`); mais de um Evento relevante vai sempre para `/meus-eventos`.
+- [x] `/meus-eventos` ordena active → scheduled (por proximidade) → resto, com glow discreto no card prioritário.
+- [x] **Lembretes são enviados manualmente pelo Admin.** Não existe lembrete automático — a implementação anterior (~12h antes, cron de reminder) foi removida por decisão de produto (2026-09-04) antes de qualquer publicação. Permanece: botão "Enviar lembrete agora" (Admin-only), cooldown global de 6h contado a partir do último lote manual bem-sucedido, cronômetro server-side, proteção contra duplo clique/retry, registro durável (`simulado_event_reminders` + `simulado_event_reminder_recipients`).
+- [x] **Correção (2026-09-04): a UI reconhece 3 estados** (available/cooldown/sending). Um "sending" mais velho que 5 minutos é reconciliado sob demanda para `failed` (sem cron), preservando recipients já enviados. Corrigido bug em que qualquer erro de INSERT no ledger (não só violação real de índice único) era relatado como "envio em andamento".
+- [x] **Migration `20260904140000_create_simulado_event_reminders.sql` aplicada em produção (2026-09-04)** e homologada com um envio manual real (92/92 destinatários, cooldown iniciado corretamente, RLS confirmado bloqueando `anon`).
+- [x] Busca e ordenação A→Z de participantes já inscritos em `/admin/eventos/[id]`.
+- [x] Card de Evento em `/admin/eventos` mostra o número de participantes inscritos (agregado em uma única query, sem N+1); Evento sem participante mostra `0`.
+- [x] Admin pode editar (nome, e-mail, WhatsApp, status) e excluir professor (`/admin/professores`). Exclusão física só é possível sem vínculo com Eventos (regra do próprio schema, `ON DELETE RESTRICT`); havendo vínculo, a UI oferece desativação como alternativa segura. `profiles.role` nunca muda.
+- [x] Nenhuma alteração em Hotmart, Jornada, Simulados, Resultados, TopCoins, recovery, reCAPTCHA ou nos fluxos de autenticação estabilizados na Sprint anterior.

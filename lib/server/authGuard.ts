@@ -182,3 +182,24 @@ export async function requireProfessorPage(): Promise<{ id: string }> {
   if (!profile || profile.role !== "professor" || !profile.is_active || professor?.status !== "active") redirect("/login");
   return { id: user.id };
 }
+
+// Guard de página para o painel operacional do Evento (mesma dashboard usada
+// por /professor/eventos/[id] e sua preview): Admin acompanha qualquer
+// Evento sem precisar estar em simulado_event_professors; professor só entra
+// se estiver atribuído a ESTE Evento. Espelha requireEventManager (rotas de
+// API), que os dados desta página já consultam com o próprio token da
+// sessão — nenhuma dashboard nova é criada, só a permissão de acesso à rota.
+export async function requireEventManagerPage(eventId: string): Promise<{ id: string; role: "admin" | "professor" }> {
+  const browserSupabase = await createSupabaseBrowserServerClient();
+  const { data: { user } } = await browserSupabase.auth.getUser();
+  if (!user) redirect("/login");
+  const supabase = createSupabaseAdminClient();
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
+  if (profile?.role === "admin" && profile.is_active) return { id: user.id, role: "admin" };
+
+  const { data: professor } = await supabase.from("professors").select("status").eq("id", user.id).maybeSingle();
+  if (!profile || profile.role !== "professor" || !profile.is_active || professor?.status !== "active") redirect("/login");
+  const { data: assignment } = await supabase.from("simulado_event_professors").select("id").eq("event_id", eventId).eq("professor_id", user.id).maybeSingle();
+  if (!assignment) redirect("/login");
+  return { id: user.id, role: "professor" };
+}

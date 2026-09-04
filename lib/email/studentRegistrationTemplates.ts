@@ -18,6 +18,13 @@ type EventContinueRegistrationEmailProps = {
   continueUrl: string;
 };
 
+type EventReminderEmailProps = {
+  eventName: string;
+  startsAtLabel: string;
+  professorNames: string[];
+  eventUrl: string;
+};
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -95,6 +102,45 @@ Recebemos uma solicitação para participar do Evento ${eventName}. Acesse o lin
 ${continueUrl}
 
 Por segurança, este link possui validade limitada.
+
+EstudoTOP Simulados`;
+}
+
+export function eventReminderTemplate({ eventName, startsAtLabel, professorNames, eventUrl }: EventReminderEmailProps) {
+  const safeEventName = escapeHtml(eventName);
+  const professorLine = professorNames.length
+    ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#64748b;">${professorNames.length > 1 ? "Professores" : "Professor"}: ${escapeHtml(professorNames.join(", "))}</p>`
+    : "";
+  return shell(
+    "Seu Evento está chegando",
+    `O Evento ${eventName} começa em breve.`,
+    `
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#334155;">O Evento <strong style="color:#0f172a;">${safeEventName}</strong> está chegando.</p>
+    <div style="margin:0 0 22px;padding:20px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;text-align:center;">
+      <p style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#ea580c;font-weight:800;">Início</p>
+      <p style="margin:0;font-size:20px;font-weight:900;color:#0f172a;">${escapeHtml(startsAtLabel)}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#64748b;">Horário de Brasília</p>
+    </div>
+    ${professorLine}
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#334155;">Recomendamos entrar com alguns minutos de antecedência para evitar imprevistos de última hora.</p>
+    <div style="text-align:center;">
+      <a href="${eventUrl}" style="display:inline-block;background:#ea580c;color:#fff;text-decoration:none;font-weight:800;border-radius:14px;padding:15px 22px;">Ver meu Evento</a>
+    </div>
+    `,
+  );
+}
+
+export function eventReminderPlainText({ eventName, startsAtLabel, professorNames, eventUrl }: EventReminderEmailProps) {
+  const professorLine = professorNames.length ? `\n${professorNames.length > 1 ? "Professores" : "Professor"}: ${professorNames.join(", ")}\n` : "";
+  return `Seu Evento está chegando
+
+O Evento ${eventName} começa em breve.
+
+Início: ${startsAtLabel} (Horário de Brasília)
+${professorLine}
+Recomendamos entrar com alguns minutos de antecedência.
+
+${eventUrl}
 
 EstudoTOP Simulados`;
 }

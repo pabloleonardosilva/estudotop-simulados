@@ -5,6 +5,10 @@
     {
       "path": "/api/admin/jornadas/release-job",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/admin/events/status-job",
+      "schedule": "0 8 * * *"
     }
   ]
 }

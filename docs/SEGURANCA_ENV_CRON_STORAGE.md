@@ -38,6 +38,16 @@ Somente as variáveis públicas podem ser lidas por Client Components. Valores r
 - A atualização exige que o item ainda esteja `locked`, evitando dupla liberação concorrente.
 - O envio de e-mail é aguardado antes da resposta, e `release_email_sent_at` impede reenvio normal.
 
+## Cron de status do Evento (2026-09-04)
+
+- Endpoint: `GET /api/admin/events/status-job`. Mesma autenticação (`verifyCronSecret`) do job acima.
+- Plano Vercel atual: **Hobby** — cron só roda 1x/dia por job, e o projeto já usa os 2 slots disponíveis (release-job às 07:00 UTC, este job às 08:00 UTC). Não há slot livre para um terceiro cron sem upgrade de plano.
+- Responsabilidades do job, todas idempotentes (nunca sobrescrevem uma ação manual já aplicada):
+  1. Auto-início: `simulado_events` com `status='scheduled'`, Simulado vinculado e `starts_at <= now < ends_at` viram `status='active'` (`started_at` só é setado se ainda `null`).
+  2. Auto-encerramento: qualquer Evento não `closed`/`archived` com `ends_at <= now` vira `status='closed'` (`closed_at` só é setado se ainda `null`).
+- A imposição de acesso real (quem pode entrar em um Evento, iniciar tentativa etc.) **nunca depende deste job** — já é garantida em tempo real por `effectiveEventStatus()` em cada rota crítica, mesmo que o cron atrase ou nunca rode.
+- **Este job não envia e-mail.** Lembrete de Evento é exclusivamente manual (decisão de produto de 2026-09-04, sem nenhum agendamento automático) — ver "Enviar lembrete agora" em `docs/Sprint-evento-de-simulado.md`. Uma versão anterior desta Sprint havia colocado o disparo de lembrete dentro deste mesmo job (para caber nos 2 slots do plano Hobby); esse trecho foi removido antes de qualquer publicação.
+
 ## Storage
 
 Uso encontrado: bucket `profile-avatars`.
