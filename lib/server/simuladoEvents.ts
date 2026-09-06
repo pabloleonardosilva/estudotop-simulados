@@ -66,6 +66,61 @@ export async function getEventBySlug(slug: string) {
     .maybeSingle();
 }
 
+// Resultado oficial do Evento = primeira tentativa concluída válida
+// (status = "completed" AND counts_toward_limit = true). Chamado somente no
+// momento em que uma tentativa efetivamente atinge esse estado (submit).
+// disqualified/expired/abandoned/in_progress nunca devem consolidar o
+// vínculo definitivo: se a tentativa hoje referenciada por
+// representative_attempt_id não estiver nesse estado, ela é substituída;
+// caso contrário (já é uma conclusão válida), é preservada — a primeira
+// válida nunca é trocada por uma posterior (ver docs/Sprint-evento-de-simulado.md).
+export async function consolidateEventRepresentativeAttempt(
+  supabase: SupabaseClient,
+  params: { eventParticipantId: string; attemptId: string },
+) {
+  const { eventParticipantId, attemptId } = params;
+
+  // A função é o único ponto de verdade da regra — não confia apenas no
+  // chamador ter checado o estado da tentativa. Só uma tentativa que já é
+  // completed + counts_toward_limit pode virar (ou permanecer) resultado
+  // oficial; iniciar/consumir uma tentativa (in_progress, disqualified,
+  // expired, abandoned) nunca passa por aqui com efeito.
+  const { data: candidateAttempt } = await supabase
+    .from("simulado_attempts")
+    .select("status,counts_toward_limit")
+    .eq("id", attemptId)
+    .maybeSingle();
+  const candidateIsValid = Boolean(candidateAttempt && candidateAttempt.status === "completed" && candidateAttempt.counts_toward_limit);
+  if (!candidateIsValid) return;
+
+  const { data: participant, error: participantError } = await supabase
+    .from("simulado_event_participants")
+    .select("representative_attempt_id")
+    .eq("id", eventParticipantId)
+    .maybeSingle();
+  if (participantError || !participant) return;
+
+  const currentRepresentativeId = participant.representative_attempt_id as string | null;
+  if (currentRepresentativeId) {
+    const { data: currentAttempt } = await supabase
+      .from("simulado_attempts")
+      .select("status,counts_toward_limit")
+      .eq("id", currentRepresentativeId)
+      .maybeSingle();
+    const currentIsValid = Boolean(currentAttempt && currentAttempt.status === "completed" && currentAttempt.counts_toward_limit);
+    if (currentIsValid) return;
+  }
+
+  // Compare-and-swap pelo valor lido acima, para não sobrescrever uma
+  // atualização concorrente feita entre a leitura e esta escrita.
+  let query = supabase
+    .from("simulado_event_participants")
+    .update({ representative_attempt_id: attemptId })
+    .eq("id", eventParticipantId);
+  query = currentRepresentativeId ? query.eq("representative_attempt_id", currentRepresentativeId) : query.is("representative_attempt_id", null);
+  await query;
+}
+
 export async function ensureProfessorAssigned(professorId: string, eventId: string) {
   const supabase = createSupabaseAdminClient();
   const { data } = await supabase

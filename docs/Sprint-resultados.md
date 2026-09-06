@@ -844,3 +844,14 @@ Regras implementadas (componente local `FeedbackPreparingModal` em `app/meus-sim
 - Nada mais mudou: cálculo de TC, regras de tentativas, resultado oficial da primeira tentativa e abas do resultado permanecem intactos. O `AppShell` apenas acrescenta `releasedNotification=1` à URL interna depois de marcar a notificação como lida.
 
 Nenhuma migration foi criada ou alterada.
+
+## Resultado oficial de Evento: tentativa consumida ≠ tentativa oficial (correção estrutural, 2026-09-06)
+
+O resultado oficial do Evento deriva sempre da **primeira tentativa válida contextual**: `status = completed` e `counts_toward_limit = true`, escopada por `event_participant_id`. Isso não é uma regra nova — é a mesma já usada pela rota de resultado do Simulado (seção acima, para Jornada/avulso); a diferença é que, para Evento, ela é persistida em `simulado_event_participants.representative_attempt_id` em vez de recalculada a cada leitura.
+
+Um bug estrutural (corrigido nesta entrega — detalhes técnicos em `docs/Sprint-evento-de-simulado.md`, seção "Bug estrutural corrigido — tentativa representativa") gravava essa referência já na criação da tentativa, misturando os dois conceitos:
+
+- **Tentativa consumida:** conta no `max_attempts` assim que iniciada com `counts_toward_limit = true` — `in_progress`, `disqualified`, `expired` e `abandoned` todas consomem. Isso nunca mudou.
+- **Tentativa oficial (resultado):** só é gerada quando a tentativa atinge `completed` + `counts_toward_limit = true`. Uma tentativa pode consumir o limite sem nunca virar resultado oficial.
+
+Depois da correção, `representative_attempt_id` só é consolidado no momento do `submit`, e nunca por uma tentativa que apenas consumiu o limite sem concluir.

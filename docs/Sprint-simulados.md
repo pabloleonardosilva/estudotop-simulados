@@ -455,6 +455,8 @@ Este documento mantém apenas a visão funcional geral do motor de Simulados. A 
 
 Atualização 2026-07-07: a página de resultado do aluno passou a abrir o **resultado real** do simulado, definido como a primeira tentativa concluída válida (`status = completed` e `counts_toward_limit = true`). Não usar a última tentativa nem a melhor nota como fonte da rota `/meus-simulados/[id]/resultado`.
 
+Atualização 2026-09-06: esta é a mesma regra central adotada para o resultado oficial de Evento (`representative_attempt_id` em `simulado_event_participants`) — ver "Bug estrutural corrigido — tentativa representativa" em `docs/Sprint-evento-de-simulado.md`. Um bug fazia o Evento gravar a referência já na criação da tentativa, antes de saber se ela terminaria válida; corrigido para consolidar só quando `completed + counts_toward_limit = true` é efetivamente atingido, preservando a mesma definição de "primeira tentativa concluída válida" já usada aqui para Jornada/avulso — nenhuma regra nova, nenhuma contradição entre os dois contextos.
+
 ### 5.5 Modelos de Pontuação
 
 #### Tradicional

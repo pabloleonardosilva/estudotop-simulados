@@ -89,17 +89,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const participantAttempts = attempts.filter((attempt) => attempt.student_id === participant.student_id);
     const representativeAttempt = participant.representative_attempt_id ? attemptsById.get(participant.representative_attempt_id) || null : null;
     const activeAttempt = participantAttempts.find((attempt) => attempt.status === "in_progress") || null;
-    const displayedAttempt = activeAttempt || representativeAttempt;
+    // representative_attempt_id só existe quando há uma conclusão válida
+    // (completed + counts_toward_limit) — ver consolidateEventRepresentativeAttempt.
+    // Quando não há representativa nem tentativa em andamento (ex.: todas as
+    // tentativas terminaram desclassificadas/expiradas/abandonadas), a mais
+    // recente é usada só para exibir a situação real; isso nunca grava nem
+    // altera representative_attempt_id, reservado à primeira conclusão válida.
+    const latestNonRepresentativeAttempt = !representativeAttempt && !activeAttempt
+      ? [...participantAttempts].sort((a, b) => new Date(b.submitted_at || b.started_at || 0).getTime() - new Date(a.submitted_at || a.started_at || 0).getTime())[0] || null
+      : null;
+    const displayedAttempt = activeAttempt || representativeAttempt || latestNonRepresentativeAttempt;
     const result = representativeAttempt ? resultsByAttemptId.get(representativeAttempt.id) || null : null;
     let status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "admin_terminated" | "expired" = "not_started";
     if (displayedAttempt?.status === "in_progress") status = "in_progress";
-    else if (representativeAttempt?.status === "completed") status = "completed";
+    else if (displayedAttempt?.status === "completed") status = "completed";
     // Encerramento administrativo excepcional (ver PATCH .../events/[id],
     // action "terminate_active_attempts") nunca deve aparecer como
     // "Desclassificado" — motivo distinto para não sugerir violação de regras.
-    else if (representativeAttempt?.status === "disqualified" && representativeAttempt.disqualification_reason === "admin_terminated") status = "admin_terminated";
-    else if (representativeAttempt?.status === "disqualified") status = "disqualified";
-    else if (representativeAttempt?.status === "expired") status = "expired";
+    else if (displayedAttempt?.status === "disqualified" && displayedAttempt.disqualification_reason === "admin_terminated") status = "admin_terminated";
+    else if (displayedAttempt?.status === "disqualified") status = "disqualified";
+    else if (displayedAttempt?.status === "expired") status = "expired";
     else if (["closed", "archived"].includes(eventEffectiveStatus)) status = "not_completed";
     const resultStatus = result ? (participant.result_released_at ? "available" : "pending") : "not_available";
     return {

@@ -10,7 +10,7 @@ import {
   simuladoReleasedTemplate,
 } from "@/app/lib/email/jornadaEmailTemplates";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
-import { releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { consolidateEventRepresentativeAttempt, releasePendingEventResults } from "@/lib/server/simuladoEvents";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -344,8 +344,12 @@ export async function POST(
   let eventResultReleased = true;
   if (isEventAttempt) {
     const { data: event } = await supabase.from("simulado_events").select("result_policy").eq("id", attempt.event_id).maybeSingle();
+    // Resultado oficial do Evento = primeira tentativa completed +
+    // counts_toward_limit; consolidada aqui (nunca na criação/retomada da
+    // tentativa) e nunca sobrescrita depois de já apontar para uma conclusão
+    // válida (ver consolidateEventRepresentativeAttempt).
+    await consolidateEventRepresentativeAttempt(supabase, { eventParticipantId: attempt.event_participant_id, attemptId });
     const { data: participant } = await supabase.from("simulado_event_participants").select("representative_attempt_id,result_released_at").eq("id", attempt.event_participant_id).maybeSingle();
-    if (!participant?.representative_attempt_id) await supabase.from("simulado_event_participants").update({ representative_attempt_id: attemptId }).eq("id", attempt.event_participant_id);
     if (event?.result_policy === "released" && !participant?.result_released_at) {
       await releasePendingEventResults(supabase, attempt.event_id, request, { createNotifications: false });
     }

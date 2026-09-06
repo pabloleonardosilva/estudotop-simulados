@@ -225,13 +225,11 @@ export async function POST(
   }
 
   if (existing) {
-    if (eventParticipant) {
-      await supabase
-        .from("simulado_event_participants")
-        .update({ representative_attempt_id: existing.id })
-        .eq("id", eventParticipant.id)
-        .is("representative_attempt_id", null);
-    }
+    // representative_attempt_id NÃO é gravado aqui: esta tentativa ainda
+    // está em andamento (in_progress), não é uma conclusão válida. A
+    // referência oficial do Evento só é consolidada em
+    // consolidateEventRepresentativeAttempt(), chamado pelo submit quando a
+    // tentativa efetivamente atinge completed + counts_toward_limit.
     await logActivity({
       request,
       actorType: "student",
@@ -410,13 +408,10 @@ export async function POST(
     );
   }
 
-  if (eventParticipant) {
-    await supabase
-      .from("simulado_event_participants")
-      .update({ representative_attempt_id: created.id })
-      .eq("id", eventParticipant.id)
-      .is("representative_attempt_id", null);
-  }
+  // representative_attempt_id NÃO é gravado na criação: a tentativa recém-
+  // criada ainda pode terminar completed, disqualified, expired ou
+  // abandoned. A referência oficial só é consolidada em
+  // consolidateEventRepresentativeAttempt(), chamado pelo submit.
 
   await logActivity({
     request,
