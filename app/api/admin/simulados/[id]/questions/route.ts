@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
+import { setSimuladoQuestionAnnulment } from "@/lib/server/simuladoQuestionReprocessing";
 
 type SimuladoQuestionPutItem = {
   question_id?: string | null;
@@ -12,6 +13,7 @@ type SimuladoQuestionPutItem = {
 type SimuladoQuestionRelationRow = {
   id: string;
   question_id: string;
+  status: string;
 };
 
 export async function POST(
@@ -202,15 +204,43 @@ export async function PUT(
     if (refetchError) return NextResponse.json({ ok: false, message: refetchError.message }, { status: 400 });
 
     const relationByQuestion = new Map((allRelations || []).map((relation: SimuladoQuestionRelationRow) => [relation.question_id, relation]));
+    const statusChangeWarnings: string[] = [];
     for (const item of normalized) {
       const relation = relationByQuestion.get(item.question_id);
       if (!relation) continue;
+
+      // order_number/points nunca passam por reconciliação — só status
+      // (active ↔ annulled) tem efeito sobre pontuação/resultados já
+      // calculados, então é o único campo aqui que precisa do serviço
+      // central (setSimuladoQuestionAnnulment), nunca de um UPDATE direto.
+      // Isso vale tanto pré quanto pós-aplicação: setSimuladoQuestionAnnulment
+      // reprocessa o Simulado inteiro, mas reprocessSimulado retorna cedo
+      // (sem custo, sem N+1) quando ainda não existe nenhuma tentativa
+      // completed — então não há bypass possível nem tratamento especial a
+      // fazer aqui para o caso "ainda sem resultados".
       const { error } = await supabase
         .from("simulado_questions")
-        .update({ order_number: item.order_number, points: item.points, status: item.status })
+        .update({ order_number: item.order_number, points: item.points })
         .eq("id", relation.id)
         .eq("simulado_id", id);
       if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 400 });
+
+      const desiredStatus = item.status === "active" || item.status === "annulled" ? item.status : null;
+      if (desiredStatus && desiredStatus !== relation.status) {
+        const outcome = await setSimuladoQuestionAnnulment(supabase, {
+          simuladoQuestionId: relation.id,
+          targetStatus: desiredStatus,
+          reason: null,
+          actorId: admin.id,
+          actorName: admin.full_name || "Admin",
+          actorType: "admin",
+        });
+        // Corrida perdida ou "já está nesse estado" não derruba o salvamento
+        // em lote inteiro — o status atual (de quem venceu a corrida) já é a
+        // verdade reconciliada; só avisamos, nunca sobrescrevemos por fora
+        // do serviço central.
+        if (!outcome.ok) statusChangeWarnings.push(`${item.question_id}: ${outcome.message}`);
+      }
     }
 
     const { data: saved, error: savedError } = await supabase
@@ -221,7 +251,12 @@ export async function PUT(
 
     if (savedError) return NextResponse.json({ ok: false, message: savedError.message }, { status: 400 });
 
-    return NextResponse.json({ ok: true, message: "Questões e numeração atualizadas.", relations: saved || [] });
+    const message =
+      statusChangeWarnings.length > 0
+        ? `Questões e numeração atualizadas. Algumas mudanças de status não foram aplicadas (recarregue para ver o estado atual): ${statusChangeWarnings.join("; ")}`
+        : "Questões e numeração atualizadas.";
+
+    return NextResponse.json({ ok: true, message, relations: saved || [], status_change_warnings: statusChangeWarnings });
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : "Erro inesperado ao salvar questões." },

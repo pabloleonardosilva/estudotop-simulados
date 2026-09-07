@@ -77,7 +77,7 @@ export async function POST(
   // Valida que simulado_question_id pertence a este simulado e que question_id é consistente
   const { data: sqValidation } = await supabase
     .from("simulado_questions")
-    .select("id, question_id")
+    .select("id, question_id, status")
     .eq("id", body.simulado_question_id)
     .eq("simulado_id", simuladoId)
     .maybeSingle();
@@ -93,6 +93,16 @@ export async function POST(
     return NextResponse.json(
       { ok: false, message: "Dados da resposta inválidos." },
       { status: 400 },
+    );
+  }
+
+  // Autoritativo no servidor: um frontend desatualizado (aba aberta antes de
+  // uma anulação) não pode produzir uma avaliação normal para uma questão já
+  // anulada. O client já bloqueia isso visualmente; esta é a barreira real.
+  if (sqValidation.status === "annulled") {
+    return NextResponse.json(
+      { ok: false, message: "Esta questão foi anulada e não aceita mais respostas." },
+      { status: 409 },
     );
   }
 

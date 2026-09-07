@@ -11,6 +11,7 @@ import {
 } from "@/app/lib/email/jornadaEmailTemplates";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { consolidateEventRepresentativeAttempt, releasePendingEventResults } from "@/lib/server/simuladoEvents";
+import { computeSimuladoAttemptResult, type AnswerForScoring, type SimuladoQuestionForScoring } from "@/lib/simuladoScoring";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -186,88 +187,53 @@ export async function POST(
     );
   }
 
-  let totalScore = 0;
-  let maxScore = 0;
-  let correctCount = 0;
-  let wrongCount = 0;
-  let blankCount = 0;
-  let annulledCount = 0;
-
-  const snapshotEntries: Array<{
-    simulado_question_id: string;
-    question_id: string;
-    points: number;
-    status: string;
-    selected_alternative_id: string | null;
-    selected_alternative_label: string | null;
-    is_correct: boolean | null;
-    correct_alternative_id: string | null;
-    correct_alternative_label: string | null;
-    score_delta: number;
-  }> = [];
-
-  for (const row of questionRows) {
-    const points = Number(row.points || 0);
-    maxScore += points;
-
-    const answer = answersBySQ.get(row.id) || null;
-    const correctAlt = (row.questions?.question_alternatives || []).find(
-      (alt) => alt.is_correct,
-    );
-    const correctLabel =
-      row.questions?.correct_alternative_label || correctAlt?.label || null;
-    const correctId = correctAlt?.id || null;
-
-    let delta = 0;
-    let isCorrect: boolean | null = null;
-
-    if (row.status === "annulled") {
-      annulledCount += 1;
-      delta = points;
-      totalScore += points;
-      isCorrect = true;
-    } else if (!answer || !answer.selected_alternative_id) {
-      blankCount += 1;
-      delta = 0;
-    } else {
-      let correct = answer.is_correct;
-      if (correct === null || correct === undefined) {
-        if (correctId && answer.selected_alternative_id === correctId) correct = true;
-        else if (correctLabel && answer.selected_alternative_label)
-          correct = answer.selected_alternative_label.trim().toLowerCase() ===
-            correctLabel.trim().toLowerCase();
-      }
-      isCorrect = Boolean(correct);
-      if (correct) {
-        correctCount += 1;
-        delta = points;
-        totalScore += points;
-      } else {
-        wrongCount += 1;
-        if (scoringModel === "cebraspe") {
-          delta = -points;
-          totalScore -= points;
-        }
-      }
-    }
-
-    snapshotEntries.push({
-      simulado_question_id: row.id,
-      question_id: row.question_id,
-      points,
+  // Fonte única de verdade da correção (lib/simuladoScoring.ts) — a mesma
+  // usada pelo reprocessamento retroativo de anulação/gabarito
+  // (lib/server/simuladoQuestionReprocessing.ts). Nunca confia em
+  // answer.is_correct armazenado: recalcula sempre a partir da resposta
+  // selecionada + gabarito/status vigentes no momento do submit, para que
+  // uma alteração de gabarito ocorrida durante a tentativa já valha aqui.
+  const scoringQuestions: SimuladoQuestionForScoring[] = questionRows.map((row) => {
+    const correctAlt = (row.questions?.question_alternatives || []).find((alt) => alt.is_correct);
+    return {
+      simuladoQuestionId: row.id,
+      questionId: row.question_id,
+      points: Number(row.points || 0),
       status: row.status,
-      selected_alternative_id: answer?.selected_alternative_id || null,
-      selected_alternative_label: answer?.selected_alternative_label || null,
-      is_correct: isCorrect,
-      correct_alternative_id: correctId,
-      correct_alternative_label: correctLabel,
-      score_delta: delta,
+      correctAlternativeId: correctAlt?.id || null,
+      correctAlternativeLabel: row.questions?.correct_alternative_label || correctAlt?.label || null,
+    };
+  });
+  const scoringAnswers = new Map<string, AnswerForScoring>();
+  for (const [simuladoQuestionId, ans] of answersBySQ.entries()) {
+    scoringAnswers.set(simuladoQuestionId, {
+      selectedAlternativeId: ans.selected_alternative_id,
+      selectedAlternativeLabel: ans.selected_alternative_label,
     });
   }
 
-  const displayScore = Math.max(totalScore, 0);
-  const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
-  const displayPercentage = Math.max(0, Math.min(100, percentage));
+  const graded = computeSimuladoAttemptResult(scoringQuestions, scoringAnswers, scoringModel);
+  const correctCount = graded.correctCount;
+  const wrongCount = graded.wrongCount;
+  const blankCount = graded.blankCount;
+  const annulledCount = graded.annulledCount;
+  const totalScore = graded.score;
+  const maxScore = graded.maxScore;
+  const displayScore = graded.displayScore;
+  const percentage = graded.percentage;
+  const displayPercentage = graded.displayPercentage;
+  const snapshotEntries = graded.entries.map((entry) => ({
+    simulado_question_id: entry.simuladoQuestionId,
+    question_id: entry.questionId,
+    points: entry.points,
+    status: entry.status,
+    selected_alternative_id: entry.selectedAlternativeId,
+    selected_alternative_label: entry.selectedAlternativeLabel,
+    is_correct: entry.isCorrect,
+    correct_alternative_id: entry.correctAlternativeId,
+    correct_alternative_label: entry.correctAlternativeLabel,
+    score_delta: entry.scoreDelta,
+  }));
 
   const finishedAt = new Date().toISOString();
   const today = new Intl.DateTimeFormat("en-CA", {

@@ -2,7 +2,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requestIp, requestRoute, requestUserAgent, sanitizeLogMetadata } from "./sanitize";
 
 type ActivitySeverity = "info" | "warning" | "error" | "critical";
-type ActorType = "admin" | "student" | "system";
+type ActorType = "admin" | "professor" | "student" | "system";
 
 export type ActivityLogInput = {
   request?: Request | null;

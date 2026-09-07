@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { normalizeSubjectIds, primarySubjectId, syncQuestionSubjects } from "@/lib/questions/question-subjects";
 import { EVALUATED_TOPICS_REQUIRED_MESSAGE, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
 import { questionFingerprint } from "@/lib/utils/textSimilarity";
-import { recalculateResultsForQuestionGabaritoChange } from "../../../../lib/utils/recalculate-question-results";
+import { reprocessAfterAnswerKeyChange } from "@/lib/server/simuladoQuestionReprocessing";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
 
@@ -310,6 +311,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .single();
 
     const previousCorrectLabel = previousQuestion?.correct_alternative_label || null;
+    const labelChanged = previousCorrectLabel !== (finalCorrect?.label || null);
+    // Gerado só quando o gabarito de fato muda — identidade estável desta
+    // revisão, persistida junto com o próprio gabarito (nunca um timestamp
+    // gerado a cada tentativa). Um retry desta mesma mudança (gabarito não
+    // muda de novo) reaproveita o valor já salvo em vez de gerar outro.
+    const answerKeyRevisionId = labelChanged ? randomUUID() : null;
 
     const { error: questionError } = await supabase
       .from("questions")
@@ -327,6 +334,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         question_type: body.question_type || "multiple_choice",
         correct_alternative_label: finalCorrect?.label || null,
         question_fingerprint: questionFingerprint(statement),
+        ...(labelChanged ? { answer_key_revision_id: answerKeyRevisionId! } : {}),
       })
       .eq("id", id);
 
@@ -345,15 +353,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: false, message: alternativesError.message }, { status: 400 });
     }
 
-    if (previousCorrectLabel !== (finalCorrect?.label || null)) {
-      await recalculateResultsForQuestionGabaritoChange({
-        supabase,
-        questionId: id,
-        questionCode: previousQuestion?.code || null,
-        previousCorrectLabel,
-        newCorrectLabel: finalCorrect?.label || null,
-        reason: `Gabarito da questão ${previousQuestion?.code || id} corrigido pela equipe EstudoTOP.`,
-      });
+    if (labelChanged) {
+      try {
+        await reprocessAfterAnswerKeyChange(supabase, {
+          questionId: id,
+          actorId: admin.id,
+          actorName: admin.full_name || "Admin",
+          reasonText: `Gabarito da questão ${previousQuestion?.code || id} corrigido pela equipe EstudoTOP.`,
+          revisionId: answerKeyRevisionId!,
+        });
+      } catch (reprocessError) {
+        void logSystemError({ source: "api.admin.questions.update.reprocess", error: reprocessError, request, metadata: { question_id: id } });
+        return NextResponse.json(
+          { ok: false, message: "Questão foi salva, mas não foi possível reprocessar os resultados afetados pela mudança de gabarito. Contate o suporte técnico." },
+          { status: 500 },
+        );
+      }
     }
 
     void logAdminAction({ adminUserId: admin.id, action: "admin.question.updated", entityType: "question", entityId: id, request, metadata: { status: body.status ?? null } });

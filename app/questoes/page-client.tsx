@@ -2337,6 +2337,19 @@ export default function QuestoesClient({
                                   ? `Presente em ${simuladoLinks.length} simulado${simuladoLinks.length > 1 ? "s" : ""}`
                                   : "Ainda nao inserida em simulados"}
                               </p>
+                              {(() => {
+                                const annulledLinksCount = simuladoLinks.filter((simulado) => simulado.relationStatus === "annulled").length;
+                                // Alerta puramente informativo, derivado da contagem real de
+                                // vínculos simulado_questions.status='annulled' já carregados
+                                // acima (sem consulta extra) — nunca altera nem reflete
+                                // questions.status (status editorial global, mostrado à parte
+                                // pelo selo "ANULADA" quando a questão em si está anulada).
+                                return annulledLinksCount > 0 ? (
+                                  <p className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-0.5 text-xs font-bold text-amber-300">
+                                    ⚠ Anulada em {annulledLinksCount} simulado{annulledLinksCount > 1 ? "s" : ""}
+                                  </p>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
 

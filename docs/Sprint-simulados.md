@@ -99,6 +99,9 @@ Cada simulado tem seu próprio conjunto de questões vinculadas via `simulado_qu
 Cada vínculo questão-simulado tem:
 - `points` — pontos que a questão vale neste simulado
 - `status` — `active` (ativa) ou `annulled` (anulada sem punição)
+- `annulled_at`/`annulled_by`/`annulment_reason` — preenchidos quando `status = annulled` (constraint `simulado_questions_annulled_at_check` exige `annulled_at` não nulo nesse caso)
+
+**"Anulada sem punição" (fórmula exata, 2026-09-06):** todo participante recebe o ponto integral da questão, independentemente de ter acertado, errado ou deixado em branco — ela conta em `annulled_count`, nunca em `correct_count`/`wrong_count`/`blank_count`, e `max_score` não é reduzido. Anular/desanular é uma operação de Simulado (`simulado_questions.status`), completamente independente do status editorial da questão no Banco (`questions.status`) — ver `docs/Sprint-resultados.md`, seção "Anulação, desanulação e alteração de gabarito", para a matriz completa e o motor de reprocessamento (`lib/simuladoScoring.ts` + `lib/server/simuladoQuestionReprocessing.ts`).
 
 
 ### Atualização — Edição rápida do nome na listagem — 2026-07-08
@@ -482,7 +485,7 @@ Questão em branco = 0 pontos (não penaliza)
 Configuração completa. Colunas principais: `id`, `title`, `status`, `scoring_model`, `navigation_type`, `time_limit_minutes`, `max_attempts`, `feedback_mode`, `shuffle_questions`, `shuffle_alternatives`, `allow_blank_answers`, `show_result_on_finish`, `show_answer_key_on_finish`, `show_teacher_comment`, `owl_help_enabled`, `owl_help_limit`, `anti_tab_switch_enabled`, `anti_window_blur_enabled`.
 
 #### `simulado_questions`
-Vínculo simulado ↔ questão. Colunas: `id`, `simulado_id`, `question_id`, `order_number`, `points`, `status` (`active|annulled`).
+Vínculo simulado ↔ questão. Colunas: `id`, `simulado_id`, `question_id`, `order_number`, `points`, `status` (`active|annulled`), `annulled_at`, `annulled_by`, `annulment_reason` (os três últimos existem desde a criação da tabela; passaram a ser usados a partir de 2026-09-06), `status_revision_id` (novo em 2026-09-07, `supabase/migrations/20260907140000_notification_revision_identity.sql` — UUID gerado a cada transição de status bem-sucedida, usado como identidade de revisão para a notificação do aluno não duplicar em retry mas gerar aviso novo numa transição futura distinta).
 
 #### `simulado_attempts`
 Tentativa do aluno. Colunas: `id`, `simulado_id`, `student_id`, `attempt_number`, `status` (`in_progress|completed|disqualified|expired|abandoned`), `answered_count`, `total_questions`, `progress_percent`, `started_at`, `submitted_at`, `expires_at`, `tab_switch_count`, `focus_violation_count`, `question_order` (JSONB), `settings_snapshot` (JSONB).
@@ -493,9 +496,9 @@ Tentativa do aluno. Colunas: `id`, `simulado_id`, `student_id`, `attempt_number`
 Resposta por questão. Colunas: `attempt_id`, `question_id`, `simulado_question_id`, `selected_alternative_id`, `is_correct`, `is_locked`, `response_time_seconds`, `changed_count`, `alternative_order`.
 
 #### `simulado_results`
-Resultado calculado. Colunas: `attempt_id`, `simulado_id`, `student_id`, `total_questions`, `correct_count`, `wrong_count`, `blank_count`, `annulled_count`, `score`, `display_score`, `percentage`, `scoring_model`, `time_spent_seconds`, `result_snapshot` (JSONB).
+Resultado calculado. Colunas: `attempt_id`, `simulado_id`, `student_id`, `total_questions`, `answered_questions`, `correct_count`, `wrong_count`, `blank_count`, `annulled_count`, `score`, `display_score`, `max_score`, `percentage`, `display_percentage`, `scoring_model`, `time_spent_seconds`, `finished_at`, `result_snapshot` (JSONB), `had_live_rule_change`, `last_reprocessed_at`, `reprocess_reason` (os três últimos existem desde a criação da tabela; passaram a ser usados a partir de 2026-09-06, ver `docs/Sprint-resultados.md`).
 
-`result_snapshot` preserva o gabarito e as respostas no momento da correção — edições futuras nas questões não alteram resultados históricos.
+`result_snapshot` preserva o gabarito e as respostas no momento da correção — edições editoriais comuns nas questões (enunciado, comentário, formatação, assunto, banca, órgão) não alteram resultados históricos. Três exceções pedagógicas propagam e reescrevem esse snapshot deliberadamente: alteração de gabarito, anulação e desanulação de questão no Simulado (ver seção "Anulação/desanulação de questão e propagação de gabarito" adiante e `docs/Sprint-resultados.md`).
 
 #### `simulado_feedbacks`
 Avaliação do aluno. Colunas: `simulado_id`, `student_id`, `attempt_id`, `rating` (1–5), `comment`.
@@ -971,3 +974,57 @@ Nenhuma migration foi criada, alterada ou executada.
 - Nada mais foi alterado: telas de erro/desqualificação, execução, APIs e regras de Jornada permanecem intactas.
 
 Nenhuma migration foi criada, alterada ou executada.
+
+### Anulação/desanulação de questão e propagação de gabarito — 2026-09-06
+
+Implementa as seções 3.18–3.21 de `docs/modules/MASTER_SIMULADOS.md`, resolvendo a contradição com a afirmação de que `result_snapshot` nunca muda (matriz completa em `docs/Sprint-resultados.md`).
+
+**Motor de correção único (fonte de verdade):** `lib/simuladoScoring.ts` — puro, sem `server-only`/supabase, usado tanto por `POST .../attempts/[attemptId]/submit` quanto pelo reprocessamento retroativo. Substituiu o loop de correção que existia inline no submit (que confiava em `answer.is_correct` armazenado como atalho — risco real se o gabarito mudasse entre a resposta e o submit). Compara sempre pela `label` da alternativa quando o `id` salvo na resposta não resolve mais para uma alternativa atual (editar uma questão apaga e recria `question_alternatives` com novos UUIDs).
+
+**Orquestração server-side:** `lib/server/simuladoQuestionReprocessing.ts` — `setSimuladoQuestionAnnulment()` (anula/desanula um vínculo `simulado_questions`, compare-and-swap pelo status antigo) e `reprocessAfterAnswerKeyChange()` (propaga gabarito a todos os Simulados que usam a `question_id`). Ambos chamam `reprocessSimulado()`, que reconstrói do zero (nunca soma/subtrai) o resultado de toda tentativa `completed`+`counts_toward_limit=true` do Simulado, corrige `simulado_answers.is_correct` só onde a classificação fresca diverge da armazenada, reescreve `simulado_results` (contadores/score/percentual/snapshot completo) só quando algo de fato mudou, registra em `simulado_result_change_logs` (tabela já existente, antes só usada pela função antiga), ressincroniza TopCoins via `resyncTopCoinEarnings()` (existente, idempotente) e cria notificação em `student_notifications` (existente).
+
+**Endpoints:**
+- `PATCH /api/admin/simulados/[id]/questions/[relationId]/annul` — Admin, qualquer Simulado.
+- `PATCH /api/professor/events/[id]/questions/[relationId]/annul` — Professor, só no Simulado vinculado a um Evento ao qual está associado (`requireEventManager`); nunca toca `questions`/`question_alternatives` (Banco/gabarito global).
+- `PATCH /api/admin/questions/[id]/answer` e `PATCH /api/admin/questions/[id]` — já existiam; a primeira **não reprocessava nada** (bug real corrigido) e a segunda usava uma função antiga e falha (`app/lib/utils/recalculate-question-results.ts`, removida) que não atualizava `simulado_answers.is_correct` e usava o snapshot cacheado como fonte em vez do estado vigente. As duas agora chamam `reprocessAfterAnswerKeyChange()`.
+
+**Segurança:** `POST .../attempts/[attemptId]/answers` passou a rejeitar (409) resposta para uma questão com `simulado_questions.status = "annulled"` — antes só o client bloqueava (bug real: uma chamada direta à API bypassava o bloqueio visual).
+
+**UI:** botão Anular/Desanular no card de questão de `/simulados/[id]/editar` (Admin) e na barra de ações do Modo Aula de `/professor/eventos/[id]` (Professor) — ambos com confirmação e mensagem de aviso mais forte implícita no texto de desanulação (pode reduzir nota). Resultado do aluno (`/meus-simulados/[id]/resultado`) não classifica mais questão anulada como certa/errada — mostra "QUESTÃO ANULADA" e preserva a alternativa marcada sem cor de acerto/erro. A tela de prova ao vivo já tinha watermark e bloqueio client-side de resposta para questão anulada (implementados em Sprint anterior, auditados e confirmados corretos nesta entrega).
+
+**Notificação:** `AppShell` generalizado para reconhecer `question_annulled_result_changed`, `question_reactivated_result_changed` e `answer_key_changed_result_changed`, além do `event_result_released` já existente — mesmo modal, mesmo mecanismo de acknowledgement (`read_at`/`dismissed_at`), sem sistema paralelo.
+
+**Testes:** `tests/simulado-scoring/simulado-scoring.spec.ts` (16 casos, execução real do motor puro, incluindo o cenário exato do incidente histórico de bonificação manual) e `tests/simulado-question-annulment/simulado-question-annulment.spec.ts` (18 casos, auditoria estrutural do código real — mesmo padrão de `tests/event-representative-attempt`, necessário porque `lib/server/simuladoQuestionReprocessing.ts` importa `"server-only"`).
+
+**Dados históricos:** a bonificação manual aplicada antes desta funcionalidade existir (questão `ET3582`, Evento "3º Simulado de Processo Civil") não foi alterada nem reprocessada por esta entrega — nenhuma escrita em produção foi feita como parte deste trabalho de código; a auditoria SELECT desse incidente serviu apenas de prova de regressão para os testes automatizados.
+
+Nenhuma migration foi criada — `simulado_questions.annulled_at/annulled_by/annulment_reason` e `simulado_results.had_live_rule_change/last_reprocessed_at/reprocess_reason` já existiam desde a migration original da tabela (`20260511183000_create_simulados_admin_core.sql`), sem nenhum código os utilizando até agora.
+
+### Fechamento — atomicidade/concorrência, alerta no Banco, ranking (2026-09-06)
+
+Decisão de atomicidade (não duplicar `lib/simuladoScoring.ts` em SQL) e o teste real de concorrência (`tests/simulado-question-annulment/concurrency.spec.ts`) estão documentados em `docs/Sprint-resultados.md`. Corrigido nesta rodada: `setSimuladoQuestionAnnulment()` não verificava se o `UPDATE` condicional realmente afetou uma linha — a requisição perdedora de uma corrida acreditava erroneamente ter aplicado a transição.
+
+**Alerta no Banco de Questões (`/questoes`):** o Banco já carregava `simulado_questions.status` no mesmo `select` que traz as questões (`app/questoes/page.tsx`, sem N+1) e já mostrava um selo "Anulada" por chip individual de Simulado (`relationStatus === "annulled"`, funcionalidade pré-existente). O que faltava era o **resumo agregado** pedido — adicionado em `app/questoes/page-client.tsx`: "⚠ Anulada em N simulado(s)", derivado por `.filter()` sobre o array já carregado (`simuladoLinks`), sem nenhuma consulta adicional. Puramente informativo — nunca lê nem escreve `questions.status` (o selo diagonal "ANULADA" de página inteira, que reflete o status editorial global da questão no Banco, é um elemento visual **separado e pré-existente**; os dois nunca se misturam na mesma renderização).
+
+Nenhuma migration nova. `tests/simulado-question-annulment/simulado-question-annulment.spec.ts` ganhou 1 teste confirmando a ausência de N+1 e a separação Banco × Simulado no alerta.
+
+### Fechamento cirúrgico — notificação por revisão + fim do bypass da rota antiga (2026-09-07)
+
+Dois pontos corrigidos, detalhados em `docs/Sprint-resultados.md`:
+
+1. **Notificação por revisão real, não por tentativa:** `student_notifications.revision_id` (nova coluna, migration `20260907140000_notification_revision_identity.sql`) entra na chave de unicidade — um retry da mesma revisão não duplica, mas duas revisões reais distintas sobre a mesma tentativa (ex.: anular a questão X e depois a questão Y) agora geram duas notificações, não uma sobrescrevendo a outra. `simulado_questions.status_revision_id` e `questions.answer_key_revision_id` (novas colunas, mesma migration) são a origem dessa identidade — gerada uma vez, no momento exato da transição/mudança real, nunca a cada tentativa de reprocessamento.
+2. **`PUT /api/admin/simulados/[id]/questions` não escreve mais `status` diretamente:** toda mudança de status (active↔annulled) neste endpoint agora chama `setSimuladoQuestionAnnulment()` — o mesmo serviço central das rotas dedicadas de Admin/Professor. `order_number`/`points` continuam num `UPDATE` direto (nunca afetam pontuação). Criação de vínculo novo continua definindo o status inicial no `INSERT`, sem reconciliação (nada a reconciliar contra uma linha que não existia).
+
+Migration nova (criada, não aplicada): `supabase/migrations/20260907140000_notification_revision_identity.sql`. Testes novos: `tests/simulado-question-annulment/notification-revision.spec.ts` e `tests/simulado-question-annulment/legacy-route-bypass.spec.ts`.
+
+### Recuperação de falha parcial — `pending_reconciliation_at` (2026-09-07)
+
+`simulado_questions.pending_reconciliation_at` (nova coluna, migration `20260907130000_simulado_question_annulment_reconciliation.sql`) marca, no mesmo `UPDATE` que já faz o compare-and-swap de `status`, que a reconciliação daquela transição ainda não terminou — e só é limpa depois que `reprocessSimulado()` concluir com sucesso. Fecha um bloqueador real: antes, uma queda de processo no meio do reprocessamento (ex.: na tentativa 37 de 100) deixava o status já mudado mas parte dos resultados desatualizados, sem nenhuma forma de detectar ou retomar isso — uma nova tentativa de anular a mesma questão era rejeitada como "já está anulada", sem nunca completar o que faltava.
+
+`processPendingReconciliationForSimulado()`/`getPendingReconciliationSummary()` (novas, em `lib/server/simuladoQuestionReprocessing.ts`) e `GET`/`POST /api/admin/simulados/[id]/reconciliation` (novo, Admin-only) resolvem isso reaproveitando o mesmo `status_revision_id` já usado pelas notificações — nenhuma segunda identidade de revisão foi criada. `setSimuladoQuestionAnnulment()` também tenta concluir automaticamente qualquer pendência antes de aceitar uma nova transição contraditória (nunca empilha revisões inconclusas), e não trata mais uma falha do reprocessamento como erro genérico quando o status já mudou — reporta `pendingReconciliation: true`, recuperável.
+
+Detalhes completos, incluindo um segundo bug real encontrado e corrigido ao testar (TopCoins podiam ficar permanentemente desatualizados para alunos já corrigidos antes de uma falha), em `docs/Sprint-resultados.md`, seção "Marcador objetivo de reconciliação pendente". Migration nova (criada, não aplicada): `20260907130000_simulado_question_annulment_reconciliation.sql`. Teste novo, execução real: `tests/simulado-question-annulment/reconciliation-recovery.spec.ts`.
+
+### Incidente real de produção — truncamento silencioso de `simulado_answers` (2026-09-07)
+
+A migration acima foi aplicada e a questão `ET3582` (3º Simulado de Processo Civil) foi anulada em produção. `reprocessSimulado()` buscava `simulado_answers` de todas as tentativas do Simulado numa única consulta sem paginação — com 135 tentativas × 12 questões (~1620 linhas), o PostgREST/Supabase cortou a resposta no limite padrão (1000), silenciosamente. O motor interpretou respostas reais ausentes como questão em branco, reduzindo a nota de 113 dos 135 alunos (sem relação com a questão anulada em si, que ficou correta). Corrigido com paginação explícita e determinística (`fetchAllPages()`, `.range()` + `.order("id")` + conferência do `count` exato) nas três consultas do motor que escalam com o número de tentativas. `lib/simuladoScoring.ts` não foi alterado. `reconcileCurrentRevision()` (nova) permite reprocessar a MESMA revisão já concluída (sem gerar revisão nova, sem mudar status) para corrigir os dados do incidente — exposta pelo endpoint já existente `POST /api/admin/simulados/[id]/reconciliation`, sem rota nova. Testado na mesma escala real (1620 respostas) em `tests/simulado-question-annulment/large-answer-set.spec.ts`. **Dados de produção deste Simulado ainda não foram corrigidos** — fica para uma etapa controlada separada. Detalhes completos: `docs/Sprint-resultados.md`, seção "Incidente de truncamento silencioso".

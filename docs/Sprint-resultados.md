@@ -855,3 +855,220 @@ Um bug estrutural (corrigido nesta entrega — detalhes técnicos em `docs/Sprin
 - **Tentativa oficial (resultado):** só é gerada quando a tentativa atinge `completed` + `counts_toward_limit = true`. Uma tentativa pode consumir o limite sem nunca virar resultado oficial.
 
 Depois da correção, `representative_attempt_id` só é consolidado no momento do `submit`, e nunca por uma tentativa que apenas consumiu o limite sem concluir.
+
+## Anulação, desanulação e alteração de gabarito — reprocessamento determinístico (2026-09-06)
+
+### Contradição documental resolvida
+
+Havia uma afirmação genérica de que `result_snapshot` existe "para que edições futuras nas questões não alterem resultados históricos" (`AGENTS.md`, `docs/Sprint-simulados.md`) enquanto `docs/modules/MASTER_SIMULADOS.md` (seções 3.18–3.21) sempre previu reprocessamento obrigatório por anulação/gabarito. **Regra final, sem contradição:**
+
+| Ação | Propaga | Recalcula |
+|---|---|---|
+| Editar enunciado/comentário/explicação/formatação/assunto/banca/órgão/metadados | Não (fora de scoring) | Não |
+| Alterar gabarito no Banco (`questions.correct_alternative_label`) | Sim — todos os Simulados que usam essa `question_id` | Sim |
+| Anular questão no Banco (`questions.status = annulled`) | Não — é só um alerta editorial | Não |
+| Desanular questão no Banco | Não | Não |
+| Anular questão no Simulado (`simulado_questions.status = annulled`) | Sim — só aquele Simulado (todos os contextos: Evento/Jornada/avulso) | Sim |
+| Desanular questão no Simulado | Sim — só aquele Simulado | Sim |
+
+`result_snapshot` continua imutável para as edições editoriais comuns (linha 1 da matriz) — a afirmação original só estava incompleta, não errada; as 3 linhas de exceção (gabarito, anular, desanular no Simulado) sempre reprocessam e **reescrevem** o snapshot da tentativa afetada (nunca criam uma tentativa nova nem apagam a original).
+
+### Banco ≠ Simulado
+
+`questions.status` (Banco de Questões) é editorial e nunca propaga automaticamente para `simulado_questions.status` (vínculo operacional que efetivamente controla pontuação/resposta/reprocessamento) — nem no sentido Banco→Simulado nem Simulado→Banco. O Banco de Questões mostra apenas um alerta informativo ("anulada em N simulados"), derivado da contagem real de `simulado_questions.status = 'annulled'` para aquela `question_id` — nunca grava nada a partir disso.
+
+### Garantia contra dupla bonificação (fonte: `lib/simuladoScoring.ts`)
+
+O reprocessamento **nunca** soma/subtrai em cima do resultado anterior (`score = score + pontos` está proibido). Toda vez que uma questão é anulada, desanulada, ou tem o gabarito alterado, o resultado inteiro da tentativa é **reconstruído do zero** a partir de três fontes ao vivo — nunca do estado anterior:
+
+1. a resposta originalmente selecionada pelo aluno (`simulado_answers.selected_alternative_id`/`selected_alternative_label`, nunca alterada pelo reprocessamento);
+2. o gabarito vigente (`questions.correct_alternative_label` / `question_alternatives.is_correct`, sempre lidos ao vivo);
+3. o status vigente do vínculo (`simulado_questions.status`).
+
+`is_correct` armazenado em `simulado_answers` é tratado como **estado derivado/materializado, nunca como fonte de verdade** — o motor de correção nem aceita esse campo como parâmetro (`lib/simuladoScoring.ts` não tem um argumento `isCorrect`). Isso é o que torna a operação idempotente (anular duas vezes = mesmo resultado de anular uma vez) e o que impede que uma correção manual de dados anterior — que só altera `is_correct` sem alterar a resposta selecionada — seja contabilizada de novo quando a mesma questão for oficialmente anulada depois: o motor nunca vê o `is_correct` antigo, só a resposta original e o gabarito/status vigentes.
+
+Validado com o caso real do incidente anterior à esta Sprint (questão `ET3582`, Evento "3º Simulado de Processo Civil"): um aluno respondeu "D", gabarito é "E" (originalmente errada); uma correção manual de dados creditou o ponto (`is_correct = true`) antes desta funcionalidade existir. Reprocessado pelo motor novo (teste automatizado em `tests/simulado-scoring/simulado-scoring.spec.ts`): anular a questão produz o mesmo score que a correção manual já havia produzido (sem duplicar); desanular depois reverte corretamente para "errada", porque o motor volta a comparar a resposta original ("D") com o gabarito vigente ("E") — nunca herda o `is_correct = true` antigo.
+
+### TopCoins
+
+Reconciliados via `resyncTopCoinEarnings()` (`app/lib/server/topcoinsSync.ts`, não alterado) — a mesma função já usada por qualquer alteração de tentativas, que recalcula do zero (delete + insert) a partir de `correct_count` atual. Chamá-la depois de corrigir `simulado_results.correct_count` produz o valor certo sem duplicar, pelo mesmo motivo do score: a função nunca soma em cima do estado anterior.
+
+### Notificação ao aluno
+
+Reaproveita `student_notifications` (mesma tabela de `event_result_released`, `docs/Sprint-evento-de-simulado.md` seção 32) com três tipos novos: `question_annulled_result_changed`, `question_reactivated_result_changed`, `answer_key_changed_result_changed`. Só é criada quando o resultado do aluno de fato mudou (score OU qualquer contador — correto/errado/branco/anulado — diferente do valor anterior), mesmo quando o score final é igual (ex.: uma questão que já estava certa migra de `correct_count` para `annulled_count` sem mudar o score, mas isso já conta como alteração de resultado exibido ao aluno). `AppShell` generalizado para reconhecer os 4 tipos (o antigo + os 3 novos) no mesmo modal — sem sistema de notificação paralelo.
+
+### Atomicidade, concorrência e idempotência recuperável (2026-09-06, fechamento)
+
+**Decisão de arquitetura registrada:** avaliamos envolver a operação inteira (mudança de status + recálculo de N tentativas + snapshot + auditoria + notificação) numa única transação Postgres via RPC. Essa transação só seria genuína numa **única chamada** ao banco — e, como o Supabase usa connection pooling (PgBouncer em modo transaction), um lock de sessão obtido numa chamada RPC não é confiável entre duas chamadas separadas. Isso forçaria mover a fórmula de correção (`lib/simuladoScoring.ts`) para dentro do SQL (PL/pgSQL), criando uma segunda implementação da regra de negócio mantida manualmente sincronizada com o TypeScript — risco real de divergência futura, e impossível de testar de verdade nesta entrega (exigiria aplicar uma migration, fora do escopo autorizado). **Decisão (confirmada explicitamente): não duplicar a regra de scoring em SQL.** Em vez de atomicidade rígida, a operação é **serializada de forma real + idempotente/recuperável**:
+
+- **Serialização real do toggle de status:** `simulado_questions.status` só muda via `UPDATE ... WHERE status = <valor lido>` (compare-and-swap). O Postgres serializa nativamente duas escritas concorrentes contra a mesma linha (garantia MVCC padrão, sem lock explícito necessário) — a primeira a commitar vence; a segunda, ao reavaliar o `WHERE` contra o valor já commitado, não encontra a linha. **Correção aplicada nesta entrega:** o código antes não verificava se o `UPDATE` de fato afetou uma linha (`setSimuladoQuestionAnnulment`, `lib/server/simuladoQuestionReprocessing.ts`) — a requisição perdedora da corrida acreditaria erroneamente que aplicou a transição. Corrigido com `.select("id").maybeSingle()` no próprio `UPDATE`: se vier `null`, a requisição perdeu a corrida e recebe uma mensagem clara pedindo para recarregar, sem reprocessar nada.
+- **Idempotência recuperável no recálculo:** o loop de reprocessamento por tentativa não está numa transação única, mas cada passo é individualmente seguro e o algoritmo inteiro é idempotente (comprovado em `tests/simulado-scoring/`). Se o processo cair no meio, o pior cenário é "algumas tentativas ainda não recalculadas" — nunca um dado incorreto — e basta reexecutar a mesma operação (reabrir e clicar anular/desanular de novo, ou repetir a chamada de gabarito) para completá-la; tentativas já corrigidas são detectadas como inalteradas (`scoreChanged = false`) e puladas sem reprocessar de novo.
+- **TopCoins fora da transação, mas seguro:** `resyncTopCoinEarnings()` roda depois do reprocessamento principal (chamada de rede separada, código já existente/idempotente — delete + insert a partir do `correct_count` já commitado). Se falhar isoladamente, os resultados em `simulado_results` já estão corretos e duráveis; chamar a mesma função de novo mais tarde reconcilia sem duplicar nada.
+
+**Testado por execução real (não apenas leitura de código):** `tests/simulado-question-annulment/concurrency.spec.ts` — simulação fiel (documentada como tal) da semântica de `UPDATE` condicional do Postgres, com duas chamadas concorrentes via `Promise.all` e interleaving forçado no pior caso (ambas leem o mesmo estado antes de qualquer uma escrever):
+- duas anulações simultâneas → exatamente uma vence, estado final único;
+- duas desanulações simultâneas → mesma garantia;
+- anular × desanular a partir do mesmo snapshot lido → resultado determinístico (uma delas, por definição, já pede o estado atual e é rejeitada como no-op antes de qualquer escrita — não há disputa real possível entre alvos opostos a partir do mesmo snapshot);
+- 10 repetições da corrida sem nenhum caso de dois vencedores.
+
+Testes de correspondência confirmam que essa simulação usa exatamente a mesma condição (`'.eq("status", relation.status)'` + checagem de linhas afetadas) do código real.
+
+### Ranking do Professor reflete o reprocessamento (sem cache)
+
+O ranking é derivado, a cada carregamento, diretamente de `simulado_results` (via `representative_attempt_id` de cada participante) — nunca de um valor persistido separadamente ou cacheado. Como o reprocessamento já reescreve `simulado_results.correct_count`/`time_spent_seconds` do participante afetado, e a dashboard do Professor faz polling a cada 10s (`docs/Sprint-evento-de-simulado.md`, seção 95), a reordenação aparece automaticamente, sem qualquer código adicional. Critério real (auditado, não presumido): acertos decrescentes → tempo total crescente → nome (pt-BR); ranking competitivo (1º, 2º, 2º, 4º) quando há empate exato em acertos **e** tempo.
+
+A função `rankedParticipants()` foi extraída de `app/professor/eventos/[id]/page-client.tsx` para `lib/eventRanking.ts` (lógica idêntica, só movida — necessário para ser testável por execução real, já que o arquivo original é `"use client"` com imports pesados). Testado em `tests/simulado-question-annulment/ranking.spec.ts`: cenário completo do pedido (aluno A=8, aluno B=7 → questão anulada eleva B para 8 → reordena por tempo; desanular reverte), empate real (mesmo acertos e tempo → `rank_tied=true`, ranking competitivo), empate só em acertos com tempos diferentes (não é tratado como empate), participante sem resultado (não quebra o ranking dos demais) e idempotência (mesma entrada produz sempre a mesma saída).
+
+Nenhum outro ranking de desempenho de aluno existe no sistema — auditado por busca em todo `app/`: as únicas outras ocorrências de "rank"/"ranking" são posição de card de Evento (`/meus-eventos`, prioridade de exibição, não desempenho) e numeração de card de assunto no relatório Raio-X (`/admin/raio-x-provas`, não é ranking de aluno) — nenhuma das duas precisou de alteração.
+
+---
+
+## Fechamento cirúrgico — notificação por revisão + fim do bypass da rota antiga (2026-09-07)
+
+Dois pontos identificados como não aceitáveis na entrega de 2026-09-06 foram corrigidos. **Nenhum outro comportamento foi tocado** — `lib/simuladoScoring.ts` (motor de correção), a serialização por compare-and-swap, `resyncTopCoinEarnings()`, o ranking e o alerta do Banco permanecem exatamente como estavam.
+
+### Ponto 1 — identidade de revisão na notificação
+
+**O gap real:** a chave de idempotência da notificação era `(student_id, type, reference_id)`, com `reference_id = attempt.id`. Isso já distinguia corretamente um retry (upsert na mesma linha, sem duplicar) de uma mudança de **tipo** diferente (anular vs. desanular vs. gabarito, cada um com seu próprio `type`). O que faltava: duas revisões **do mesmo tipo** sobre a mesma tentativa — por exemplo anular a questão X e, depois, anular a questão Y no mesmo Simulado — colidiam no mesmo `(student_id, "question_annulled_result_changed", attempt.id)` e a segunda `upsert` **sobrescrevia silenciosamente** a primeira: dois eventos reais, uma notificação só.
+
+**Correção — identidade de revisão persistida, nunca um timestamp gerado a cada tentativa:**
+
+| Evento | Onde a identidade é gerada e persistida | Quando muda |
+|---|---|---|
+| Anular/desanular (`setSimuladoQuestionAnnulment`) | `simulado_questions.status_revision_id` (`randomUUID()`, gravado no MESMO `UPDATE` condicional que já faz o compare-and-swap do status) | A cada transição de status bem-sucedida (as duas direções) |
+| Mudança de gabarito (`reprocessAfterAnswerKeyChange`) | `questions.answer_key_revision_id` (`randomUUID()`, gravado no MESMO `UPDATE` que já grava `correct_alternative_label`, só quando o valor de fato muda) | A cada mudança real de gabarito |
+
+A identidade é gerada **uma vez, no momento exato da transição/mudança real** (nunca dentro do loop de `reprocessSimulado`, que só recebe `context.revisionId` pronto e nunca chama `randomUUID()` — confirmado por teste). Um retry de `reprocessSimulado`/`reprocessAfterAnswerKeyChange` para a MESMA revisão (o processo caiu no meio e foi chamado de novo, sem que o status/gabarito tenha mudado outra vez) relê o mesmo valor persistido — nunca gera um novo.
+
+`student_notifications.revision_id` (migration `20260907140000_notification_revision_identity.sql`) entra na chave de unicidade: `(student_id, type, reference_id, revision_id)`. `reference_id` continua sendo `attempt.id` (não mudou de significado); `revision_id` é o que diferencia:
+- **retry da mesma revisão** → mesmo `revision_id` → `upsert` colide → 1 notificação;
+- **revisão futura distinta** (mesmo `type` ou não) → `revision_id` novo → linha nova → notificação nova.
+
+Tipos sem conceito de revisão (`event_result_released`, único outro consumidor da tabela) usam uma coluna `NOT NULL DEFAULT` sentinela (UUID zero) em vez de `NULL` — se fosse `NULL`, a semântica padrão do Postgres (`NULL` nunca é igual a `NULL` numa constraint `UNIQUE`) faria cada notificação desse tipo virar uma linha nova a cada liberação de resultado, quebrando a idempotência que já existia. `lib/server/simuladoEvents.ts` foi atualizado só na string do `onConflict` (de 3 para 4 colunas, para bater com o índice novo) — continua sem passar `revision_id`, herdando a sentinela automaticamente. Comportamento desse tipo **inalterado**, confirmado por teste.
+
+**Limitação que existia antes desta correção e que foi eliminada:** anular duas questões diferentes (mesmo `type`) na mesma tentativa não perde mais a primeira notificação.
+
+**Testes (execução real):** `tests/simulado-question-annulment/notification-revision.spec.ts` — retry da mesma revisão (1 notificação), anulação seguida de desanulação (2 notificações distintas), anulação de X seguida de anulação de Y no mesmo Simulado/tentativa (2 notificações — o cenário exato do gap original), gabarito alterado depois (nova notificação), retry após falha parcial simulada (não duplica o que já foi processado, completa só o que faltava), e a sentinela de `event_result_released` preservando o comportamento anterior. Testes de correspondência confirmam que a simulação usa a mesma migration/chave do código real.
+
+### Ponto 2 — rota antiga não contorna mais a reconciliação
+
+**O gap real:** `PUT /api/admin/simulados/[id]/questions` (edição em lote da grade de questões do Simulado) escrevia `simulado_questions.status` num `UPDATE` direto, sem compare-and-swap e sem chamar `reprocessSimulado` — se usada num Simulado que já tivesse resultados, a mudança de status ficava silenciosamente sem reconciliar.
+
+**Correção — delega ao mesmo serviço central, não duplica a lógica:** o `UPDATE` que grava `order_number`/`points` (nunca afeta pontuação, continua direto) foi separado do campo `status`. Quando o item do lote pede um `status` diferente do atual, a rota chama `setSimuladoQuestionAnnulment()` — o MESMO serviço usado pelas rotas dedicadas de Admin e Professor — para aquele vínculo. Uma corrida perdida (`!outcome.ok`, ex.: outra ação já mudou o status entre a leitura e a escrita) não derruba o salvamento em lote inteiro: vira um aviso em `status_change_warnings` na resposta, e o status já reconciliado por quem venceu a corrida prevalece — nunca um `UPDATE` por fora do serviço central.
+
+**Pré-aplicação preservada, sem tratamento especial:** `reprocessSimulado()` já retorna cedo (sem nenhuma tentativa/consulta pesada) quando o Simulado ainda não tem questões ou nenhuma tentativa `completed` — então rotear toda mudança de status por `setSimuladoQuestionAnnulment`, mesmo durante a montagem do Simulado (antes de qualquer aluno responder), não introduz custo real nem N+1. Criação de vínculo **novo** (via `POST` ou como linha nova dentro do próprio `PUT`) continua podendo definir o status inicial diretamente no `INSERT` — não há resultado prévio contra o qual reconciliar uma linha que ainda não existia.
+
+**Auditoria (item 18 do pedido) — busca real no repositório, não uma lista mantida à mão:** todo arquivo sob `app/`/`lib/` que referencia `simulado_questions` foi varrido por um `.update(...)` encadeado diretamente em `.from("simulado_questions")` contendo `status:`. Resultado: só o motor central (`lib/server/simuladoQuestionReprocessing.ts`) escreve `status` fora de um `INSERT` de vínculo novo. Nenhum outro ponto de escrita restante.
+
+**Testes:** `tests/simulado-question-annulment/legacy-route-bypass.spec.ts` — confirma a delegação, a separação order/points × status, o tratamento de corrida perdida como aviso (não erro fatal), o custo zero em pré-aplicação, e a varredura global por regex sobre todos os arquivos `.ts`/`.tsx` de `app/`/`lib/`.
+
+### Validação desta rodada
+
+`npx tsc --noEmit`: limpo. `npm run build`: limpo (mesmas rotas de antes, incluindo as duas de anulação). `eslint` nos arquivos tocados nesta rodada: 0 problemas (a contagem pré-existente do resto do repositório, 484 problemas, é anterior a esta Sprint e não muda). Regressão: as 5 suítes já existentes desta Sprint (concorrência, scoring, ranking, anulação estrutural, notificação — 47 testes) + as 2 novas (`notification-revision`, `legacy-route-bypass` — 15 testes) + as 5 suítes de Evento/professor pedidas explicitamente para reconfirmação (`event-representative-attempt`, `event-operations`, `event-acquisition-session`, `event-professor-assignment`, `professor-management` — 73 testes) = **135/135 passando**, nenhuma regressão.
+
+**Nota corrigida em 2026-09-07 (ver seção seguinte):** a frase que estava aqui ("não existe pending_reconciliation_at nesta arquitetura") descrevia o estado do código nesta data, mas não era uma decisão de design — era um bloqueador real (uma queda de processo no meio de `reprocessSimulado`, depois de o status já ter mudado, deixava resultados parcialmente reconciliados sem nenhuma forma objetiva de detectar ou retomar). Foi corrigido — ver "Marcador objetivo de reconciliação pendente" abaixo.
+
+Nenhuma migration foi aplicada — `supabase/migrations/20260907140000_notification_revision_identity.sql` foi criada e commitada localmente, não executada.
+
+---
+
+## Marcador objetivo de reconciliação pendente — recuperação de falha parcial (2026-09-07)
+
+### O bloqueador real
+
+Até esta correção, `reprocessSimulado()` rodava um `for` sem `try/catch` por tentativa: se a conexão/processo caísse na tentativa 38 de 100, a transição de `simulado_questions.status` **já tinha comitado** (o compare-and-swap é a primeira escrita, antes do reprocessamento), mas as tentativas 38–100 ficavam com o resultado antigo — e nenhuma coluna registrava isso. Pior: uma nova tentativa de anular a MESMA questão era rejeitada de cara como *"esta questão já está anulada"* (a checagem de no-op não distinguia "já anulada e reconciliada" de "já anulada mas com reconciliação incompleta"), então não havia sequer como reexecutar pela rota normal.
+
+### A correção — reaproveitando `lib/simuladoScoring.ts` como fonte única
+
+**Nenhum motor de scoring foi duplicado.** A correção é inteiramente estrutural, dentro de `lib/server/simuladoQuestionReprocessing.ts` — que continua chamando `computeSimuladoAttemptResult()` (`lib/simuladoScoring.ts`) exatamente como antes:
+
+- **`simulado_questions.pending_reconciliation_at`** (coluna nova, migration `20260907130000_simulado_question_annulment_reconciliation.sql`) — marcado (`now()`) no MESMO `UPDATE` que já faz o compare-and-swap do status, junto com `status_revision_id`. Uma pendência agora se identifica por um único `SELECT ... WHERE pending_reconciliation_at IS NOT NULL` — nunca por memória, log, ou o Admin lembrar de agir.
+- **Reaproveita `status_revision_id`** (já existente desde `20260907140000_notification_revision_identity.sql`, criado no fechamento anterior desta mesma Sprint): a revisão que fica pendente é a mesma que identifica as notificações — os dois conceitos foram integrados num só, como pedido explicitamente ("11. REVISION_ID" do pedido).
+- **`processPendingReconciliationForSimulado(supabase, simuladoId)`** (nova) — encontra vínculos pendentes, reivindica cada um por compare-and-swap (pelo valor exato de `pending_reconciliation_at` lido, não só "não nulo" — protege contra duas retomadas concorrentes, seção 35 do pedido), chama `reprocessSimulado()` reaproveitando o MESMO `status_revision_id` (nunca gera um novo), e só limpa a pendência depois que `reprocessSimulado()` retornar sem lançar exceção. Se `reprocessSimulado()` falhar de novo, a pendência permanece — detectável e retomável na próxima chamada.
+- **`getPendingReconciliationSummary(supabase, simuladoId?)`** (nova) — quantas pendências, quais questões, desde quando, qual `status_revision_id`.
+- **`setSimuladoQuestionAnnulment()` ganhou dois comportamentos**: (1) se o vínculo já tem uma pendência de uma transição anterior, tenta concluí-la automaticamente (`processPendingReconciliationForSimulado`) *antes* de aplicar a nova transição — nenhuma revisão nova é aceita em cima de uma antiga inconclusa (seção 19 do pedido); se a tentativa automática também falhar, a nova transição é rejeitada com uma mensagem clara. (2) se `reprocessSimulado()` falhar depois que o status já mudou, a função não propaga o erro como falha genérica — retorna `{ ok: true, pendingReconciliation: true }`: o status mudou de verdade, só o recálculo ficou pendente, recuperável.
+- **Endpoint manual, Admin-only**: `GET`/`POST /api/admin/simulados/[id]/reconciliation` — consulta e retoma pendências, para o caso em que a tentativa automática acima também não conseguir (ex.: indisponibilidade momentânea do banco).
+
+### Bug real encontrado e corrigido ao escrever o teste de falha parcial
+
+Escrever o teste de "falha determinística após a tentativa 37 de 100" (abaixo) expôs um segundo problema, mais sutil, no código já existente: `resyncTopCoinEarnings()` era chamado num loop **separado, ao final** de `reprocessSimulado()`, iterando só sobre os alunos cujo resultado mudou NAQUELA passagem. Se o processo caísse durante o loop principal (antes de alcançar esse loop de TopCoins), os alunos já corrigidos ficavam com TopCoins desatualizados — e um retry posterior nunca mais os resincronizaria, porque `scoreChanged` já dava `false` para eles (o resultado já estava correto) e o retry só resincroniza quem mudou NA PASSAGEM DELE. Ou seja: um subconjunto de alunos podia ficar com TopCoins permanentemente errados após uma falha parcial, mesmo com a nota 100% correta.
+
+**Corrigido:** `resyncTopCoinEarnings()` passou a ser chamado **dentro** do loop por tentativa (deduplicado por aluno via um `Set` local), antes do ponto onde uma falha pode interromper aquela tentativa especificamente — não mais um loop separado ao final. `resyncTopCoinEarnings()` em si **não foi alterado** (continua idempotente, delete+insert do zero a partir de `correct_count` vigente) — só o *lugar* de onde é chamado.
+
+### Testado por execução real — 100 tentativas, falha determinística na 37ª
+
+`tests/simulado-question-annulment/reconciliation-recovery.spec.ts` — transpila e executa (`vm` + `ts.transpileModule`, mesma limitação de `"server-only"` documentada em `concurrency.spec.ts`) o motor real com um Supabase falso em memória (mesma semântica de `UPDATE ... WHERE` fiel ao Postgres já usada em `notification-revision.spec.ts`), `resyncTopCoinEarnings`/`logActivity` substituídos por stubs que só registram chamadas:
+
+- **A:** execução completa sem falha (baseline) — 100/100 processados, sem pendência, TopCoins/notificação 1x por aluno.
+- **B–P (combinado):** falha injetada determinística na 37ª tentativa de 100 — status já `annulled`, `pending_reconciliation_at` preenchido, exatamente 37 resultados corrigidos e 63 ainda antigos (verificado por `SELECT`, nunca por inferência), `getPendingReconciliationSummary` detecta a pendência com o `status_revision_id` certo; retry (`processPendingReconciliationForSimulado`) completa os 100, limpa a pendência, reaproveita o MESMO `status_revision_id`; estado final byte-a-byte idêntico ao baseline (score, `correct_count`, `annulled_count`); nenhum score duplicado; nenhuma notificação duplicada (mesma `revision_id` em todas, nenhum `(student_id, reference_id)` repetido); todo aluno cujo resultado foi corrigido também foi resincronizado — a prova de regressão do bug de TopCoins acima.
+- **J:** desanulação depois da recuperação gera uma revisão nova e notificações novas, distintas da anulação.
+- **K:** uma transição contraditória (desanular) enquanto a anulação anterior está pendente é bloqueada com uma mensagem explícita; assim que a falha para de ocorrer, a PRÓXIMA tentativa da mesma transição já destrava sozinha (self-heal automático, sem endpoint manual).
+- **X:** duas chamadas concorrentes de `processPendingReconciliationForSimulado` para o mesmo Simulado — só uma reconcilia de fato (a outra perde a corrida do compare-and-swap de reivindicação e não reprocessa nada), sem duplicar notificação nem TopCoins.
+
+### Decisão de arquitetura reafirmada
+
+A garantia continua sendo **serialização real (compare-and-swap) + scoring determinístico único em TypeScript (`lib/simuladoScoring.ts`) + idempotência + marcador objetivo de pendência + recuperação segura** — nunca uma transação Postgres monolítica, e nunca uma segunda implementação do scoring em SQL. "Reexecutar tudo" (todas as tentativas elegíveis do Simulado, não só as que faltavam) numa retomada é deliberado e aceitável (seção 14 do pedido): o motor é determinístico, então reprocessar uma tentativa já correta não a altera — só é um trabalho redundante, nunca incorreto.
+
+### Validação desta rodada
+
+`npx tsc --noEmit`: limpo. `npm run build`: limpo (mesmas rotas de antes + `GET`/`POST /api/admin/simulados/[id]/reconciliation`). `eslint` nos arquivos tocados nesta rodada: 0 problemas. Regressão: as suítes desta Sprint (67 testes: scoring, anulação estrutural, concorrência, ranking, notificação por revisão, rota antiga, **+ recovery**) + as 5 suítes de Evento/professor pedidas para reconfirmação (73 testes) = **140/140 passando**, nenhuma regressão.
+
+Migrations pendentes desta Sprint (criadas, **nenhuma aplicada**): `20260907130000_simulado_question_annulment_reconciliation.sql` (nova nesta rodada — `pending_reconciliation_at` é o único campo estrutural realmente novo; o restante normaliza colunas já existentes desde a migration original da tabela) e `20260907140000_notification_revision_identity.sql` (do fechamento anterior). A ordem numérica (130000 antes de 140000, apesar de criada depois) é segura porque ambas usam `add column if not exists`/`create ... if not exists` — comutativas entre si, sem dependência de ordem de execução.
+
+---
+
+## Incidente de truncamento silencioso — carregamento incompleto de `simulado_answers` (2026-09-07)
+
+### O que aconteceu, em produção, real
+
+A migration `20260907130000` foi aplicada manualmente em produção e a questão `ET3582` (3º Simulado de Processo Civil) foi anulada uma única vez pela área do Professor. A transição de status funcionou corretamente (compare-and-swap, `status_revision_id` gerado, `pending_reconciliation_at` marcado e depois limpo com sucesso — nenhuma falha, nenhuma pendência). **Mas o reprocessamento produziu dados errados para 113 dos 135 resultados oficiais já liberados deste Simulado**, com reduções de até 10 pontos.
+
+**Causa raiz, confirmada por auditoria direta do banco:** `reprocessSimulado()` buscava `simulado_answers` de todas as tentativas do Simulado numa única chamada, sem paginação:
+
+```ts
+supabase.from("simulado_answers").select(...).in("attempt_id", attemptIds)
+```
+
+Este Simulado tinha 135 tentativas oficiais × 12 questões ≈ 1620 linhas de resposta — acima do limite padrão de linhas por resposta do PostgREST/Supabase (`max_rows`, tipicamente 1000). A consulta foi **cortada silenciosamente, sem erro** (o Postgres nem chega a saber que só recebeu parte do que pediu — é o PostgREST que limita a resposta HTTP). Para toda resposta que ficou fora do corte, o motor não encontrou entrada no mapa de respostas e classificou a questão como **"em branco"** — mesmo com a resposta real, completa, presente em `simulado_answers`. A questão anulada (`ET3582`) em si sempre ficou correta (crédito integral, bonificação histórica preservada); o dano foi em **outras questões do mesmo Simulado**, sem relação com a anulação.
+
+Auditoria confirmou: nenhuma invariante estrutural foi violada (`score ≤ max_score`, `percentage ≤ 100`, contadores somam o total de questões) — os números ficaram **consistentes entre si, só incorretos**, o que tornou o problema silencioso mesmo para quem olhasse cada resultado isoladamente.
+
+### Por que isso não é o mesmo problema que a recuperação de falha parcial resolve
+
+`pending_reconciliation_at`/CAS/idempotência por `revision_id` protegem contra o processo **cair no meio** do reprocessamento. Aqui o processo **terminou "com sucesso"** — não houve exceção, não houve falha de rede, não houve retry necessário do ponto de vista do mecanismo de recuperação. O bug estava em quais dados o motor sequer *enxergava*, não em uma interrupção do processamento.
+
+### Correção — paginação explícita e determinística, nunca um limite mágico maior
+
+`fetchAllPages()` (nova, privada, em `lib/server/simuladoQuestionReprocessing.ts`) pagina por `.range(from, to)` com `.order("id")` (chave primária — garante que nenhuma linha seja pulada nem duplicada entre páginas) até uma página voltar com menos que 1000 linhas, e confere o total acumulado contra o `count` exato que o Postgres relata na mesma consulta (`{ count: "exact" }`) — se algo ainda assim divergir, lança erro em vez de seguir com dado incompleto (a garantia de recuperação de falha parcial já existente cobre esse erro normalmente: `pending_reconciliation_at` continua marcado, detectável, retomável). Funciona para 100 linhas, 1.000, 20.000 ou qualquer volume futuro — não é "aumentar `.limit()`", é sempre paginar até esgotar. Aplicada às três consultas de `reprocessSimulado()` que escalam com o número de tentativas: `simulado_attempts`, `simulado_answers` e `simulado_results`.
+
+**Distinção importante, auditada e preservada (`lib/simuladoScoring.ts` não foi tocado):** resposta ausente porque a linha existe no banco mas não coube na página é diferente de resposta ausente porque o aluno genuinamente deixou em branco — o modelo de dados já resolve isso: `POST .../attempts/[attemptId]/answers` só grava uma linha em `simulado_answers` quando o aluno realmente seleciona uma alternativa (confirmado em código); branco real nunca teve linha. A defesa de completude, portanto, não compara "tentativas × questões" (isso classificaria brancos reais como corrupção) — compara o total de linhas efetivamente carregadas contra o `count` exato do Postgres para o mesmo filtro, que é imune a essa ambiguidade.
+
+### Reprocessar a MESMA revisão sem gerar uma nova (correção do incidente, ainda não executada em produção)
+
+A revisão `e60acda3-428d-45c6-b669-f1bee17837ea` (a anulação real de `ET3582`) terminou formalmente (`pending_reconciliation_at = null`) com dado incorreto — não é um caso de retomada de pendência. `reconcileCurrentRevision()` (nova) cobre exatamente isso: reprocessa `reprocessSimulado()` reaproveitando um `status_revision_id` já existente, **sem** mudar `status` e **sem** gerar revisão nova — desde que o `status_revision_id` informado ainda seja, no momento da chamada, o vigente naquele vínculo (senão rejeita — protege contra reprocessar por engano uma revisão já superada por uma transição mais recente). Como a notificação e o changelog continuam chaveados pela revisão (não pela execução), reexecutar a mesma revisão depois de corrigida a paginação não duplica nada: os 135 avisos já existentes colidem no mesmo `(student_id, type, reference_id, revision_id)`.
+
+Exposto Admin-only via o endpoint **já existente** `POST /api/admin/simulados/[id]/reconciliation` (nenhuma rota nova): quando o corpo inclui `simulado_question_id` + `expected_revision_id`, delega para `reconcileCurrentRevision()`; sem esses campos, continua o comportamento normal (retomar pendências). Decisão deliberada de não criar um endpoint novo para um caminho raro/incidente — reaproveita a superfície Admin-only já auditada.
+
+### Testado por execução real, na MESMA escala do incidente
+
+`tests/simulado-question-annulment/large-answer-set.spec.ts` — 135 tentativas × 12 questões = 1620 `simulado_answers`, motor real transpilado e executado (mesma limitação de `"server-only"` já documentada):
+1. reproduz o bug controladamente: o padrão antigo (sem `.range()`) contra a mesma fixture retorna só 1000 de 1620 linhas;
+2. o motor atual (`fetchAllPages`) carrega as 1620 completas — `blank_count` continua 0 para os 135, nenhum branco artificial;
+3. tentativas nas posições 1, 50, 84, 85, 100, 135 (cruzando a fronteira de 1000 respostas, por volta da 83ª/84ª tentativa) conferidas individualmente: sempre 12 respostas reais consideradas;
+4. bonificação histórica preservada para 6 alunos-teste espalhados pela fixture, incluindo perto da fronteira de página — sem duplicar, sem perder o crédito;
+5. reexecutar a mesma revisão (`reconcileCurrentRevision`) na mesma escala é idempotente: `resultsChanged: 0` (nada muda de novo, porque já estava certo), notificações não dobram, status e revisão permanecem intactos.
+
+Regressão completa: as suítes desta Sprint (70 testes: scoring, anulação estrutural, concorrência, ranking, notificação por revisão, rota antiga, recovery, **+ 3 de volume**) + as 5 suítes de Evento/professor (73 testes) = **143/143 passando**.
+
+### Outras consultas de volume auditadas, não alteradas (fora do fluxo de reprocessamento)
+
+Buscadas todas as consultas `.select().in(...)` sobre `simulado_answers`/`simulado_attempts`/`simulado_results`/`simulado_event_participants` no repositório. Duas categorias fora do escopo desta correção (mesma classe de risco teórico, mas não fazem parte do fluxo de reprocessamento, e a esta escala atual nenhuma delas passa de algumas centenas de linhas):
+- `app/api/professor/events/[id]/route.ts:50-51` — dashboard do Modo Aula do Professor busca `simulado_answers`/`simulado_results` de todas as tentativas representativas de um Evento (mesmo padrão `.in("attempt_id", ...)` sem `.range()`); escalaria com o número de participantes × questões de um Evento muito grande.
+- `lib/server/simuladoEvents.ts:172` (`releasePendingEventResults`) e `app/api/admin/events/[id]/participants/route.ts` — listam `simulado_event_participants` por evento, uma linha por pessoa (não multiplicado por questão); risco bem mais distante.
+- `app/lib/server/topcoinsSync.ts` (`resyncTopCoinEarnings`) — auditada e **não** é risco: já é escopada por `student_id` + `simulado_id` (as tentativas de UM aluno em UM Simulado), nunca escala com o total de participantes.
+
+Nenhuma dessas foi alterada — não fazem parte direta deste incidente. Registradas aqui para decisão futura, se a escala justificar.
+
+### Estado dos dados de produção
+
+**Nenhum dado de produção foi corrigido nesta rodada.** Os 135 resultados deste Simulado continuam com os números produzidos pelo incidente até que `reconcileCurrentRevision()` seja executado deliberadamente contra produção, em uma etapa controlada separada, depois desta correção estar revisada e no ar. `ET3582` permanece `annulled` (não foi desanulada como parte desta investigação/correção).

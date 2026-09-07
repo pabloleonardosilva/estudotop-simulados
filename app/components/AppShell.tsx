@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Trophy } from "lucide-react";
+import { Menu, RefreshCw, Trophy } from "lucide-react";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import MobileSidebar from "./MobileSidebar";
@@ -23,12 +23,20 @@ type UnseenHelpReply = {
   count: number;
 };
 
+const RESULT_NOTIFICATION_TYPES = [
+  "event_result_released",
+  "question_annulled_result_changed",
+  "question_reactivated_result_changed",
+  "answer_key_changed_result_changed",
+] as const;
+
 type ResultNotification = {
   id: string;
-  type: "event_result_released";
+  type: (typeof RESULT_NOTIFICATION_TYPES)[number];
   title: string;
+  body?: string;
   action_url: string | null;
-  metadata: { event_name?: string; simulado_name?: string } | null;
+  metadata: { event_name?: string; simulado_name?: string; previous_score?: number; new_score?: number } | null;
 };
 
 const JOURNEY_EXPLAINER_AUTO_COUNT_LIMIT = 10;
@@ -234,7 +242,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const res = await fetch("/api/student/notifications", { headers: { Authorization: `Bearer ${session.access_token}` } });
         const json = await res.json().catch(() => ({}));
         if (cancelled || !res.ok || !json.ok) return;
-        if (json.notification?.type === "event_result_released") {
+        if (RESULT_NOTIFICATION_TYPES.includes(json.notification?.type)) {
           setJourneyExplainerOpen(false);
           setResultNotification(json.notification as ResultNotification);
         }
@@ -440,9 +448,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           open={Boolean(resultNotification)}
           theme="light"
           tone="success"
-          icon={<Trophy size={28} />}
+          icon={resultNotification?.type === "event_result_released" ? <Trophy size={28} /> : <RefreshCw size={28} />}
           title={resultNotification?.title || "Seu resultado foi liberado"}
-          message="O professor liberou o resultado do seu Evento de Simulado. Você já pode consultar seu desempenho completo."
+          message={resultNotification?.body || "O professor liberou o resultado do seu Evento de Simulado. Você já pode consultar seu desempenho completo."}
           dismissible={false}
           onClose={() => undefined}
           actions={
@@ -458,9 +466,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           {resultNotification && (
             <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">Evento de Simulado</p>
-              <p className="mt-2 font-semibold text-slate-900">{resultNotification.metadata?.event_name || "Evento"}</p>
-              <p className="mt-1 text-sm text-slate-600">{resultNotification.metadata?.simulado_name || "Simulado"}</p>
+              {resultNotification.type === "event_result_released" ? (
+                <>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">Evento de Simulado</p>
+                  <p className="mt-2 font-semibold text-slate-900">{resultNotification.metadata?.event_name || "Evento"}</p>
+                  <p className="mt-1 text-sm text-slate-600">{resultNotification.metadata?.simulado_name || "Simulado"}</p>
+                </>
+              ) : (
+                resultNotification.metadata?.previous_score !== undefined &&
+                resultNotification.metadata?.new_score !== undefined &&
+                resultNotification.metadata.previous_score !== resultNotification.metadata.new_score && (
+                  <>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">Sua nota</p>
+                    <p className="mt-2 font-semibold text-slate-900">{resultNotification.metadata.previous_score} → {resultNotification.metadata.new_score}</p>
+                  </>
+                )
+              )}
               {resultNotificationError && <p className="mt-3 text-sm font-semibold text-red-600">{resultNotificationError}</p>}
             </div>
           )}

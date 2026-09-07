@@ -189,7 +189,13 @@ export async function releasePendingEventResults(supabase: SupabaseClient, event
         read_at: null,
         dismissed_at: null,
         created_at: releasedAt,
-      }, { onConflict: "student_id,type,reference_id" });
+      // revision_id não é passado de propósito: este tipo não tem conceito de
+      // revisão (um resultado de Evento só é liberado uma vez por
+      // participante) — a coluna assume o valor padrão (sentinela) no banco,
+      // preservando exatamente a idempotência de 3 colunas que já existia
+      // antes de revision_id ser adicionado ao índice único (ver
+      // supabase/migrations/20260907140000_notification_revision_identity.sql).
+      }, { onConflict: "student_id,type,reference_id,revision_id" });
       if (notificationError) {
         void logSystemError({ source: "simulado_event.result_release_notification", error: notificationError, request, metadata: { event_id: eventId, participant_id: participant.id, student_id: participant.student_id, notification_type: "event_result_released" } });
       }

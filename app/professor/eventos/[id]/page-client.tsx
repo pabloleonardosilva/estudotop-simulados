@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownAZ, ArrowLeft, ArrowRight, BarChart3, CheckCircle2, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Circle, Clock3, Eye, EyeOff, Hourglass, Loader2, Medal, Minus, PlayCircle, Plus, Presentation, Radio, Search, SearchX, ShieldCheck, Target, Trophy, Type, Unlock, UserRound, Users, X, XCircle } from "lucide-react";
+import { ArrowDownAZ, ArrowLeft, ArrowRight, Ban, BarChart3, CheckCircle2, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Circle, Clock3, Eye, EyeOff, Hourglass, Loader2, Medal, Minus, PlayCircle, Plus, Presentation, Radio, RotateCcw, Search, SearchX, ShieldCheck, Target, Trophy, Type, Unlock, UserRound, Users, X, XCircle } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
+import { rankedParticipants } from "@/lib/eventRanking";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
@@ -55,17 +56,6 @@ function formatTime(seconds: number) { return formatTimeMs(Number(seconds || 0) 
 function formatPercent(value: number | null) { return value === null ? "—" : `${value.toFixed(1).replace(".0", "").replace(".", ",")}%`; }
 function formatScore(value: number | null) { return value === null ? "—" : value.toLocaleString("pt-BR", { maximumFractionDigits: 2 }); }
 
-function rankedParticipants(participants: Participant[]) {
-  const ranked = participants.filter((item) => item.result).sort((a, b) => Number(b.result?.correct_count || 0) - Number(a.result?.correct_count || 0) || Number(a.result?.time_spent_ms || 0) - Number(b.result?.time_spent_ms || 0) || a.name.localeCompare(b.name, "pt-BR"));
-  const tieCount = new Map<string, number>();
-  ranked.forEach((item) => { const key = `${item.result?.correct_count}:${item.result?.time_spent_ms}`; tieCount.set(key, (tieCount.get(key) || 0) + 1); });
-  const ranks = new Map<string, { rank: number; tied: boolean }>();
-  let lastKey = "";
-  let rank = 0;
-  ranked.forEach((item, index) => { const key = `${item.result?.correct_count}:${item.result?.time_spent_ms}`; if (key !== lastKey) rank = index + 1; ranks.set(item.id, { rank, tied: (tieCount.get(key) || 0) > 1 }); lastKey = key; });
-  return participants.map((item) => ({ ...item, rank: ranks.get(item.id)?.rank || null, rank_tied: ranks.get(item.id)?.tied || false })).sort((a, b) => a.rank !== null && b.rank !== null ? a.rank - b.rank || a.name.localeCompare(b.name, "pt-BR") : a.rank !== null ? -1 : b.rank !== null ? 1 : a.name.localeCompare(b.name, "pt-BR"));
-}
-
 export default function ProfessorEventoClient({ id }: { id: string }) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [message, setMessage] = useState("");
@@ -74,6 +64,7 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
   const [showQuestionData, setShowQuestionData] = useState(false);
   const [questionFontScale, setQuestionFontScale] = useState(1);
   const [eliminatedQuestionAlternatives, setEliminatedQuestionAlternatives] = useState<Record<string, string[]>>({});
+  const [annulmentBusy, setAnnulmentBusy] = useState(false);
   const [participantSearch, setParticipantSearch] = useState("");
   const [participantFilter, setParticipantFilter] = useState("all");
   const [participantSort, setParticipantSort] = useState<"score" | "alphabetical">("score");
@@ -113,6 +104,31 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
       return { ok: false, message: actionMessage };
     } finally {
       setControlBusy(false);
+    }
+  }
+  async function toggleQuestionAnnulment(relationId: string, targetStatus: "active" | "annulled") {
+    const confirmed = window.confirm(
+      targetStatus === "annulled"
+        ? "Anular esta questão? Todos os participantes concluídos deste Simulado passam a receber o ponto integral dela, e os resultados afetados serão recalculados imediatamente."
+        : "Desanular esta questão? Os resultados serão recalculados considerando a resposta original de cada aluno contra o gabarito vigente — isso pode reduzir a nota de quem havia recebido o ponto pela anulação.",
+    );
+    if (!confirmed) return;
+    const { data: auth } = await supabase.auth.getSession();
+    if (!auth.session) { setMessage("Sua sessão expirou. Entre novamente para continuar."); return; }
+    setAnnulmentBusy(true);
+    try {
+      const response = await fetch(`/api/professor/events/${id}/questions/${relationId}/annul`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.session.access_token}` },
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      const json = await response.json() as { ok?: boolean; message?: string; results_changed?: number; attempts_reprocessed?: number };
+      setMessage(json.ok ? `${json.message} (${json.results_changed ?? 0} de ${json.attempts_reprocessed ?? 0} resultado(s) alterado(s).)` : (json.message || "Não foi possível concluir a operação."));
+      if (json.ok) await load();
+    } catch {
+      setMessage("Não foi possível comunicar com o servidor. Tente novamente.");
+    } finally {
+      setAnnulmentBusy(false);
     }
   }
   function selectQuestion(index: number) { setQuestionIndex(index); setShowQuestionData(false); }
@@ -246,7 +262,7 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
       {current && currentQuestion ? <div><div className="mt-6 flex gap-3.5 overflow-x-auto pb-2">{data.questions.map((question, index) => <button key={question.id} type="button" onClick={() => selectQuestion(index)} className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border text-[15px] font-bold transition duration-200 hover:-translate-y-px ${index === safeQuestionIndex ? "border-orange-400/70 bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 text-white shadow-[0_14px_30px_rgba(249,115,22,0.26)]" : "border-slate-300/80 bg-white/90 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.04)] hover:border-orange-300"}`}>{index + 1}</button>)}</div>
         <div className="mt-5"><QuestionDisplayCard question={currentQuestion} orderLabel={`Questão ${current.order_number}`} showCorrect={showQuestionData && !isAnnulled} markIncorrect={showQuestionData && !isAnnulled} presentationMode presentationFontScale={questionFontScale} eliminatedAlternativeIds={eliminatedQuestionAlternatives[currentQuestion.id] || []} onToggleEliminate={(alternativeId) => toggleQuestionAlternative(currentQuestion.id, alternativeId)} presentationControls={<div className="inline-flex items-center gap-1 rounded-[14px] border border-slate-300/80 bg-white/90 p-1.5 shadow-[0_8px_20px_rgba(15,23,42,0.045)]"><span className="flex h-9 items-center gap-2 px-2 text-xs font-bold text-slate-500"><Type size={16} /> Texto</span><button type="button" aria-label="Diminuir tamanho do texto" title="Diminuir texto" disabled={questionFontScale === 0} onClick={() => setQuestionFontScale((value) => Math.max(0, value - 1))} className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-35"><Minus size={17} /></button><span className="min-w-8 text-center text-xs font-bold tabular-nums text-slate-600">{questionFontScale + 1}/4</span><button type="button" aria-label="Aumentar tamanho do texto" title="Aumentar texto" disabled={questionFontScale === 3} onClick={() => setQuestionFontScale((value) => Math.min(3, value + 1))} className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-35"><Plus size={17} /></button></div>} extraBadges={isAnnulled ? <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">Questão anulada</span> : undefined} renderAlternativeMeta={showQuestionData ? (alternative) => { const count = current.alternative_counts[alternative.id || ""] || 0; const percentage = current.answered ? count / current.answered * 100 : 0; return <AlternativeDistribution count={count} percentage={percentage} isCorrect={Boolean(alternative.is_correct)} />; } : undefined} /></div>
         {showQuestionData && <div className="mt-[22px] rounded-[22px] border border-slate-200/90 bg-white/90 p-[18px] shadow-[0_18px_46px_rgba(15,23,42,0.055)]"><div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-5"><CompactMetric label="Total considerado" value={current.total_considered} icon={<Users size={21} />} iconTone="bg-blue-50 text-blue-600" /><CompactMetric label="Acertos" value={isAnnulled ? "—" : current.correct} tone="text-emerald-600" icon={<CheckCircle2 size={21} />} iconTone="bg-emerald-50 text-emerald-600" /><CompactMetric label="Erros" value={isAnnulled ? "—" : current.wrong} tone="text-red-600" icon={<XCircle size={21} />} iconTone="bg-red-50 text-red-600" /><CompactMetric label="Brancos" value={current.blank} icon={<Circle size={21} />} iconTone="bg-slate-100 text-slate-600" /><CompactMetric label="Tempo médio" value={formatTime(current.average_time_seconds)} icon={<Clock3 size={21} />} iconTone="bg-violet-50 text-violet-600" /></div></div>}
-        <div className="mt-[22px] grid gap-4 sm:grid-cols-[1fr_1.2fr_1fr]"><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === 0} onClick={() => selectQuestion(safeQuestionIndex - 1)} icon={<ArrowLeft size={18} />}>Anterior</PremiumButton><PremiumButton variant={showQuestionData ? "secondary" : "primary"} className={`min-h-14 rounded-2xl ${showQuestionData ? "border-slate-800 text-slate-900" : "shadow-[0_18px_38px_rgba(249,115,22,0.30)]"}`} onClick={() => setShowQuestionData((value) => !value)} icon={showQuestionData ? <EyeOff size={18} /> : <Eye size={18} />}>{showQuestionData ? "Ocultar dados" : "Exibir dados"}</PremiumButton><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === data.questions.length - 1} onClick={() => selectQuestion(safeQuestionIndex + 1)}>Próxima <ArrowRight size={18} /></PremiumButton></div>
+        <div className="mt-[22px] grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.2fr_1fr_1fr]"><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === 0} onClick={() => selectQuestion(safeQuestionIndex - 1)} icon={<ArrowLeft size={18} />}>Anterior</PremiumButton><PremiumButton variant={showQuestionData ? "secondary" : "primary"} className={`min-h-14 rounded-2xl ${showQuestionData ? "border-slate-800 text-slate-900" : "shadow-[0_18px_38px_rgba(249,115,22,0.30)]"}`} onClick={() => setShowQuestionData((value) => !value)} icon={showQuestionData ? <EyeOff size={18} /> : <Eye size={18} />}>{showQuestionData ? "Ocultar dados" : "Exibir dados"}</PremiumButton><PremiumButton variant="secondary" className="min-h-14 rounded-2xl border-amber-300 text-amber-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={annulmentBusy} onClick={() => void toggleQuestionAnnulment(current.id, isAnnulled ? "active" : "annulled")} icon={isAnnulled ? <RotateCcw size={18} /> : <Ban size={18} />}>{isAnnulled ? "Desanular questão" : "Anular questão"}</PremiumButton><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === data.questions.length - 1} onClick={() => selectQuestion(safeQuestionIndex + 1)}>Próxima <ArrowRight size={18} /></PremiumButton></div>
       </div> : <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-white/90 p-10 text-center text-slate-500">Este Evento ainda não possui questões disponíveis para revisão.</div>}
     </section>}
   </div>{selected && <ParticipantDetailModal participant={selected} onClose={() => setSelectedParticipantId(null)} />}</main>;

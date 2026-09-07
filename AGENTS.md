@@ -370,8 +370,8 @@ Toda tabela tem `created_at timestamptz not null default now()` e `updated_at ti
 - Uma tentativa só conta para o limite quando `answered_count / total_questions > 0.5`.
 - Pode haver no máximo uma tentativa `in_progress` por aluno por simulado (índice único parcial).
 - O modo preview nunca grava em `simulado_attempts`, `simulado_answers` ou `simulado_results`.
-- A correção usa o `id` da alternativa, nunca sua posição visual ou label.
-- `simulado_results` armazena `result_snapshot` (JSONB) para que edições futuras nas questões não alterem resultados históricos.
+- A correção usa o `id` da alternativa quando ele resolve para uma alternativa atual; nunca a posição visual. Para reprocessamento retroativo (dias/semanas depois, possivelmente após a questão ter sido editada — o que apaga e recria `question_alternatives` com novos UUIDs), o `label` (A/B/C/D/E) é o identificador estável usado como critério — ver `lib/simuladoScoring.ts`.
+- `simulado_results` armazena `result_snapshot` (JSONB) para que **edições editoriais comuns** (enunciado, comentário, explicação, formatação, assunto, banca, órgão) nunca alterem resultados históricos. Há três exceções pedagógicas que **propagam e recalculam deliberadamente**: alteração de gabarito, anulação de questão no Simulado e desanulação — ver `lib/server/simuladoQuestionReprocessing.ts` e a matriz em `docs/Sprint-resultados.md`. O reprocessamento nunca soma/subtrai em cima do resultado anterior: sempre reconstrói do zero a partir da resposta originalmente selecionada + gabarito/status vigentes, o que impede dupla bonificação mesmo depois de uma correção manual de dados.
 - Simulados não têm coluna `jornada_id`. A associação a jornadas usa a futura tabela `jornada_simulados`.
 - `navigation_type = 'open'` → aluno navega livremente, confirma tudo ao final. `'closed'` → confirma cada resposta antes de avançar.
 

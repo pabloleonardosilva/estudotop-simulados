@@ -1578,3 +1578,85 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [ ] **Pendência de produto registrada, não implementada nesta correção:** o limite máximo de tentativas (`max_attempts`) hoje pertence ao Simulado; há decisão futura de movê-lo para Jornada/Evento, preservando a semântica de consumo/resultado oficial descrita acima. Fora do escopo desta Sprint.
 - [x] Validado: `npx tsc --noEmit` limpo, `eslint` limpo nos arquivos alterados. `npm run build` completo — ver resultado nesta mesma entrega.
 - [ ] Não commitado, não publicado nesta entrega.
+
+## Anulação/desanulação de questão e propagação de gabarito — 2026-09-06
+
+**Implementado localmente, com testes; aguardando commit.**
+
+- [x] **Regra final (resolve contradição entre `docs/modules/MASTER_SIMULADOS.md` e a afirmação de que `result_snapshot` nunca muda):** edições editoriais comuns não recalculam nada; alterar gabarito, anular questão no Simulado e desanular são as três exceções que propagam e recalculam — matriz completa em `docs/Sprint-resultados.md`.
+- [x] **Banco ≠ Simulado:** `questions.status` (editorial) nunca propaga para `simulado_questions.status` (operacional) em nenhuma direção — confirmado por auditoria de código antes de implementar, e por teste automatizado.
+- [x] Motor de correção único: `lib/simuladoScoring.ts` (puro, testável, usado pelo submit e pelo reprocessamento). Nunca soma/subtrai em cima do resultado anterior; nunca trata `is_correct` armazenado como fonte de verdade — só a resposta originalmente selecionada + gabarito/status vigentes. Isso garante, por construção, que a bonificação manual de dados aplicada antes desta funcionalidade existir (questão `ET3582`, Evento "3º Simulado de Processo Civil") não pode ser duplicada quando essa mesma questão for anulada oficialmente.
+- [x] Orquestração: `lib/server/simuladoQuestionReprocessing.ts`, novos endpoints Admin (`/api/admin/simulados/[id]/questions/[relationId]/annul`) e Professor (`/api/professor/events/[id]/questions/[relationId]/annul`, escopado ao Evento gerenciado).
+- [x] Corrigidos dois bugs reais encontrados na auditoria: `PATCH /api/admin/questions/[id]/answer` alterava gabarito sem reprocessar nada; `POST .../attempts/[attemptId]/answers` só bloqueava resposta a questão anulada no client, nunca no servidor.
+- [x] Removida `app/lib/utils/recalculate-question-results.ts` (função antiga de reprocessamento por gabarito, falha: não atualizava `simulado_answers.is_correct`, usava snapshot cacheado como fonte).
+- [x] UI: botão Anular/Desanular no editor Admin do Simulado e no Modo Aula do Professor; resultado do aluno mostra "QUESTÃO ANULADA" em vez de certa/errada; `AppShell` reconhece os 3 novos tipos de notificação no mesmo mecanismo já usado por `event_result_released`.
+- [x] TopCoins reconciliados via `resyncTopCoinEarnings()` existente (idempotente) — nenhuma lógica nova de moedas criada.
+- [x] Testes: `tests/simulado-scoring/simulado-scoring.spec.ts` (16, execução real) + `tests/simulado-question-annulment/simulado-question-annulment.spec.ts` (18, auditoria estrutural). Regressão completa: 107/107 passando (todas as suítes de Evento/tentativa representativa/professor + as novas).
+- [x] **Nenhum dado alterado em produção nesta entrega** — a auditoria da bonificação histórica foi só leitura (SELECT), usada como prova de regressão para os testes.
+- [x] Nenhuma migration necessária — `simulado_questions.annulled_at/annulled_by/annulment_reason` e `simulado_results.had_live_rule_change/last_reprocessed_at/reprocess_reason` já existiam desde a migration original da tabela, sem código usando-os até agora.
+- [x] Validado: `npx tsc --noEmit` limpo, `eslint` limpo, `npm run build` limpo (101/101 páginas).
+- [ ] **Bloqueador pré-existente, não introduzido por esta Sprint:** `app/simulados/[id]/editar/page-client.tsx` já tinha 2 erros de lint (`react-hooks/set-state-in-effect`) antes desta entrega, em `useEffect`s não relacionados às mudanças feitas aqui — confirmado comparando com o HEAD anterior. Fora do escopo desta correção.
+- [ ] Não commitado, não publicado nesta entrega.
+
+## Fechamento — atomicidade, concorrência, alerta no Banco, ranking (2026-09-06)
+
+**Implementado localmente, com testes; aguardando commit.**
+
+- [x] **Atomicidade:** decisão explícita de **não** duplicar `lib/simuladoScoring.ts` em SQL/RPC (o Supabase usa connection pooling, então só uma transação de chamada única daria atomicidade real, forçando essa duplicação) — em vez disso, serialização real (compare-and-swap nativo do Postgres/MVCC) + idempotência recuperável (uma falha no meio nunca corrompe dado, só deixa "ainda não recalculado", corrigível reexecutando). Decisão registrada e explicada em `docs/Sprint-resultados.md`.
+- [x] **Bug real corrigido:** `setSimuladoQuestionAnnulment()` não verificava se o `UPDATE` condicional de fato afetou uma linha — a requisição perdedora de uma corrida acreditava erroneamente ter aplicado a transição. Corrigido com `.select("id").maybeSingle()` + rejeição explícita quando `null`.
+- [x] **Teste real de concorrência** (execução via `Promise.all`, não só leitura de código): `tests/simulado-question-annulment/concurrency.spec.ts` — anular×anular, desanular×desanular, anular×desanular, 10 repetições sem falha. Simulação fiel da semântica Postgres (documentada como tal — banco de teste/homologação não disponível nesta sessão sem aplicar migration ou tocar produção, ambos fora de escopo).
+- [x] **Alerta no Banco de Questões** (`/questoes`): resumo agregado "⚠ Anulada em N simulado(s)", derivado do `select` já existente (sem N+1). O selo "Anulada" por Simulado individual já existia antes desta Sprint; só faltava o resumo agregado.
+- [x] **Teste real de ranking**: `tests/simulado-question-annulment/ranking.spec.ts` — `rankedParticipants()` extraída para `lib/eventRanking.ts` (mesma lógica, só movida) para ser testável por execução; cenário completo do pedido + empate real + idempotência.
+- [x] Testes da bonificação histórica (ET3582) reexecutados sem alteração — continuam protegidos.
+- [x] Regressão completa: **119/119 passando** (todas as suítes anteriores + concorrência + ranking + alerta do Banco).
+- [x] Validado: `npx tsc --noEmit` limpo, `eslint` limpo nos arquivos desta rodada, `npm run build` limpo.
+- [ ] **Bloqueadores pré-existentes reconfirmados, não introduzidos por esta Sprint:** os mesmos 2 erros em `app/simulados/[id]/editar/page-client.tsx`; e 71 problemas (52 erros, 19 warnings) pré-existentes em `app/questoes/page-client.tsx`, confirmados idênticos comparando com o HEAD anterior à mudança.
+- [ ] Não commitado, não publicado nesta entrega.
+
+## Fechamento cirúrgico — notificação por revisão + fim do bypass da rota antiga — 2026-09-07
+
+**Implementado localmente, com testes; aguardando commit e aplicação da migration.**
+
+- [x] **Ponto 1 corrigido:** `student_notifications.revision_id` (nova coluna, entra na chave de unicidade `(student_id, type, reference_id, revision_id)`) — retry da mesma revisão não duplica; uma revisão futura distinta sobre a mesma tentativa, mesmo com o mesmo `type` (ex.: anular a questão X e depois a questão Y no mesmo Simulado), agora gera uma notificação nova em vez de sobrescrever silenciosamente a anterior (gap real da entrega de 2026-09-06). Identidade gerada uma única vez, no momento exato da transição/mudança (`simulado_questions.status_revision_id`, `questions.answer_key_revision_id`) — nunca um timestamp gerado a cada tentativa de reprocessamento. `event_result_released` preservado via sentinela `NOT NULL DEFAULT` (não `NULL`, que quebraria a idempotência existente desse tipo).
+- [x] **Ponto 2 corrigido:** `PUT /api/admin/simulados/[id]/questions` não escreve mais `simulado_questions.status` diretamente — passou a chamar `setSimuladoQuestionAnnulment()`, o mesmo serviço central das rotas dedicadas de Admin/Professor. Corrida perdida vira aviso (`status_change_warnings`), nunca um `UPDATE` por fora do serviço. Pré-aplicação (Simulado ainda sem resultados) continua sem custo real, porque `reprocessSimulado()` já retorna cedo quando não há tentativas `completed`.
+- [x] **Auditoria completa (varredura real, não lista mantida à mão):** todo arquivo sob `app/`/`lib/` que referencia `simulado_questions` foi varrido por escrita de `status` fora de um `INSERT` de vínculo novo — nenhum outro ponto de escrita restante além do motor central.
+- [x] Migration nova: `supabase/migrations/20260907140000_notification_revision_identity.sql` (`status_revision_id`, `answer_key_revision_id`, `revision_id` + índice único de 4 colunas) — **criada, não aplicada**.
+- [x] Testes novos: `tests/simulado-question-annulment/notification-revision.spec.ts` (6 casos) e `tests/simulado-question-annulment/legacy-route-bypass.spec.ts` (6 casos).
+- [x] Regressão completa desta rodada: as 5 suítes já existentes desta Sprint + as 2 novas (62 testes em `tests/simulado-question-annulment` + `tests/simulado-scoring`) + as 5 suítes de Evento/professor explicitamente pedidas para reconfirmação (73 testes) = **135/135 passando**.
+- [x] Validado: `npx tsc --noEmit` limpo, `npm run build` limpo (mesmas rotas de antes), `eslint` nos arquivos tocados nesta rodada: 0 problemas.
+- [ ] Nenhuma migration aplicada remotamente. Nenhum dado de produção alterado. Não commitado, não publicado, não deployado.
+
+## Recuperação de falha parcial — pending_reconciliation_at portado para a main — 2026-09-07
+
+**Implementado localmente, com testes; aguardando commit e aplicação da migration.**
+
+- [x] **Bloqueador real fechado:** antes desta correção, uma queda de processo no meio de `reprocessSimulado()` (ex.: na tentativa 37 de 100) deixava `simulado_questions.status` já mudado mas resultados parcialmente reconciliados, sem nenhum marcador objetivo de pendência — e uma nova tentativa de anular a mesma questão era rejeitada como no-op ("já está anulada"), sem retomar o que faltava.
+- [x] `simulado_questions.pending_reconciliation_at` (nova coluna) marcado no MESMO `UPDATE` do compare-and-swap de status, junto com `status_revision_id` (reaproveitado, não uma segunda identidade) — limpo só depois que o reprocessamento terminar com sucesso.
+- [x] `processPendingReconciliationForSimulado()`/`getPendingReconciliationSummary()` novas em `lib/server/simuladoQuestionReprocessing.ts`; `GET`/`POST /api/admin/simulados/[id]/reconciliation` novo, Admin-only.
+- [x] `setSimuladoQuestionAnnulment()` tenta concluir automaticamente qualquer pendência antes de aceitar uma nova transição contraditória (nunca empilha revisões inconclusas); uma falha do reprocessamento depois que o status já mudou não é mais reportada como erro genérico — vira `pendingReconciliation: true`, recuperável.
+- [x] **Bug real corrigido ao testar:** `resyncTopCoinEarnings()` rodava num loop separado ao final de `reprocessSimulado()` — uma falha no meio do loop principal deixava alunos já corrigidos sem resync, e o retry nunca mais tentava para eles (o resultado já parecia correto). Corrigido: resync agora roda dentro do loop, por tentativa, deduplicado por aluno, antes do ponto onde a falha pode interromper aquela tentativa.
+- [x] Nenhum motor de scoring duplicado — `lib/simuladoScoring.ts` continua a única fonte, inalterado.
+- [x] Migration nova: `supabase/migrations/20260907130000_simulado_question_annulment_reconciliation.sql` (`pending_reconciliation_at` é o único campo estrutural novo; o restante normaliza colunas já existentes) — **criada, não aplicada**. Ordem numérica (130000 antes da já existente 140000) segura: ambas usam `add column if not exists`, comutativas.
+- [x] Teste novo, execução real (transpila e roda o motor real com Supabase falso em memória): `tests/simulado-question-annulment/reconciliation-recovery.spec.ts` — 5 testes cobrindo execução sem falha (baseline), falha determinística na 37ª de 100 tentativas + retry + estado final idêntico ao baseline, nova revisão após recuperação, bloqueio de transição contraditória com self-heal automático, e recovery concorrente.
+- [x] Regressão completa: 67 testes em `tests/simulado-question-annulment` + `tests/simulado-scoring` (62 anteriores + 5 novos de recovery) + 73 testes das suítes de Evento/professor explicitamente pedidas para reconfirmação = **140/140 passando**.
+- [x] Validado: `npx tsc --noEmit` limpo, `npm run build` limpo, `eslint` nos arquivos tocados nesta rodada: 0 problemas.
+- [x] Busca por `hotmart`/`HOTTOK` no diff desta rodada: zero ocorrências. Nenhum código da worktree `Sistema`/branch `hotmart-homologacao` foi copiado — só usada como referência de leitura para os conceitos (marcador de pendência, retomada, idempotência).
+- [ ] Nenhuma migration aplicada remotamente. Nenhum dado de produção alterado. Não commitado, não publicado, não deployado.
+
+## Incidente de truncamento silencioso de simulado_answers — corrigido no código, dados de produção pendentes — 2026-09-07
+
+**Implementado localmente, com testes; aguardando commit. Dados de produção deste incidente ainda NÃO corrigidos — etapa controlada separada.**
+
+- [x] **Incidente real confirmado em produção:** a anulação real da questão `ET3582` (3º Simulado de Processo Civil, `event_id=6e1acbae-…`) reduziu incorretamente a nota de 113 dos 135 resultados oficiais já liberados deste Simulado (maior redução: −10 pontos). A questão anulada em si ficou correta; o dano foi em outras questões, sem relação com a anulação.
+- [x] **Causa raiz confirmada:** `reprocessSimulado()` buscava `simulado_answers` de todas as tentativas do Simulado numa única consulta sem paginação. 135 tentativas × 12 questões ≈ 1620 linhas excederam o limite padrão de resposta do PostgREST/Supabase (tipicamente 1000), cortado **silenciosamente, sem erro**. Respostas reais e presentes no banco viraram "em branco" para o motor.
+- [x] **Corrigido:** `fetchAllPages()` (nova, privada) pagina por `.range()` com `.order("id")` (determinístico) até esgotar, conferindo o total carregado contra o `count` exato do Postgres — nunca um `.limit()` maior, funciona para qualquer volume futuro. Aplicada às 3 consultas do motor que escalam com tentativas (`simulado_attempts`, `simulado_answers`, `simulado_results`).
+- [x] Distinção preservada, auditada no modelo de dados: branco real (aluno nunca respondeu) nunca tem linha em `simulado_answers` — confirmado em `POST .../attempts/[attemptId]/answers`. A defesa de completude compara linhas carregadas × `count` exato, nunca "tentativas × questões" (que classificaria brancos reais como corrupção).
+- [x] **`reconcileCurrentRevision()` (nova):** reprocessa uma revisão já concluída (`pending_reconciliation_at = null`) reaproveitando o `status_revision_id` vigente — sem mudar `status`, sem gerar revisão nova. Valida que a revisão informada ainda é a vigente no banco antes de agir (rejeita revisão superada). Exposta pelo endpoint **já existente** `POST /api/admin/simulados/[id]/reconciliation` (campos opcionais `simulado_question_id` + `expected_revision_id`) — nenhuma rota nova.
+- [x] `lib/simuladoScoring.ts` não foi alterado. Fallback ID→LABEL (auditado em rodada anterior) não foi tocado — não era a causa.
+- [x] Teste novo, execução real, mesma escala do incidente: `tests/simulado-question-annulment/large-answer-set.spec.ts` — 135×12=1620 respostas; reproduz o corte de 1000 linhas do padrão antigo; prova que o motor atual carrega as 1620 completas sem branco artificial; confere tentativas nas posições 1/50/84/85/100/135 (cruzando a fronteira de página); bonificação histórica preservada; reexecução da mesma revisão idempotente.
+- [x] Outras consultas de volume auditadas (não alteradas, fora do fluxo de reprocessamento): `app/api/professor/events/[id]/route.ts` (dashboard do Modo Aula, mesmo padrão `.in()` sem `.range()` sobre `simulado_answers`/`simulado_results` — risco real em Eventos muito grandes, não corrigido nesta rodada); listagens de `simulado_event_participants` (1 linha/pessoa, risco mais distante); `resyncTopCoinEarnings()` auditada e confirmada segura (escopada por aluno+simulado, nunca escala com o total de participantes).
+- [x] Regressão completa: 70 testes em `tests/simulado-question-annulment` + `tests/simulado-scoring` (67 anteriores + 3 novos de volume) + 73 testes das suítes de Evento/professor = **143/143 passando**.
+- [x] Validado: `npx tsc --noEmit` limpo, `npm run build` limpo, `eslint` nos arquivos tocados nesta rodada: 0 problemas.
+- [x] Busca por `hotmart`/`HOTTOK` no diff: zero ocorrências.
+- [ ] **BLOQUEADOR para homologação:** os 135 resultados deste Simulado em produção continuam com os números incorretos produzidos pelo incidente até `reconcileCurrentRevision()` ser executado deliberadamente contra produção — não feito nesta rodada, por instrução explícita. `ET3582` permanece `annulled`.
+- [ ] Nenhuma migration aplicada remotamente. Nenhum dado de produção alterado. Não commitado, não publicado, não deployado.

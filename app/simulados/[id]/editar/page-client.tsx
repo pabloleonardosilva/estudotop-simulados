@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Ban,
   BarChart3,
   Check,
   CheckCircle2,
@@ -802,6 +803,41 @@ export default function EditarSimuladoClient({
     }
   }
 
+  async function toggleAnnulment(relation: SimuladoQuestion) {
+    const targetStatus = relation.status === "annulled" ? "active" : "annulled";
+    const confirmed = window.confirm(
+      targetStatus === "annulled"
+        ? "Anular esta questão? Todos os participantes concluídos deste Simulado passam a receber o ponto integral dela, e os resultados afetados serão recalculados imediatamente."
+        : "Desanular esta questão? Os resultados serão recalculados considerando a resposta original de cada aluno contra o gabarito vigente — isso pode reduzir a nota de quem havia recebido o ponto pela anulação.",
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      const response = await adminFetch(`/api/admin/simulados/${simulado.id}/questions/${relation.id}/annul`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || "Erro ao atualizar a anulação da questão.");
+      setRelations((current) => current.map((item) => (item.id === relation.id ? { ...item, status: targetStatus } : item)));
+      setFeedback({
+        type: "success",
+        title: targetStatus === "annulled" ? "Questão anulada" : "Questão desanulada",
+        message: `${result.message} (${result.results_changed} de ${result.attempts_reprocessed} resultado(s) alterado(s).)`,
+      });
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        title: "Não foi possível concluir a operação",
+        message: error instanceof Error ? error.message : "Erro ao atualizar a anulação da questão.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function refreshRelationQuestion(questionId: string) {
     try {
       const response = await adminFetch(`/api/admin/questions/${questionId}`);
@@ -1215,6 +1251,7 @@ export default function EditarSimuladoClient({
                       onMove={move}
                       onRemove={removeRelation}
                       onSend={openSendToSimuladoModal}
+                      onToggleAnnul={toggleAnnulment}
                       onQuestionSaved={refreshRelationQuestion}
                     />
                   ))}
@@ -1538,16 +1575,18 @@ function InsightBar({ label, value, width }: { label: string; value: string; wid
   );
 }
 
-function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend, onQuestionSaved }: {
+function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend, onToggleAnnul, onQuestionSaved }: {
   relation: SimuladoQuestion;
   index: number;
   total: number;
   onMove: (index: number, direction: "up" | "down") => void;
   onRemove: (relation: SimuladoQuestion) => void;
   onSend: (relation: SimuladoQuestion) => void;
+  onToggleAnnul: (relation: SimuladoQuestion) => void;
   onQuestionSaved: (questionId: string) => void;
 }) {
   const question = relation.questions;
+  const isAnnulled = relation.status === "annulled";
   const alternatives = [...(question?.question_alternatives || [])].sort((a, b) => (a.order_number || 0) - (b.order_number || 0));
   const accuracyStats = getAccuracyStats(question || null);
   const topicsPending = !hasEvaluatedTopics(question?.evaluated_topics);
@@ -1578,6 +1617,11 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
             {topicsPending && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200">
                 ⚠ Sem tópicos avaliados
+              </span>
+            )}
+            {isAnnulled && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200">
+                <Ban size={13} /> Questão anulada neste Simulado
               </span>
             )}
           </div>
@@ -1620,6 +1664,14 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
           </button>
           <button type="button" onClick={() => onSend(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-300/25 bg-orange-500/10 text-orange-200 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300/40 hover:bg-orange-500/15" title="Enviar para outro simulado">
             <Send size={17} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleAnnul(relation)}
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl border shadow-sm transition hover:-translate-y-0.5 ${isAnnulled ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400/40 hover:bg-emerald-500/15" : "border-amber-400/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15"}`}
+            title={isAnnulled ? "Desanular questão" : "Anular questão"}
+          >
+            {isAnnulled ? <RotateCcw size={17} /> : <Ban size={17} />}
           </button>
           <button type="button" onClick={() => onRemove(relation)} className="flex h-11 w-11 items-center justify-center rounded-2xl border border-red-400/25 bg-red-500/10 text-red-300 shadow-sm transition hover:-translate-y-0.5 hover:border-red-400/40 hover:bg-red-500/15" title="Remover">
             <Trash2 size={17} />
