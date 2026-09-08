@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -99,12 +101,12 @@ export default function EditarJornadaClient({
 
   const linkedIds = useMemo(() => new Set(simulados.map((s) => s.simulado_id)), [simulados]);
 
-  const filteredBank = useMemo(() => {
+  const filteredBank = sortByPtBrLabel(useMemo(() => {
     const term = simuladoSearch.toLowerCase().trim();
     return allSimulados.filter(
       (s) => !term || s.title.toLowerCase().includes(term),
     );
-  }, [allSimulados, simuladoSearch]);
+  }, [allSimulados, simuladoSearch]), (item) => item.title);
 
   async function saveInfo() {
     if (!form.title.trim()) {

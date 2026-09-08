@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -868,9 +870,9 @@ function ActivityFilters({
             options={[
               { value: "all", label: "Todos os tipos" },
               { value: "acesso", label: "Acessos e navegação" },
+              { value: "admin", label: "Administração" },
               { value: "jornada", label: "Jornadas" },
               { value: "simulado", label: "Simulados" },
-              { value: "admin", label: "Administração" },
             ]}
           />
         )}
@@ -880,7 +882,7 @@ function ActivityFilters({
             onChange={setJornadaFilter}
             options={[
               { value: "all", label: "Todas as Jornadas" },
-              ...jornadas.map((j) => ({ value: j.jornada_id, label: j.jornadas?.title || "Jornada" })),
+              ...sortByPtBrLabel(jornadas, (item) => item.jornadas?.title).map((j) => ({ value: j.jornada_id, label: j.jornadas?.title || "Jornada" })),
             ]}
           />
         )}
@@ -1594,11 +1596,11 @@ export default function AlunoAdminDetalheClient({
   const assignableEvents = availableEvents.filter((event) =>
     !activeEventIds.has(event.id) && (event.effective_status === "scheduled" || event.effective_status === "active"),
   );
-  const filteredAssignableEvents = (() => {
+  const filteredAssignableEvents = sortByPtBrLabel((() => {
     const term = eventSearch.toLowerCase().trim();
     if (!term) return assignableEvents;
     return assignableEvents.filter((event) => event.name.toLowerCase().includes(term));
-  })();
+  })(), (item) => item.name);
 
   async function handleAssignEvent(eventId: string) {
     setAddingEventId(eventId);
@@ -2560,7 +2562,7 @@ export default function AlunoAdminDetalheClient({
                         onChange={(e) => setAssignForm((p) => ({ ...p, jornada_id: e.target.value }))}
                       >
                         <option value="">Selecione a Jornada…</option>
-                        {assignableJornadas.map((j) => (
+                        {sortByPtBrLabel(assignableJornadas, (item) => item.title).map((j) => (
                           <option key={j.id} value={j.id}>
                             {j.title}
                             {j.scope_type === "contest" && j.contest_name ? ` — ${j.contest_name}` : " — Geral"}

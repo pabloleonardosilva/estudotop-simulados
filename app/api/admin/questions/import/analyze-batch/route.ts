@@ -1,3 +1,4 @@
+import { splitQuestionSeparatorBlocks, extractStructuredQuestionMetadata, preserveStructuredQuestionHeader } from "@/app/lib/utils/question-splitter";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
@@ -88,20 +89,7 @@ function extractAgencyNameFromText(text: string): string {
   return "";
 }
 
-function extractStructuredQuestionMetadata(text: string) {
-  for (const line of text.replace(/\r/g, "").split("\n")) {
-    const parts = line.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
-    if (parts.length < 4 || !/^(?:19\d{2}|20\d{2}|2100)$/.test(parts[0])) continue;
 
-    return {
-      year: Number(parts[0]),
-      boardName: parts[1],
-      agencyName: parts[2],
-    };
-  }
-
-  return null;
-}
 
 
 type ParsedAlternative = {
@@ -313,21 +301,9 @@ function coalesceContinuationBlocks(blocks: string[]) {
   return merged;
 }
 
-function isQuestionSeparatorLine(line: string) {
-  const compact = line.trim().replace(/\s+/g, "");
-  return /^x{6,}$/i.test(compact);
-}
 
-function cleanSeparatorDelimitedBlock(value: string) {
-  const lines = value.split("\n");
-  const firstContentIndex = lines.findIndex((line) => line.trim());
 
-  if (firstContentIndex >= 0 && /^\d{1,4}\)\s*$/.test(lines[firstContentIndex].trim())) {
-    lines.splice(firstContentIndex, 1);
-  }
 
-  return lines.join("\n").trim();
-}
 
 function isPreMetadataContextLine(line: string) {
   const trimmed = line.trim();
@@ -356,29 +332,11 @@ function detachPreMetadataContext(lines: string[]) {
 }
 
 function splitIntoQuestionBlocks(text: string) {
+  const separated = splitQuestionSeparatorBlocks(text);
+  if (separated !== null) return separated;
   const normalized = sanitizeImportedText(text);
 
   if (!normalized) return [];
-
-  const normalizedLines = normalized.split("\n");
-  if (normalizedLines.some(isQuestionSeparatorLine)) {
-    const separatorBlocks: string[] = [];
-    let current: string[] = [];
-
-    for (const line of normalizedLines) {
-      if (isQuestionSeparatorLine(line)) {
-        const block = cleanSeparatorDelimitedBlock(current.join("\n"));
-        if (block) separatorBlocks.push(block);
-        current = [];
-        continue;
-      }
-      current.push(line);
-    }
-
-    const lastBlock = cleanSeparatorDelimitedBlock(current.join("\n"));
-    if (lastBlock) separatorBlocks.push(lastBlock);
-    return separatorBlocks;
-  }
 
   const markedRegex =
     /\(?IN[IÍ]CIO DA QUEST(?:ÃO|AO)\)?([\s\S]*?)\(?FIM DA QUEST(?:ÃO|AO)\)?/gi;
@@ -450,6 +408,7 @@ function normalizeLines(value: string) {
 }
 
 function stripQuestionMetadataFromStatement(value: string) {
+  value = preserveStructuredQuestionHeader(value, value);
   const lines = normalizeLines(value);
   if (!lines.length) return clean(value);
 
@@ -1324,14 +1283,14 @@ ${text}
       const parsedStatement = clean(question.statement);
       const rawStatement = rawParts.statement;
       const statement = formatStatementForDisplay(
-        restoreMissingNumberedItems(
+        preserveStructuredQuestionHeader(restoreMissingNumberedItems(
           chooseStatement({
             rawStatement,
             parsedStatement,
             rawAlternativeCount: rawParts.alternatives.length,
           }),
           rawBlock,
-        )
+        ), rawBlock)
       );
       const alternatives = mergeRawAlternativesWithAi(
         rawParts.alternatives,

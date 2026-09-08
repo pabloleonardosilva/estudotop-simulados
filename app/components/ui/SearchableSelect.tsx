@@ -1,5 +1,8 @@
 "use client";
 
+import { sortTextOptions } from "@/app/lib/utils/sort";
+
+
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
@@ -14,12 +17,14 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   options: SearchableSelectOption[];
+  sortOptions?: boolean;
   placeholder?: string;
   dark?: boolean;
   className?: string;
 };
 
 export default function SearchableSelect({
+  sortOptions = true,
   label,
   value,
   onChange,
@@ -35,6 +40,7 @@ export default function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = `searchable-select-listbox-${useId()}`;
 
+  options = sortOptions ? sortTextOptions(options) : options;
   const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
   const filtered = search.trim()
     ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()))
@@ -183,16 +189,16 @@ export default function SearchableSelect({
 
   // ─── Light theme (importar, PremiumSelect contexts) ────────────────────────
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <div ref={containerRef} className={`et-clean-field-group relative ${className}`}>
       {label && (
-        <label className="mb-2 block text-sm font-medium text-slate-700">
+        <label className="et-clean-label mb-2 block text-sm font-medium text-slate-700">
           {label}
         </label>
       )}
       <button
         type="button"
         onClick={handleOpen}
-        className="flex h-12 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+        className="et-clean-field flex h-12 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
       >
         <span className={`truncate ${value ? "text-slate-800" : "text-slate-400"}`}>
           {selectedLabel || placeholder}
@@ -201,7 +207,7 @@ export default function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-[9999] mt-1.5 w-full min-w-[200px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
+        <div className="et-clean-popover absolute left-0 top-full z-[9999] mt-1.5 w-full min-w-[200px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
           <div className="border-b border-slate-100 px-3 py-2">
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
               <Search size={13} className="shrink-0 text-slate-400" />

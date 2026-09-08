@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
@@ -54,7 +56,7 @@ function HelpReasonDropdown({ value, onChange }: { value: HelpContactReason | ""
       </button>
       {open && (
         <div role="listbox" aria-labelledby="student-help-reason-label" className="absolute left-0 top-full z-[10001] mt-2 w-full rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/15">
-          {HELP_CONTACT_REASONS.map((reason) => {
+          {sortByPtBrLabel(HELP_CONTACT_REASONS, (item) => item.label).map((reason) => {
             const selected = reason.value === value;
             return <button key={reason.value} type="button" role="option" aria-selected={selected} onClick={() => { onChange(reason.value); setOpen(false) }}
               className={`flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left text-sm font-semibold transition ${selected ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>

@@ -1,4 +1,7 @@
 "use client";
+
+import { sortByPtBrLabel, sortTextOptions } from "@/app/lib/utils/sort";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -507,7 +510,7 @@ export default function SimuladosClient({
                     {simulados.length === 0 ? (
                       <option value="">Nenhum simulado disponível</option>
                     ) : (
-                      simulados.map((simulado) => (
+                      sortByPtBrLabel(simulados, (item) => item.title).map((simulado) => (
                         <option key={simulado.id} value={simulado.id}>
                           {simulado.title} · {statusLabel(simulado.status)}
                         </option>
@@ -887,6 +890,7 @@ function SimpleSelectDropdown({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  options = label === "Status" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 

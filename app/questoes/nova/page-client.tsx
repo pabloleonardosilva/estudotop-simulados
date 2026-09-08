@@ -778,9 +778,9 @@ export default function NovaQuestaoClient({
         </div>
       )}
 
-      <article className="overflow-visible rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-950/5 ring-1 ring-slate-100">
-        <div className="grid gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
-          <SearchableSelect label="Tipo" value={questionType} onChange={(value) => {
+      <article className="et-clean-question overflow-visible rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-950/5 ring-1 ring-slate-100">
+        <div className="et-clean-metadata et-clean-metadata-fields grid gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
+<SearchableSelect className="et-clean-meta-compact" label="Tipo" value={questionType} onChange={(value) => {
             markTemplateEdited();
             const nextType = value as "multiple_choice" | "true_false";
             setQuestionType(nextType);
@@ -789,37 +789,37 @@ export default function NovaQuestaoClient({
             }
           }} options={[{ value: "multiple_choice", label: "Alternativas" }, { value: "true_false", label: "Assertivas" }]} />
 
-          <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
-            markTemplateEdited();
-            setDisciplineId(value);
-            setSubjectIds([]);
-          }} options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))} />
-
-          <SubjectMultiSelect subjects={filteredSubjects} selectedIds={subjectIds} onChange={(ids) => {
-            markTemplateEdited();
-            setSubjectIds(ids);
-          }} emptyLabel="Adicionar assunto" disciplineId={disciplineId} />
-
-          <SearchableSelect label="Banca" value={boardId} onChange={(value) => {
+<SearchableSelect label="Banca" value={boardId} onChange={(value) => {
             markTemplateEdited();
             setPossibleDuplicate(null);
             setBoardId(value);
           }} options={[{ value: "", label: "Selecione" }, ...boardOptions.map((board) => ({ value: board.id, label: board.name }))]} />
 
-          <div>
+<div className="et-clean-meta-year">
             <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Ano</label>
             <input value={year} inputMode="numeric" onChange={(event) => {
               markTemplateEdited();
               setYear(event.target.value.replace(/\D/g, "").slice(0, 4));
             }} placeholder={`Ex.: ${CURRENT_YEAR}`} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100" />
           </div>
-        </div>
 
-        <div className="grid gap-3 border-b border-slate-200 px-6 py-4 md:grid-cols-[1fr_240px]">
-          <StarRatingField value={difficulty} onChange={(value) => {
+<div className="et-clean-meta-subjects"><SubjectMultiSelect subjects={filteredSubjects} selectedIds={subjectIds} onChange={(ids) => {
+            markTemplateEdited();
+            setSubjectIds(ids);
+          }} emptyLabel="Adicionar assunto" disciplineId={disciplineId} /></div>
+
+<div className="et-clean-meta-compact"><StarRatingField value={difficulty} onChange={(value) => {
             markTemplateEdited();
             setDifficulty(value);
-          }} />
+          }} /></div>
+</div>
+
+        <div className="grid gap-3 border-b border-slate-200 px-6 py-4 md:grid-cols-[1fr_240px]">
+          <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
+            markTemplateEdited();
+            setDisciplineId(value);
+            setSubjectIds([]);
+          }} options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))} />
           <PremiumSelect label="Status" variant="light" value={status} onChange={(event: ChangeEvent<HTMLSelectElement>) => {
             markTemplateEdited();
             setStatus(event.target.value as "pending_review" | "published" | "archived");
@@ -880,57 +880,27 @@ export default function NovaQuestaoClient({
           />
         )}
 
-        <div className="relative mt-5 isolate">
-          <div className="pointer-events-none absolute -inset-[3px] -z-10 rounded-2xl bg-gradient-to-b from-blue-400/25 via-blue-400/[0.06] to-transparent blur-[10px]" />
-          <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">Tópicos avaliados</p>
-            <span className="text-[10px] font-semibold text-blue-500">Obrigatório para salvar/publicar</span>
-          </div>
-          <EvaluatedTopicsInput
-            value={evaluatedTopics}
-            onChange={(topics) => {
-              markTemplateEdited();
-              setEvaluatedTopics(topics);
-            }}
-            subjectId={subjectIds[0] || null}
-            required
-            variant="light"
-            placeholder="Ex.: Memória RAM, Placa-mãe"
-          />
-          </div>
-        </div>
-
         {questionType === "true_false" ? (
           <InlineTrueFalseEditor alternatives={alternatives} onMarkCorrect={markCorrect} />
         ) : (
           <div className="mt-5 space-y-3">
             {alternatives.map((alt, index) => (
               <div key={alt.label}>
-                <div className={possibleDuplicate ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-3" : alt.is_correct ? "flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3" : "flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3"}>
-                  <button
-                    type="button"
-                    onClick={() => removeAlternative(index)}
-                    disabled={alternatives.length <= 4}
-                    title={alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : `Excluir alternativa ${alt.label}`}
-                    className="mt-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <Trash2 size={15} />
-                    <span className="hidden xl:inline">Excluir</span>
-                  </button>
-
-                  <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
-                    {alt.label}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => markCorrect(index)}
-                    title="Marcar como correta"
-                    className={alt.is_correct ? "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-100 text-xl" : "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-slate-300 hover:border-emerald-400 hover:bg-emerald-50"}
-                  >
-                    {alt.is_correct ? <span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span> : null}
-                  </button>
+                <div className={possibleDuplicate ? "et-clean-alternative flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-3" : alt.is_correct ? "et-clean-alternative et-clean-alternative-correct flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3" : "et-clean-alternative flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3"}>
+                  {alt.is_correct ? (
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500 text-lg text-white">
+                      <span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => markCorrect(index)}
+                      title="Marcar como correta"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-black text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
+                    >
+                      {alt.label}
+                    </button>
+                  )}
 
                   <RichTextarea
                     value={alt.text}
@@ -947,6 +917,17 @@ export default function NovaQuestaoClient({
                     className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-orange-50 hover:text-orange-600"
                   >
                     <ImageIcon size={20} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => removeAlternative(index)}
+                    disabled={alternatives.length <= 4}
+                    title={alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Remover alternativa"}
+                    className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <Trash2 size={15} />
+                    <span className="hidden xl:inline">Remover alternativa</span>
                   </button>
                 </div>
 
@@ -977,7 +958,28 @@ export default function NovaQuestaoClient({
           </div>
         )}
 
-        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="relative mt-5 isolate">
+          <div className="pointer-events-none absolute -inset-[3px] -z-10 rounded-2xl bg-gradient-to-b from-blue-400/25 via-blue-400/[0.06] to-transparent blur-[10px]" />
+          <div className="et-clean-topics-panel rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="et-clean-topics-label text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">Tópicos avaliados</p>
+            <span className="text-[10px] font-semibold text-blue-500">Obrigatório para salvar/publicar</span>
+          </div>
+          <EvaluatedTopicsInput
+            value={evaluatedTopics}
+            onChange={(topics) => {
+              markTemplateEdited();
+              setEvaluatedTopics(topics);
+            }}
+            subjectId={subjectIds[0] || null}
+            required
+            variant="light"
+            placeholder="Ex.: Memória RAM, Placa-mãe"
+          />
+          </div>
+        </div>
+
+        <div className="et-clean-editor-row mt-8 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
           <span className="mt-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
             <Info size={16} />
           </span>
@@ -1014,7 +1016,7 @@ export default function NovaQuestaoClient({
         </div>
       </div>
         <div className="sticky bottom-0 z-10 flex justify-end rounded-b-[2rem] border-t border-slate-200 bg-white/90 px-6 py-4 backdrop-blur-sm">
-          <button type="button" onClick={handleSubmit} disabled={saving || !!possibleDuplicate} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-6 py-2.5 text-sm font-bold text-slate-950 shadow-md shadow-orange-900/40 transition hover:from-orange-600 hover:to-amber-500 disabled:opacity-50">
+          <button type="button" onClick={handleSubmit} disabled={saving || !!possibleDuplicate} className="et-clean-button et-clean-button-primary inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-6 py-2.5 text-sm font-bold text-slate-950 shadow-md shadow-orange-900/40 transition hover:from-orange-600 hover:to-amber-500 disabled:opacity-50">
             <CheckCircle2 size={16} /> {possibleDuplicate ? "Questão duplicada" : "Salvar questão"}
           </button>
         </div>

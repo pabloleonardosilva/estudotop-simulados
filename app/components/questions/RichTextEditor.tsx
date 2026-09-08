@@ -392,7 +392,7 @@ export default function RichTextEditor({
   }
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${dark ? "" : "et-clean-editor"}`}>
       {!compact && !disabled && (
         <div
           className={
@@ -527,7 +527,7 @@ function TextToolbar({
     : "border-slate-900 bg-slate-900 text-white";
 
   return (
-    <div className={`inline-flex flex-wrap items-center gap-1 rounded-xl p-1 shadow-sm ${dark ? "border border-white/[0.10] bg-white/[0.04]" : "border border-slate-200 bg-white/80"}`}>
+    <div className={`${dark ? "" : "et-clean-toolbar"} inline-flex flex-wrap items-center gap-1 rounded-xl p-1 shadow-sm ${dark ? "border border-white/[0.10] bg-white/[0.04]" : "border border-slate-200 bg-white/80"}`}>
       <button type="button" title="Negrito" onMouseDown={(e) => e.preventDefault()} onClick={onBold} className={buttonClass}>
         <Bold size={13} />
       </button>

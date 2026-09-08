@@ -1,5 +1,7 @@
 "use client";
 
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 
@@ -23,7 +25,7 @@ export default function ProfessorAssignmentPicker({ professors, selectedIds, onC
 
   const results = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return professors
+    return sortByPtBrLabel(professors, (professor) => professor.name)
       .filter((professor) => !selectedIds.includes(professor.id))
       .filter((professor) => !term || professor.name.toLowerCase().includes(term) || professor.email.toLowerCase().includes(term))
       .slice(0, 30);

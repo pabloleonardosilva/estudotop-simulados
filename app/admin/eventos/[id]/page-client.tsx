@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 
 import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -176,11 +178,11 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
     return () => window.clearInterval(interval);
   }, [reminder?.state, load]);
 
-  const filteredEligibleStudents = useMemo(() => {
+  const filteredEligibleStudents = sortByPtBrLabel(useMemo(() => {
     const term = participantSearch.toLowerCase().trim();
     if (!term) return eligibleStudents;
     return eligibleStudents.filter((student) => student.name.toLowerCase().includes(term) || student.email.toLowerCase().includes(term));
-  }, [eligibleStudents, participantSearch]);
+  }, [eligibleStudents, participantSearch]), (item) => item.name);
 
   // Participantes já inscritos: busca por nome/e-mail (client-side, a lista
   // completa já chega em cada load()) e ordem A→Z estável — nome, depois

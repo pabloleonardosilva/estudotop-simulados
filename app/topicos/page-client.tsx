@@ -1,5 +1,8 @@
 "use client";
 
+import { sortTextOptions } from "@/app/lib/utils/sort";
+
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Check, ChevronDown, Eye, EyeOff, FileQuestion, ListTree, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
@@ -554,6 +557,7 @@ function SimpleSelectDropdown({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  options = label === "Status" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 

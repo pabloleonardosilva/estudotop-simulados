@@ -17,8 +17,18 @@ type InitialFilters = {
 
 // pending_review is managed in /questoes/revisar — not shown by default
 // ready_to_publish is accessible via ?status=ready_to_publish URL param (sidebar link) but hidden from dropdown
-const QUESTION_STATUSES = ["draft", "published", "active", "archived", "ready_to_publish"];
+// "annulled" é um status real de questions (edição/badge/toggle Anular-Reativar
+// já existentes) — incluído aqui para permitir o filtro dedicado "Anulada no
+// Banco" carregar server-side de forma direcionada (.eq("status","annulled")).
+const QUESTION_STATUSES = ["draft", "published", "active", "archived", "ready_to_publish", "annulled"];
 const QUESTION_DASHBOARD_STATUSES = [...QUESTION_STATUSES, "pending_review"];
+// "Anuladas em Simulados" NÃO é um valor de questions.status — é derivado de
+// simulado_questions.status="annulled" (ver app/questoes/page-client.tsx).
+// Preservado aqui só para o filtro client-side não ser resetado para "Todos"
+// ao entrar direto por um link com essa opção selecionada; o carregamento
+// server-side cai no branch padrão (abrangente), nunca tenta um
+// .eq("status", ...) com esse valor.
+const SIMULADO_ANNULLED_FILTER_VALUE = "annulled_in_simulados";
 
 async function getData(initialFilters: InitialFilters) {
   const supabase = createSupabaseAdminClient();
@@ -202,7 +212,7 @@ export default async function QuestoesPage({
     inspirationBoardIds: arr("inspirada"),
     orgaos: arr("orgao"),
     difficultyLevels: arr("dificuldade"),
-    status: QUESTION_STATUSES.includes(rawStatus) ? rawStatus : "",
+    status: QUESTION_STATUSES.includes(rawStatus) || rawStatus === SIMULADO_ANNULLED_FILTER_VALUE ? rawStatus : "",
     yearFilters: arr("ano"),
     missingTopics: str("topicos") === "sem",
   };

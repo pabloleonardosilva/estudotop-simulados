@@ -148,6 +148,8 @@ function coalesceContinuationBlocks(blocks: string[]) {
 }
 
 export function splitIntoQuestionBlocks(text: string): string[] {
+  const separated = splitQuestionSeparatorBlocks(text);
+  if (separated !== null) return separated;
   const normalized = sanitizeImportedText(text);
   if (!normalized) return [];
 
@@ -200,4 +202,46 @@ export function splitIntoQuestionBlocks(text: string): string[] {
   const lastBlock = current.join("\n").trim();
   if (lastBlock) blocks.push(lastBlock);
   return coalesceContinuationBlocks(blocks.length ? blocks : [normalized]);
+}
+
+export function isQuestionSeparatorLine(line: string): boolean {
+  return /^x{6,}$/i.test(line.trim().replace(/\s+/g, ""));
+}
+
+export function splitQuestionSeparatorBlocks(text: string): string[] | null {
+  const lines = text.replace(/\r/g, "").replace(/\u00a0/g, " ").split("\n");
+  if (!lines.some(isQuestionSeparatorLine)) return null;
+  const blocks: string[] = [];
+  let current: string[] = [];
+  const flush = () => {
+    const block = current.join("\n").trim().replace(/^\d{1,4}\)\s*\n/, "").trim();
+    if (block) blocks.push(block);
+    current = [];
+  };
+  for (const line of lines) {
+    if (isQuestionSeparatorLine(line)) flush();
+    else current.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+export function extractStructuredQuestionMetadata(text: string) {
+  for (const line of text.replace(/\r/g, "").split("\n")) {
+    const parts = line.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 4 || !/^(?:19\d{2}|20\d{2}|2100)$/.test(parts[0])) continue;
+    return { year: Number(parts[0]), boardName: parts[1], agencyName: parts[2], headerLine: line.trim() };
+  }
+  return null;
+}
+
+export function preserveStructuredQuestionHeader(statement: string, rawBlock: string): string {
+  const rawLines = rawBlock.replace(/\r/g, "").split("\n").map((line) => line.trim()).filter(Boolean);
+  const headerIndex = /^\d{1,4}\)$/.test(rawLines[0] || "") ? 1 : 0;
+  const metadata = extractStructuredQuestionMetadata(rawLines[headerIndex] || "");
+  if (!metadata) return statement;
+  const lines = statement.replace(/\r/g, "").split("\n").filter((line) => !isQuestionSeparatorLine(line));
+  const cleaned = lines.join("\n").trim().replace(/^\d{1,4}\)\s*\n/, "").trim();
+  if (cleaned.startsWith(metadata.headerLine)) return cleaned;
+  return [metadata.headerLine, cleaned].filter(Boolean).join("\n\n");
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { sortTextOptions } from "@/app/lib/utils/sort";
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Edit3, ExternalLink, LifeBuoy, Loader2, Search, Send, User, X } from "lucide-react";
@@ -21,6 +24,7 @@ function studentRef(value: TicketRow["students"]) { return Array.isArray(value) 
 function statusLabel(status: TicketStatus) { return status === "open" ? "Aberto" : status === "answered" ? "Respondido" : "Encerrado" }
 
 function PremiumFilterDropdown({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
+  options = label === "Motivo" ? sortTextOptions(options) : options;
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {

@@ -219,11 +219,11 @@ export default function NovoAlunoAdminPage() {
                 </DarkField>
                 <DarkField label="Origem">
                   <DarkSelect name="origin" defaultValue="Manual">
-                    <option value="Manual">Manual</option>
-                    <option value="Instagram">Instagram</option>
-                    <option value="WhatsApp">WhatsApp</option>
                     <option value="Hotmart">Hotmart</option>
                     <option value="Indicação">Indicação</option>
+                    <option value="Instagram">Instagram</option>
+                    <option value="Manual">Manual</option>
+                    <option value="WhatsApp">WhatsApp</option>
                   </DarkSelect>
                 </DarkField>
               </div>

@@ -1,4 +1,7 @@
 "use client";
+
+import { sortTextOptions } from "@/app/lib/utils/sort";
+
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
 import QuestionCodePopupLink from "@/app/components/questions/QuestionCodePopupLink";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -1084,7 +1087,7 @@ export default function EditarSimuladoClient({
                 <PremiumInput label="Nome" value={form.title} onChange={(event: any) => update("title", event.target.value)} />
                 <PremiumInput label="Descrição automática" textarea value={autoDescription} readOnly />
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <PremiumSelect label="Disciplina" value={form.discipline_id || ""} onChange={(event: any) => update("discipline_id", event.target.value)}>
+                  <PremiumSelect sortOptions label="Disciplina" value={form.discipline_id || ""} onChange={(event: any) => update("discipline_id", event.target.value)}>
                     <option value="">Sem disciplina principal</option>
                     {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
                   </PremiumSelect>
@@ -1925,6 +1928,7 @@ function DarkSingleDropdown({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  options = sortTextOptions(options);
   const selected = options.find((item) => item.value === value)?.label || options[0]?.label || "Todos";
   return (
     <DarkDropdownShell label={label} summary={selected}>
@@ -1961,6 +1965,7 @@ function DarkMultiDropdown({
   options: { value: string; label: string; node?: ReactNode; count?: number }[];
   placeholder: string;
 }) {
+  options = label === "Ano" || label === "Dificuldade" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2822,37 +2827,38 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
     <div className="et-admin-clean-content fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-[#eef0f4] px-4 py-6" onClick={onClose}>
       <QuestionTemplatePicker open={showTemplatePicker} questions={modelQuestions} disciplines={disciplines} subjects={subjects} boards={boards} onClose={() => setShowTemplatePicker(false)} onSelect={applyTemplate} />
       <div className="mx-auto w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="et-clean-card rounded-[2rem] border border-slate-200 bg-white p-6 shadow-xl">
           <ModalHeader title="Criar questões manualmente" subtitle="Monte uma ou várias questões. Todas serão salvas no Banco e vinculadas ao simulado." onClose={onClose} icon={<Pencil size={22} />} />
           {error && <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
           <div className="space-y-6">
             {drafts.map((draft, draftIndex) => {
               const availableSubjects = subjects.filter((subject) => subject.discipline_id === draft.disciplineId);
               return (
-                <section key={draft.localId} className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
-                  <div className="mb-5 flex items-center justify-between gap-3">
+                <section key={draft.localId} className="et-clean-question et-clean-question-body rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                     <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">Questão {draftIndex + 1}</p>{draft.persisted && <p className="mt-1 text-xs font-semibold text-emerald-600">Salva no Banco · {draft.persisted.code}</p>}</div>
-                    <div className="flex gap-2"><PremiumButton variant="secondary" icon={<CopyCheck size={16} />} onClick={() => { setActiveDraftId(draft.localId); setShowTemplatePicker(true); }} disabled={saving || Boolean(draft.persisted)}>Usar modelo</PremiumButton>{drafts.length > 1 && !draft.persisted && <PremiumButton variant="danger" icon={<Trash2 size={16} />} onClick={() => removeDraft(draft)} disabled={saving}>Remover questão</PremiumButton>}</div>
+                    <div className="flex flex-wrap gap-2"><PremiumButton variant="secondary" icon={<CopyCheck size={16} />} onClick={() => { setActiveDraftId(draft.localId); setShowTemplatePicker(true); }} disabled={saving || Boolean(draft.persisted)}>Usar modelo</PremiumButton>{drafts.length > 1 && !draft.persisted && <PremiumButton variant="danger" icon={<Trash2 size={16} />} onClick={() => removeDraft(draft)} disabled={saving}>Remover questão</PremiumButton>}</div>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-4">
-                    <PremiumSelect label="Disciplina" value={draft.disciplineId} onChange={(event: any) => updateDraft(draft.localId, { disciplineId: event.target.value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)}>{disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</PremiumSelect>
-                    <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto" value={draft.subjectId} onChange={(value) => updateDraft(draft.localId, { subjectId: value })} options={[{ value: "", label: "Selecione" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Selecione" /></div>
-                    <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Banca" value={draft.boardId} onChange={(value) => updateDraft(draft.localId, { boardId: value })} options={boards.map((item) => ({ value: item.id, label: item.name }))} placeholder="Selecione" /></div>
-                    <PremiumSelect label="Dificuldade" value={draft.difficulty} onChange={(event: any) => updateDraft(draft.localId, { difficulty: event.target.value })} disabled={saving || Boolean(draft.persisted)}>{[1,2,3,4,5].map((item) => <option key={item} value={item}>{item}</option>)}</PremiumSelect>
-                  </div>
+                  <PremiumSelect sortOptions label="Disciplina" value={draft.disciplineId} onChange={(event: any) => updateDraft(draft.localId, { disciplineId: event.target.value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)}>{disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</PremiumSelect>
+<div className="et-clean-metadata et-clean-metadata-fields grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+<div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Banca" value={draft.boardId} onChange={(value) => updateDraft(draft.localId, { boardId: value })} options={boards.map((item) => ({ value: item.id, label: item.name }))} placeholder="Selecione" /></div>
+<div className="et-clean-meta-year"><PremiumInput label="Ano" value={draft.year} onChange={(event: any) => updateDraft(draft.localId, { year: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={saving || Boolean(draft.persisted)} /></div>
+<div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto" value={draft.subjectId} onChange={(value) => updateDraft(draft.localId, { subjectId: value })} options={[{ value: "", label: "Selecione" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Selecione" /></div>
+<PremiumSelect className="et-clean-meta-compact" label="Dificuldade" value={draft.difficulty} onChange={(event: any) => updateDraft(draft.localId, { difficulty: event.target.value })} disabled={saving || Boolean(draft.persisted)}>{[1,2,3,4,5].map((item) => <option key={item} value={item}>{item}</option>)}</PremiumSelect>
+</div>
                   <div className="mt-4 space-y-4">
-                    <PremiumInput label="Ano" value={draft.year} onChange={(event: any) => updateDraft(draft.localId, { year: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={saving || Boolean(draft.persisted)} />
+
                     <RichTextEditor label="Enunciado" value={draft.statement} onChange={(statement) => updateDraft(draft.localId, { statement })} placeholder="Digite o enunciado da questão." minRows={7} disabled={saving || Boolean(draft.persisted)} />
-                    {draft.alternatives.map((alternative, alternativeIndex) => <div key={`${draft.localId}-${alternative.label}`} className={`grid gap-3 rounded-2xl border p-3 md:grid-cols-[64px_1fr_auto] ${alternative.is_correct ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)} className={`flex h-11 w-11 items-center justify-center rounded-full font-bold ${alternative.is_correct ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-700"}`}>{alternative.label}</button><RichTextEditor value={alternative.text} onChange={(text) => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => index === alternativeIndex ? { ...item, text } : item) })} placeholder={`Alternativa ${alternative.label}`} compact disabled={saving || Boolean(draft.persisted)} /><div className="flex items-center gap-2"><PremiumButton variant={alternative.is_correct ? "primary" : "secondary"} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)}>{alternative.is_correct ? "Gabarito" : "Marcar"}</PremiumButton>{draft.alternatives.length > 4 && <PremiumButton variant="danger" icon={<Trash2 size={14} />} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.filter((_, index) => index !== alternativeIndex).map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })) })} disabled={saving || Boolean(draft.persisted)}>Excluir</PremiumButton>}</div></div>)}
+                    {draft.alternatives.map((alternative, alternativeIndex) => <div key={`${draft.localId}-${alternative.label}`} className={`et-clean-alternative flex items-start gap-3 rounded-2xl border p-3 ${alternative.is_correct ? "et-clean-alternative-correct border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}>{alternative.is_correct ? <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500 text-lg text-white"><span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span></span> : <button type="button" onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)} title="Marcar como correta" className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-black text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700">{alternative.label}</button>}<div className="min-w-0 flex-1"><RichTextEditor value={alternative.text} onChange={(text) => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => index === alternativeIndex ? { ...item, text } : item) })} placeholder={`Alternativa ${alternative.label}`} compact disabled={saving || Boolean(draft.persisted)} /></div>{draft.alternatives.length > 4 && <PremiumButton variant="danger" icon={<Trash2 size={14} />} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.filter((_, index) => index !== alternativeIndex).map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })) })} disabled={saving || Boolean(draft.persisted)}>Remover alternativa</PremiumButton>}</div>)}
                     {draft.alternatives.length < 5 && <PremiumButton variant="secondary" icon={<Plus size={16} />} onClick={() => updateDraft(draft.localId, { alternatives: [...draft.alternatives, { label: String.fromCharCode(65 + draft.alternatives.length), text: "", is_correct: false }] })} disabled={saving || Boolean(draft.persisted)}>Adicionar alternativa</PremiumButton>}
-                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"><p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p><EvaluatedTopicsInput value={draft.evaluatedTopics} onChange={(evaluatedTopics) => updateDraft(draft.localId, { evaluatedTopics })} subjectId={draft.subjectId || null} required variant="light" disabled={saving || Boolean(draft.persisted)} /></div>
+                    <div className="et-clean-topics-panel rounded-2xl border border-blue-200 bg-blue-50/70 p-4"><p className="et-clean-topics-label mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p><EvaluatedTopicsInput value={draft.evaluatedTopics} onChange={(evaluatedTopics) => updateDraft(draft.localId, { evaluatedTopics })} subjectId={draft.subjectId || null} required variant="light" disabled={saving || Boolean(draft.persisted)} /></div>
                     <RichTextEditor label="Comentário do professor" value={draft.explanation} onChange={(explanation) => updateDraft(draft.localId, { explanation })} placeholder="Explique a resposta correta." minRows={4} disabled={saving || Boolean(draft.persisted)} />
                   </div>
                 </section>
               );
             })}
           </div>
-          <div className="mt-6 flex flex-col justify-between gap-3 border-t border-slate-200 pt-5 sm:flex-row"><PremiumButton variant="secondary" icon={<Plus size={17} />} onClick={() => setDrafts((current) => [...current, createManualDraft(disciplines, boards)])} disabled={saving}>Criar mais uma questão</PremiumButton><div className="flex justify-end gap-3"><PremiumButton variant="secondary" onClick={onClose} disabled={saving}>Cancelar</PremiumButton><PremiumButton icon={<CheckCircle2 size={18} />} onClick={createAll} disabled={saving}>{saving ? "Adicionando..." : "Adicionar questões ao simulado"}</PremiumButton></div></div>
+          <div className="mt-6 flex flex-col justify-between gap-3 border-t border-slate-200 pt-5 sm:flex-row"><PremiumButton variant="secondary" icon={<Plus size={17} />} onClick={() => setDrafts((current) => [...current, createManualDraft(disciplines, boards)])} disabled={saving}>Criar mais uma questão</PremiumButton><div className="flex flex-wrap justify-end gap-3"><PremiumButton variant="secondary" onClick={onClose} disabled={saving}>Cancelar</PremiumButton><PremiumButton icon={<CheckCircle2 size={18} />} onClick={createAll} disabled={saving}>{saving ? "Adicionando..." : "Adicionar questões ao simulado"}</PremiumButton></div></div>
         </div>
       </div>
     </div>
@@ -3037,7 +3043,7 @@ function ManualQuestionModal({ simuladoId, disciplines, subjects, boards, modelQ
         </div>
         {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
         <div className="grid gap-4 md:grid-cols-4">
-          <PremiumSelect label="Disciplina" value={disciplineId} onChange={(event: any) => { markTemplateEdited(); setDisciplineId(event.target.value); setSubjectId(""); }}>
+          <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: any) => { markTemplateEdited(); setDisciplineId(event.target.value); setSubjectId(""); }}>
             {disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </PremiumSelect>
           <SearchableSelect

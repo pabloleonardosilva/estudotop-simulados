@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
@@ -74,10 +76,10 @@ export default function MeuPerfilClient() {
   const changed = Boolean(data && (name.trim().replace(/\s+/g, " ") !== data.profile.name || phone.trim() !== (data.profile.phone || "")));
   const interestOptions = useMemo(() => [...(data?.interests.catalog || []), ...draftCustomInterests], [data, draftCustomInterests]);
   const selectedNames = useMemo(() => interestOptions.filter((contest) => selectedContests.includes(contest.id)).map((contest) => contest.name), [interestOptions, selectedContests]);
-  const filteredInterestOptions = useMemo(() => {
+  const filteredInterestOptions = sortByPtBrLabel(useMemo(() => {
     const term = interestQuery.trim().toLocaleLowerCase("pt-BR");
     return term ? interestOptions.filter((contest) => contest.name.toLocaleLowerCase("pt-BR").includes(term)) : interestOptions;
-  }, [interestOptions, interestQuery]);
+  }, [interestOptions, interestQuery]), (item) => item.name);
   const normalizedInterestQuery = interestQuery.trim().replace(/\s+/g, " ");
   const canAddCustomInterest = normalizedInterestQuery.length >= 2
     && normalizedInterestQuery.length <= 100

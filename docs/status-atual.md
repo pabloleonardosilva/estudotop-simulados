@@ -1,5 +1,103 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 08/09/2026 — Dropdown de tópicos escondido atrás da barra fantasma (correção da causa raiz)
+
+- [x] Causa raiz real identificada: a animação de entrada dos cards do Importador (`importCardIn`, anima `opacity`/`transform`) cria stacking context próprio por especificação de CSS — prendia o `z-[9999]` do dropdown de tópicos dentro do card, que nunca competia de fato com a barra fantasma (`position: fixed`, `z-[9000]`, fora dessa árvore). Subir o z-index sozinho (correção anterior, seção 4.6) era necessário mas não suficiente.
+- [x] Corrigido de forma centralizada em `app/components/questions/EvaluatedTopicsInput.tsx`: o menu de sugestões passou a renderizar via `createPortal` em `document.body`, posicionado por `getBoundingClientRect()` (recalculado ao abrir e em scroll/resize), com `position: fixed`. Fora da árvore do card, `z-[9999]` volta a valer de verdade contra a barra fantasma (`z-[9000]`).
+- [x] Abre para cima automaticamente quando não há espaço suficiente abaixo e há mais espaço acima.
+- [x] Nenhum consumidor precisou de alteração (Importador, Gerar IA, Criador Manual, Banco de Questões, QuestionEditor/Revisar, Simulados) — correção 100% dentro do componente compartilhado.
+- [x] `SelectionGhostBar.tsx` não foi tocado — mesma posição, z-index, botões e comportamento.
+- [x] Preservado: busca, seleção, criação e remoção de tópico, navegação por teclado, ordenação pt-BR, visual (cores/bordas/sombra/hover) idêntico.
+- [x] `npx tsc --noEmit` e `npm run build` limpos.
+- Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção 4.9.
+
+## 08/09/2026 — Padronização estrutural do bloco de alternativas (correção da entrega anterior)
+
+- [x] A entrega anterior padronizou só o texto dos botões; esta corrige a estrutura visual em si, usando o Importador com IA como referência obrigatória (não o Criador Manual).
+- [x] Padrão fixado: badge único circular (letra OU coruja, nunca dois elementos separados) → editor de texto → campos auxiliares da tela, se houver → botão "Remover alternativa" por último. Alternativa correta com fundo/borda verde e coruja branca no badge.
+- [x] Corrigidos: `QuestionEditor.tsx` (remover estava antes do badge no estado expandido — reordenado), `/questoes/nova` (badge duplicado — unificado; remover reordenado para o final), `/questoes` `InlineQuestionEditor` (badge duplicado com "A)" — unificado, prática já vetada pelo índice/AGENTS.md), `/questoes/[id]/variacoes` (remover antes do badge no estado expandido — reordenado; ícone `X` → `Trash2` com texto; estado colapsado ganhou botão de remover, que não existia), `/simulados/[id]/editar` (modal manual — grid convertido para flex; botão "Marcar"/"Gabarito" separado removido, função absorvida pelo próprio badge).
+- [x] `/questoes/gerar-ia` já seguia o padrão do Importador (implementado assim numa entrega anterior) — nenhuma mudança estrutural necessária.
+- [x] Preservado, conscientemente, sem alteração: o mecanismo de colapsar/expandir de `QuestionEditor.tsx` e `/questoes/[id]/variacoes` — não é parte da estrutura da linha de alternativa, é um recurso adicional útil para revisão de questão única; removê-lo seria mudança de comportamento além do pedido de estrutura visual.
+- [x] Preservado integralmente: lógica de inserir/remover, mínimo/máximo por tela, ajuste de gabarito, Certo/Errado, arquivamento, arquivar selecionadas, envio para revisão, parser, tópicos após alternativas, dropdown `z-[9999]`, ordenação pt-BR, persistência, endpoints, banco.
+- [x] `npx tsc --noEmit` e `npm run build` limpos; lint dos 5 arquivos tocados idêntico à baseline (0 problemas novos).
+- Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção 4.8.
+
+## 08/09/2026 — Padronização textual dos botões de alternativa
+
+- [x] Texto oficial fixado em todo editor/importador de questões: "Adicionar alternativa" (inserir) e "Remover alternativa" (remover) — sem variações de capitalização, sem letra dinâmica no botão, sem sinônimos ("Excluir", "Inserir", "Nova", "+ alternativa").
+- [x] Corrigidos: `QuestionEditor.tsx` (usava "Adicionar resposta {letra}" / "Excluir"), `/questoes/importar`, `/questoes/gerar-ia`, `/questoes` (`InlineQuestionEditor`) (letra dinâmica no botão de adicionar; título/texto "Excluir" no de remover), `/simulados/[id]/editar` (modal manual, botão "Excluir" → "Remover alternativa"), `/questoes/[id]/variacoes` ("+ Adicionar alternativa" → ícone `Plus` + "Adicionar alternativa").
+- [x] `/questoes/nova` já estava com o texto correto — nenhuma mudança textual necessária.
+- [x] Preservado: ícones, tipografia, cores clean/dark, alturas, estados hover/focus/disabled de cada botão — só o texto foi unificado. Nenhuma lógica de inserir/remover, mínimo/máximo, gabarito, Certo/Errado, arquivamento, envio para revisão, parser, tópicos ou ordenação pt-BR foi tocada.
+- [x] Variação visual conscientemente preservada (não é texto): botão de remover em Variações usa ícone circular `X` sem texto visível, já com `title="Remover alternativa"` correto — mudar o formato do ícone/botão ficaria fora do escopo puramente textual desta entrega.
+- [x] `npx tsc --noEmit` e `npm run build` limpos; lint dos 7 arquivos tocados idêntico à baseline (0 problemas novos).
+- Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção 4.7.
+
+## 08/09/2026 — Posição do campo "Tópicos da questão" e camada do dropdown
+
+- [x] Regra global aplicada: em editores/importadores de questões com alternativas, "Tópicos da questão" sempre aparece depois da última alternativa (referência: padrão já correto de `/questoes/revisar` via `QuestionEditor.tsx`).
+- [x] Auditados: `QuestionEditor.tsx` (revisar + editar), `/questoes/importar`, `/questoes/gerar-ia`, `/questoes` (`InlineQuestionEditor`), `/simulados/[id]/editar` (3 fluxos de criação de questão) — todos já corretos, nenhum alterado.
+- [x] Corrigido apenas `/questoes/nova` (Criador manual) — o campo estava entre o enunciado e as alternativas; movido para depois das alternativas/botão "Adicionar alternativa", antes do comentário do professor. Só reposicionamento de JSX, nenhuma lógica/estado tocado.
+- [x] Dropdown de sugestões de tópicos (`EvaluatedTopicsInput.tsx`) corrigido de forma centralizada: `z-30` → `z-[9999]`, alinhando com o padrão já usado por todos os outros dropdowns customizados do sistema. Um único ponto de correção, válido para todos os consumidores.
+- [x] Sem campo de tópicos, não aplicável: `/questoes/[id]/variacoes`, `UseAsTemplateModal`.
+- [x] Nenhum endpoint alterado. Nenhuma migration necessária.
+- [x] `npx tsc --noEmit` e `npm run build` limpos; lint dos 2 arquivos tocados idêntico à baseline (0 problemas).
+- Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção 4.6.
+
+## 08/09/2026 — Inserir/remover alternativa em todos os editores de questão
+
+- [x] Recurso já existia em `QuestionEditor.tsx` (revisar + editar), `/questoes/nova`, `/questoes/[id]/variacoes` e no modal de criação manual de `/simulados/[id]/editar` — padrão localizado e reaproveitado (mínimo 4, máximo 5 alternativas para múltipla escolha; próxima letra ao inserir; relabel sequencial ao remover; gabarito por objeto, sem lógica extra).
+- [x] Estendido, seguindo o mesmo padrão, para os 3 pontos que não tinham o recurso completo: Importador com IA (`/questoes/importar` — já tinha remover, adicionado inserir), editor inline do Banco de Questões (`/questoes` — `InlineQuestionEditor`, adicionados os dois) e Gerar Questões com IA (`/questoes/gerar-ia`, adicionados os dois).
+- [x] Certo/Errado preservado sem alteração — botões só aparecem para `question_type = "multiple_choice"`.
+- [x] Nenhum endpoint alterado — `PATCH /api/admin/questions/[id]` e `POST /api/admin/questions/import/save` já suportavam a lista de alternativas completa.
+- [x] Nenhuma migration necessária.
+- [x] `npx tsc --noEmit` e `npm run build` limpos; lint nos 3 arquivos tocados idêntico à baseline (0 problemas novos).
+- Ver `docs/INDICE_FUNCOES_SISTEMA.md`, seção 4.5.
+
+## 08/09/2026 - Auditoria e alinhamento seletivo da main
+
+- [x] npx tsc --noEmit, npm run build e testes isolados no Edge/importador aprovados.
+
+- Arquivamento existente alinhado a Sistema, sem nova alteração de lógica.
+- Ordenação pt-BR aplicada aos consumidores presentes e ao ProfessorAssignmentPicker exclusivo da main.
+- Preservadas diferenças de anulação, Banco e Eventos; Hotmart e alterações alheias não importados.
+- Relatório: docs/Auditoria-main-ordenacao.md.
+- Aceite integral nas rotas autenticadas continua pendente. Sem escrita externa, migration, commit ou push.
+
+
+## 08/09/2026 - Arquivamento na prévia do Importador
+
+- [x] npx tsc --noEmit e npm run build aprovados nas duas worktrees.
+
+- [x] Arquivar individual e selecionadas, com confirmação e persistência como archived; limpeza somente dos IDs confirmados.
+- [x] Testes isolados do endpoint real, serviço real de duplicidade e função da UI: metadados, alternativas, assuntos, retry, falhas parciais, cancelamento e envio normal. Supabase simulado em memória, sem escrita externa.
+- [ ] Homologação em rota autenticada com Supabase real permanece pendente; os testes isolados não substituem esse aceite.
+- Nenhuma migration criada ou alterada nesta Sprint. Sem commit, push ou alteração de assets.
+
+
+## 07/09/2026 - Clean Premium administrativa editorial
+
+- [x] Base visual central e consumidores aplicados em Sistema e main-worktree; trabalho anterior preservado.
+- [x] Canvas, hierarquia, superficies, campos, acoes, estados, editor, alternativas e topicos centralizados em globals.css.
+- [x] TypeScript/build nas duas arvores; fixture visual de 100 cards e textos longos nas larguras 375 a 1920; regressao isolada Dark/Aluno.
+- [x] Sem alteracao de API, regra de negocio, migration ou asset nesta entrega; sem commit/push/deploy.
+- [ ] Aceite integral: rotas autenticadas, interacoes, IA/salvamento, shell real e referencias visuais. Fixture isolada nao substitui esses testes.
+
+Detalhes: docs/Sprint-interface-grafica.md, secao de 07/09/2026.
+
+> **Nota de reconciliação — 07/09/2026:** este arquivo é um changelog cronológico (histórico), não a fonte oficial de estado atual. Entradas antigas às vezes ficam desatualizadas conforme o desenvolvimento avança em Sprints posteriores. Sempre que uma entrada abaixo contradiser `AGENTS.md` (seção "Estado Atual do Projeto") ou `docs/INDICE_FUNCOES_SISTEMA.md`, esses dois documentos prevalecem. Nesta data foram revisadas e anotadas inline (sem apagar histórico) as entradas de Jornadas Admin/Aluno, cujo status estava desatualizado — ver anotações "✅ Reconciliado 07/09/2026" abaixo.
+
+## 07/09/2026 — Filtros "Anuladas no Banco" e "Anuladas em Simulados" em `/questoes`
+
+- [x] Novo filtro **Anuladas no Banco** no seletor de Status de `/questoes` — reaproveita `questions.status = "annulled"` (badge/edição já existentes), agora também carregável server-side via `?status=annulled` (deep-link).
+- [x] Novo filtro **Anuladas em Simulados** — derivado de `simulado_questions.status = "annulled"` em pelo menos um vínculo; não é um valor de `questions.status`, é 100% client-side (`questionAnnulledInAnySimulado()` em `app/questoes/page-client.tsx`), reaproveitando os dados de `simulado_questions` já embutidos no `select()` de `app/questoes/page.tsx` (nenhuma nova query para os vínculos, zero N+1; a inclusão do status `annulled` acrescenta uma consulta fixa de contagem ao dashboard).
+- [x] Rótulos no plural; os dois filtros permanecem visíveis com contador `(0)`, preservando a ocultação das demais opções. Seleção única de Status: cada filtro combina separadamente com os demais critérios.
+- [x] Cada questão conta **uma única vez** mesmo anulada em múltiplos simulados (embeds do PostgREST não duplicam a linha-pai).
+- [x] Ambos os filtros compõem normalmente com os demais filtros existentes (disciplina, assunto, banca, órgão, ano, dificuldade, busca) — mesma função `questionMatchesFilters()`.
+- [x] Nenhuma migration criada. Nenhuma alteração de layout/dark premium. Nenhum comportamento pré-existente alterado.
+- [x] `npx tsc --noEmit` e `npm run build` limpos; lint sem novos problemas em relação à baseline.
+
+---
+
 ## 02/09/2026 — Consolidação oficial das interfaces
 
 - [x] Formalizadas exatamente duas bases visuais: Dark Premium e Clean Premium.
@@ -37,6 +135,8 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 
 ## Sprint B — Jornadas (Admin) — 🔄 Implementado, aguardando testes e ajustes finais
 
+> **✅ Reconciliado 07/09/2026:** o módulo de Jornadas (Admin + Aluno) está completo e em uso — ver `AGENTS.md` ("Estado Atual do Projeto": "Módulo de Jornadas completo (admin + área do aluno)") e `docs/INDICE_FUNCOES_SISTEMA.md`, seção 9. A migration das 4 tabelas (histórico: `007_jornadas.sql`) está aplicada em produção — confirmado por evidência indireta: `supabase/migrations/20260713150000_add_jornada_release_duration.sql` adiciona uma coluna à tabela `jornadas`, o que só é possível se a tabela já existir. Os itens abaixo marcados "[ ]" que se referem à migration ou a testes automatizados residuais permanecem como registro histórico da Sprint; os dois botões específicos ("Incluir em Jornada" no detalhe do simulado e "Atribuir a Jornada" no perfil do aluno) não foram encontrados no código atual e continuam genuinamente pendentes — ver seção G do relatório da Sprint de 07/09/2026.
+
 ### Banco de dados
 
 - [x] Migration `007_jornadas.sql` criada com as 4 tabelas
@@ -44,7 +144,7 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 - [x] Tabela `jornada_simulados` com unique `(jornada_id, simulado_id)` e `(jornada_id, order_number)`
 - [x] Tabela `student_jornadas` com unique `(student_id, jornada_id)` e check `expires_at > started_at`
 - [x] Tabela `student_jornada_simulados` com unique `(student_jornada_id, jornada_simulado_id)`
-- [ ] **Migration aplicada no Supabase** ← pendente (arquivo criado, não aplicado)
+- [x] **Migration aplicada no Supabase** — reconciliado 07/09/2026, ver nota acima (histórico original: "arquivo criado, não aplicado")
 
 ### APIs
 
@@ -94,7 +194,7 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 - [ ] Botão "Atribuir a Jornada" no perfil do aluno (`/admin/alunos/[id]`) — previsto na spec seção 3.1
 - [ ] Recálculo de `scheduled_release_at` ao editar `exam_date` com alunos ativos — spec seção 2.4
 - [ ] Reenvio manual de e-mail de boas-vindas da Jornada pelo admin — spec seção 5
-- [ ] Migration aplicada no Supabase (production/staging)
+- [x] Migration aplicada no Supabase (production/staging) — reconciliado 07/09/2026, ver nota acima
 - [x] Cron declarado em `vercel.json` para chamar `/api/admin/jornadas/release-job` uma vez por dia às 04h00 de Brasília (`07:00 UTC`), protegido por `CRON_SECRET` e compatível com o limite diário atualmente aplicado pela Vercel ao projeto; torna-se ativo após o próximo deploy de produção aprovado.
 
 ### Páginas implementadas
@@ -128,20 +228,24 @@ _Atualizado automaticamente pelo agente a cada implementação concluída._
 - [x] Raio-X aprofundado para detalhar o que foi cobrado dentro de cada assunto de Informática/TI.
 - [x] Rotas de IA do Raio-X passam a usar a mesma configuração de modelo da importação (`OPENAI_IMPORT_MODEL`, com fallback para `OPENAI_MODEL`).
 
-## Sprint C — Jornadas (Aluno) — ⬜ Pendente
+## Sprint C — Jornadas (Aluno) — ✅ Concluído
+
+> **✅ Reconciliado 07/09/2026:** confirmado por evidência direta no código atual da `main` — `app/minhas-jornadas/page.tsx` + `page-client.tsx` e `app/minhas-jornadas/[id]/page.tsx` + `page-client.tsx` existem e implementam a listagem e o detalhe; os estados `locked_late`/`expired` (entre outros) estão presentes em ambos os `page-client.tsx`. Ver também `AGENTS.md` ("Módulo de Jornadas completo (admin + área do aluno)"). Escopo original (histórico) abaixo, mantido para registro:
 
 Depende de Sprint B concluído e migration aplicada.
 
 Escopo previsto:
-- [ ] Página `/minhas-jornadas` — lista as jornadas do aluno com progresso
-- [ ] Página `/minhas-jornadas/[id]` — detalhe da jornada com simulados e status de liberação
-- [ ] Integração com `/meus-simulados/[id]` — simulados acessados via jornada
-- [ ] Estados visuais: `locked`, `locked_late`, `available`, `in_progress`, `completed`, `expired`
-- [ ] Atualização de `student_jornada_simulados.status` conforme tentativas do aluno
+- [x] Página `/minhas-jornadas` — lista as jornadas do aluno com progresso
+- [x] Página `/minhas-jornadas/[id]` — detalhe da jornada com simulados e status de liberação
+- [x] Integração com `/meus-simulados/[id]` — simulados acessados via jornada
+- [x] Estados visuais: `locked`, `locked_late`, `available`, `in_progress`, `completed`, `expired`
+- [x] Atualização de `student_jornada_simulados.status` conforme tentativas do aluno
 
 ---
 
 ## Sprint D — Google + Pagamento — ⬜ Fase 2 (futuro)
+
+> **Nota 07/09/2026:** OAuth Google segue sem evidência de implementação em `main`. A parte de "pagamento" está sendo endereçada por uma integração Hotmart em desenvolvimento em branch separada (`hotmart-homologacao`, não mesclada a `main` nesta data) — abordagem distinta do gateway genérico originalmente previsto aqui; não confundir os dois.
 
 - [ ] OAuth Google com merge de conta por email
 - [ ] Integração com gateway de pagamento
@@ -252,14 +356,16 @@ Escopo previsto:
 
 - [ ] Rodar `RODAR-NO-SUPABASE/011_renomear_assuntos_microsoft.sql` no Supabase antes de validar a nomenclatura antiga no banco real.
 
-## Sprint — Importador com IA / Órgão da questão — 🔄 Preparado
+## Sprint — Importador com IA / Órgão da questão — ✅ Concluído
+
+> Reconciliado 07/09/2026: `questions.orgao` está em uso ativo e consolidado em produção — coluna selecionada em `app/questoes/page.tsx`, exibida/editada no Banco de Questões, e com propagação/backfill documentados em `docs/INDICE_FUNCOES_SISTEMA.md` (seções 19.14 e 19.17, 2026-06-03/2026-06-09). O arquivo `012_questions_orgao.sql` não está mais presente no repositório (padrão do projeto para SQLs avulsos rodados manualmente no Supabase — ver também `RODAR-NO-SUPABASE/`); não localizado em nenhum ponto do histórico do git. Não há evidência de coluna ausente ou feature quebrada — mantido como concluído com base no uso corrente do código.
 
 - [x] Importador com IA passa a detectar `Órgão:` / `Orgao:` em textos colados de portais como QConcursos.
 - [x] Card de importação passa a exibir e permitir edição do campo Órgão antes do envio para revisão.
 - [x] Fluxo de salvamento da importação passa a persistir `questions.orgao`.
 - [x] Editor central de questão passa a carregar, editar e salvar `orgao`.
-- [ ] Rodar migration `012_questions_orgao.sql` no Supabase.
-- [ ] Rodar, se desejado, o script destrutivo `013_descartar_questoes_inseridas_hoje.sql` para remover questões criadas hoje.
+- [x] Migration `012_questions_orgao.sql` — reconciliado 07/09/2026, ver nota acima.
+- [ ] Script destrutivo `013_descartar_questoes_inseridas_hoje.sql` (opcional, pontual) — sem relevância atual, mantido apenas como registro histórico.
 
 ## Atualização — Banco de Questões: relatório de uso em simulados — ✅ Implementado em 2026-06-08
 
@@ -476,7 +582,9 @@ Escopo previsto:
 
 ---
 
-## Sprint Segurança do Banco — correções preparadas — 🔄 Migrations criadas em 2026-07-10, aguardando autorização para execução
+## Sprint Segurança do Banco — ✅ Concluído — Migrations criadas e executadas em 2026-07-10
+
+> Reconciliado 07/09/2026: o título anterior ("aguardando autorização para execução") contradizia o corpo da própria seção, que já registrava a execução e a validação pós-execução concluídas em 2026-07-10 — ver "Estado" abaixo.
 
 ### Bloqueadores críticos auditados no banco operacional (somente leitura)
 
@@ -1660,3 +1768,9 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Busca por `hotmart`/`HOTTOK` no diff: zero ocorrências.
 - [ ] **BLOQUEADOR para homologação:** os 135 resultados deste Simulado em produção continuam com os números incorretos produzidos pelo incidente até `reconcileCurrentRevision()` ser executado deliberadamente contra produção — não feito nesta rodada, por instrução explícita. `ET3582` permanece `annulled`.
 - [ ] Nenhuma migration aplicada remotamente. Nenhum dado de produção alterado. Não commitado, não publicado, não deployado.
+
+
+## 07/09/2026 — Fechamento posterior da reconciliação de produção — ET3582
+
+- [x] Pendência do incidente acima encerrada: conforme confirmação do responsável, a reconciliação foi executada com sucesso contra o Supabase de produção usando `reconcileCurrentRevision()` do módulo real commitado. Resultado final: `status = annulled`; `revision_id = e60acda3-428d-45c6-b669-f1bee17837ea`.
+- [x] Para execução local fora do bundler do Next.js, o shim `server-only` foi criado temporariamente, utilizado e removido imediatamente; não permaneceu em `node_modules` nem em arquivo versionado. Nenhum código do repositório ou arquivo versionado foi alterado pela execução. A entrada anterior permanece como registro histórico.

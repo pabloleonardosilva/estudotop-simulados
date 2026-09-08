@@ -1,5 +1,8 @@
 "use client";
 
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
+
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Loader2, Plus, Search, X } from "lucide-react";
 import { adminFetch } from "@/lib/supabase/adminFetch";
@@ -72,7 +75,7 @@ export default function SubjectMultiSelect({
 
   const selected = allSubjects.filter((s) => selectedIds.includes(s.id));
   const normalizedSearch = normalizeSubjectName(search);
-  const filtered = allSubjects.filter(
+  const filtered = sortByPtBrLabel(allSubjects, (subject) => subject.name).filter(
     (s) => !normalizedSearch || s.name.toLowerCase().includes(normalizedSearch.toLowerCase()),
   );
   const exactMatch = allSubjects.some((s) => comparableName(s.name) === comparableName(normalizedSearch));
@@ -241,11 +244,11 @@ export default function SubjectMultiSelect({
     : "mb-2 block text-sm font-medium text-slate-700";
 
   return (
-    <div>
+    <div className={dark ? undefined : "et-clean-field-group"}>
       {label && <label className={labelClass}>{label}</label>}
 
       <div ref={containerRef} className="relative">
-        <button type="button" onClick={openDropdown} className={buttonClass}>
+        <button type="button" onClick={openDropdown} className={`${dark ? "" : "et-clean-field"} ${buttonClass}`}>
           <span className={`truncate ${selected.length > 0 ? (dark ? "text-white/90" : "text-slate-800") : ""}`}>
             {selected.length > 0
               ? `${selected.length} assunto${selected.length > 1 ? "s" : ""} selecionado${selected.length > 1 ? "s" : ""}`
@@ -261,7 +264,7 @@ export default function SubjectMultiSelect({
         </button>
 
         {open && (
-          <div className={dropdownClass}>
+          <div className={`${dark ? "" : "et-clean-popover"} ${dropdownClass}`}>
             <div className={searchWrapClass}>
               <Search size={13} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${dark ? "text-white/30" : "text-slate-400"}`} />
               <input

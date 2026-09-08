@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -101,7 +103,7 @@ export default function NovaRaioXProvaClient({ disciplines, boards, contests, po
   const filteredBoards = useMemo(() => {
     const search = normalizeComparable(boardSearch);
     if (!search) return [];
-    return boardOptions.filter((board) => normalizeComparable(board.name).includes(search)).slice(0, 40);
+    return sortByPtBrLabel(boardOptions, (board) => board.name).filter((board) => normalizeComparable(board.name).includes(search)).slice(0, 40);
   }, [boardOptions, boardSearch]);
 
   const typedBoardAlreadyExists = newBoardName.trim()
@@ -430,7 +432,7 @@ export default function NovaRaioXProvaClient({ disciplines, boards, contests, po
                 <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Disciplina</span>
                 <select value={disciplineId} onChange={(e) => setDisciplineId(e.target.value)} className="w-full rounded-2xl border border-white/[0.08] bg-[#091323] px-4 py-3 text-sm font-semibold text-white outline-none focus:border-orange-300/50 focus:ring-4 focus:ring-orange-500/10">
                   {!disciplines.length && <option value="">Informática/TI</option>}
-                  {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
+                  {sortByPtBrLabel(disciplines, (item) => item.name).map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
                 </select>
               </label>
             </div>
@@ -502,7 +504,7 @@ function FieldSearch({ label, value, onChange, placeholder, suggestions }: {
   const filtered = useMemo(() => {
     const term = normalizeComparable(value);
     if (!term) return [];
-    return suggestions.filter((s) => normalizeComparable(s).includes(term)).slice(0, 30);
+    return sortByPtBrLabel(suggestions, (item) => item).filter((s) => normalizeComparable(s).includes(term)).slice(0, 30);
   }, [suggestions, value]);
 
   return (
@@ -555,7 +557,7 @@ function EntitySearch({ label, placeholder, apiBase, responseKey, options, searc
   const filtered = useMemo(() => {
     const s = normalizeComparable(search);
     if (!s) return [];
-    return options.filter((o) => normalizeComparable(o.name).includes(s)).slice(0, 25);
+    return sortByPtBrLabel(options, (item) => item.name).filter((o) => normalizeComparable(o.name).includes(s)).slice(0, 25);
   }, [options, search]);
 
   const exactMatch = search.trim() && options.some((o) => normalizeComparable(o.name) === normalizeComparable(search));

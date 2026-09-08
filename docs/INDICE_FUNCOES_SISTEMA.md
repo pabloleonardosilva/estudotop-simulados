@@ -4,6 +4,16 @@
 
 O EstudoTOP possui exatamente duas bases visuais: **Dark Premium** (`.et-interface-dark`) e **Clean Premium** (`.et-interface-clean`). A fonte da verdade é `app/globals.css`; `AppShell.tsx` declara a base dos shells e `PageBackground.tsx` a aplica em páginas administrativas. `.et-admin-dark-*`, `.et-admin-clean-content`, `.student-theme` e `.teacher-theme` permanecem como aliases e camadas de compatibilidade. Contrato completo: `docs/Sprint-interface-grafica.md`.
 
+
+### Acabamento editorial Admin Clean - 07/09/2026
+
+Fonte central: app/globals.css, escopo et-admin-clean-content. PageBackground variant=light ativa et-clean-page/container; PageHeader e PremiumCard light herdam hero, titulos e superficies. Campos, botoes, editor, alternativas, metadados, metricas e topicos usam a familia semantica et-clean-*. Consumidores: /questoes/importar, /questoes/nova, /questoes/gerar-ia e fullscreen de criacao manual em lote do Simulado; importacao contextual herda a mesma rota. Tokens --et-interface-* sao reutilizados; --et-clean-* concentram bordas, glows, sombras, canvas e raios complementares. Nao aplicar essa camada ao Aluno/Professor nem aos cards Dark vinculados a simulados. Contrato, arquivos, medidas e limites de validacao: docs/Sprint-interface-grafica.md, secao de 07/09/2026.
+
+
+### Metadados e topicos Admin Clean - refinamento de 07/09/2026
+
+Distribuicao semantica central em globals.css: et-clean-metadata-grid/fields e et-clean-meta-year/board/agency/subjects/compact. Ordem do importador: Tipo, Banca, Orgao, Ano, Assuntos, Dificuldade. Campos textuais expansivos e curtos compactos; quebra por largura do bloco. Valores desktop em Inter 13px/500, sem herdar tracking dos labels. et-clean-topics-panel/label e tokens --et-clean-topics-surface/border/shadow refinam somente o azul tecnico dos topicos. Contrato e validacoes: docs/Sprint-interface-grafica.md, ajuste cirurgico de 07/09/2026. Escopo exclusivo et-admin-clean-content, sem alteracao funcional.
+
 **Projeto:** EstudoTOP Simulados  
 **Arquivo:** `docs/INDICE_FUNCOES_SISTEMA.md`  
 **Status:** versão inicial — mapa funcional para manutenção  
@@ -523,7 +533,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 - **Rodapé do card "Banco de Questões" — restilizado (2026-06-10):** removido o botão "Voltar para revisão" (estado de `toggleQuestionPublishStatus` quando `status === "published"`) — agora o botão "Publicar" só aparece quando `status !== "published"`, já que "Editar" cobre a edição de questões publicadas. Todos os botões do rodapé passaram a usar as novas variantes "premium" (escuras) do `PremiumButton`, no mesmo padrão visual do rodapé do `QuestionEditor.tsx`: `dark` (Editar, Visualizar, Simulado, Usar como modelo, Desarquivar), `dark-primary` (Publicar — gradiente laranja), `dark-warning`/`dark-success` (Anular/Reativar), `dark-danger` (Arquivar, Excluir).
 - **`PremiumButton` (`@/components/ui/PremiumButton`) — novas variantes (2026-06-10):** além de `primary | secondary | ghost | danger`, agora suporta `dark`, `dark-danger`, `dark-warning`, `dark-success`, `dark-primary` — réplicas do esquema de cores escuro usado nos botões de rodapé do `QuestionEditor.tsx` (neutro translúcido, vermelho, âmbar, verde-esmeralda e gradiente laranja/âmbar). Usar essas variantes em rodapés de cards escuros (`darkCard`); as variantes originais continuam claras/neutras para uso em formulários e páginas claras.
 - **`QuestionEditor.tsx` — botão "Arquivar"/"Desarquivar" no rodapé (adicionado 2026-06-10):** novo `<button>` no rodapé (entre "Anular/Reativar" e "Salvar"), estilizado igual ao botão "Salvar" (neutro translúcido). Função `toggleArchiveQuestion` alterna `status` entre `archived` e `draft` via `PATCH /api/admin/questions/bulk`; ao arquivar, chama `onArchived?.(question.id)` (em `/questoes/revisar` isso remove a questão da fila de revisão via `handleArchived`). Diferente do botão "Descartar" (que sempre arquiva e fecha o modal de confirmação), este é um toggle direto sem modal, dando paridade com o botão equivalente do Banco de Questões.
-- **Questões `pending_review` NÃO aparecem no Banco de Questões** — gerenciadas exclusivamente em `/questoes/revisar`. **Questões `ready_to_publish` são acessíveis via URL `?status=ready_to_publish`** — o link "Ver fila de publicação" na sidebar aponta para `/questoes?status=ready_to_publish`, ativando o item corretamente via `isPublicationQueueActive = pathname === "/questoes" && searchParams.get("status") === "ready_to_publish"`. O dropdown de status só exibe: Todos / Rascunho / Publicada / Arquivada (sem `ready_to_publish`). No servidor (`page.tsx`), `QUESTION_STATUSES = ["draft", "published", "active", "archived", "ready_to_publish"]` valida o URL param, enquanto `QUESTION_DASHBOARD_STATUSES` acrescenta `pending_review` exclusivamente à apuração dos cards. A query padrão (sem status) continua excluindo `pending_review` e `ready_to_publish`; no cliente (`questionMatchesFilters`): `if (!fStatus && (qStatus === "pending_review" || qStatus === "ready_to_publish")) return false`.
+- **Questões `pending_review` NÃO aparecem no Banco de Questões** — gerenciadas exclusivamente em `/questoes/revisar`. **Questões `ready_to_publish` são acessíveis via URL `?status=ready_to_publish`** — o link "Ver fila de publicação" na sidebar aponta para `/questoes?status=ready_to_publish`, ativando o item corretamente via `isPublicationQueueActive = pathname === "/questoes" && searchParams.get("status") === "ready_to_publish"`. O dropdown de status exibe: Todos / Rascunho / Publicada / Arquivada / **Anuladas no Banco** / **Anuladas em Simulados** (sem `ready_to_publish`) — as duas últimas opções adicionadas em 2026-09-07, ver seção 5.1.2. No servidor (`page.tsx`), `QUESTION_STATUSES = ["draft", "published", "active", "archived", "ready_to_publish", "annulled"]` valida o URL param (mais o sentinel `"annulled_in_simulados"`, tratado à parte — não é um valor real de `questions.status`), enquanto `QUESTION_DASHBOARD_STATUSES` acrescenta `pending_review` exclusivamente à apuração dos cards. A query padrão (sem status) continua excluindo `pending_review` e `ready_to_publish`; no cliente (`questionMatchesFilters`): `if (!fStatus && (qStatus === "pending_review" || qStatus === "ready_to_publish")) return false`.
 - **Contagem do dashboard corrigida em 2026-08-17:** o card **Aguardando revisão** usa a contagem exata de `questions.status = pending_review`, no mesmo universo do badge **Revisar** da sidebar. A inclusão desse status na apuração não o torna acessível na listagem padrão nem altera o fluxo exclusivo de `/questoes/revisar`.
 
 **Bug corrigido (2026-05-29) — sidebar "fila de publicação" ativava ao digitar:** ao navegar de `/questoes?status=ready_to_publish` para `/questoes` via soft-navigation do Next.js, o state `status` não era redefinido, causando o URL sync effect incluir `status=ready_to_publish` sempre que qualquer outro filtro mudava (ex: digitação na busca). Corrigido com `useEffect(() => { setStatus(initialFilters?.status ?? ""); }, [initialFilters?.status])` logo após o effect de `setQuestions`.
@@ -1010,6 +1020,109 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificulda
 
 ---
 
+### 4.5 Inserir / remover alternativa (2026-09-08)
+
+**Função:** em todo editor/importador que edita alternativas de múltipla escolha, permitir inserir uma alternativa vazia ao final (próxima letra disponível) e remover uma alternativa específica, sem depender de reimportação.
+
+**Padrão original (pré-existente, reaproveitado — não duplicado):** `app/components/questions/QuestionEditor.tsx` (`addAlternative`/`removeAlternative`, usado por `/questoes/revisar` e `/questoes/[id]/editar`), `app/questoes/nova/page-client.tsx` e `app/simulados/[id]/editar/page-client.tsx` (modal "Criar questão manualmente") já implementavam o recurso de forma idêntica: limite mínimo de **4** e máximo de **5** alternativas para `question_type = "multiple_choice"`; nova alternativa recebe a próxima letra (`String.fromCharCode(65 + length)`); ao remover, as demais são relabeladas sequencialmente (`String.fromCharCode(65 + índice)`); `is_correct` é uma propriedade do próprio objeto da alternativa (não uma referência externa por label), então o gabarito acompanha automaticamente a alternativa certa através da remoção/relabel, sem lógica extra — se a removida era a correta, nenhuma fica marcada (exige nova seleção antes de salvar).
+
+**Estendido nesta data, replicando exatamente o mesmo padrão (limite 4–5, relabel, gabarito por objeto), para os editores que ainda não tinham o recurso completo:**
+
+- `app/questoes/importar/page-client.tsx` (Importador com IA) — já existia `removeAlternative`; adicionado `addAlternative`. Botão "Adicionar alternativa" abaixo da lista de alternativas de cada card, ao lado do botão "Excluir" já existente por alternativa. Atualiza apenas o estado local (`questions`) — a persistência real ocorre no envio (`Enviar para revisão`/`Arquivar`/`Arquivar selecionadas`), que já envia a lista de `alternatives` vigente para `POST /api/admin/questions/import/save` (nenhuma mudança no endpoint).
+- `app/questoes/page-client.tsx` (`InlineQuestionEditor`, editor inline do Banco de Questões) — não tinha nenhum dos dois; adicionados `addAlternative`/`removeAlternative` e os respectivos botões. Persiste via `PATCH /api/admin/questions/[id]` (mesmo endpoint já usado por `QuestionEditor.tsx`, que já substitui `question_alternatives` por completo a cada salvamento — nenhuma mudança no endpoint).
+- `app/questoes/gerar-ia/page-client.tsx` (Gerar Questões com IA) — não tinha nenhum dos dois; adicionados via `onChange({ alternatives: ... })` no card (`GeneratedQuestionCard`/`GeneratedAlternativeEditor`, novo prop opcional `onRemove`). Persiste no envio via `POST /api/admin/questions/import/save` (mesmo endpoint do Importador, sem mudança).
+
+**Certo/Errado preserva comportamento próprio, sem alteração:** nenhum dos editores acima exibe os botões de inserir/remover quando `question_type === "true_false"` — o par fixo `Certo`/`Errado` continua sendo o único caminho para esse tipo, como já era.
+
+**Não alterados (já tinham o recurso, verificado e preservado):** `app/questoes/nova/page-client.tsx`, `app/questoes/[id]/variacoes/page-client.tsx`, `app/simulados/[id]/editar/page-client.tsx` (modal de criação manual), `app/components/questions/QuestionEditor.tsx` (e por consequência `/questoes/revisar` e `/questoes/[id]/editar`).
+
+**Fora do escopo desta entrega (recurso ainda ausente, não implementado aqui):** `UseAsTemplateModal` em `app/questoes/page-client.tsx` (fluxo "Usar como modelo") edita texto/gabarito das alternativas mas não tem inserir/remover — não foi alterado por não constar na lista de telas solicitada; registrar como pendência se o fluxo precisar do recurso no futuro.
+
+**Persistência:** nenhum endpoint foi alterado — `PATCH /api/admin/questions/[id]` (delete + insert completo de `question_alternatives`) e `POST /api/admin/questions/import/save` já suportavam corretamente inserir, remover e reordenar alternativas antes desta entrega; apenas a UI passou a expor o recurso nos pontos que faltavam. Nenhuma migration foi necessária.
+
+---
+
+### 4.6 Posição do campo "Tópicos da questão" e camada do dropdown (2026-09-08)
+
+**Regra global:** em todo editor/importador de questões com alternativas, o campo "Tópicos da questão" (`EvaluatedTopicsInput`) deve aparecer **depois da última alternativa** (ou depois do bloco Certo/Errado, quando aplicável) — nunca entre o enunciado e as alternativas. Ordem de referência (padrão de `/questoes/revisar`, via `QuestionEditor.tsx`, que já estava correto): Enunciado → Alternativas → Tópicos → Comentário/explicação → demais campos.
+
+**Exceção:** questões sem alternativas mantêm o campo logo após o enunciado (não há bloco de alternativas para posicionar depois).
+
+**Telas auditadas:**
+- **Já corretas, preservadas sem alteração:** `app/components/questions/QuestionEditor.tsx` (referência — usado por `/questoes/revisar` e `/questoes/[id]/editar`), `app/questoes/importar/page-client.tsx`, `app/questoes/gerar-ia/page-client.tsx`, `app/questoes/page-client.tsx` (`InlineQuestionEditor`), `app/simulados/[id]/editar/page-client.tsx` (as três telas de criação de questão desse arquivo — modal "Criar questão manualmente", formulário "Usar como modelo" e o card de criação avulsa).
+- **Corrigida:** `app/questoes/nova/page-client.tsx` — o bloco de "Tópicos avaliados" estava posicionado entre o enunciado e o bloco de alternativas/Certo-Errado. Movido para depois do bloco de alternativas (incluindo o botão "Adicionar alternativa") e antes do campo "Comentário do professor". Alteração puramente de posição no JSX — nenhum estado, handler ou persistência foi tocado.
+- **Não aplicável (sem campo de tópicos):** `app/questoes/[id]/variacoes/page-client.tsx`, `UseAsTemplateModal` em `app/questoes/page-client.tsx`.
+
+**Dropdown/autocomplete de sugestões — correção centralizada:** `app/components/questions/EvaluatedTopicsInput.tsx` — o menu de sugestões usava `z-30`, valor baixo demais quando o card que contém o campo (em telas com lista de vários cards, como o Importador e o Gerar IA) disputa camada com cards/painéis vizinhos ou barras flutuantes que já usam `z-40`/`z-[9999]` no padrão do projeto (documentado nesta seção 14.5). Elevado para `z-[9999]` — mesmo padrão já usado por todos os outros dropdowns customizados do sistema (`SimpleSelectDropdown`, `BoardFilterDropdown`, `YearFilterDropdown`, etc.). Correção feita uma única vez, no componente compartilhado — nenhum consumidor precisou de ajuste de camada. **Necessária, mas insuficiente por si só — ver seção 4.9 (2026-09-08): o problema tinha uma segunda causa (stacking context da animação de entrada dos cards), corrigida com portal.**
+
+**Preservado sem alteração:** cores, bordas, comportamento de digitar/selecionar/remover tópico, criação de tópico novo, busca/filtro do catálogo, atalhos de teclado (setas, Enter, `;`, Escape).
+
+---
+
+### 4.7 Padronização textual dos botões de alternativa (2026-09-08)
+
+**Texto oficial, obrigatório em todo editor/importador de questões:**
+- Inserir: **"Adicionar alternativa"**
+- Remover: **"Remover alternativa"**
+
+Nunca variações como "Adicionar Alternativa", "Inserir alternativa", "Nova alternativa", "Excluir alternativa", "Apagar alternativa", "+ alternativa", ou texto dinâmico com a próxima letra no botão (ex.: "Adicionar alternativa E)"). A letra da nova alternativa é resultado da ação (aparece na bolinha/label do campo criado), nunca parte do nome do botão — nome da ação é estável.
+
+**Inconsistências encontradas e corrigidas (texto apenas — nenhuma lógica, classe estrutural ou comportamento tocado):**
+- `app/components/questions/QuestionEditor.tsx` (editor central/referência) — usava **"Adicionar resposta {letra}"** e **"Excluir"**; corrigido para "Adicionar alternativa" e "Remover alternativa" (título do botão e texto visível).
+- `app/questoes/importar/page-client.tsx`, `app/questoes/gerar-ia/page-client.tsx`, `app/questoes/page-client.tsx` (`InlineQuestionEditor`) — o botão de inserir mostrava a letra dinâmica ("Adicionar alternativa E)"); removida, mantendo apenas "Adicionar alternativa". O de remover usava `title` como "Excluir alternativa {letra}" (ou, no caso do Gerar IA, nenhum texto visível); padronizado `title="Remover alternativa"` e adicionado/corrigido o texto visível `<span className="hidden xl:inline">Remover alternativa</span>` — mesmo padrão de visibilidade condicional (ícone sempre visível, texto a partir do breakpoint `xl`) já usado por essas telas.
+- `app/simulados/[id]/editar/page-client.tsx` (modal "Criar questão manualmente") — o `PremiumButton` de remover mostrava apenas "Excluir"; corrigido para "Remover alternativa". O de adicionar já estava correto ("Adicionar alternativa").
+- `app/questoes/[id]/variacoes/page-client.tsx` — o botão de inserir usava o caractere "+" como texto literal ("+ Adicionar alternativa"); substituído por um ícone `<Plus>` (mesmo padrão de ícone usado nas demais telas), mantendo apenas o texto "Adicionar alternativa". O botão de remover já usava `title="Remover alternativa"` — preservado sem alteração.
+- `app/questoes/nova/page-client.tsx` — já estava com o texto correto em ambos os botões; nenhuma alteração textual necessária (apenas o reposicionamento do campo de tópicos, feito numa entrega anterior).
+
+**Preservado, não redesenhado:** ícone de cada botão (`Plus`/`Trash2`, exceto o `X` do botão de remover em Variações — ver nota abaixo), tipografia (`text-xs`/`text-sm` `font-semibold`, conforme o botão já usava), cores/tema clean vs dark, alturas, raios de borda, paddings, estados `hover`/`focus`/`disabled` de cada botão — só o texto foi unificado. Nenhum componente `PremiumButton` foi trocado por marcação customizada, nem o inverso.
+
+**Nota (atualizada em 4.8 abaixo):** o botão de remover em Variações usava ícone circular `X` sem texto visível na entrega anterior — na entrega de 2026-09-08 (seção 4.8), essa e outras divergências estruturais foram revisadas e alinhadas ao padrão do Importador com IA.
+
+**Preservado integralmente:** lógica de inserir/remover, limites mínimo/máximo de cada tela (4–5 na maioria; 2 em Variações), ajuste de gabarito na remoção, comportamento Certo/Errado, arquivamento, envio para revisão, parser, tópicos após alternativas, ordenação pt-BR, persistência — nenhum desses pontos foi tocado.
+
+---
+
+### 4.8 Padronização estrutural do bloco de alternativas (2026-09-08)
+
+**Referência visual/estrutural oficial:** o bloco de alternativas do Importador com IA (`app/questoes/importar/page-client.tsx`). Todos os editores/importadores de questões que editam alternativas devem seguir esta estrutura, na mesma ordem, em uma única linha (`flex items-start gap-3`):
+
+1. Badge circular único (`h-7 w-7 rounded-full`) — mostra a letra quando não é a correta (botão clicável, `onClick` marca como correta) ou a coruja (`OWL_MARK`, `span` não-clicável) quando é a correta. **Nunca dois elementos separados** (letra + botão de marcar) — é um único badge com os dois estados.
+2. Editor de texto (`RichTextEditor`, `compact`) ocupando a área principal (`min-w-0 flex-1`) — toolbar dentro do próprio campo, não acima.
+3. Campos auxiliares específicos da tela (ex.: botão de imagem por alternativa), se a tela já os tiver — posicionados entre o editor de texto e o botão de remover.
+4. Botão "Remover alternativa" **por último**, à direita da linha.
+
+Alternativa correta: fundo verde suave (`bg-emerald-50`/`bg-emerald-500/[0.08]` conforme o tema) e borda verde (`border-emerald-200`/`border-emerald-500/30`) no card; badge com fundo verde sólido e coruja branca.
+
+**Divergências encontradas e corrigidas (estrutura, não apenas texto):**
+- `app/components/questions/QuestionEditor.tsx` (estado expandido) — o botão "Remover alternativa" vinha **antes** do badge/letra (ordem: remover → letra → texto → imagem). Reordenado para letra → texto → imagem → remover, igual ao Importador. O estado colapsado já estava na ordem correta (letra → prévia clicável → remover) e não foi alterado. O mecanismo de colapsar/expandir (`useState(!hasContent)`, botão "Colapsar") foi **preservado** — não é parte da estrutura da linha de alternativa em si, é um recurso adicional específico deste editor central (usado por `/questoes/revisar` e `/questoes/[id]/editar`), útil para questões com alternativas longas onde o usuário revisa uma questão de cada vez; removê-lo seria uma mudança de comportamento além do pedido de estrutura visual do bloco.
+- `app/questoes/nova/page-client.tsx` — tinha **dois elementos separados** para letra e "marcar como correta" (um `<span>` com a letra + um `<button>` redondo com a coruja), nessa ordem: remover → letra (span) → marcar (button) → texto → imagem. Unificado em um único badge (padrão Importador) e reordenado para badge → texto → imagem → remover.
+- `app/questoes/page-client.tsx` (`InlineQuestionEditor`, Banco de Questões) — mesma duplicação de `nova` (botão redondo + `<span>{label})</span>` com parêntese literal, prática já vetada por este índice — ver padrão de alternativas em `AGENTS.md`/seção 3.1: "a letra fica dentro da bolinha... não usar o padrão 'A)' como prefixo de texto"). Unificado em um único badge; ordem badge → texto → remover já estava correta, não precisou mudar.
+- `app/questoes/[id]/variacoes/page-client.tsx` — estado expandido tinha o botão de remover **antes** do badge (mesmo problema de `QuestionEditor.tsx`); reordenado. O botão de remover usava ícone `X` circular sem texto visível; padronizado para `Trash2` com texto `hidden xl:inline` (mesmo padrão condicional de importar/nova/gerar-ia). O estado colapsado não tinha nenhum botão de remover (só era possível remover após expandir); adicionado, na mesma posição/estilo do estado colapsado de `QuestionEditor.tsx`. Colapsar/expandir (mesmo padrão de `QuestionEditor.tsx`, componentes distintos mas arquitetura idêntica) foi preservado pela mesma razão.
+- `app/simulados/[id]/editar/page-client.tsx` (modal "Criar questão manualmente") — usava layout `grid md:grid-cols-[64px_1fr_auto]` (não `flex`) e um botão `PremiumButton` de texto ("Marcar"/"Gabarito") **separado** do badge da letra para marcar a resposta correta, além do badge não ter estado de coruja (mostrava só a letra, mesmo quando correta). Convertido para `flex items-start gap-3`; badge único (letra ou coruja) com `onClick` assumindo a função do antigo botão "Marcar"/"Gabarito" (removido, redundante); editor de texto em `flex-1`; botão de remover (`PremiumButton variant="danger"`, já com o texto oficial) mantido por último. O outro fluxo de criação neste mesmo arquivo ("Usar como modelo"/"Criada a partir de modelo") não tem inserir/remover e usa um formulário de campos avulsos (`PremiumInput`) estruturalmente diferente por natureza — fora do escopo desta padronização (não é um "card de alternativa").
+- `app/questoes/gerar-ia/page-client.tsx` (`GeneratedAlternativeEditor`) — já seguia a estrutura do Importador (foi implementado espelhando esse padrão numa entrega anterior); nenhuma mudança estrutural necessária.
+
+**Diferença clean/dark permitida, preservada:** cores de fundo/borda/hover (`slate`/`white` no clean, `white/[0.0X]` no dark), conforme já era. Nenhuma estrutura, ordem ou texto diferem entre clean e dark.
+
+**Preservado integralmente (nenhuma lógica tocada):** `addAlternative`/`removeAlternative`/`markCorrect` (mesmos handlers, apenas religados a elementos JSX reorganizados), limites mínimo/máximo de cada tela, ajuste de gabarito na remoção, Certo/Errado (não usa este bloco — layout próprio, inalterado), arquivamento, arquivar selecionadas, envio para revisão, parser, duplicidade, tópicos após alternativas (posição não tocada), dropdown de tópicos em `z-[9999]`, ordenação pt-BR, persistência, endpoints, banco de dados.
+
+---
+
+### 4.9 Dropdown de tópicos via portal — correção da causa raiz real (2026-09-08)
+
+**Problema reportado:** no Importador com IA, com uma seleção ativa (barra fantasma `SelectionGhostBar` visível), o dropdown de sugestões de "Tópicos avaliados" abria parcialmente **atrás** da barra — mesmo já estando em `z-[9999]` (seção 4.6). Print do usuário confirmou parte das sugestões cobertas pela barra.
+
+**Causa raiz real:** `z-[9999]` só resolve disputas de camada **dentro do mesmo stacking context**. Cada card de questão do Importador tem `motion-safe:animate-[importCardIn_...]`, e o keyframe `importCardIn` (`app/globals.css`) anima `opacity` e `transform`. Pela especificação de CSS, qualquer elemento com uma animação que afeta `opacity`/`transform`/`filter` cria **stacking context próprio** — independentemente de a animação já ter terminado. Isso prende o `z-[9999]` do dropdown (renderizado `position: absolute` dentro do card) ao nível de camada do **card como um todo** (efetivamente `z-30`, do `focus-within:z-30` do próprio card, ou menor). A barra fantasma usa `position: fixed` com `z-[9000]`, fora dessa árvore, então sempre vencia a disputa — subir o z-index do menu para qualquer valor não resolvia, porque ele nunca competia diretamente com a barra no mesmo contexto.
+
+**Solução aplicada — centralizada em `app/components/questions/EvaluatedTopicsInput.tsx`:** o menu de sugestões passou a ser renderizado via `createPortal` diretamente em `document.body`, com `position: fixed` e coordenadas calculadas por `getBoundingClientRect()` do campo (recalculadas ao abrir e, enquanto aberto, a cada `scroll`/`resize` da janela). Ao sair da árvore do card, o menu deixa de estar sujeito ao stacking context da animação — `z-[9999]` volta a ser comparado no nível raiz do documento, acima de qualquer card, painel ou da barra fantasma (`z-[9000]`). Também passou a abrir para cima quando não há espaço suficiente abaixo (menos de 160px) e há mais espaço acima — evita ficar espremido perto do rodapé/barra em qualquer tela.
+
+**Por que não quebra a barra fantasma:** `app/components/ui/SelectionGhostBar.tsx` não foi tocado — mesmo `z-[9000]`, mesma posição, mesmos botões (Arquivar selecionadas, Enviar para revisão, Limpar seleção, Descartar). A correção não baixou a camada da barra; apenas fez o menu de tópicos escapar do contexto que o prendia, para poder ficar acima dela quando necessário.
+
+**Sem portal de âncora pré-existente no projeto:** os usos de `createPortal` já existentes (`QuestionCodePopupLink.tsx`, `DraftRestoreModal.tsx`, `TopCoinRewardModal.tsx`) são modais de tela cheia centralizados, sem lógica de ancoragem a um campo — não reaproveitáveis para este caso; a lógica de posicionamento foi implementada localmente, apenas neste componente.
+
+**Preservado sem alteração:** busca/filtro do catálogo, seleção de sugestão (`onMouseDown` com `preventDefault` continua evitando que o clique feche o campo antes do clique registrar — comportamento independente da posição do menu no DOM), criação de tópico (`commitDraft`), remoção de tópico selecionado, navegação por teclado (setas/Enter/`;`/Escape), ordenação pt-BR das sugestões, visual (cores, bordas, sombra, hover, item ativo, tipografia) idêntico ao anterior — só a posição/camada de renderização mudou. Nenhum consumidor (`importar`, `gerar-ia`, `nova`, `page-client.tsx`, `QuestionEditor.tsx`, `simulados/[id]/editar`) precisou de alteração — a correção ficou inteiramente dentro de `EvaluatedTopicsInput.tsx`.
+
+---
+
 ## 5. FILTROS E BUSCAS
 
 ### 5.1 Filtros do Banco de Questões
@@ -1142,6 +1255,28 @@ As telas dark de Questões, Revisar Questões e o seletor de questões dentro de
 - Em `questoes/page.tsx` o order server-side foi simplificado para `created_at DESC` fixo (o sort de exibição é 100% client-side por `year`).
 
 **Visual:** card `rounded-[2rem] border border-white/[0.07] bg-white/[0.03]` com ícone `Calendar` + label "Ordenar por ano" à esquerda; toggle de dois botões `rounded-xl bg-white/[0.04] p-1` à direita. Ativo: `bg-orange-500 shadow-orange-500/30`. Inativo: `text-white/40 hover:bg-white/[0.06]`.
+
+---
+
+### 5.1.2 Filtros de anulação — "Anuladas no Banco" e "Anuladas em Simulados" (2026-09-07)
+
+Duas opções adicionadas ao dropdown de Status existente (`SimpleSelectDropdown`), sem novo componente e sem alterar layout/grid/estilo dos filtros.
+
+**Distinção conceitual:**
+- **Anuladas no Banco** (`value: "annulled"`) — a questão em si tem `questions.status = "annulled"` (mesmo badge/toggle Anular-Reativar já existentes na edição de questão). Carrega server-side via `?status=annulled` (deep-link), igual aos demais valores reais de `questions.status`.
+- **Anuladas em Simulados** (`value: "annulled_in_simulados"`) — **não é** um valor de `questions.status`. É verdadeiro quando a questão tem pelo menos um vínculo `simulado_questions.status = "annulled"` (anulação feita dentro de um simulado específico, após aplicação). A própria questão no banco pode continuar `published`/`active`. 100% client-side — não existe `.eq("status", "annulled_in_simulados")` no servidor.
+
+**Arquivos:**
+- `app/questoes/page.tsx` — `QUESTION_STATUSES` inclui `"annulled"` (permite deep-link server-side); constante `SIMULADO_ANNULLED_FILTER_VALUE = "annulled_in_simulados"` preservada apenas para o `initialFilters.status` não ser resetado para `""` num deep-link com essa opção — o carregamento server-side cai no branch padrão (abrangente) para esse valor, nunca tenta `.eq("status", ...)` com ele.
+- `app/questoes/page-client.tsx` — mesma constante `SIMULADO_ANNULLED_FILTER_VALUE`; helper `questionAnnulledInAnySimulado(question)` — `some()` sobre `question.simulado_questions` checando `status === "annulled"`; usado dentro de `questionMatchesFilters()` (cláusula adicional no `OR` do status) e em `statusFacetCounts` (contador dedicado, incrementado 1x por questão, nunca por vínculo).
+
+**Origem dos dados:** reaproveita o `select()` de `simulado_questions (id, status, order_number, simulados:simulado_id(id,title,status))` que já existia em `page.tsx` para o badge "⚠ Anulada em N simulado(s)" do card — **nenhuma query nova para os vínculos, nenhum N+1**. A inclusão de `annulled` em `QUESTION_DASHBOARD_STATUSES` acrescenta uma consulta fixa de contagem ao dashboard. Como os embeds do PostgREST não duplicam a linha-pai da questão, uma questão anulada em vários simulados aparece **uma única vez** na lista filtrada.
+
+**Composição com outros filtros:** a seleção de Status é única; os dois filtros são usados separadamente. Uma questão que satisfaz ambos aparece em cada seleção. Ambas as opções entram na mesma cláusula `AND` de `questionMatchesFilters` que já combina disciplina/assunto/banca/órgão/ano/dificuldade/busca — comportamento idêntico ao de qualquer outro valor de status.
+
+**Contadores do dropdown:** Anuladas no Banco e Anuladas em Simulados permanecem visíveis inclusive com `(0)`. As demais opções preservam o padrão existente: aparecem se `statusFacetCounts[value] > 0` (ou já selecionadas). Contagem client-side sobre a lista carregada.
+
+**Cautelas de manutenção:** ao alterar `simulado_questions` no `select()` de `page.tsx`, preservar `status` no embed (é a única coluna que `questionAnnulledInAnySimulado` lê). Ao adicionar um novo valor real a `questions.status`, não reutilizar o literal `"annulled_in_simulados"` — é um sentinel reservado, não um status de banco.
 
 ---
 
@@ -3213,6 +3348,27 @@ Ao alterar `app/components/ui/SearchableSelect.tsx`:
 - Toda query que busca uma questão individual para edição deve incluir `orgao` no SELECT.
 - No card de questão (Banco de Questões), `orgao` fica entre banca e ano nos chips de metadados.
 - A tela `/questoes/revisar` usa `QuestionEditor` que já renderiza o campo `orgao` como input editável — nenhuma mudança necessária lá além do SELECT já existente em `revisar/page.tsx`.
+
+### Ordenação global de opções textuais - 08/09/2026
+
+- Filtros, dropdowns, selects, autocompletes e multiselects textuais exibem opções alfabeticamente em pt-BR, ignorando caixa e diferenças de acento na comparação, com comparação numérica natural. Regra de exibição para todo o sistema, sem alterar dados, schema, APIs ou contratos dos filtros.
+- Helper: app/lib/utils/sort.ts, sortByPtBrLabel (copia o array) e sortTextOptions (preserva opções especiais e agrupa por disciplina/grupo antes dos nomes).
+- SearchableSelect ordena por padrão; sortOptions=false preserva listas operacionais futuras. PremiumSelect usa sortOptions explicitamente nos consumidores textuais. SubjectMultiSelect e sugestões de tópicos ordenam apenas as opções; seleções e vínculos permanecem intactos.
+- Consumidores locais: Banco/Revisão/Importador, Simulados e seleção do banco, Tópicos, Assuntos, Raio-X (FieldSearch/EntitySearch), Jornadas (banco de simulados e seleção de alunos), Eventos (professores/alunos), Alunos (jornadas/eventos), perfil do aluno (interesses), Ajuda (motivo), Logs (ator).
+- Estado de fluxo, dificuldade, anos, datas, períodos, progresso, gravidade, rankings, menus, abas e listas manuais não recebem ordenação alfabética. Listagens principais e paginação conservadas. Bancas/Disciplinas/Professores sem seletor textual próprio não tiveram sua listagem alterada.
+- Particularidade da main: ProfessorAssignmentPicker ordena resultados por nome antes do limite de 30, preservando selecionados. Hotmart ausente nesta branch; nenhuma importação desse módulo.
+- Validação: build e TypeScript; Edge com componentes reais em fixture isolada (ordem, seleção, busca, teclado, status/anos); arrays congelados, empates estáveis e grupos. Aceite manual completo de todas as rotas autenticadas permanece pendente.
+
+### Importador com IA - Arquivar na prévia (08/09/2026)
+
+- Auditoria main em 08/09/2026: archiveQuestions, sendToReview e endpoints de salvamento/duplicidade já alinhados a Sistema; preservados. Usuário homologou parcialmente archived ao arquivar e draft ao desarquivar no Banco.
+- O card oferece **Arquivar** e a barra de seleção oferece **Arquivar selecionadas**, com confirmação pelo QuestionActionModal existente.
+- Usa o mesmo status da Revisão/Banco: a questão ainda na prévia é inserida por POST /api/admin/questions/import/save com status explicitamente archived e source_origin import_ai. Não segue para revisão, publicação ou vínculo com Simulado.
+- Preserva metadados, gabarito, alternativas e assuntos existentes. Dados opcionais ausentes não exigem classificação por IA para arquivar.
+- archiveQuestions remove da prévia, seleção e expansão somente saved_temp_ids/ignored_temp_ids confirmados; failed_items permanecem. Cancelamento e erro de comunicação preservam a prévia.
+- Duplicidade bloqueante é sucesso operacional: informa que a questão já constava no banco, sem alterar o registro existente. Questões archived continuam participando da detecção futura, sem mudança no critério de similaridade.
+- status aceita somente pending_review ou archived; ausente, preserva o fluxo normal e os comportamentos contextuais anteriores. Arquivar ignora contexto de Simulado e status_override.
+- Arquivos: app/questoes/importar/page-client.tsx e app/api/admin/questions/import/save/route.ts. Editor central, Revisador, Banco, parsers e dropdowns preservados nesta etapa.
 
 ### 19.15 Importar com IA — envio idempotente para revisão (2026-06-03)
 

@@ -1,4 +1,5 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from "react";
 import { CalendarClock, CheckCircle2, Clock3, ImageIcon, Link2, Loader2, Plus, Sparkles, Users } from "lucide-react";
@@ -219,7 +220,7 @@ export default function EventosAdminClient() {
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-slate-300">Professores responsáveis <span className="text-slate-500">(opcional)</span></legend>
                 <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {professors.length ? professors.map((professor) => { const selected = professorIds.includes(professor.id); return <label key={professor.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 transition ${selected ? "border-orange-400/40 bg-orange-500/10 text-orange-100" : "border-white/[0.07] bg-white/[0.03] text-slate-300 hover:border-white/15"}`}><input type="checkbox" checked={selected} onChange={() => setProfessorIds((current) => selected ? current.filter((id) => id !== professor.id) : [...current, professor.id])} className="h-4 w-4 accent-orange-500" /><span className="min-w-0"><span className="block truncate text-sm font-bold">{professor.name}</span><span className="block truncate text-xs text-slate-500">{professor.email}</span></span></label>; }) : <p className="p-2 text-sm text-slate-500">Nenhum professor ativo cadastrado.</p>}
+                  {professors.length ? sortByPtBrLabel(professors, (item) => item.name).map((professor) => { const selected = professorIds.includes(professor.id); return <label key={professor.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 transition ${selected ? "border-orange-400/40 bg-orange-500/10 text-orange-100" : "border-white/[0.07] bg-white/[0.03] text-slate-300 hover:border-white/15"}`}><input type="checkbox" checked={selected} onChange={() => setProfessorIds((current) => selected ? current.filter((id) => id !== professor.id) : [...current, professor.id])} className="h-4 w-4 accent-orange-500" /><span className="min-w-0"><span className="block truncate text-sm font-bold">{professor.name}</span><span className="block truncate text-xs text-slate-500">{professor.email}</span></span></label>; }) : <p className="p-2 text-sm text-slate-500">Nenhum professor ativo cadastrado.</p>}
                 </div>
               </fieldset>
             </div>

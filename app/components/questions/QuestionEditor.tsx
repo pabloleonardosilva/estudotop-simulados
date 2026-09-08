@@ -439,9 +439,9 @@ function AlternativeEditor({ alternative, index, total, isCorrect, onChange, onR
             <ChevronDown size={13} className="mt-0.5 shrink-0 text-white/30" />
           </button>
           <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 4}
-            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Excluir alternativa"}
+            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Remover alternativa"}
             className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white/35 hover:bg-red-500/[0.12] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-20">
-            <Trash2 size={13} /> Excluir
+            <Trash2 size={13} /> Remover alternativa
           </button>
         </div>
       </div>
@@ -460,11 +460,6 @@ function AlternativeEditor({ alternative, index, total, isCorrect, onChange, onR
           </div>
         )}
         <div className="flex items-start gap-2">
-          <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 4}
-            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Excluir alternativa"}
-            className="mt-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white/35 hover:bg-red-500/[0.12] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-20">
-            <Trash2 size={13} /> Excluir
-          </button>
           {isCorrect ? (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-lg">
               <span className="block font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span>
@@ -488,6 +483,11 @@ function AlternativeEditor({ alternative, index, total, isCorrect, onChange, onR
           <button type="button" onClick={(event) => { event.stopPropagation(); onChange({ showImage: !alternative.showImage }); }}
             className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/25 hover:bg-white/[0.06] hover:text-orange-400">
             <ImageIcon size={18} />
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} disabled={total <= 4}
+            title={total <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Remover alternativa"}
+            className="mt-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white/35 hover:bg-red-500/[0.12] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-20">
+            <Trash2 size={13} /> Remover alternativa
           </button>
         </div>
         {alternative.showImage && (
@@ -1097,7 +1097,7 @@ export default function QuestionEditor({
                 {question.alternatives.length < 5 && (
                   <button type="button" onClick={addAlternative}
                     className="ml-10 mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-white/[0.10] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-white/40 transition hover:border-orange-400/30 hover:bg-orange-400/[0.06] hover:text-orange-300">
-                    <Plus size={16} /> Adicionar resposta {getNextAlternativeLabel(question.alternatives)}
+                    <Plus size={16} /> Adicionar alternativa
                   </button>
                 )}
               </div>

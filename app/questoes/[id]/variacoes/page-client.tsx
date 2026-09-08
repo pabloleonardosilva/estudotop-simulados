@@ -10,6 +10,7 @@ import {
   ChevronDown,
   FileQuestion,
   ImageIcon,
+  Plus,
   Scissors,
   Send,
   ShieldAlert,
@@ -1092,9 +1093,9 @@ function GeneratedQuestionCard({
                 type="button"
                 onClick={onAddAlternative}
                 disabled={disabled}
-                className="mt-3 rounded-2xl border border-dashed border-orange-200 bg-orange-50/60 px-4 py-2 text-sm font-bold text-orange-700 transition hover:bg-orange-50 disabled:opacity-50"
+                className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-dashed border-orange-200 bg-orange-50/60 px-4 py-2 text-sm font-bold text-orange-700 transition hover:bg-orange-50 disabled:opacity-50"
               >
-                + Adicionar alternativa
+                <Plus size={16} /> Adicionar alternativa
               </button>
             )}
 
@@ -1257,6 +1258,15 @@ function VariationAlternativeEditor({
             </span>
             <ChevronDown size={13} className="mt-0.5 shrink-0 text-slate-400" />
           </button>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onRemove(); }}
+            disabled={disabled || total <= 2 || questionType === "true_false"}
+            title="Remover alternativa"
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Trash2 size={13} /> Remover alternativa
+          </button>
         </div>
       </div>
     );
@@ -1287,16 +1297,6 @@ function VariationAlternativeEditor({
         )}
 
         <div className="flex items-start gap-2">
-          <button
-            type="button"
-            onClick={(event) => { event.stopPropagation(); onRemove(); }}
-            disabled={disabled || total <= 2 || questionType === "true_false"}
-            className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-red-50 hover:text-red-500 disabled:opacity-20"
-            title="Remover alternativa"
-          >
-            <X size={16} />
-          </button>
-
           {isCorrect ? (
             <span className={`${qCard.alts.labelCorrect} shrink-0`}>
               <span className="block font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">
@@ -1353,6 +1353,17 @@ function VariationAlternativeEditor({
               <ImageIcon size={18} />
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onRemove(); }}
+            disabled={disabled || total <= 2 || questionType === "true_false"}
+            title="Remover alternativa"
+            className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Trash2 size={14} />
+            <span className="hidden xl:inline">Remover alternativa</span>
+          </button>
         </div>
 
         {questionType !== "true_false" && alternative.showImage && (

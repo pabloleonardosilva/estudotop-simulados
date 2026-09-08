@@ -1,4 +1,8 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
+
+import { splitQuestionSeparatorBlocks } from "@/app/lib/utils/question-splitter";
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -7,16 +11,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import {
+  Archive,
   AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
   Ban,
   Bold,
-  Bot,
   BrushCleaning,
   Check,
   CheckCircle2,
-  ClipboardPaste,
   Clock3,
   Eye,
   FileQuestion,
@@ -377,46 +380,16 @@ function coalesceContinuationBlocks(blocks: string[]) {
   return merged;
 }
 
-function isQuestionSeparatorLine(line: string) {
-  const compact = line.trim().replace(/\s+/g, "");
-  return /^x{6,}$/i.test(compact);
-}
 
-function cleanSeparatorDelimitedBlock(value: string) {
-  const lines = value.split("\n");
-  const firstContentIndex = lines.findIndex((line) => line.trim());
 
-  if (firstContentIndex >= 0 && /^\d{1,4}\)\s*$/.test(lines[firstContentIndex].trim())) {
-    lines.splice(firstContentIndex, 1);
-  }
 
-  return lines.join("\n").trim();
-}
 
 function splitIntoQuestionBlocks(text: string) {
+  const separated = splitQuestionSeparatorBlocks(text);
+  if (separated !== null) return separated;
   const normalized = sanitizeImportedText(text);
 
   if (!normalized) return [];
-
-  const normalizedLines = normalized.split("\n");
-  if (normalizedLines.some(isQuestionSeparatorLine)) {
-    const separatorBlocks: string[] = [];
-    let current: string[] = [];
-
-    for (const line of normalizedLines) {
-      if (isQuestionSeparatorLine(line)) {
-        const block = cleanSeparatorDelimitedBlock(current.join("\n"));
-        if (block) separatorBlocks.push(block);
-        current = [];
-        continue;
-      }
-      current.push(line);
-    }
-
-    const lastBlock = cleanSeparatorDelimitedBlock(current.join("\n"));
-    if (lastBlock) separatorBlocks.push(lastBlock);
-    return separatorBlocks;
-  }
 
   const markedRegex =
     /\(?IN[IÍ]CIO DA QUEST(?:ÃO|AO)\)?([\s\S]*?)\(?FIM DA QUEST(?:ÃO|AO)\)?/gi;
@@ -543,6 +516,7 @@ export default function ImportarQuestoesClient({
   const searchParams = useSearchParams();
   const simuladoId = searchParams.get("simulado")?.trim() || null;
   const importingForSimulado = Boolean(simuladoId);
+  const archiveBusy = useRef(false);
   const stopRef = useRef(false);
   const questionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const currentQuestionsForBatchRef = useRef<ImportedQuestion[]>([]);
@@ -1222,6 +1196,28 @@ export default function ImportarQuestoesClient({
     });
   }
 
+  function addAlternative(questionId: string) {
+    setQuestions((current) =>
+      current.map((question) => {
+        if (
+          question.temp_id !== questionId ||
+          question.question_type !== "multiple_choice" ||
+          question.alternatives.length >= 5
+        ) {
+          return question;
+        }
+
+        return {
+          ...question,
+          alternatives: [
+            ...question.alternatives,
+            { label: String.fromCharCode(65 + question.alternatives.length), text: "", is_correct: false },
+          ],
+        };
+      }),
+    );
+  }
+
   function applyBoardToQuestion(questionId: string, board: BoardOption) {
     if (!board?.id) return;
 
@@ -1705,6 +1701,52 @@ export default function ImportarQuestoesClient({
     }, 120);
   }
 
+  async function archiveQuestions(targetQuestions: ImportedQuestion[], confirmed = false) {
+    if (sendingToReview || archiveBusy.current || targetQuestions.length === 0) return;
+    const close = () => setSendReviewModal(null);
+    if (!confirmed) {
+      setSendReviewModal({
+        open: true, tone: "confirm", title: targetQuestions.length === 1 ? "Arquivar questão" : "Arquivar selecionadas",
+        message: "Esta questão será salva no banco como arquivada. Ela não irá para revisão, mas continuará registrada para futuras verificações de duplicidade. Deseja continuar?" + (targetQuestions.length > 1 ? " A ação será aplicada a " + targetQuestions.length + " questões selecionadas." : ""),
+        primaryLabel: "Arquivar", secondaryLabel: "Cancelar",
+        onPrimary: () => { void archiveQuestions(targetQuestions, true); }, onSecondary: close, onClose: close,
+      });
+      return;
+    }
+    archiveBusy.current = true;
+    setSendReviewModal({ open: true, tone: "review", title: "Arquivando questões", loading: true });
+    try {
+      const response = await adminFetch("/api/admin/questions/import/save", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived", questions: targetQuestions.map((question) => ({
+          ...question, subject_ids: questionOwnSubjectIds(question), source_origin: "import_ai",
+        })) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error("Não foi possível arquivar. Tente novamente.");
+      const requested = new Set(targetQuestions.map((question) => question.temp_id));
+      const failed = new Set<string>((result.failed_items || []).map((item: { temp_id?: string }) => item.temp_id));
+      const completed = new Set<string>([...(result.saved_temp_ids || []), ...(result.ignored_temp_ids || [])]
+        .filter((id: string) => requested.has(id) && !failed.has(id)));
+      if (completed.size > 0) {
+        setQuestions((current) => current.filter((question) => !completed.has(question.temp_id)));
+        setSelectedIds((current) => current.filter((id) => !completed.has(id)));
+        setExpandedIds((current) => current.filter((id) => !completed.has(id)));
+      }
+      const remaining = targetQuestions.length - completed.size;
+      setSendReviewModal({
+        open: true, tone: remaining ? completed.size ? "warning" : "error" : "success",
+        title: remaining ? "Arquivamento com pendências" : "Arquivamento concluído",
+        message: completed.size + " questão(ões) arquivada(s) ou já existente(s) no banco." + (remaining ? " " + remaining + " permaneceram na prévia. Confira os dados e tente novamente." : ""),
+        primaryLabel: "Entendi", onPrimary: close, onClose: close,
+      });
+    } catch {
+      setSendReviewModal({ open: true, tone: "error", title: "Erro ao arquivar", message: "Não foi possível confirmar o arquivamento. As questões foram mantidas na prévia; tente novamente.", primaryLabel: "Entendi", onPrimary: close, onClose: close });
+    } finally {
+      archiveBusy.current = false;
+    }
+  }
+
   async function sendToReview(targetQuestions: ImportedQuestion[], skipPossibleCheck = false) {
     if (sendingToReview) return;
 
@@ -2099,9 +2141,9 @@ export default function ImportarQuestoesClient({
 
       <PremiumCard
         variant="light"
-        title="1. Padrões de importação"
+        title="Padrões de importação"
         description="Defina disciplina e assunto. O ano padrão é opcional; quando vazio, o sistema tenta detectar o ano em cada questão."
-        icon={<Bot size={18} />}
+        icon={<span className="et-clean-step">1</span>}
         className="z-20 overflow-visible"
       >
         <div className="grid gap-5 md:grid-cols-3">
@@ -2140,9 +2182,9 @@ export default function ImportarQuestoesClient({
       <div className="mt-6">
         <PremiumCard
           variant="light"
-          title="2. Texto bruto"
+          title="Texto bruto"
           description="Cole o texto bruto vindo da internet, PDF, Word ou ChatGPT. O sistema tentará identificar as questões automaticamente."
-          icon={<ClipboardPaste size={18} />}
+          icon={<span className="et-clean-step">2</span>}
           className="z-10"
         >
           <div className="grid gap-5">
@@ -2178,7 +2220,7 @@ export default function ImportarQuestoesClient({
             </div>
 
             {(processing || totalBatches > 0) && (
-              <div className="overflow-hidden rounded-[2rem] border border-orange-200 bg-gradient-to-br from-white via-orange-50/60 to-white p-5 shadow-sm">
+              <div className="et-clean-processing overflow-hidden rounded-[2rem] border border-orange-200 bg-gradient-to-br from-white via-orange-50/60 to-white p-5 shadow-sm">
                 <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
@@ -2207,14 +2249,14 @@ export default function ImportarQuestoesClient({
                   </div>
                 </div>
 
-                <div className="mb-5 h-3 overflow-hidden rounded-full bg-white shadow-inner">
+                <div className="et-clean-progress-track mb-5 h-3 overflow-hidden rounded-full bg-white shadow-inner">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-500"
+                    className="et-clean-progress-fill h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-500"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-7">
+                <div className="et-clean-metrics grid gap-3">
                   <ProgressPill icon={<Layers3 size={17} />} label="Lotes" value={`${processedBatches}/${totalBatches}`} />
                   <ProgressPill icon={<FileQuestion size={17} />} label="Detectadas" value={totalDetected} />
                   <ProgressPill icon={<FileQuestion size={17} />} label="Analisadas" value={analyzedCount} />
@@ -2250,9 +2292,9 @@ export default function ImportarQuestoesClient({
       <div className="mt-6">
         <PremiumCard
           variant="light"
-          title="3. Prévia das questões"
+          title="Prévia das questões"
           description={`${questions.length} questão(ões) na tela. ${duplicateCount} duplicada(s). ${selectedIds.length} selecionada(s).`}
-          icon={<FileQuestion size={18} />}
+          icon={<span className="et-clean-step">3</span>}
         >
           {questions.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm text-slate-500">
@@ -2307,7 +2349,7 @@ export default function ImportarQuestoesClient({
                   const requiresImage = questionRequiresImage(question);
 
                   const boardSuggestionsForQuestion =
-                    boardSuggestions[question.temp_id] || [];
+                    sortByPtBrLabel(boardSuggestions[question.temp_id] || [], (item) => item.name);
                   const isCreatingThisBoard =
                     creatingBoardQuestionId === question.temp_id;
                   const canCreateBoardForQuestion =
@@ -2326,17 +2368,17 @@ export default function ImportarQuestoesClient({
                           question.temp_id
                         ] = element;
                       }}
-                      className={`relative import-question-card motion-safe:animate-[importCardIn_220ms_ease-out] rounded-[2rem] border p-5 shadow-sm transition-all duration-300 focus-within:z-30 hover:-translate-y-0.5 hover:shadow-xl ${
+                      className={`et-clean-question et-clean-question-body relative import-question-card motion-safe:animate-[importCardIn_220ms_ease-out] rounded-[2rem] border p-5 shadow-sm transition-all duration-300 focus-within:z-30 hover:-translate-y-0.5 hover:shadow-xl ${
                         isAnnulledInImport
-                          ? "border-red-300 bg-red-50/80 shadow-red-950/5"
+                          ? "et-clean-danger border-red-300 bg-red-50/80 shadow-red-950/5"
                           : question.is_duplicate
-                          ? "border-red-300 bg-red-50 shadow-red-950/5"
+                          ? "et-clean-danger border-red-300 bg-red-50 shadow-red-950/5"
                           : question.duplicate_type === "possible"
-                            ? "border-amber-300 bg-amber-50 shadow-amber-950/5"
+                            ? "et-clean-warning border-amber-300 bg-amber-50 shadow-amber-950/5"
                             : requiresImage
-                              ? "border-blue-300 bg-blue-50 shadow-blue-950/5"
+                              ? "et-clean-info border-blue-300 bg-blue-50 shadow-blue-950/5"
                               : isSelected
-                                ? "border-orange-300 bg-orange-50/40 shadow-orange-950/10 ring-1 ring-orange-100"
+                                ? "et-clean-selected border-orange-300 bg-orange-50/40 shadow-orange-950/10 ring-1 ring-orange-100"
                                 : "border-slate-200 bg-white shadow-slate-950/5"
                       }`}
                     >
@@ -2453,30 +2495,20 @@ export default function ImportarQuestoesClient({
                         </span>
                       </div>
 
-                      <div className="mb-5 rounded-[1.5rem] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-3 text-slate-700 shadow-sm">
-                        <div className="flex flex-wrap items-end gap-3">
-                          <label className="grid w-[72px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Ano</span>
-                            <input
-                              type="number"
-                              min="1990"
-                              max="2100"
-                              placeholder={year || "—"}
-                              value={String(question.year || "")}
-                              onChange={(event) =>
-                                updateQuestion(
-                                  question.temp_id,
-                                  "year",
-                                  /^\d{0,4}$/.test(event.target.value)
-                                    ? event.target.value || null
-                                    : question.year || null,
-                                )
-                              }
-                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
-                            />
-                          </label>
+                      <div className="et-clean-metadata mb-5 rounded-[1.5rem] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-3 text-slate-700 shadow-sm">
+                        <div className="et-clean-metadata-grid flex flex-wrap items-end gap-3">
+<div className="et-clean-meta-compact grid gap-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Tipo</span>
+                            <button type="button"
+                              onClick={() => updateQuestion(question.temp_id, "question_type", question.question_type === "true_false" ? "multiple_choice" : "true_false")}
+                              title="Clique para alternar o tipo"
+                              className="flex h-10 items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700">
+                              {question.question_type === "true_false" ? "Assertivas" : "Alternativas"}
+                              <span className="ml-1 text-slate-400">⇄</span>
+                            </button>
+                          </div>
 
-                          <div className="relative grid w-[160px] shrink-0 gap-1">
+<div className="et-clean-meta-board relative grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Banca</span>
                             <input
                               value={boardSearches[question.temp_id] || ""}
@@ -2493,7 +2525,7 @@ export default function ImportarQuestoesClient({
                               aria-controls={`board-listbox-${question.temp_id}`}
                             />
                             {boardSuggestionsForQuestion.length > 0 && (
-                              <div id={`board-listbox-${question.temp_id}`} role="listbox" className="absolute left-0 right-0 top-[3.8rem] z-30 grid max-h-56 gap-1 overflow-auto rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl">
+                              <div id={`board-listbox-${question.temp_id}`} role="listbox" className="et-clean-popover absolute left-0 right-0 top-full mt-1 z-30 grid max-h-56 gap-1 overflow-auto rounded-2xl border border-orange-100 bg-white p-2 shadow-2xl">
                                 {boardSuggestionsForQuestion.map((board, boardIndex) => (
                                   <button key={board.id} type="button"
                                     onClick={() => applyBoardToQuestion(question.temp_id, board)}
@@ -2516,7 +2548,7 @@ export default function ImportarQuestoesClient({
                             )}
                           </div>
 
-                          <label className="grid w-[150px] shrink-0 gap-1">
+<label className="et-clean-meta-agency grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Órgão</span>
                             <input
                               value={question.orgao || ""}
@@ -2532,7 +2564,28 @@ export default function ImportarQuestoesClient({
                             />
                           </label>
 
-                          <div className="w-[260px] shrink-0">
+<label className="et-clean-meta-year grid gap-1">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Ano</span>
+                            <input
+                              type="number"
+                              min="1990"
+                              max="2100"
+                              placeholder={year || "—"}
+                              value={String(question.year || "")}
+                              onChange={(event) =>
+                                updateQuestion(
+                                  question.temp_id,
+                                  "year",
+                                  /^\d{0,4}$/.test(event.target.value)
+                                    ? event.target.value || null
+                                    : question.year || null,
+                                )
+                              }
+                              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+                            />
+                          </label>
+
+<div className="et-clean-meta-subjects">
                             <SubjectMultiSelect
                               label="Assuntos"
                               subjects={filteredSubjects.filter((s) => s.id !== PROVA_COMPLETA_SUBJECT_ID)}
@@ -2543,7 +2596,7 @@ export default function ImportarQuestoesClient({
                             />
                           </div>
 
-                          <div className="grid w-[120px] shrink-0 gap-1">
+<div className="et-clean-meta-compact grid gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Dificuldade</span>
                             <div className="flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3">
                               {[1, 2, 3, 4, 5].map((star) => (
@@ -2555,19 +2608,7 @@ export default function ImportarQuestoesClient({
                               ))}
                             </div>
                           </div>
-
-                          <div className="grid w-[110px] shrink-0 gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Tipo</span>
-                            <button type="button"
-                              onClick={() => updateQuestion(question.temp_id, "question_type", question.question_type === "true_false" ? "multiple_choice" : "true_false")}
-                              title="Clique para alternar o tipo"
-                              className="flex h-10 items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700">
-                              {question.question_type === "true_false" ? "Assertivas" : "Alternativas"}
-                              <span className="ml-1 text-slate-400">⇄</span>
-                            </button>
-                          </div>
-
-                        </div>
+</div>
                       </div>
 
                       <RichTextEditor
@@ -2743,11 +2784,11 @@ export default function ImportarQuestoesClient({
                                     <PremiumScissorsIcon size={18} />
                                   </button>
 
-                                  <div onClick={() => updateAlternative(question.temp_id, altIndex, "is_correct", true)} className={`cursor-pointer transition ${isEliminated ? "opacity-60" : ""} ${
+                                  <div onClick={() => updateAlternative(question.temp_id, altIndex, "is_correct", true)} className={`et-clean-alternative cursor-pointer transition ${isEliminated ? "opacity-60" : ""} ${
                                     isWrongTrueFalse
                                       ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-3"
                                     : alternative.is_correct
-                                      ? "flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3"
+                                      ? "et-clean-alternative-correct flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3"
                                       : isTrueFalseAlternative
                                         ? isWrongOption
                                           ? "flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/70 p-3 hover:border-red-300 hover:bg-red-50"
@@ -2795,21 +2836,30 @@ export default function ImportarQuestoesClient({
                                           removeAlternative(question.temp_id, altIndex);
                                         }}
                                         disabled={question.alternatives.length <= 4}
-                                        title={question.alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : `Excluir alternativa ${label}`}
+                                        title={question.alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Remover alternativa"}
                                         className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
                                       >
                                         <Trash2 size={14} />
-                                        <span className="hidden xl:inline">Excluir</span>
+                                        <span className="hidden xl:inline">Remover alternativa</span>
                                       </button>
                                     )}
                                   </div>
                                 </div>
                               );
                             })}
+                            {question.question_type !== "true_false" && question.alternatives.length < 5 && (
+                              <button
+                                type="button"
+                                onClick={() => addAlternative(question.temp_id)}
+                                className="ml-10 inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                              >
+                                <Plus size={16} /> Adicionar alternativa
+                              </button>
+                            )}
                           </div>
 
-                          <div className="rounded-2xl border border-blue-300 bg-blue-50/70 p-4 shadow-[0_0_0_3px_rgba(59,130,246,0.08)]">
-                            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
+                          <div className="et-clean-topics-panel rounded-2xl border border-blue-300 bg-blue-50/70 p-4 shadow-[0_0_0_3px_rgba(59,130,246,0.08)]">
+                            <p className="et-clean-topics-label mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
                             <EvaluatedTopicsInput
                               value={question.evaluated_topics}
                               onChange={(topics) => {
@@ -2850,6 +2900,8 @@ export default function ImportarQuestoesClient({
                             Descartar
                           </PremiumButton>
 
+                          <PremiumButton variant="secondary" icon={<Archive size={16} />} onClick={() => archiveQuestions([question])} disabled={sendingToReview}>Arquivar</PremiumButton>
+
                           {!question.is_duplicate && (
                             <PremiumButton
                               icon={<Send size={16} />}
@@ -2873,6 +2925,7 @@ export default function ImportarQuestoesClient({
       <SelectionGhostBar
         count={selectedIds.length}
         actions={[
+          { label: "Arquivar selecionadas", icon: <Archive size={14} />, onClick: () => archiveQuestions(selectedQuestions), variant: "secondary", disabled: sendingToReview || selectedQuestions.length === 0 },
           { label: importingForSimulado ? "Adicionar ao simulado" : "Enviar para revisão", icon: <Send size={14} />, onClick: () => sendToReview(selectedQuestions), variant: "primary", disabled: sendingToReview || selectedQuestions.length === 0 },
           { label: "Limpar seleção", icon: <BrushCleaning size={14} />, onClick: () => setSelectedIds([]), variant: "secondary", disabled: sendingToReview },
           { label: "Descartar", icon: <Trash2 size={14} />, onClick: discardSelectedQuestions, variant: "danger", disabled: sendingToReview },
@@ -3029,26 +3082,26 @@ function ProgressPill({
 }: any) {
   const toneClass =
     tone === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      ? "et-clean-success border-emerald-200 bg-emerald-50 text-emerald-700"
       : tone === "danger"
-        ? "border-red-200 bg-red-50 text-red-700"
+        ? "et-clean-danger border-red-200 bg-red-50 text-red-700"
         : tone === "warning"
-          ? "border-amber-200 bg-amber-50 text-amber-700"
+          ? "et-clean-warning border-amber-200 bg-amber-50 text-amber-700"
           : "border-slate-200 bg-white text-slate-950";
 
   return (
     <div
-      className={`rounded-2xl border p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${toneClass}`}
+      className={`et-clean-metric rounded-2xl border p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${toneClass}`}
     >
       <div className="mb-2 flex items-center gap-2 opacity-75">
         {icon}
       </div>
 
-      <p className="text-xs font-bold uppercase tracking-[0.14em] opacity-70">
+      <p className="et-clean-metric-label text-xs font-bold uppercase tracking-[0.14em]">
         {label}
       </p>
 
-      <p className="mt-1 text-2xl font-semibold tabular-nums transition-all duration-300">
+      <p className="et-clean-metric-value mt-1 text-2xl font-semibold tabular-nums transition-all duration-300">
         {value}
       </p>
     </div>

@@ -61,7 +61,7 @@ export default function ImportarAssuntosClient({ disciplines }: { disciplines: a
 
       <PremiumCard title="Assuntos em massa" description="Escolha a disciplina e informe um assunto por linha." icon={<Layers3 size={18} />}>
         <div className="grid gap-5">
-          <PremiumSelect label="Disciplina" value={disciplineId} onChange={(event: any) => setDisciplineId(event.target.value)}>
+          <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: any) => setDisciplineId(event.target.value)}>
             <option value="">Selecione</option>
             {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
           </PremiumSelect>

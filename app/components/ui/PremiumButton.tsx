@@ -50,7 +50,7 @@ export default function PremiumButton({
       "et-admin-dark-button-primary active:scale-[0.98]",
   };
 
-  const buttonClass = `${base} ${variants[variant]} ${full ? "w-full" : ""} ${
+  const buttonClass = `et-clean-button et-clean-button-${variant} ${base} ${variants[variant]} ${full ? "w-full" : ""} ${
     disabled ? "cursor-not-allowed opacity-60 hover:translate-y-0 hover:shadow-none" : ""
   } ${className}`;
 

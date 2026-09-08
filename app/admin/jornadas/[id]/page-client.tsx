@@ -1,4 +1,6 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useMemo, useState } from "react";
@@ -100,7 +102,7 @@ export default function JornadaDetailClient({
     [studentJornadas],
   );
 
-  const filteredAvailableStudents = useMemo(() => {
+  const filteredAvailableStudents = sortByPtBrLabel(useMemo(() => {
     const term = assignStudentSearch.toLowerCase().trim();
     return availableStudents.filter((student) => {
       if (enrolledStudentIds.has(student.id)) return false;
@@ -110,7 +112,7 @@ export default function JornadaDetailClient({
         student.email.toLowerCase().includes(term)
       );
     });
-  }, [availableStudents, assignStudentSearch, enrolledStudentIds]);
+  }, [availableStudents, assignStudentSearch, enrolledStudentIds]), (item) => item.name);
 
   const filteredStudentJornadas = useMemo(() => {
     const term = studentSearch.toLowerCase().trim();

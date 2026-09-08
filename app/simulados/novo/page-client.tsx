@@ -198,7 +198,7 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
 
               <PremiumInput label="Descrição automática" textarea value={autoDescription} readOnly />
 
-              <PremiumSelect
+              <PremiumSelect sortOptions
                 label="Disciplina opcional"
                 value={form.discipline_id || ""}
                 onChange={(event: any) => update("discipline_id", event.target.value)}

@@ -1,4 +1,5 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useMemo, useState } from "react";
@@ -261,7 +262,7 @@ export default function JornadasClient({ jornadas }: { jornadas: Jornada[] }) {
               Jornada que será duplicada
             </label>
             <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {jornadas.map((jornada) => {
+              {sortByPtBrLabel(jornadas, (item) => item.title).map((jornada) => {
                 const selected = duplicateSourceId === jornada.id;
                 return (
                   <button

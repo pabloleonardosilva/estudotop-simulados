@@ -1,5 +1,8 @@
 "use client";
 
+import { sortByPtBrLabel, sortTextOptions } from "@/app/lib/utils/sort";
+
+
 import { type KeyboardEvent, type ReactNode, ChangeEvent, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1396,6 +1399,7 @@ function SimpleSelectDropdown({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  options = label === "Status" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1505,9 +1509,9 @@ function BoardFilterDropdown({
     );
   }
 
-  const visibleBoards = search.trim()
+  const visibleBoards = sortByPtBrLabel(search.trim()
     ? boards.filter((b) => b.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : boards;
+    : boards, (item) => item.name);
 
   function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (visibleBoards.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -1653,9 +1657,9 @@ function OrgaoFilterDropdown({
     );
   }
 
-  const visibleOrgaos = search.trim()
+  const visibleOrgaos = sortByPtBrLabel(search.trim()
     ? orgaos.filter((orgao) => orgao.toLowerCase().includes(search.trim().toLowerCase()))
-    : orgaos;
+    : orgaos, (item) => item);
 
   function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (visibleOrgaos.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -1898,9 +1902,9 @@ function FilterSubjectDropdown({
     );
   }
 
-  const visibleSubjects = search.trim()
+  const visibleSubjects = sortByPtBrLabel(search.trim()
     ? subjects.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : subjects;
+    : subjects, (item) => item.name);
 
   function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (visibleSubjects.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -2139,7 +2143,7 @@ function BulkEditModal({
               </p>
 
               <div className="mt-5 space-y-4">
-                <PremiumSelect
+                <PremiumSelect sortOptions
                   label="Banca"
                   variant="jornada"
                   value={boardId}

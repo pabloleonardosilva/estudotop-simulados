@@ -27,6 +27,8 @@ Pablo é analista de sistemas e professor de TI para concursos. Ele conhece bem 
 
 ## STATUS ATUAL DO SISTEMA
 
+> **Nota — 07/09/2026:** esta seção é um snapshot do momento em que este prompt foi escrito para colar nas instruções de projeto do Claude — não é atualizada desde então. Sprints A, B e C estão concluídas (ver `AGENTS.md`, seção "Estado Atual do Projeto", e `docs/status-atual.md`); Sprint D (OAuth Google) segue sem evidência de implementação; a parte de pagamento está sendo endereçada por integração Hotmart em branch separada. Texto original preservado abaixo como registro histórico.
+
 - Sistema ~70% pronto em localhost
 - **Sprint A (Cadastro de Aluno):** verificar status
 - **Sprint B (Jornadas Admin):** em desenvolvimento

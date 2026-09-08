@@ -12,8 +12,8 @@ export default function PageBackground({ children, variant = "jornada" }: { chil
   }
 
   return (
-    <main className="et-interface-clean et-admin-clean-content min-h-screen bg-[#eef0f4] px-4 py-6 md:px-8 md:py-8">
-      <section className="mx-auto max-w-7xl">{children}</section>
+    <main className="et-interface-clean et-admin-clean-content et-clean-page min-h-screen">
+      <section className="et-clean-container">{children}</section>
     </main>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -1294,7 +1295,7 @@ export default function RaioXDetalheClient({ analysis, questions, disciplines, s
                     className="w-full rounded-2xl border border-white/[0.08] bg-[#091323] px-4 py-3 text-sm font-semibold text-white outline-none focus:border-orange-300/50"
                   >
                     <option value="">Selecione</option>
-                    {disciplines.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {sortByPtBrLabel(disciplines, (item) => item.name).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </label>
               )}

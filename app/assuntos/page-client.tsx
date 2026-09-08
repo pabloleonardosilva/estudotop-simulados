@@ -283,7 +283,7 @@ export default function AssuntosClient({
             <div><h2 className="et-admin-dark-section-title">Novo assunto</h2><p className="et-admin-dark-muted mt-1.5">O sistema verifica duplicidade enquanto você digita.</p></div>
           </div>
           <div className="space-y-5">
-            <PremiumSelect variant="jornada" label="Disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
+            <PremiumSelect sortOptions variant="jornada" label="Disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
               {activeDisciplines.length === 0 ? <option value="">Nenhuma disciplina ativa</option> : activeDisciplines.map((discipline) => (
                 <option key={discipline.id} value={discipline.id}>{discipline.name}</option>
               ))}
@@ -324,7 +324,7 @@ export default function AssuntosClient({
             <div className="min-w-0"><h2 className="et-admin-dark-section-title">Assuntos cadastrados</h2><p className="et-admin-dark-muted mt-1.5 truncate">{selectedDiscipline ? `Disciplina selecionada: ${selectedDiscipline.name}` : "Selecione uma disciplina."}</p></div>
           </div>
           <div className="et-admin-dark-card mb-6 grid gap-4 p-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <PremiumSelect variant="jornada" label="Filtrar por disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
+            <PremiumSelect sortOptions variant="jornada" label="Filtrar por disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
               {initialDisciplines.map((discipline) => (
                 <option key={discipline.id} value={discipline.id}>{discipline.name}{!discipline.is_active ? " (inativa)" : ""}</option>
               ))}

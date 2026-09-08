@@ -28,6 +28,7 @@ type ImportedQuestion = {
   statement?: string | null;
   question_type?: "multiple_choice" | "true_false" | string | null;
   status_override?: string | null;
+  correct_alternative_label?: string | null;
 
   board_name?: string | null;
   exam_board_id?: string | null;
@@ -52,6 +53,7 @@ type ImportedQuestion = {
 };
 
 type ImportSaveBody = {
+  status?: "pending_review" | "archived";
   questions?: ImportedQuestion[];
   simulado_id?: string | null;
 
@@ -236,11 +238,16 @@ export async function POST(
         ? body.questions
         : [];
 
+    if (body.status !== undefined && body.status !== "pending_review" && body.status !== "archived") {
+      return NextResponse.json({ ok: false, message: "Status de importação inválido." }, { status: 400 });
+    }
+    const archive = body.status === "archived";
+
     const subjectIds =
       realSubjectIds(normalizeSubjectIds(body));
 
     const defaultYear = parseValidYear(body.year);
-    const simuladoId = clean(body.simulado_id || "") || null;
+    const simuladoId = archive ? null : clean(body.simulado_id || "") || null;
 
     if (!questions.length) {
       return NextResponse.json(
@@ -257,7 +264,7 @@ export async function POST(
       (question) => subjectIdsForQuestion(question, subjectIds).length > 0,
     );
 
-    if (!hasAtLeastOneQuestionWithSubject) {
+    if (!archive && !hasAtLeastOneQuestionWithSubject) {
       return NextResponse.json(
         {
           ok: false,
@@ -282,7 +289,7 @@ export async function POST(
     }
 
     // Pre-compute difficulty levels in one batch call instead of one AI call per question
-    const needsPrediction = questions.map((q) => !q.difficulty_level);
+    const needsPrediction = questions.map((q) => !archive && !q.difficulty_level);
     const toPredict = questions
       .filter((_, i) => needsPrediction[i])
       .map((q) => ({
@@ -292,8 +299,8 @@ export async function POST(
       }));
     const batchDifficulties = toPredict.length > 0 ? await predictDifficultyAIBatch(toPredict) : [];
     let batchDiffIdx = 0;
-    const precomputedDifficulty: number[] = questions.map((q, i) =>
-      needsPrediction[i] ? (batchDifficulties[batchDiffIdx++] ?? 3) : Number(q.difficulty_level),
+    const precomputedDifficulty = questions.map((q, i) =>
+      needsPrediction[i] ? (batchDifficulties[batchDiffIdx++] ?? 3) : archive && !q.difficulty_level ? null : Number(q.difficulty_level),
     );
 
     const boardCache: DuplicateCandidateCache = new Map();
@@ -312,7 +319,7 @@ export async function POST(
       const tempId = clean(question.temp_id || "") || null;
 
       try {
-        if (question.is_duplicate) {
+        if (question.is_duplicate && !archive) {
           ignoredCount++;
           if (tempId) ignoredTempIds.push(tempId);
           continue;
@@ -327,13 +334,13 @@ export async function POST(
         const questionSubjectId = primarySubjectId(questionSubjectIds);
         const evaluatedTopics = normalizeEvaluatedTopics(question.evaluated_topics);
 
-        if (!questionSubjectId) {
+        if (!questionSubjectId && !archive) {
           ignoredCount++;
           if (tempId) ignoredTempIds.push(tempId);
           continue;
         }
 
-        if (evaluatedTopics.length === 0) {
+        if (evaluatedTopics.length === 0 && !archive) {
           failedItems.push({
             temp_id: tempId,
             message: EVALUATED_TOPICS_REQUIRED_MESSAGE,
@@ -345,13 +352,18 @@ export async function POST(
           question.statement
         );
 
+        if (!statement && archive) {
+          failedItems.push({ temp_id: tempId, message: "Informe o enunciado antes de arquivar." });
+          continue;
+        }
+
         if (!statement) {
           ignoredCount++;
           if (tempId) ignoredTempIds.push(tempId);
           continue;
         }
 
-        const sourceOrigin = clean(
+        const sourceOrigin = archive ? "import_ai" : clean(
           question.source_origin
         );
 
@@ -364,7 +376,7 @@ export async function POST(
                   ""
               );
 
-        if (!boardName) {
+        if (!boardName && !(archive && clean(question.exam_board_id))) {
           failedItems.push({
             temp_id: tempId,
             message: "Uma questão está sem banca.",
@@ -372,8 +384,9 @@ export async function POST(
           continue;
         }
 
-        const board =
-          sourceOrigin ===
+        const board = archive && clean(question.exam_board_id)
+          ? (await supabase.from("exam_boards").select("id, name").eq("id", clean(question.exam_board_id)).maybeSingle()).data
+          : sourceOrigin ===
           "generate_ai"
             ? await findOrCreateEstudoTopBoard(
                 supabase
@@ -428,6 +441,15 @@ export async function POST(
               (alternative) =>
                 alternative.text || alternative.image_url
             );
+
+        if (archive && clean(question.correct_alternative_label)) {
+          const label = clean(question.correct_alternative_label).toUpperCase();
+          if (!validAlternatives.some((alternative) => alternative.label === label)) {
+            failedItems.push({ temp_id: tempId, message: "Gabarito incompatível com as alternativas." });
+            continue;
+          }
+          validAlternatives.forEach((alternative) => { alternative.is_correct = alternative.label === label; });
+        }
 
         const correctAlternative =
           validAlternatives.find(
@@ -506,7 +528,7 @@ export async function POST(
                 "import_ai",
 
               status:
-                question.status_override === "annulled" ? "annulled" : simuladoId ? "published" : "pending_review",
+                archive ? "archived" : question.status_override === "annulled" ? "annulled" : simuladoId ? "published" : "pending_review",
             })
             .select("id")
             .single();
@@ -514,23 +536,19 @@ export async function POST(
           if (error) {
             failedItems.push({
               temp_id: tempId,
-              message: error.message,
+              message: archive ? "Não foi possível salvar a questão." : error.message,
             });
             continue;
           }
 
           if (inserted?.id) {
-            savedIds.push(
-              inserted.id
-            );
-            if (simuladoId) targetQuestionIds.push(inserted.id);
-            if (tempId) savedTempIds.push(tempId);
-
-            await syncQuestionSubjects({
-              supabase,
-              questionId: inserted.id,
-              subjectIds: questionSubjectIds,
-            });
+            try {
+              await syncQuestionSubjects({ supabase, questionId: inserted.id, subjectIds: questionSubjectIds });
+            } catch {
+              await supabase.from("questions").delete().eq("id", inserted.id);
+              failedItems.push({ temp_id: tempId, message: "Não foi possível salvar os assuntos da questão." });
+              continue;
+            }
 
             if (validAlternatives.length) {
               const {
@@ -558,52 +576,46 @@ export async function POST(
                     inserted.id
                   );
 
-                savedIds.splice(savedIds.indexOf(inserted.id), 1);
-                if (tempId) {
-                  const tempIndex = savedTempIds.indexOf(tempId);
-                  if (tempIndex >= 0) savedTempIds.splice(tempIndex, 1);
-                }
-
                 failedItems.push({
                   temp_id: tempId,
-                  message: alternativesError.message,
+                  message: archive ? "Não foi possível salvar as alternativas." : alternativesError.message,
                 });
                 continue;
               }
             }
 
-            const { error: topicsError } = await supabase
-              .from("topics")
-              .upsert(
-                evaluatedTopics.map((topicName) => ({
-                  subject_id: questionSubjectId,
-                  name: topicName,
-                  normalized_name: normalizeTopicComparableName(topicName),
-                  is_active: true,
-                })),
-                { onConflict: "subject_id,normalized_name" },
-              );
+            if (questionSubjectId && evaluatedTopics.length > 0) {
+              const { error: topicsError } = await supabase
+                .from("topics")
+                .upsert(
+                  evaluatedTopics.map((topicName) => ({
+                    subject_id: questionSubjectId,
+                    name: topicName,
+                    normalized_name: normalizeTopicComparableName(topicName),
+                    is_active: true,
+                  })),
+                  { onConflict: "subject_id,normalized_name" },
+                );
 
-            if (topicsError) {
-              await supabase
-                .from("questions")
-                .delete()
-                .eq("id", inserted.id);
+              if (topicsError) {
+                await supabase
+                  .from("questions")
+                  .delete()
+                  .eq("id", inserted.id);
 
-              savedIds.splice(savedIds.indexOf(inserted.id), 1);
-              if (tempId) {
-                const tempIndex = savedTempIds.indexOf(tempId);
-                if (tempIndex >= 0) savedTempIds.splice(tempIndex, 1);
+                failedItems.push({
+                  temp_id: tempId,
+                  message: "Não foi possível cadastrar os tópicos da questão.",
+                });
+                continue;
               }
 
-              failedItems.push({
-                temp_id: tempId,
-                message: "Não foi possível cadastrar os tópicos da questão.",
-              });
-              continue;
             }
-
+            savedIds.push(inserted.id);
+            if (simuladoId) targetQuestionIds.push(inserted.id);
+            if (tempId) savedTempIds.push(tempId);
             savedCount++;
+            if (archive) boardCache.delete(board.id);
           }
         } finally {
           releaseImportLock(lockKey);
@@ -612,7 +624,7 @@ export async function POST(
         failedItems.push({
           temp_id: tempId,
           message:
-            error instanceof Error
+            archive ? "Não foi possível arquivar a questão." : error instanceof Error
               ? error.message
               : "Erro ao salvar a questão.",
         });
@@ -654,7 +666,9 @@ export async function POST(
       message:
         failedCount > 0
           ? `${savedCount} questão(ões) enviada(s), ${ignoredCount} já estavam no banco/foram ignorada(s) e ${failedCount} ficaram com erro.`
-          : simuladoId
+          : archive
+            ? `${savedCount} questão(ões) arquivada(s). ${ignoredCount} já constavam no banco.`
+            : simuladoId
             ? `${savedCount} questão(ões) salva(s) no Banco e adicionada(s) ao simulado.${ignoredCount > 0 ? ` ${ignoredCount} questão(ões) já existente(s) foi(ram) reutilizada(s).` : ""}`
             : `${savedCount} questão(ões) enviada(s) para revisão.${ignoredCount > 0 ? ` ${ignoredCount} questão(ões) já estavam no banco e foram removida(s) da prévia.` : ""}`,
 

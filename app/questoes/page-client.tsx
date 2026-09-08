@@ -1,5 +1,8 @@
 "use client";
 
+import { sortByPtBrLabel, sortTextOptions } from "@/app/lib/utils/sort";
+
+
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -127,6 +130,18 @@ function getTrueFalseAnswerLabel(question: any) {
 
 
 const READY_TO_PUBLISH_STATUS = "ready_to_publish";
+// "Anuladas em Simulados" não é um valor de questions.status — é derivado de
+// simulado_questions.status = "annulled" em pelo menos um vínculo (dado já
+// carregado via question.simulado_questions, mesma fonte do selo "Anulada em
+// N simulados" existente). Sentinela client-side só para o filtro; nunca
+// gravado nem comparado a questions.status.
+const SIMULADO_ANNULLED_FILTER_VALUE = "annulled_in_simulados";
+
+function questionAnnulledInAnySimulado(question: { simulado_questions?: QuestionSimuladoRelation[] | null }): boolean {
+  const relations = Array.isArray(question?.simulado_questions) ? question.simulado_questions : [];
+  return relations.some((relation) => relation?.status === "annulled");
+}
+
 function notifyPublicationQueueUpdated() {
   window.dispatchEvent(new Event("estudotop:publication-queue-updated"));
 }
@@ -219,7 +234,10 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     (fInspirationBoards.length === 0 || fInspirationBoards.includes(qInspirationBoardId)) &&
     (fOrgaos.length === 0 || fOrgaos.includes((question.orgao || "").trim())) &&
     (fDifficulty.length === 0 || fDifficulty.includes(String(question.difficulty_level || ""))) &&
-    (!fStatus || qStatus === fStatus || (fStatus === "published" && ["published", "active"].includes(qStatus))) &&
+    (!fStatus ||
+      qStatus === fStatus ||
+      (fStatus === "published" && ["published", "active"].includes(qStatus)) ||
+      (fStatus === SIMULADO_ANNULLED_FILTER_VALUE && questionAnnulledInAnySimulado(question))) &&
     (fYears.length === 0 || fYears.includes(String(question.year || ""))) &&
     (!fMissingTopics || !hasEvaluatedTopics(question.evaluated_topics))
   );
@@ -549,6 +567,12 @@ export default function QuestoesClient({
       const raw = question.status || "draft";
       const key = raw === "active" ? "published" : raw;
       counts[key] = (counts[key] || 0) + 1;
+      // Contador de "Anuladas em Simulados": 1 por QUESTÃO (não por vínculo)
+      // — uma questão anulada em 3 simulados ainda conta 1 vez aqui, igual
+      // ao selo "Anulada em N simulados" já existente por card.
+      if (questionAnnulledInAnySimulado(question)) {
+        counts[SIMULADO_ANNULLED_FILTER_VALUE] = (counts[SIMULADO_ANNULLED_FILTER_VALUE] || 0) + 1;
+      }
     });
     return counts;
   }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, yearFilters]);
@@ -1823,8 +1847,17 @@ export default function QuestoesClient({
                   { value: "draft", label: "Rascunho" },
                   { value: "published", label: "Publicada" },
                   { value: "archived", label: "Arquivada" },
+                  // Anuladas no Banco: questions.status = "annulled" — status
+                  // real da questão, já existente (edição/badge/toggle
+                  // Anular-Reativar). Anuladas em Simulados: não é status da
+                  // questão — deriva de simulado_questions.status = "annulled"
+                  // em pelo menos um vínculo (ver questionAnnulledInAnySimulado).
+                  // Os dois convivem no mesmo seletor por pedido de UX, mas
+                  // aplicam predicados internos diferentes.
+                  { value: "annulled", label: "Anuladas no Banco" },
+                  { value: SIMULADO_ANNULLED_FILTER_VALUE, label: "Anuladas em Simulados" },
                 ]
-                  .filter((item) => (statusFacetCounts[item.value] || 0) > 0 || status === item.value)
+                  .filter((item) => item.value === "annulled" || item.value === SIMULADO_ANNULLED_FILTER_VALUE || (statusFacetCounts[item.value] || 0) > 0 || status === item.value)
                   .map((item) => ({
                     value: item.value,
                     label: `${item.label} (${statusFacetCounts[item.value] || 0})`,
@@ -2911,6 +2944,23 @@ function InlineQuestionEditor({
     );
   }
 
+  function addAlternative() {
+    if (questionType !== "multiple_choice" || alternatives.length >= 5) return;
+    setAlternatives((current) => [
+      ...current,
+      { id: undefined, label: String.fromCharCode(65 + current.length), text: "", image_url: "", is_correct: false },
+    ]);
+  }
+
+  function removeAlternative(index: number) {
+    if (questionType !== "multiple_choice" || alternatives.length <= 4) return;
+    setAlternatives((current) =>
+      current
+        .filter((_, currentIndex) => currentIndex !== index)
+        .map((alternative, currentIndex) => ({ ...alternative, label: String.fromCharCode(65 + currentIndex) })),
+    );
+  }
+
   async function saveImmediate() {
     if (saving) return;
 
@@ -3298,20 +3348,21 @@ function InlineQuestionEditor({
                 }
               >
                 <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() => markCorrect(index)}
-                    className={alternative.is_correct
-                      ? "mt-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-xl"
-                      : "mt-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/[0.15] bg-white/[0.04] text-xl hover:border-emerald-500/40 hover:bg-emerald-500/10"
-                    }
-                  >
-                    {alternative.is_correct ? OWL_MARK : ""}
-                  </button>
-                  <span className={`mt-2 font-black ${alternative.is_correct ? "text-emerald-300" : "text-white/40"}`}>
-                    {alternative.label})
-                  </span>
-                  <div className="flex-1">
+                  {alternative.is_correct ? (
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/20 text-lg">
+                      <span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => markCorrect(index)}
+                      title="Marcar como correta"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.15] bg-white/[0.04] text-xs font-black text-white/50 transition hover:border-emerald-500/40 hover:bg-emerald-500/[0.10] hover:text-emerald-300"
+                    >
+                      {alternative.label}
+                    </button>
+                  )}
+                  <div className="min-w-0 flex-1">
                     <RichTextEditor
                       value={alternative.text}
                       onChange={(value) => updateAlternative(index, value)}
@@ -3322,9 +3373,28 @@ function InlineQuestionEditor({
                       className="w-full rounded-xl border border-white/[0.06] bg-[#07111F] px-4 py-2.5 text-sm text-slate-200 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAlternative(index)}
+                    disabled={alternatives.length <= 4}
+                    title={alternatives.length <= 4 ? "A questão deve manter pelo menos quatro alternativas" : "Remover alternativa"}
+                    className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-white/40 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <Trash2 size={14} />
+                    <span className="hidden xl:inline">Remover alternativa</span>
+                  </button>
                 </div>
               </div>
             ))}
+            {alternatives.length < 5 && (
+              <button
+                type="button"
+                onClick={addAlternative}
+                className="ml-10 mt-1 inline-flex items-center gap-2 rounded-xl border border-dashed border-white/[0.10] bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-white/40 transition hover:border-orange-400/30 hover:bg-orange-400/[0.06] hover:text-orange-300"
+              >
+                <Plus size={16} /> Adicionar alternativa
+              </button>
+            )}
           </div>
         )}
 
@@ -3437,6 +3507,7 @@ function SimpleSelectDropdown({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
+  options = label === "Status" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -3552,9 +3623,9 @@ function BoardFilterDropdown({
     });
   }
 
-  const visibleBoards = search.trim()
+  const visibleBoards = sortByPtBrLabel(search.trim()
     ? boards.filter((b) => b.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : boards;
+    : boards, (item) => item.name);
 
   function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (visibleBoards.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -3708,9 +3779,9 @@ function OrgaoFilterDropdown({
     );
   }
 
-  const visibleOrgaos = search.trim()
+  const visibleOrgaos = sortByPtBrLabel(search.trim()
     ? orgaos.filter((orgao) => orgao.toLowerCase().includes(search.trim().toLowerCase()))
-    : orgaos;
+    : orgaos, (item) => item);
 
   function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (visibleOrgaos.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -3971,9 +4042,9 @@ function SubjectFilterDropdown({
     );
   }
 
-  const visibleSubjects = search.trim()
+  const visibleSubjects = sortByPtBrLabel(search.trim()
     ? subjects.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()))
-    : subjects;
+    : subjects, (item) => item.name);
 
   function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (visibleSubjects.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -4340,7 +4411,7 @@ function PublicationQueueBulkEditModal({
               </p>
 
               <div className="mt-5 space-y-4">
-                <PremiumSelect
+                <PremiumSelect sortOptions
                   label="Banca"
                   value={boardId}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setBoardId(e.target.value)}
@@ -4563,7 +4634,7 @@ function BulkEditModal({
               {boards.length === 0 ? (
                 <p className="px-3 py-2 text-sm text-slate-500">Nenhuma banca disponível.</p>
               ) : (
-                boards.map((b) => {
+                sortByPtBrLabel(boards, (item) => item.name).map((b) => {
                   const active = selectedBoardId === b.id;
                   return (
                     <button

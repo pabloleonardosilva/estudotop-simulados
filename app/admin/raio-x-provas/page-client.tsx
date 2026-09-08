@@ -1,5 +1,8 @@
 "use client";
 
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
+
+
 import Link from "next/link";
 import { type KeyboardEvent, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -253,6 +256,7 @@ export default function RaioXProvasClient({ analyses: initialAnalyses, filterOpt
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+  options = label === "Ano" ? options : sortByPtBrLabel(options, (option) => option);
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const listboxId = `filter-select-listbox-${useId()}`;

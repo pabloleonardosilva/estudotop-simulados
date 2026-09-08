@@ -11,6 +11,7 @@ import {
   FileQuestion,
   ImageIcon,
   Loader2,
+  Plus,
   Send,
   ShieldAlert,
   Sparkles,
@@ -529,7 +530,7 @@ export default function GerarQuestoesIAClient({
 
       {feedback && <Notice feedback={feedback} />}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
           <PremiumCard
             variant="light"
@@ -539,7 +540,7 @@ export default function GerarQuestoesIAClient({
           >
             <div className="grid gap-5">
               <div className="grid gap-5 md:grid-cols-3">
-                <PremiumSelect
+                <PremiumSelect sortOptions
                   label="Tipo de questão"
                   value={questionType}
                   onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -552,7 +553,7 @@ export default function GerarQuestoesIAClient({
                   <option value="true_false">Questão de assertiva / Certo ou Errado</option>
                 </PremiumSelect>
 
-                <PremiumSelect
+                <PremiumSelect sortOptions
                   label="Disciplina"
                   value={disciplineId}
                   onChange={(event: ChangeEvent<HTMLSelectElement>) => {
@@ -582,7 +583,7 @@ export default function GerarQuestoesIAClient({
                 />
               </div>
 
-              <PremiumSelect
+              <PremiumSelect sortOptions
                 label="Inspirado na banca"
                 value={boardId}
                 onChange={(event: ChangeEvent<HTMLSelectElement>) => {
@@ -834,15 +835,15 @@ function GeneratedQuestionCard({
 
   return (
     <article
-      className={`overflow-hidden rounded-[2rem] border backdrop-blur-sm transition-all duration-300 ${
+      className={`et-clean-question relative overflow-visible rounded-[2rem] border focus-within:z-30 transition-all duration-300 ${
         question.is_duplicate
-          ? "border-red-300 bg-red-50 shadow-lg shadow-red-950/5"
+          ? "et-clean-danger border-red-300 bg-red-50 shadow-lg shadow-red-950/5"
           : selected
-            ? "border-orange-300 bg-orange-50/60 shadow-lg shadow-orange-950/5 ring-1 ring-orange-100"
+            ? "et-clean-selected border-orange-300 bg-orange-50/60 shadow-lg shadow-orange-950/5 ring-1 ring-orange-100"
             : isQuestionImagePending(question)
-              ? "border-blue-300 bg-blue-50/60 shadow-lg shadow-blue-950/5 ring-2 ring-blue-100"
+              ? "et-clean-info border-blue-300 bg-blue-50/60 shadow-lg shadow-blue-950/5 ring-2 ring-blue-100"
               : topicsPending
-                ? "border-amber-300 bg-amber-50/60 shadow-lg shadow-amber-950/5 ring-2 ring-amber-100"
+                ? "et-clean-warning border-amber-300 bg-amber-50/60 shadow-lg shadow-amber-950/5 ring-2 ring-amber-100"
                 : "border-slate-200 bg-white shadow-lg shadow-slate-950/5 hover:-translate-y-0.5 hover:border-slate-300"
       }`}
     >
@@ -966,8 +967,34 @@ function GeneratedQuestionCard({
                   const newAlts = question.alternatives.map((a, i) => ({ ...a, is_correct: i === index }));
                   onChange({ alternatives: newAlts });
                 }}
+                onRemove={
+                  question.alternatives.length > 4
+                    ? () => {
+                        const newAlts = question.alternatives
+                          .filter((_, i) => i !== index)
+                          .map((a, i) => ({ ...a, label: String.fromCharCode(65 + i) }));
+                        onChange({ alternatives: newAlts });
+                      }
+                    : undefined
+                }
               />
             ))}
+            {question.alternatives.length < 5 && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  const newAlts = [
+                    ...question.alternatives,
+                    { label: String.fromCharCode(65 + question.alternatives.length), text: "", is_correct: false },
+                  ];
+                  onChange({ alternatives: newAlts });
+                }}
+                className="ml-10 inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus size={16} /> Adicionar alternativa
+              </button>
+            )}
           </div>
         )}
 
@@ -980,8 +1007,8 @@ function GeneratedQuestionCard({
       <div className="border-b border-slate-200 px-6 py-5">
         <div className="relative isolate">
           <div className="pointer-events-none absolute -inset-[3px] -z-10 rounded-2xl bg-gradient-to-b from-blue-400/25 via-blue-400/[0.06] to-transparent blur-[10px]" />
-          <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
+          <div className="et-clean-topics-panel rounded-2xl border border-blue-200 bg-blue-50/70 p-4 shadow-sm">
+            <p className="et-clean-topics-label mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p>
             <EvaluatedTopicsInput
               value={question.evaluated_topics}
               onChange={(evaluated_topics) => onChange({ evaluated_topics })}
@@ -1028,6 +1055,7 @@ function GeneratedAlternativeEditor({
   disabled,
   onChange,
   onMarkCorrect,
+  onRemove,
 }: {
   alternative: GeneratedAlternative;
   index: number;
@@ -1035,6 +1063,7 @@ function GeneratedAlternativeEditor({
   disabled?: boolean;
   onChange: (updates: Partial<GeneratedAlternative>) => void;
   onMarkCorrect: () => void;
+  onRemove?: () => void;
 }) {
   const [isEliminated, setIsEliminated] = useState(false);
   const label = alternative.label || String.fromCharCode(65 + index);
@@ -1052,9 +1081,9 @@ function GeneratedAlternativeEditor({
 
       <div
         onClick={!disabled ? onMarkCorrect : undefined}
-        className={`cursor-pointer transition ${isEliminated ? "opacity-60" : ""} ${
+        className={`et-clean-alternative cursor-pointer transition ${isEliminated ? "opacity-60" : ""} ${
           isCorrect
-            ? "rounded-2xl border border-emerald-300 bg-emerald-50 p-3"
+            ? "et-clean-alternative-correct rounded-2xl border border-emerald-300 bg-emerald-50 p-3"
             : "rounded-2xl border border-slate-200 bg-white p-3 hover:border-emerald-300 hover:bg-emerald-50"
         }`}
       >
@@ -1085,6 +1114,18 @@ function GeneratedAlternativeEditor({
               className={`w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100 ${isEliminated ? "line-through decoration-red-500 decoration-2 [&_*]:line-through [&_*]:decoration-red-500 [&_*]:decoration-2" : ""}`}
             />
           </div>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); onRemove(); }}
+              disabled={disabled}
+              title="Remover alternativa"
+              className="mt-0.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2 text-xs font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <Trash2 size={14} />
+              <span className="hidden xl:inline">Remover alternativa</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1238,17 +1279,17 @@ function ProgressPill({
 }) {
   const toneClass =
     tone === "danger"
-      ? "border-red-200 bg-red-50 text-red-700"
+      ? "et-clean-danger border-red-200 bg-red-50 text-red-700"
       : tone === "success"
-        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        ? "et-clean-success border-emerald-200 bg-emerald-50 text-emerald-700"
         : "border-slate-200 bg-white text-slate-700";
 
   return (
-    <div className={`rounded-2xl border p-3 shadow-sm ${toneClass}`}>
-      <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] opacity-80">
+    <div className={`et-clean-metric rounded-2xl border p-3 shadow-sm ${toneClass}`}>
+      <p className="et-clean-metric-label mb-2 text-xs font-bold uppercase tracking-[0.14em] opacity-80">
         {label}
       </p>
-      <p className="text-xl font-black">{value}</p>
+      <p className="et-clean-metric-value text-xl font-black">{value}</p>
     </div>
   );
 }

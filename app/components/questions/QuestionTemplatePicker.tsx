@@ -146,15 +146,15 @@ export default function QuestionTemplatePicker({
 
             <div className="grid gap-3 border-y border-slate-100 py-4 lg:grid-cols-6">
               <PremiumInput label="Texto" value={search} icon={<Search size={15} />} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Codigo ou enunciado" />
-              <PremiumSelect label="Disciplina" value={disciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setDisciplineId(event.target.value); setSubjectId(""); }}>
+              <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setDisciplineId(event.target.value); setSubjectId(""); }}>
                 <option value="">Todas</option>
                 {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
               </PremiumSelect>
-              <PremiumSelect label="Assunto" value={subjectId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSubjectId(event.target.value)}>
+              <PremiumSelect sortOptions label="Assunto" value={subjectId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSubjectId(event.target.value)}>
                 <option value="">Todos</option>
                 {filteredSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
               </PremiumSelect>
-              <PremiumSelect label="Banca" value={boardId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setBoardId(event.target.value)}>
+              <PremiumSelect sortOptions label="Banca" value={boardId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setBoardId(event.target.value)}>
                 <option value="">Todas</option>
                 {boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
               </PremiumSelect>

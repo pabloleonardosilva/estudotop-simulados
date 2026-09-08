@@ -1,4 +1,5 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -297,7 +298,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
     <label className="block">
       <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</span>
       <select className="h-12 w-full rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-sm font-semibold text-white/80 outline-none focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]" value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
+        {(label === "Ator" ? [...options.filter(([value]) => !value), ...sortByPtBrLabel(options.filter(([value]) => value), (item) => item[1])] : options).map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
       </select>
     </label>
   );

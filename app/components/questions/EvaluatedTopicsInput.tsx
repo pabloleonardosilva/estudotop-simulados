@@ -1,6 +1,9 @@
 "use client";
+import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
-import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
+
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
 import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
@@ -89,10 +92,17 @@ export default function EvaluatedTopicsInput({
   const [retryCatalog, setRetryCatalog] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
   const topics = normalizeEvaluatedTopics(value);
   const showError = error || (required && topics.length === 0 ? "Informe pelo menos um tópico avaliado." : null);
   const dark = variant === "dark";
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   useEffect(() => {
     if (!subjectId) return;
@@ -143,17 +153,41 @@ export default function EvaluatedTopicsInput({
     if (catalogSubjectId !== subjectId) return [];
 
     const selectedKeys = new Set(topics.map(normalizeTopicComparableName));
-    return catalog
+    return sortByPtBrLabel(catalog, (item) => item.name)
       .filter((topic) => !selectedKeys.has(normalizeTopicComparableName(topic.name)))
-      .filter((topic) => !term || normalizeTopicComparableName(topic.name).includes(term))
-      .sort((left, right) => {
-        const leftName = normalizeTopicComparableName(left.name);
-        const rightName = normalizeTopicComparableName(right.name);
-        const leftRank = leftName === term ? 0 : leftName.startsWith(term) ? 1 : 2;
-        const rightRank = rightName === term ? 0 : rightName.startsWith(term) ? 1 : 2;
-        return leftRank - rightRank || leftName.localeCompare(rightName, "pt-BR");
-      });
+      .filter((topic) => !term || normalizeTopicComparableName(topic.name).includes(term));
   }, [catalog, catalogSubjectId, draft, subjectId, topics]);
+
+  useEffect(() => {
+    const menuVisible = suggestionsOpen && suggestions.length > 0;
+    if (!menuVisible) return;
+
+    function updatePosition() {
+      const el = inputWrapperRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const minDesiredHeight = 160;
+      const openUpward = spaceBelow < minDesiredHeight && spaceAbove > spaceBelow;
+
+      setMenuStyle(
+        openUpward
+          ? { position: "fixed", left: rect.left, width: rect.width, bottom: viewportHeight - rect.top + 4, maxHeight: Math.max(spaceAbove - 12, 120) }
+          : { position: "fixed", left: rect.left, width: rect.width, top: rect.bottom + 4, maxHeight: Math.max(spaceBelow - 12, 120) },
+      );
+    }
+
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [suggestionsOpen, suggestions.length]);
 
   function commitDraft(raw = draft) {
     const parts = raw.split(";").map((part) => {
@@ -211,7 +245,7 @@ export default function EvaluatedTopicsInput({
 
   const wrapperClass = dark
     ? "rounded-2xl border border-white/[0.08] bg-white/[0.04] p-3"
-    : "rounded-2xl border border-slate-200 bg-white p-3";
+    : "et-clean-topics rounded-2xl border border-slate-200 bg-white p-3";
   const chipClass = dark
     ? "border-white/[0.10] bg-white/[0.06] text-slate-100"
     : "border-slate-200 bg-slate-50 text-slate-700";
@@ -234,7 +268,7 @@ export default function EvaluatedTopicsInput({
           {!topics.length && <span className={dark ? "text-xs font-semibold text-slate-500" : "text-xs font-semibold text-slate-400"}>Nenhum tópico informado.</span>}
         </div>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <div className="relative min-w-[180px] flex-1">
+          <div className="relative min-w-[180px] flex-1" ref={inputWrapperRef}>
             <input
               type="text"
               value={draft}
@@ -251,34 +285,6 @@ export default function EvaluatedTopicsInput({
               aria-controls={listboxId}
               aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
             />
-            {suggestionsOpen && suggestions.length > 0 && (
-              <div id={listboxId} role="listbox" className={dark ? "absolute inset-x-0 top-11 z-30 max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-slate-950 shadow-2xl" : "absolute inset-x-0 top-11 z-30 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"}>
-                {suggestions.map((suggestion, index) => {
-                  const highlighted = index === highlightedIndex;
-                  const base = dark
-                    ? "block w-full border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0"
-                    : "block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0";
-                  const tone = dark
-                    ? highlighted ? "bg-white/[0.10] text-orange-200" : "text-slate-200 hover:bg-white/[0.07]"
-                    : highlighted ? "bg-orange-50 text-orange-700" : "text-slate-700 hover:bg-orange-50";
-                  return (
-                    <button
-                      key={suggestion.id}
-                      id={`${listboxId}-option-${index}`}
-                      type="button"
-                      role="option"
-                      aria-selected={highlighted}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setHighlightedIndex(index)}
-                      onClick={() => { commitDraft(suggestion.name); setHighlightedIndex(-1); }}
-                      className={`${base} ${tone}`}
-                    >
-                      {suggestion.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
           <button
             type="button"
@@ -305,6 +311,35 @@ export default function EvaluatedTopicsInput({
         )}
       </div>
       {showError && <p className={dark ? "text-xs font-semibold text-red-300" : "text-xs font-semibold text-red-600"}>{showError}</p>}
+      {portalReady && suggestionsOpen && suggestions.length > 0 && menuStyle && createPortal(
+        <div id={listboxId} role="listbox" style={menuStyle} className={dark ? "z-[9999] overflow-y-auto rounded-xl border border-white/10 bg-slate-950 shadow-2xl" : "z-[9999] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"}>
+          {suggestions.map((suggestion, index) => {
+            const highlighted = index === highlightedIndex;
+            const base = dark
+              ? "block w-full border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0"
+              : "block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0";
+            const tone = dark
+              ? highlighted ? "bg-white/[0.10] text-orange-200" : "text-slate-200 hover:bg-white/[0.07]"
+              : highlighted ? "bg-orange-50 text-orange-700" : "text-slate-700 hover:bg-orange-50";
+            return (
+              <button
+                key={suggestion.id}
+                id={`${listboxId}-option-${index}`}
+                type="button"
+                role="option"
+                aria-selected={highlighted}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                onClick={() => { commitDraft(suggestion.name); setHighlightedIndex(-1); }}
+                className={`${base} ${tone}`}
+              >
+                {suggestion.name}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
