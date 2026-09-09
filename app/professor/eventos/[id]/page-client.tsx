@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDownAZ, ArrowLeft, ArrowRight, Ban, BarChart3, Bird, CheckCircle2, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Circle, Clock3, Eye, EyeOff, FileText, Hourglass, Loader2, Medal, Minus, PlayCircle, Plus, Presentation, Radio, RotateCcw, Search, SearchX, ShieldCheck, Sparkles, Target, Trophy, Type, Unlock, UserRound, Users, X, XCircle } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
 import { rankedParticipants } from "@/lib/eventRanking";
 import { formatRankingName } from "@/lib/formatRankingName";
 import type { EventInsightsSummary, QuestionInsight, TopicDifficultyBand, TopicInsight } from "@/lib/eventInsights";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
+import PremiumCard from "@/app/components/ui/PremiumCard";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
@@ -223,7 +224,13 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
       setRankingPdfBusy(false);
     }
   }
-  if (!data) return <main className="min-h-dvh bg-slate-50 p-8 text-slate-700">{message || "Carregando dashboard..."}</main>;
+  if (!data) return <main className="min-h-dvh bg-slate-50 p-8 text-slate-700" aria-busy={!message}>
+    <p role="status">{message || "Carregando dashboard..."}</p>
+    {!message && <div aria-hidden="true" className="mx-auto mt-6 max-w-[1760px] space-y-6 motion-safe:animate-pulse">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[182px] rounded-[22px] border border-slate-200 bg-white" />)}</div>
+      <div className="grid gap-6 xl:grid-cols-[1.78fr_1fr]"><div className="h-[420px] rounded-3xl border border-slate-200 bg-white" /><div className="h-[420px] rounded-3xl border border-orange-100 bg-white" /></div>
+    </div>}
+  </main>;
   const safeQuestionIndex = Math.min(questionIndex, Math.max(0, data.questions.length - 1));
   const current = data.questions[safeQuestionIndex] || null;
   const currentQuestion = current?.questions || null;
@@ -265,8 +272,50 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
     {data.event.effective_status === "scheduled" && <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 text-sm text-orange-800 shadow-sm">Pré-evento · começa em <strong>{countdown}</strong> · {data.summary.registered} inscritos · {data.summary.online} online.</div>}{!data.event.simulado_id && <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 font-semibold text-amber-800 shadow-sm">Evento sem Simulado vinculado. O início permanece bloqueado até a configuração pelo administrador.</div>}{message && <p className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-sm text-orange-800">{message}</p>}
     <nav className="mt-[22px] grid gap-2 rounded-[18px] border border-slate-200/90 bg-white/90 p-2 shadow-[0_18px_46px_rgba(15,23,42,0.07),inset_0_1px_0_rgba(255,255,255,0.94)] sm:grid-cols-2 lg:grid-cols-4" aria-label="Áreas da dashboard"><DashboardTab active={activeTab === "overview"} icon={<BarChart3 size={18} />} label="Visão geral" onClick={() => setActiveTab("overview")} /><DashboardTab active={activeTab === "participants"} icon={<Users size={18} />} label="Participantes" onClick={() => setActiveTab("participants")} /><DashboardTab active={activeTab === "questions"} icon={<Presentation size={18} />} label="Questões / revisão" onClick={() => setActiveTab("questions")} /><DashboardTab active={activeTab === "insights"} icon={<Sparkles size={18} />} label="Insights" onClick={() => setActiveTab("insights")} /></nav>
 
-    {activeTab === "overview" && <section className="mt-6 space-y-6"><div className="grid gap-[18px] sm:grid-cols-2 xl:grid-cols-5"><MetricCard icon={<Users size={22} />} label="Participantes" value={String(data.summary.registered)} detail={`${data.summary.online} online agora`} /><MetricCard icon={<Trophy size={22} />} label="Maior nota" value={formatScore(data.summary.highest_score)} detail="Tentativa oficial" /><MetricCard icon={<Medal size={22} />} label="Menor nota" value={formatScore(data.summary.lowest_score)} detail="Tentativa oficial" /><MetricCard icon={<BarChart3 size={22} />} label="Média do evento" value={formatScore(data.summary.average_score)} detail={`${data.summary.completed} concluídos`} featured /><MetricCard icon={<Clock3 size={22} />} label="Tempo médio" value={formatTime(data.summary.average_time_seconds)} detail="Resultados oficiais" /></div><div className="grid items-stretch gap-[22px] xl:grid-cols-[minmax(0,1.75fr)_minmax(420px,0.85fr)]"><article className="relative min-h-[420px] overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-8"><div className="flex items-start justify-between gap-4"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00] shadow-[0_10px_22px_rgba(249,115,22,0.20)]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Distribuição de desempenho</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Faixas de aproveitamento</h2></div></div><span className="rounded-full border border-slate-300/80 bg-slate-50/90 px-3.5 py-1.5 text-[13px] font-semibold text-slate-500">{completed.length} resultados</span></div><div className="mt-8 space-y-2">{bands.map((band) => <div key={band.label} className="grid min-h-[54px] grid-cols-[88px_1fr_28px] items-center gap-[18px]"><span className="text-sm text-slate-700">{band.label}</span><div className="grid grid-cols-10 gap-1.5" aria-label={`${band.label}: ${band.count} participantes`}>{Array.from({ length: 10 }, (_, index) => <span key={index} className={`h-2.5 rounded-full ${index < Math.round((band.count / Math.max(1, completed.length)) * 10) ? band.color : "bg-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"}`} />)}</div><strong className="text-right text-lg tabular-nums text-slate-950">{band.count}</strong></div>)}</div></article><article className="min-h-[420px] rounded-3xl border border-orange-200/80 bg-[radial-gradient(circle_at_92%_6%,rgba(255,122,0,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,250,245,0.92))] p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-[30px]"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Situação ao vivo</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Participação geral</h2></div></div><div className="mt-6 grid grid-cols-2 gap-3.5"><CompactMetric label="Concluídos" value={data.summary.completed} tone="text-emerald-600" icon={<CheckCircle2 size={21} />} iconTone="bg-emerald-50 text-emerald-600" /><CompactMetric label="Realizando" value={data.summary.taking} tone="text-blue-600" icon={<Loader2 size={21} />} iconTone="bg-blue-50 text-blue-600" title="Tentativas em andamento com atividade recente" /><CompactMetric label="Não iniciaram" value={data.summary.not_started} icon={<UserRound size={21} />} iconTone="bg-slate-100 text-slate-600" /><CompactMetric label="Pendentes" value={data.summary.pending_results} tone="text-orange-600" icon={<Hourglass size={21} />} iconTone="bg-orange-50 text-orange-600" /></div><div className="my-7 h-px bg-gradient-to-r from-transparent via-slate-300/80 to-transparent" /><div className="grid grid-cols-[54px_1fr] items-center gap-4"><div className="flex h-[54px] w-[54px] items-center justify-center rounded-[18px] border border-orange-200 bg-orange-50 text-orange-600"><Target size={28} /></div><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Precisão consolidada</p><p className="mt-2 text-[42px] font-bold leading-[0.95] tracking-[-0.045em] text-[#07142f]">{formatPercent(data.summary.accuracy_percent)}</p><p className="mt-2 text-sm text-slate-500">Acertos nas tentativas oficiais</p></div></div></article></div></section>}
-
+    {activeTab === "overview" && <section className="mt-5 space-y-5" aria-label="Visão geral do evento">
+      <div className="grid gap-[18px] sm:grid-cols-2 xl:grid-cols-5">
+        <MetricCard icon={<Users size={25} />} label="Participantes" value={String(data.summary.registered)} detail={`${data.summary.online} online agora`} tone="emerald" />
+        <MetricCard icon={<Trophy size={25} />} label="Maior nota" value={formatScore(data.summary.highest_score)} detail="Tentativa oficial" tone="orange" />
+        <MetricCard icon={<Medal size={25} />} label="Menor nota" value={formatScore(data.summary.lowest_score)} detail="Tentativa oficial" tone="rose" />
+        <MetricCard icon={<BarChart3 size={25} />} label="Média do evento" value={formatScore(data.summary.average_score)} detail={`${data.summary.completed} concluídos`} tone="blue" />
+        <MetricCard icon={<Clock3 size={25} />} label="Tempo médio" value={formatTime(data.summary.average_time_seconds)} detail="Resultados oficiais" tone="violet" />
+      </div>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.78fr)_minmax(0,1fr)]">
+        <PremiumCard variant="light" className="min-w-0 rounded-3xl border-slate-200/80 bg-white/95 shadow-[0_18px_48px_rgba(15,23,42,0.09),inset_0_1px_0_white] md:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-700">Distribuição de desempenho</p><h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Faixas de aproveitamento</h2></div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">{completed.length} resultados</span>
+          </div>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">Percentual de alunos em cada faixa de acerto nas tentativas oficiais.</p>
+          <div className="mt-5 space-y-2">{bands.map((band, index) => <PerformanceBand key={band.label} label={band.label} count={band.count} total={completed.length} index={index} />)}</div>
+          {completed.length === 0 && <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Ainda não há resultados de tentativas oficiais para distribuir entre as faixas.</p>}
+        </PremiumCard>
+        <PremiumCard variant="light" className="min-w-0 rounded-3xl border-orange-200/80 bg-[radial-gradient(circle_at_85%_10%,rgba(255,122,0,0.13),transparent_40%),linear-gradient(135deg,#ffffff,#fff7ed)] shadow-[0_18px_48px_rgba(249,115,22,0.12),inset_0_1px_0_white] md:p-6">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-700">Situação ao vivo</p>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">Participação geral</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-500">Acompanhe o engajamento dos alunos no evento em tempo real.</p>
+          <div className="mt-4 grid items-center gap-3 sm:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-1 min-[96rem]:grid-cols-[200px_minmax(0,1fr)]">
+            <ParticipationDonut completed={data.summary.completed} total={data.summary.registered} />
+            <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 min-[96rem]:grid-cols-1">
+              {[
+                { label: "Concluídos", count: data.summary.completed, tone: "text-emerald-700", icon: <CheckCircle2 size={17} /> },
+                { label: "Realizando", count: data.summary.taking, tone: "text-blue-700", icon: <Loader2 size={17} />, title: "Tentativas em andamento com atividade recente" },
+                { label: "Não iniciaram", count: data.summary.not_started, tone: "text-slate-600", icon: <UserRound size={17} /> },
+                { label: "Pendentes", count: data.summary.pending_results, tone: "text-orange-700", icon: <Hourglass size={17} />, title: "Resultados ainda não liberados; podem incluir alunos concluídos" },
+              ].map((status) => <div key={status.label} title={status.title} className="flex min-h-[54px] items-center gap-2 rounded-[14px] border border-orange-100/60 bg-white/85 px-3 py-2 shadow-[0_3px_10px_rgba(15,23,42,0.04),inset_0_1px_0_white]">
+                <span className={status.tone}>{status.icon}</span><div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{status.label}</p><strong className={`text-xl tabular-nums ${status.tone}`}>{status.count}</strong></div>
+                <span className="text-sm font-semibold tabular-nums text-slate-600">{overviewPercent(status.count, data.summary.registered)}</span>
+              </div>)}
+            </div>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-slate-500">O anel representa os concluídos entre os inscritos. Os status podem se sobrepor.</p>
+          <div className="mt-4 flex min-h-[104px] items-center gap-4 rounded-[18px] border border-orange-200/80 bg-gradient-to-br from-white to-orange-50/80 p-[18px] shadow-[0_8px_22px_rgba(249,115,22,0.08),inset_0_1px_0_white]">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100"><Target size={28} /></span>
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Precisão consolidada</p><p className="mt-2 text-[42px] font-extrabold leading-none tracking-[-0.05em] tabular-nums text-slate-950">{formatPercent(data.summary.accuracy_percent)}</p><p className="mt-1 text-xs text-slate-500">Acertos nas tentativas oficiais</p></div>
+          </div>
+        </PremiumCard>
+      </div>
+    </section>}
     {activeTab === "participants" && (
       <section className="mt-9">
         <div className="grid items-end gap-6 sm:grid-cols-[1fr_auto]">
@@ -540,7 +589,67 @@ function AlternativeDistribution({ count, percentage, isCorrect }: { count: numb
 
 function DashboardTab({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" onClick={onClick} className={`flex min-h-14 items-center justify-center gap-2.5 rounded-[13px] px-4 text-sm transition duration-200 ${active ? "bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 font-bold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28),inset_0_1px_0_rgba(255,255,255,0.28)]" : "font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950"}`}>{icon}{label}</button>; }
 function PaginationButton({ children, label, disabled, onClick }: { children: React.ReactNode; label: string; disabled: boolean; onClick: () => void }) { return <button type="button" aria-label={label} disabled={disabled} onClick={onClick} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300/80 bg-white/90 text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-px hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{children}</button>; }
-function MetricCard({ icon, label, value, detail, featured = false }: { icon: React.ReactNode; label: string; value: string; detail: string; featured?: boolean }) { return <article className={`relative min-h-[170px] overflow-hidden rounded-[22px] border p-6 shadow-[0_18px_46px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.94)] transition duration-200 hover:-translate-y-px hover:shadow-[0_22px_52px_rgba(15,23,42,0.08)] ${featured ? "border-orange-300/80 bg-[radial-gradient(circle_at_92%_12%,rgba(255,122,0,0.12),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,250,245,0.94))]" : "border-slate-200/90 bg-white/95"}`}><div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${featured ? "bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 text-white shadow-[0_12px_28px_rgba(249,115,22,0.25)]" : "border border-orange-100 bg-orange-50 text-orange-600"}`}>{icon}</div><p className="mt-[22px] text-[11px] font-bold uppercase leading-[14px] tracking-[0.16em] text-slate-500">{label}</p><p className="mt-3 text-[clamp(30px,2.6vw,42px)] font-bold leading-[0.95] tracking-[-0.045em] text-slate-950 tabular-nums">{value}</p><p className="mt-3 text-sm leading-5 text-slate-600">{label === "Participantes" && <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.10)]" />}{detail}</p></article>; }
+function MetricCard({ icon, label, value, detail, tone }: { icon: React.ReactNode; label: string; value: string; detail: string; tone: "emerald" | "orange" | "rose" | "blue" | "violet" }) {
+  const id = useId();
+  const colors = {
+    emerald: "from-emerald-100/80 via-white to-teal-50 border-emerald-200/80 text-emerald-600 shadow-[0_10px_28px_rgba(16,185,129,0.12),inset_0_1px_0_white]",
+    orange: "from-orange-100/80 via-white to-amber-50 border-orange-200/80 text-orange-600 shadow-[0_10px_28px_rgba(249,115,22,0.12),inset_0_1px_0_white]",
+    rose: "from-rose-100/80 via-white to-rose-50 border-rose-200/80 text-rose-600 shadow-[0_10px_28px_rgba(244,63,94,0.11),inset_0_1px_0_white]",
+    blue: "from-blue-100/80 via-white to-sky-50 border-blue-200/80 text-blue-600 shadow-[0_10px_28px_rgba(59,130,246,0.12),inset_0_1px_0_white]",
+    violet: "from-violet-100/80 via-white to-purple-50 border-violet-200/80 text-violet-600 shadow-[0_10px_28px_rgba(139,92,246,0.12),inset_0_1px_0_white]",
+  };
+  return <PremiumCard variant="light" className={`min-w-0 rounded-[22px] bg-gradient-to-br p-[22px] md:p-[22px] motion-safe:transition-transform motion-safe:duration-500 motion-safe:hover:-translate-y-0.5 ${colors[tone]}`}>
+    <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-current/10 bg-current/10 shadow-[0_5px_14px_-6px_currentColor,inset_0_1px_0_rgba(255,255,255,0.9)]">{icon}</span><p className="text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-slate-600">{label}</p></div>
+    <div className="relative mt-2.5"><p className={`relative z-10 w-fit font-extrabold leading-none tracking-tight tabular-nums text-slate-950 ${label === "Tempo médio" ? "text-[clamp(25px,2vw,34px)]" : "text-[36px]"}`}>{value}</p>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 90 40" className="pointer-events-none absolute -bottom-0.5 right-0 h-9 w-[76px] opacity-30">
+        <defs><linearGradient id={`${id}-line`}><stop stopColor="currentColor" stopOpacity="0.3" /><stop offset="1" stopColor="currentColor" /></linearGradient><linearGradient id={`${id}-area`} x2="0" y2="1"><stop stopColor="currentColor" stopOpacity="0.3" /><stop offset="1" stopColor="currentColor" stopOpacity="0" /></linearGradient></defs>
+        <path d="M2 22 C10 22 12 10 22 14 S35 30 44 22 S58 10 67 17 S79 26 88 22 L88 40 L2 40 Z" fill={`url(#${id}-area)`} />
+        <path d="M2 22 C10 22 12 10 22 14 S35 30 44 22 S58 10 67 17 S79 26 88 22" fill="none" stroke={`url(#${id}-line)`} strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    </div>
+    <p className="mt-2 text-xs leading-4 text-slate-500">{label === "Participantes" && <span aria-hidden="true" className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-500" />}{detail}</p>
+  </PremiumCard>;
+}
+function overviewPercent(count: number, total: number) {
+  return `${(total > 0 ? count / total * 100 : 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function PerformanceBand({ label, count, total, index }: { label: string; count: number; total: number; index: number }) {
+  const id = useId();
+  const percentage = total > 0 ? count / total * 100 : 0;
+  const tones = [
+    { start: "#f43f5e", end: "#fb7185", icon: "bg-rose-50 text-rose-600", description: "Baixo aproveitamento" },
+    { start: "#f59e0b", end: "#facc15", icon: "bg-amber-50 text-amber-700", description: "Aproveitamento regular" },
+    { start: "#0ea5e9", end: "#22d3ee", icon: "bg-sky-50 text-sky-600", description: "Bom aproveitamento" },
+    { start: "#10b981", end: "#34d399", icon: "bg-emerald-50 text-emerald-600", description: "Alto aproveitamento" },
+  ];
+  const tone = tones[index];
+  return <div className="grid min-h-[82px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-2xl bg-gradient-to-r from-slate-50/80 to-white px-3 py-3 sm:grid-cols-[185px_minmax(0,1fr)_90px]">
+    <div className="flex min-w-0 items-center gap-3"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-[0_5px_14px_-8px_currentColor,inset_0_1px_0_white] ${tone.icon}`}><BarChart3 size={21} /></span><div><p className="text-sm font-bold text-slate-800">{label}</p><p className="mt-1 text-xs text-slate-500">{tone.description}</p></div></div>
+    <svg role="img" aria-label={`${label}: ${overviewPercent(count, total)}, ${count} alunos`} width="100%" height="22" className="col-span-2 row-start-2 overflow-visible sm:col-span-1 sm:col-start-2 sm:row-start-1">
+      <defs><filter id={`${id}-shadow`} x="-30%" y="-100%" width="160%" height="350%"><feDropShadow dx="0" dy="4" stdDeviation="3" floodColor={tone.start} floodOpacity="0.3" /></filter><linearGradient id={`${id}-track`} x2="0" y2="1"><stop stopColor="#e2e8f0" /><stop offset="1" stopColor="#f1f5f9" /></linearGradient><linearGradient id={`${id}-fill`}><stop stopColor={tone.start} /><stop offset="1" stopColor={tone.end} /></linearGradient><linearGradient id={`${id}-shine`} x2="0" y2="1"><stop stopColor="white" stopOpacity="0.8" /><stop offset="0.6" stopColor="white" stopOpacity="0" /></linearGradient></defs>
+      <rect y="4" width="100%" height="14" rx="7" fill={`url(#${id}-track)`} stroke="#cbd5e1" strokeWidth="0.5" />
+      {percentage > 0 && <g filter={`url(#${id}-shadow)`}><rect y="4" width={`${percentage}%`} height="14" rx="7" fill={`url(#${id}-fill)`} className="motion-safe:transition-all motion-safe:duration-700" /><rect y="4" width={`${percentage}%`} height="14" rx="7" fill={`url(#${id}-shine)`} className="motion-safe:transition-all motion-safe:duration-700" /></g>}
+    </svg>
+    <div className="col-start-2 row-start-1 text-right sm:col-start-3"><strong className="text-2xl font-bold tracking-tight tabular-nums text-slate-950">{overviewPercent(count, total)}</strong><p className="mt-1 text-xs text-slate-500">({count} {count === 1 ? "aluno" : "alunos"})</p></div>
+  </div>;
+}
+
+function ParticipationDonut({ completed, total }: { completed: number; total: number }) {
+  const id = useId();
+  const percentage = total > 0 ? completed / total * 100 : 0;
+  return <div className="relative mx-auto h-[185px] w-[185px] sm:h-[200px] sm:w-[200px] min-[106.25rem]:h-[220px] min-[106.25rem]:w-[220px]">
+    <svg viewBox="0 0 240 240" role="img" aria-label={`${overviewPercent(completed, total)} dos inscritos concluíram o evento`} className="h-full w-full overflow-visible">
+      <defs><linearGradient id={`${id}-green`} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#10b981" /><stop offset="1" stopColor="#2dd4bf" /></linearGradient><radialGradient id={`${id}-center`}><stop stopColor="white" /><stop offset="1" stopColor="#f0fdfa" /></radialGradient></defs>
+      <circle cx="120" cy="120" r="78" fill={`url(#${id}-center)`} />
+      <circle cx="120" cy="120" r="94" fill="none" stroke="#e2e8f0" strokeWidth="34" className="drop-shadow-[0_3px_3px_rgba(15,23,42,0.10)]" />
+      {percentage > 0 && <circle cx="120" cy="120" r="94" pathLength="100" fill="none" stroke={`url(#${id}-green)`} strokeWidth="34" strokeLinecap="round" strokeDasharray={`${percentage} 100`} transform="rotate(-90 120 120)" className="drop-shadow-[0_7px_5px_rgba(16,185,129,0.32)] motion-safe:transition-all motion-safe:duration-700" />}
+      <circle cx="120" cy="120" r="77" fill="none" stroke="white" strokeOpacity="0.8" strokeWidth="2" />
+      <circle cx="120" cy="120" r="109" fill="none" stroke="white" strokeOpacity="0.6" strokeWidth="1" />
+    </svg>
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><strong className="text-[36px] font-bold tracking-tight tabular-nums text-slate-950">{overviewPercent(completed, total)}</strong><span className="mt-1 text-xs font-medium text-slate-500">Participação total</span></div>
+  </div>;
+}
 function CompactMetric({ label, value, tone = "text-slate-950", icon, iconTone = "bg-slate-100 text-slate-600", title }: { label: string; value: string | number; tone?: string; icon?: React.ReactNode; iconTone?: string; title?: string }) { return <div title={title} className="grid min-h-[86px] grid-cols-[42px_1fr] items-center gap-3 rounded-2xl border border-slate-300/70 bg-white/75 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035),inset_0_1px_0_rgba(255,255,255,0.90)]"><div className={`flex h-[42px] w-[42px] items-center justify-center rounded-[14px] ${iconTone}`}>{icon}</div><div><p className="text-[10px] font-bold uppercase leading-[14px] tracking-[0.14em] text-slate-500">{label}</p><p className={`mt-1.5 text-[26px] font-bold leading-none tracking-[-0.035em] tabular-nums ${tone}`}>{value}</p></div></div>; }
 
 // Linha do ranking de "Tópicos de maior dificuldade" (guia Insights) — usa

@@ -1905,3 +1905,8 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 ### Pré-commit do painel de Eventos — correção final de questionStats (2026-09-09)
 
 Pendência operacional resolvida em leitura: `questionStats` considera uma conclusão oficial válida por aluno ou, sem conclusão válida, uma tentativa realmente ativa na janela de dez minutos. Exclui stale, extras, vínculos inválidos, desclassificados e expirados. Insights continua estritamente separado. Regra e evidências: `Sprint-evento-de-simulado.md`, seção 109. Dívida histórica de referências permanece sem escrita no banco. Arquivo protegido `app/questoes/nova/page-client.tsx` fora do commit; nenhuma migration ou deploy manual nesta etapa.
+
+
+- Visão geral do professor (2026-09-09): KPIs semânticos, barras percentuais contínuas e donut de conclusão; banner e outras abas preservados. Detalhes em `docs/Sprint-evento-de-simulado.md`, seção 'Visão geral do professor — refinamento visual'. Sem API/migration/commit/push/deploy.
+
+- Refino visual complementar da Visão geral (2026-09-09): KPIs compactos com sparklines decorativos, barras com sombra semântica, donut encorpado e menor espaçamento. Detalhes em `docs/Sprint-evento-de-simulado.md`. Banner e funcionamento preservados.

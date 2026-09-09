@@ -3943,3 +3943,8 @@ Testes: `tests/simulado-scoring/simulado-scoring.spec.ts` (execução real do mo
 ### 25.8 População operacional de Questões/revisão — correção final (2026-09-09)
 
 Substitui a pendência de `questionStats` descrita acima. `lib/eventQuestionStats.ts`: `isActiveEventAttempt` compartilha a janela de dez minutos com Realizando; `selectEventQuestionAttempts` escolhe uma tentativa por aluno com vínculo participante/aluno validado. Prioridade: conclusão oficial válida, fallback primeira conclusão válida, ou tentativa ativa quando ainda não existe conclusão válida. Extras, stale, desclassificados, expirados e abandonados ficam fora da distribuição. Respostas usam a mesma paginação existente, com união dos IDs necessários; Insights continua separado e estritamente representativo/completed. Não modifica representante persistido, ranking, resultado ou liberação. Regra completa, decisões e testes: `docs/Sprint-evento-de-simulado.md`, seção 109.
+
+
+- Visão geral do professor (2026-09-09): KPIs semânticos, barras percentuais contínuas e donut de conclusão; banner e outras abas preservados. Detalhes em `docs/Sprint-evento-de-simulado.md`, seção 'Visão geral do professor — refinamento visual'. Sem API/migration/commit/push/deploy.
+
+- Refino visual complementar da Visão geral (2026-09-09): KPIs compactos com sparklines decorativos, barras com sombra semântica, donut encorpado e menor espaçamento. Detalhes em `docs/Sprint-evento-de-simulado.md`. Banner e funcionamento preservados.

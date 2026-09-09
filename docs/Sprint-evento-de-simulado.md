@@ -2967,3 +2967,17 @@ Validação: nova suíte `tests/event-operations/question-stats.spec.ts` cobre o
 Dívida controlada: as 3 referências antigas para `in_progress` e 9 para `disqualified`, relatadas na auditoria anterior, não foram corrigidas no banco nesta rodada. Nenhuma migration, escrita de produção ou deploy manual. `app/questoes/nova/page-client.tsx` permanece preservado e excluído do commit.
 
 Validação final do pré-commit: 395/395 testes de regressão aprovados, incluindo execução do GET em escala de 1587 respostas e callback real de polling com B chegando antes de A. `npx tsc --noEmit`, `npm run build` e `git diff --check` aprovados. Lint de 21 arquivos TypeScript: zero erros; 13 avisos na tela de resultado do aluno, com regras/mensagens idênticas ao HEAD inicial (`deb8c2736e75860f83387db0296059e81130fdec`). No Windows, a suíte usa o `grep` já instalado pelo Git, adicionado somente ao PATH do processo de testes. Testes com dados simulados e auditoria estrutural; sem nova homologação visual autenticada nem escrita remota.
+
+### Visão geral do professor — refinamento visual (2026-09-09)
+
+Na main-worktree, a aba Visão geral de `app/professor/eventos/[id]/page-client.tsx` reutiliza PremiumCard light nos cinco KPIs e painéis. Cores semânticas, barras SVG contínuas com percentuais pt-BR, donut de concluídos/inscritos, status com percentuais independentes e skeleton inicial. As categorias de participação podem se sobrepor; por isso não são somadas como fatias do donut. Banner superior, navegação, outras abas, consultas, polling e regras de negócio preservados. Nenhuma API ou migration alterada. Sem commit, push ou deploy nesta tarefa.
+
+Validação: TypeScript e lint do arquivo passaram. Renderização isolada do JSX real com dados sintéticos, em 1920, 1366 e 390 pixels, com dados e vazia: sem overflow horizontal. Não substitui homologação autenticada no evento real. Lint global: 344 erros e 142 avisos fora do arquivo alterado.
+Build de produção final: `npm.cmd run build` concluído com sucesso.
+
+### Refino visual da Visão geral — segunda passagem (2026-09-09)
+
+Refinado somente o acabamento da aba existente: KPIs com 164px na renderização isolada, ícones elevados à esquerda, fundos semânticos e sparklines SVG decorativos neutros (aria-hidden, sem histórico ou variação inventada). Faixas com coluna de rótulos de 185px no desktop, linhas compactas sem divisórias, barras contínuas de 14px com brilho e sombra colorida. Donut com anel de 34 unidades SVG e tamanhos responsivos de 185/200/220px. Status compactos e precisão com peso tipográfico maior. Reutilizados PremiumCard e os componentes locais existentes; nenhum componente compartilhado novo.
+
+Comparação com a versão anterior confirmou banner, navegação, demais abas, carregamento, mensagens, consultas e cálculos preservados. Renderização do JSX real com dados sintéticos: 1920x1080, 1536x864, 1440x900, 1366x768, 1280x720, 768x1024 e 390x844, com dados e vazia, sem overflow horizontal. Duas conferências visuais por capturas; não houve homologação autenticada do evento real. TypeScript e lint do arquivo passaram. Nenhuma API ou migration alterada; sem commit, push ou deploy.
+Validação final do refino: build de produção concluído com sucesso; lint global manteve os 344 erros e 142 avisos preexistentes, sem diagnóstico no arquivo refinado. `git diff --check` passou.
