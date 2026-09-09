@@ -25,6 +25,7 @@ import {
   Trophy,
   Tags,
   UserRound,
+  UserRoundSearch,
   Users,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -85,6 +86,7 @@ export function SidebarContent({ onNavigate, studentDrawer = false }: { onNaviga
   const [openAdminGroup, setOpenAdminGroup] = useState<AdminMenuGroup | null>(activeAdminGroup);
   const [reviewQueueCount, setReviewQueueCount] = useState<number | null>(null);
   const [publicationQueueCount, setPublicationQueueCount] = useState<number | null>(null);
+  const [openRegistrationAttemptsCount, setOpenRegistrationAttemptsCount] = useState<number | null>(null);
   const [openHelpMessagesCount, setOpenHelpMessagesCount] = useState<number | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -170,6 +172,27 @@ export function SidebarContent({ onNavigate, studentDrawer = false }: { onNaviga
       window.removeEventListener("help-tickets:changed", loadOpenHelpMessagesCount);
     };
   }, [isAdmin, pathname]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let cancelled = false;
+
+    async function loadOpenRegistrationAttemptsCount() {
+      const response = await adminFetch("/api/admin/registration-attempts?status=open&pageSize=1");
+      const json = await response.json().catch(() => ({}));
+      if (cancelled || !response.ok || !json.ok) return;
+      setOpenRegistrationAttemptsCount(json.metrics?.open ?? 0);
+    }
+
+    loadOpenRegistrationAttemptsCount();
+    const interval = window.setInterval(loadOpenRegistrationAttemptsCount, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isAdmin]);
 
   function toggleAdminGroup(group: AdminMenuGroup) {
     setOpenAdminGroup((current) => {
@@ -417,6 +440,10 @@ export function SidebarContent({ onNavigate, studentDrawer = false }: { onNaviga
 
               <NavLink href="/admin/configuracoes/imagens-do-sistema" active={isActive("/admin/configuracoes/imagens-do-sistema")} icon={<LibraryBig size={16} />} onNavigate={onNavigate}>
                 Imagens do Sistema
+              </NavLink>
+
+              <NavLink href="/admin/configuracoes/tentativas-cadastro" active={isActive("/admin/configuracoes/tentativas-cadastro")} icon={<UserRoundSearch size={16} />} badge={openRegistrationAttemptsCount && openRegistrationAttemptsCount > 0 ? openRegistrationAttemptsCount : null} onNavigate={onNavigate}>
+                Tentativas de cadastro
               </NavLink>
             </AdminGroup>
           </nav>

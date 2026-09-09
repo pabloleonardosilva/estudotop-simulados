@@ -7,6 +7,12 @@ import { logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { createStudentAccount, studentAccountErrorResponse } from "@/lib/server/studentAccountService";
 import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationTemplates";
+import {
+  touchRegistrationAttemptResend,
+  markRegistrationAttemptConfirmed,
+  completeRegistrationAttempt,
+  markRegistrationAttemptFailed,
+} from "@/lib/server/studentRegistrationAttemptService";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
@@ -143,6 +149,10 @@ export async function POST(request: Request) {
         .update({ used_at: new Date().toISOString() })
         .eq("id", confirmation.id);
 
+      // Reenvio automático por código incorreto: só toca atividade/contador
+      // de código enviado — nunca conta como nova tentativa voluntária.
+      await touchRegistrationAttemptResend(supabase, email);
+
       return NextResponse.json(
         {
           ok: false,
@@ -166,6 +176,9 @@ export async function POST(request: Request) {
     if (claimError || !claimedConfirmation) {
       return NextResponse.json({ ok: false, message: "Este código já está sendo processado ou foi utilizado." }, { status: 409 });
     }
+
+    // Código confirmado com sucesso — antes de tentar criar a conta.
+    await markRegistrationAttemptConfirmed(supabase, email);
 
     const { data: existingStudent } = await supabase
       .from("students")
@@ -219,10 +232,17 @@ export async function POST(request: Request) {
         extraStudentFields: { email_confirmed_at: new Date().toISOString(), ...(eventSignup ? { origin: "Evento de Simulado", origin_event_id: eventId, origin_registered_at: new Date().toISOString(), approved_at: new Date().toISOString() } : {}) },
       });
       userId = account.userId;
+      // Conta constituída (auth.users + profiles + students) — a tentativa
+      // de cadastro é considerada concluída aqui, independentemente do que
+      // acontecer depois nos passos específicos de Evento abaixo (token de
+      // senha, participante etc.), que são uma preocupação diferente.
+      await completeRegistrationAttempt(supabase, email);
     } catch (error) {
       await supabase.from("student_registration_confirmations").update({ used_at: null }).eq("id", confirmation.id).eq("used_at", claimedAt);
       void logSystemError({ source: "api.auth.confirm_registration.account", error, request });
-      return NextResponse.json(studentAccountErrorResponse(error, true), { status: 409 });
+      const failure = studentAccountErrorResponse(error, true);
+      await markRegistrationAttemptFailed(supabase, email, failure.code, failure.message);
+      return NextResponse.json(failure, { status: 409 });
     }
 
     if (eventSignup && eventId) {

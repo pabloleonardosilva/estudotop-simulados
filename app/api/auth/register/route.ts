@@ -9,6 +9,7 @@ import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
 import { authUserExists } from "@/lib/server/studentAccountRepair";
 import { verifyRecaptchaToken } from "@/lib/server/recaptcha";
+import { startOrTouchRegistrationAttempt } from "@/lib/server/studentRegistrationAttemptService";
 
 const FROM_EMAIL = "EstudoTOP <estudotop@estudotop.com.br>";
 const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
@@ -241,6 +242,18 @@ export async function POST(request: Request) {
       void logSystemError({ source: "api.auth.register.email", error: emailError, request });
       return NextResponse.json({ ok: false, message: "Não foi possível enviar o código de confirmação." }, { status: 400 });
     }
+
+    // Tentativa de cadastro incompleto (Configurações → "Tentativas de
+    // cadastro"): só registrada aqui, quando o servidor de fato aceitou
+    // iniciar o fluxo (código gerado e e-mail enviado) — nunca antes disso.
+    // Nunca bloqueia o cadastro real (ver lib/server/studentRegistrationAttemptService.ts).
+    await startOrTouchRegistrationAttempt(supabase, {
+      email,
+      fullName: name,
+      phone: phone || null,
+      source: eventId ? "event_signup" : "public_signup",
+      sourceContextId: eventId,
+    });
 
     return NextResponse.json({
       ok: true,
