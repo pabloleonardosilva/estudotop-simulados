@@ -34,6 +34,7 @@ import {
 import { supabase } from "@/app/lib/supabase/client";
 import TopCoinRewardModal from "@/app/components/gamification/TopCoinRewardModal";
 import CorrectionVideoPlayer from "./CorrectionVideoPlayer";
+import { addTopicRollup, normalizeTextKey, type TopicRollup } from "@/lib/topicDifficulty";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -128,15 +129,6 @@ type ResultPayload = {
   earned_topcoins?: number | null;
 };
 
-type TopicRollup = {
-  label: string;
-  aliases: string[];
-  correct: number;
-  wrong: number;
-  blank: number;
-  total: number;
-};
-
 type SubjectTopicPerformance = {
   subject: string;
   correct: number;
@@ -171,66 +163,6 @@ function formatPercent(value: number): string {
   const safe = Number(value || 0);
   const fixed = safe.toFixed(2);
   return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",");
-}
-
-function normalizeTextKey(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\b(protocolo|conceito|conceitos|nocao|nocoes|sobre|de|da|do|dos|das|em)\b/g, " ")
-    .replace(/[^a-z0-9+/#.\s-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function canonicalizeTopicLabel(rawTopic: string): { key: string; label: string } {
-  const original = String(rawTopic || "").trim().replace(/\s+/g, " ");
-  const key = normalizeTextKey(original);
-  if (!key) return { key: "", label: "" };
-
-  const compact = key.replace(/[\s-]/g, "");
-  const aliases: Array<[RegExp, string, string]> = [
-    [/^(ram|memoriaram)$/i, "memoria ram", "Memória RAM"],
-    [/^(cache|memoriacache)$/i, "memoria cache", "Memória Cache"],
-    [/^(placamae|motherboard)$/i, "placa mae", "Placa-mãe"],
-    [/^(hd|hdd|discorigido)$/i, "hd hdd", "HD/HDD"],
-    [/^(ssd|unidadessd)$/i, "ssd", "SSD"],
-    [/^(bios|uefi|biosuefi)$/i, "bios uefi", "BIOS/UEFI"],
-    [/^(http|https|httphttps)$/i, "http https", "HTTP/HTTPS"],
-    [/^(tcpip|tcp\/ip)$/i, "tcp ip", "TCP/IP"],
-    [/^(ip|enderecoip|enderecamentoip)$/i, "endereco ip", "Endereço IP"],
-    [/^(dns|sistemadns)$/i, "dns", "DNS"],
-    [/^(dhcp)$/i, "dhcp", "DHCP"],
-    [/^(url|uri)$/i, "url uri", "URL/URI"],
-  ];
-
-  for (const [pattern, canonicalKey, label] of aliases) {
-    if (pattern.test(compact)) return { key: canonicalKey, label };
-  }
-
-  const semanticKey = key
-    .replace(/^protocolo\s+/, "")
-    .replace(/\s+protocolo$/, "")
-    .replace(/\bmemoria\s+ram\b/, "memoria ram")
-    .replace(/\bmemoria\s+cache\b/, "memoria cache")
-    .trim();
-
-  return { key: semanticKey || key, label: original };
-}
-
-function addTopicRollup(map: Map<string, TopicRollup>, topic: string, status: "correct" | "wrong" | "blank") {
-  const canonical = canonicalizeTopicLabel(topic);
-  if (!canonical.key) return;
-  if (!map.has(canonical.key)) {
-    map.set(canonical.key, { label: canonical.label, aliases: [], correct: 0, wrong: 0, blank: 0, total: 0 });
-  }
-  const item = map.get(canonical.key)!;
-  if (!item.aliases.some((alias) => normalizeTextKey(alias) === normalizeTextKey(topic))) item.aliases.push(topic.trim());
-  item.total += 1;
-  if (status === "correct") item.correct += 1;
-  if (status === "wrong") item.wrong += 1;
-  if (status === "blank") item.blank += 1;
 }
 
 function buildSubjectTopicPerformance(questions: ResultQuestion[]): SubjectTopicPerformance[] {

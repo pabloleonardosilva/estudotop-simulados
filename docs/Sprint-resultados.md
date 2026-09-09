@@ -1072,3 +1072,35 @@ Nenhuma dessas foi alterada — não fazem parte direta deste incidente. Registr
 ### Estado dos dados de produção
 
 **Nenhum dado de produção foi corrigido nesta rodada.** Os 135 resultados deste Simulado continuam com os números produzidos pelo incidente até que `reconcileCurrentRevision()` seja executado deliberadamente contra produção, em uma etapa controlada separada, depois desta correção estar revisada e no ar. `ET3582` permanece `annulled` (não foi desanulada como parte desta investigação/correção).
+
+### Prova Professor
+
+O caderno de prova em PDF gerado pelo Professor/Admin (a partir do Evento) não expõe gabarito: `SimuladoQuestionsPdf` (`app/lib/pdf/simulado-result-pdf.ts`) ganhou `showAnswerKey?: boolean`, gating todo o destaque de alternativa correta atrás de `highlightCorrect = showAnswerKey && alternative.is_correct`. O PDF do aluno (`downloadSimuladoResultPdf`) continua com `showAnswerKey: true`, sem nenhuma mudança de comportamento — a correção/resultado do aluno em si (`lib/simuladoScoring.ts`, reconciliação, `pending_reconciliation_at`) não foi tocada. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seções 98 e 99.
+
+### Ranking PDF
+
+Exportação do Ranking oficial (mesma regra de `rankedParticipants()`) em PDF, dentro da aba Participantes do Professor. Não toca `lib/simuladoScoring.ts` nem recalcula `correct_count`/`display_score`/`time_spent_ms`/`owl_help_used_count`/`focus_violation_count` — consome exatamente os valores já consolidados. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 99.
+
+### Regra de classificação do Ranking — pontuação > coruja > advertências > tempo (2026-09-09)
+
+`rankedParticipants()` passou a comparar, hierarquicamente: `display_score` (score oficial, o mesmo já exibido como "Nota" — não `correct_count`) → `owl_help_used_count` → `focus_violation_count` → `time_spent_ms`. Pontuação continua soberana. Nenhum dos quatro campos é recalculado — todos vêm já consolidados da tentativa oficial/representativa (`simulado_results`/`simulado_attempts`). Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 103.
+
+### "Tópicos de maior dificuldade" no modal "Ver" do Ranking — mesma análise da tela de resultados do aluno (2026-09-09)
+
+`normalizeTextKey`/`canonicalizeTopicLabel`/`addTopicRollup` — a lógica de canonicalização/deduplicação de tópicos já usada em "Tópicos para revisar" na tela de resultados do aluno (`app/meus-simulados/[id]/resultado/page-client.tsx`) — foram extraídas verbatim (sem reescrever) para `lib/topicDifficulty.ts`, que também ganhou `buildDifficultyTopics` (versão achatada, mesma regra de incidência de erro, sem agrupar por assunto). A tela de resultados do aluno passou a importar do módulo compartilhado em vez de definir localmente — comportamento do aluno inalterado. Questão anulada nunca conta como erro (mesma regra); status por questão (correta/errada/em branco) calculado do mesmo jeito. Não recalcula `correct_count`/`wrong_count`/`blank_count`/`annulled_count`/score em nenhum ponto. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 104.
+
+### Guia "Insights" do Professor — análise pedagógica coletiva por tópico, com suavização estatística k=2 (2026-09-09)
+
+Nova 4ª aba na dashboard do Evento do Professor (`app/professor/eventos/[id]/page-client.tsx`), calculada por `lib/eventInsights.ts` (funções puras): dificuldade por questão `D_q = wrong/(correct+wrong)` (branco fora do denominador, anulada excluída), dificuldade bruta por tópico `D_t` (média simples, sem peso por volume de resposta), dificuldade global `D_global` (mesma regra), e dificuldade ajustada `D_adjusted = (n·D_t + k·D_global)/(n+k)`, k=2, usada para ordenar — `D_t` bruto continua sempre visível ao lado, nunca escondido. Reaproveita `canonicalizeTopicLabel` de `lib/topicDifficulty.ts` (seção 104) e o `questionStats` já calculado em `GET /api/professor/events/[id]/route.ts` (zero consultas novas). Resumo textual final ("O que merece revisão em aula") é determinístico, sem IA/API externa. Não altera scoring, resultados, TopCoins nem a regra de classificação do Ranking (seção 103). Detalhes completos, incluindo o exemplo numérico de suavização e a lista de arquivos/testes: `docs/Sprint-evento-de-simulado.md`, seção 105.
+
+### Refinamento de UX da guia "Insights" — classificação simplificada, sem Mapa de domínio, questão em modal (2026-09-10)
+
+Ajuste de apresentação sobre a guia "Insights" (seção anterior) — a matemática (D_q/D_t/D_global/D_adjusted, k=2) não mudou. A lista de tópicos deixou de mostrar a dificuldade "observada" ao lado da ajustada e os rótulos de confiança da amostra ("Evidência inicial"/"Confiança moderada"/"Confiança alta") — só a dificuldade ajustada é exibida agora, com uma classificação visual renomeada (Extrema/Alta/Média/Baixa, limiares 75/50/25% centralizados em `classifyTopicDifficultyBand()`). A lista "Questões mais difíceis" deixou de mostrar taxa de branco e passou a ser clicável: abre a questão completa (enunciado + alternativas) num modal de consulta que reaproveita `QuestionDisplayCard` (mesmo componente da aba Questões/revisão) e o mesmo `data.questions` já carregado — zero fetch novo, zero mudança de permissão. O bloco "Mapa de domínio" foi removido integralmente por decisão de clareza do usuário. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 106.
+
+### Correção da coleta de dados dos Insights — paginação completa e revalidação de status (2026-09-10)
+
+Auditoria comprovou, no mesmo Evento do incidente `ET3582`, que `GET /api/professor/events/[id]` truncava silenciosamente `simulado_answers` (1587 reais, 1000 retornadas) por falta de paginação — mesma classe de bug do "Incidente de truncamento silencioso" (seção acima), agora corrigida também nesta rota via `fetchAllPages()` (extraída para o módulo compartilhado `lib/server/supabasePagination.ts`, reaproveitada por `lib/server/simuladoQuestionReprocessing.ts` e pela rota do Professor). Adicionalmente, a rota passou a revalidar o status da tentativa antes de incluí-la nos Insights (`completedRepresentativeAttemptIds`, estritamente `completed`) — defesa em profundidade contra `representative_attempt_id` histórico inconsistente (12 casos reais encontrados: 3 `in_progress`, 9 `disqualified`). A aba Questões/revisão (Modo Aula) manteve sua base operacional original, sem alteração. Nenhuma mudança em `lib/simuladoScoring.ts`. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 107.
+
+### Atualização da base operacional (pré-commit, 2026-09-09)
+
+A preservação da base antiga de Questões/revisão mencionada acima descreve a etapa anterior. A correção final usa conclusão válida ou tentativa ativa, deduplicada por aluno, sem alterar a base consolidada dos Insights ou resultados oficiais. Decisão completa e dívida histórica: `docs/Sprint-evento-de-simulado.md`, seção 109.

@@ -1028,3 +1028,31 @@ Detalhes completos, incluindo um segundo bug real encontrado e corrigido ao test
 ### Incidente real de produção — truncamento silencioso de `simulado_answers` (2026-09-07)
 
 A migration acima foi aplicada e a questão `ET3582` (3º Simulado de Processo Civil) foi anulada em produção. `reprocessSimulado()` buscava `simulado_answers` de todas as tentativas do Simulado numa única consulta sem paginação — com 135 tentativas × 12 questões (~1620 linhas), o PostgREST/Supabase cortou a resposta no limite padrão (1000), silenciosamente. O motor interpretou respostas reais ausentes como questão em branco, reduzindo a nota de 113 dos 135 alunos (sem relação com a questão anulada em si, que ficou correta). Corrigido com paginação explícita e determinística (`fetchAllPages()`, `.range()` + `.order("id")` + conferência do `count` exato) nas três consultas do motor que escalam com o número de tentativas. `lib/simuladoScoring.ts` não foi alterado. `reconcileCurrentRevision()` (nova) permite reprocessar a MESMA revisão já concluída (sem gerar revisão nova, sem mudar status) para corrigir os dados do incidente — exposta pelo endpoint já existente `POST /api/admin/simulados/[id]/reconciliation`, sem rota nova. Testado na mesma escala real (1620 respostas) em `tests/simulado-question-annulment/large-answer-set.spec.ts`. **Dados de produção deste Simulado ainda não foram corrigidos** — fica para uma etapa controlada separada. Detalhes completos: `docs/Sprint-resultados.md`, seção "Incidente de truncamento silencioso".
+
+### Prova Professor
+
+Caderno de prova neutro gerado pelo Professor/Admin a partir do Evento reaproveita o mesmo renderer do PDF do aluno (`SimuladoQuestionsPdf`, `app/lib/pdf/simulado-result-pdf.ts`) via um parâmetro `showAnswerKey?: boolean` — `false` para o Professor/Admin (nenhuma alternativa correta marcada, nenhuma coruja, nenhuma indicação de gabarito), `true` (comportamento inalterado) para o aluno. `is_correct` também deixou de ser selecionado do banco na rota `GET /api/professor/events/[id]/exam-pdf`. Detalhes completos, testes e regressão: `docs/Sprint-evento-de-simulado.md`, seções 98 e 99.
+
+### Ranking PDF
+
+Exportação do "Ranking oficial" em PDF, botão dentro da própria aba Participantes de `/professor/eventos/[id]`. Renderer dedicado `app/lib/pdf/event-ranking-pdf.ts`, sem endpoint novo (gerado client-side a partir do mesmo `participants` já calculado em tela via `rankedParticipants()` — nenhuma regra de ranking nova, nenhuma consulta adicional). Colunas atuais: Posição, Nome, Tempo, Advert., Coruja, Pontos. Capa oficial reaproveita o mesmo mecanismo A4/`objectFit:"cover"` da capa do Simulado. Detalhes completos, testes e regressão: `docs/Sprint-evento-de-simulado.md`, seções 99-103.
+
+### Regra de classificação do Ranking (atualizada 2026-09-09)
+
+`lib/eventRanking.ts` (`rankedParticipants()`) passou a ordenar por: pontuação oficial (`display_score`) > menor uso da Ajuda da Coruja (`owl_help_used_count`) > menor número de advertências por troca de tela (`focus_violation_count`) > menor tempo. Tela, modal "Ver" e PDF do ranking usam a mesma função — nenhuma regra paralela. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 103.
+
+### Guia "Insights" do Professor — dificuldade por tópico com suavização estatística (2026-09-09)
+
+Nova aba "Insights" no Evento do Professor, com uma análise coletiva (todos os participantes juntos) de quais tópicos foram mais difíceis — distinta do card individual por aluno (seção anterior/104). Métrica principal de ordenação `D_adjusted = (n·D_t + k·D_global)/(n+k)`, k=2, suaviza tópicos com poucas questões em direção à média global do Simulado, evitando que 1 questão isolada pareça tão confiável quanto várias. Anuladas sempre excluídas; branco nunca conta como erro; questão com múltiplos tópicos contribui integralmente (não dividida) para cada um. Nenhuma consulta nova ao banco (reaproveita dados já calculados na mesma rota), nenhuma migration, nenhuma mudança em `lib/simuladoScoring.ts` ou na regra de classificação do Ranking. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 105.
+
+### Refinamento de UX da guia "Insights" do Professor (2026-09-10)
+
+Guia "Insights" (seção anterior) recebeu um refinamento só de apresentação: lista de tópicos agora mostra apenas a dificuldade ajustada (a observada e a confiança da amostra continuam calculadas internamente, só deixaram de aparecer na tela), com classificação renomeada para Extrema/Alta/Média/Baixa (limiares 75/50/25%, centralizados em `lib/eventInsights.ts`). Lista "Questões mais difíceis" deixou de mostrar taxa de branco e passou a ser clicável, abrindo a questão em um modal de consulta somente-leitura que reaproveita `QuestionDisplayCard` (já usado na aba Questões/revisão) e os dados já carregados (zero fetch novo). Bloco "Mapa de domínio" removido. Nenhuma mudança na matemática, no scoring, no ranking ou nas demais guias. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 106.
+
+### Paginação completa reaproveitada na guia Insights do Professor (2026-09-10)
+
+`fetchAllPages()` — paginação determinística contra o truncamento silencioso do PostgREST em `simulado_answers`/`simulado_results`, já usada em `lib/server/simuladoQuestionReprocessing.ts` — foi extraída para `lib/server/supabasePagination.ts` e passou a ser reaproveitada também por `GET /api/professor/events/[id]` (guia Insights), que hoje sofria o mesmo tipo de truncamento (1587 respostas reais, 1000 retornadas, no mesmo Evento do incidente `ET3582`). Nenhuma mudança em `lib/simuladoScoring.ts` ou nos resultados oficiais. Detalhes completos: `docs/Sprint-evento-de-simulado.md`, seção 107.
+
+### Questões/revisão — população operacional válida (2026-09-09)
+
+A correção final do painel separa conclusão oficial válida de tentativa realmente ativa, com deduplicação e exclusão de extras/stale/desclassificados/expirados. Não altera pontuação nem tentativas persistidas. Fonte detalhada: `docs/Sprint-evento-de-simulado.md`, seção 109.

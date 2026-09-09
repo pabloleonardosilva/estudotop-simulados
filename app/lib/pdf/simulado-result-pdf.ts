@@ -307,7 +307,7 @@ function PdfWatermark({ student, second = false }: { student: PdfStudent; second
   );
 }
 
-function SimuladoQuestionsPdf({ meta, questions, student }: { meta: PdfMeta; questions: PdfQuestion[]; student: PdfStudent }): React.ReactElement<React.ComponentProps<typeof Document>> {
+function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }: { meta: PdfMeta; questions: PdfQuestion[]; student?: PdfStudent | null; showAnswerKey?: boolean }): React.ReactElement<React.ComponentProps<typeof Document>> {
   const title = meta.title || "Simulado";
 
   return React.createElement(
@@ -347,35 +347,46 @@ function SimuladoQuestionsPdf({ meta, questions, student }: { meta: PdfMeta; que
               React.createElement(
                 View,
                 { style: s.alternatives },
-                (question.alternatives || []).map((alternative, alternativeIndex) =>
-                  React.createElement(
+                (question.alternatives || []).map((alternative, alternativeIndex) => {
+                  // Gabarito exclusivo do PDF do aluno: com showAnswerKey=false
+                  // (Professor/Admin, ver downloadNeutralSimuladoPdf) nenhuma
+                  // alternativa recebe destaque/coruja — todas ficam com a
+                  // mesma aparência neutra, mesmo que is_correct seja true.
+                  const highlightCorrect = showAnswerKey && Boolean(alternative.is_correct);
+                  return React.createElement(
                     View,
                     {
                       key: alternative.id || `${alternativeIndex}`,
-                      style: alternative.is_correct ? [s.alternative, s.alternativeCorrect] : s.alternative,
+                      style: highlightCorrect ? [s.alternative, s.alternativeCorrect] : s.alternative,
                       wrap: false,
                     },
                     React.createElement(
                       View,
-                      { style: alternative.is_correct ? [s.alternativeLabel, s.alternativeLabelCorrect] : s.alternativeLabel },
+                      { style: highlightCorrect ? [s.alternativeLabel, s.alternativeLabelCorrect] : s.alternativeLabel },
                       React.createElement(
                         Text,
-                        { style: alternative.is_correct ? s.alternativeCorrectMark : s.alternativeLabelText },
-                        alternative.is_correct ? OWL_MARK : alternative.label || String(alternativeIndex + 1),
+                        { style: highlightCorrect ? s.alternativeCorrectMark : s.alternativeLabelText },
+                        highlightCorrect ? OWL_MARK : alternative.label || String(alternativeIndex + 1),
                       ),
                     ),
                     React.createElement(
                       Text,
-                      { style: alternative.is_correct ? [s.alternativeText, s.alternativeTextCorrect] : s.alternativeText },
+                      { style: highlightCorrect ? [s.alternativeText, s.alternativeTextCorrect] : s.alternativeText },
                       stripHtml(alternative.text),
                     ),
-                  ),
-                ),
+                  );
+                }),
               ),
             ),
           ),
-      React.createElement(PdfWatermark, { student }),
-      React.createElement(PdfWatermark, { student, second: true }),
+      // Marca d'água pessoal: exclusiva do PDF do aluno. Quando `student` não
+      // é informado (PDF neutro do Professor/Admin gerado direto do Evento —
+      // ver downloadNeutralSimuladoPdf), nenhuma marca é renderizada — nunca
+      // se usa um placeholder "não informado" nem dado de outra pessoa aqui.
+      ...(student ? [
+        React.createElement(PdfWatermark, { student }),
+        React.createElement(PdfWatermark, { student, second: true }),
+      ] : []),
       React.createElement(PdfFooter, { title }),
     ),
   );
@@ -393,7 +404,35 @@ export async function downloadSimuladoResultPdf({
   answers: Record<string, PdfAnswer>;
   timeSpent: number;
 }) {
-  const pdfDocument = React.createElement(SimuladoQuestionsPdf, { meta, questions, student }) as React.ReactElement<React.ComponentProps<typeof Document>>;
+  const pdfDocument = React.createElement(SimuladoQuestionsPdf, { meta, questions, student, showAnswerKey: true }) as React.ReactElement<React.ComponentProps<typeof Document>>;
+  const blob = await pdf(pdfDocument).toBlob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `simulado-estudotop-${safeFileName(meta.title)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Prova neutra gerada por Professor/Admin diretamente a partir do Evento →
+// Simulado vinculado (ver GET /api/professor/events/[id]/exam-pdf). Reaproveita
+// o mesmo componente e o mesmo helper de nome de arquivo do PDF do aluno —
+// nenhum template paralelo. Sem `student`, a marca d'água pessoal não é
+// renderizada (ver SimuladoQuestionsPdf); nome do arquivo e metadata do PDF
+// já eram apenas institucionais (título do simulado, "EstudoTOP Simulados"),
+// preservados sem alteração. `showAnswerKey: false` — caderno de prova limpo,
+// sem alternativa correta marcada, sem coruja, sem qualquer indicação de
+// gabarito: é a prova neutra, não um relatório de resultado.
+export async function downloadNeutralSimuladoPdf({
+  meta,
+  questions,
+}: {
+  meta: PdfMeta;
+  questions: PdfQuestion[];
+}) {
+  const pdfDocument = React.createElement(SimuladoQuestionsPdf, { meta, questions, student: null, showAnswerKey: false }) as React.ReactElement<React.ComponentProps<typeof Document>>;
   const blob = await pdf(pdfDocument).toBlob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

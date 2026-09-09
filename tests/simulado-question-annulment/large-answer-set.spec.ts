@@ -205,6 +205,10 @@ function createFakePostgrest(tables: Record<string, Row[]>) {
 const simuladoScoringModule = loadCjsModule("lib/simuladoScoring.ts", () => {
   throw new Error("import inesperado dentro de lib/simuladoScoring.ts");
 });
+const supabasePaginationModule = loadCjsModule("lib/server/supabasePagination.ts", (id: string) => {
+  if (id === "server-only") return {};
+  throw new Error(`import inesperado dentro de lib/server/supabasePagination.ts: ${id}`);
+});
 
 type EngineModule = {
   setSimuladoQuestionAnnulment: (
@@ -218,6 +222,7 @@ function buildEngine(resyncCalls: { studentId: string; simuladoId: string }[]): 
     if (id === "server-only") return {};
     if (id === "node:crypto") return crypto;
     if (id === "@/lib/simuladoScoring") return simuladoScoringModule;
+    if (id === "@/lib/server/supabasePagination") return supabasePaginationModule;
     if (id === "@/app/lib/server/topcoinsSync") {
       return {
         resyncTopCoinEarnings: async (_s: unknown, studentId: string, simuladoId: string) => {
@@ -447,6 +452,7 @@ test.describe("reprodução do incidente real — >1000 simulado_answers (135 te
       if (id === "server-only") return {};
       if (id === "node:crypto") return crypto;
       if (id === "@/lib/simuladoScoring") return simuladoScoringModule;
+      if (id === "@/lib/server/supabasePagination") return supabasePaginationModule;
       if (id === "@/app/lib/server/topcoinsSync") return { resyncTopCoinEarnings: async (_s: unknown, studentId: string, simuladoId: string) => { resyncCalls.push({ studentId, simuladoId }); } };
       if (id === "@/lib/logging/activity-log") return { logActivity: async () => {} };
       throw new Error(`Unexpected import: ${id}`);

@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownAZ, ArrowLeft, ArrowRight, Ban, BarChart3, CheckCircle2, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Circle, Clock3, Eye, EyeOff, Hourglass, Loader2, Medal, Minus, PlayCircle, Plus, Presentation, Radio, RotateCcw, Search, SearchX, ShieldCheck, Target, Trophy, Type, Unlock, UserRound, Users, X, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ArrowDownAZ, ArrowLeft, ArrowRight, Ban, BarChart3, Bird, CheckCircle2, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Circle, Clock3, Eye, EyeOff, FileText, Hourglass, Loader2, Medal, Minus, PlayCircle, Plus, Presentation, Radio, RotateCcw, Search, SearchX, ShieldCheck, Sparkles, Target, Trophy, Type, Unlock, UserRound, Users, X, XCircle } from "lucide-react";
 import { supabase } from "@/app/lib/supabase/client";
 import { rankedParticipants } from "@/lib/eventRanking";
+import { formatRankingName } from "@/lib/formatRankingName";
+import type { EventInsightsSummary, QuestionInsight, TopicDifficultyBand, TopicInsight } from "@/lib/eventInsights";
+import { richTextToPlainText } from "@/lib/utils/rich-text";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
 import PremiumSelect from "@/app/components/ui/PremiumSelect";
@@ -11,11 +14,22 @@ import QuestionDisplayCard from "@/app/components/questions/QuestionDisplayCard"
 import ProfessorEventBannerFrame from "./ProfessorEventBannerFrame";
 import SimuladoControlMenu from "./SimuladoControlMenu";
 
-type Tab = "overview" | "participants" | "questions";
+type Tab = "overview" | "participants" | "questions" | "insights";
 type Alternative = { id: string; label: string | null; text: string | null; image_url: string | null; is_correct: boolean; order_number: number | null };
 type ClassroomQuestion = { id: string; order_number: number; status: string; questions: { id: string; code: string | null; statement: string | null; image_url: string | null; year: number | null; question_type: string | null; question_alternatives: Alternative[] } | null; answered: number; total_considered: number; correct: number; wrong: number; blank: number; accuracy_percent: number | null; error_percent: number | null; average_time_seconds: number; alternative_counts: Record<string, number> };
-type Participant = { id: string; name: string; email: string; joined_at: string; status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "admin_terminated" | "expired"; attempt_count: number; representative_attempt_id: string | null; representative_attempt_number: number | null; attempt: { id: string; status: string; attempt_number: number; started_at: string | null; submitted_at: string | null; time_spent_seconds: number | null; is_representative: boolean } | null; result: { display_score: number | null; percentage: number | null; correct_count: number; wrong_count: number; blank_count: number; total_questions: number; time_spent_ms: number } | null; result_status: "not_available" | "pending" | "available"; result_released_at: string | null; is_online: boolean; rank?: number | null; rank_tied?: boolean };
-type Dashboard = { event: { id: string; name: string; simulado_id: string | null; effective_status: string; result_policy: string; starts_at: string; professor_banner_url?: string | null; professor_banner_position_x?: number; professor_banner_position_y?: number; simulados?: { title?: string } }; summary: { registered: number; online: number; not_started: number; taking: number; completed: number; pending_results: number; accuracy_percent: number | null; error_percent: number | null; blank_answers: number; average_time_seconds: number; highest_score: number | null; lowest_score: number | null; average_score: number | null }; participants: Participant[]; questions: ClassroomQuestion[] };
+type Participant = { id: string; name: string; email: string; joined_at: string; status: "not_started" | "not_completed" | "in_progress" | "completed" | "disqualified" | "admin_terminated" | "expired"; attempt_count: number; representative_attempt_id: string | null; representative_attempt_number: number | null; attempt: { id: string; status: string; attempt_number: number; started_at: string | null; submitted_at: string | null; time_spent_seconds: number | null; is_representative: boolean } | null; result: { display_score: number | null; percentage: number | null; correct_count: number; wrong_count: number; blank_count: number; total_questions: number; time_spent_ms: number; owl_help_used_count: number; focus_violation_count: number; difficulty_topics: string[] } | null; result_status: "not_available" | "pending" | "available"; result_released_at: string | null; is_online: boolean; rank?: number | null; rank_tied?: boolean };
+type Dashboard = { event: { id: string; name: string; simulado_id: string | null; effective_status: string; result_policy: string; starts_at: string; professor_banner_url?: string | null; professor_banner_position_x?: number; professor_banner_position_y?: number; simulados?: { title?: string } }; summary: { registered: number; online: number; not_started: number; taking: number; completed: number; pending_results: number; accuracy_percent: number | null; error_percent: number | null; blank_answers: number; average_time_seconds: number; highest_score: number | null; lowest_score: number | null; average_score: number | null }; participants: Participant[]; questions: ClassroomQuestion[]; insights: EventInsightsSummary };
+
+// Classificação visual exibida ao professor na guia Insights — nomenclatura
+// e cores definidas no refinamento de UX (2026-09-10); os limiares em si
+// (75/50/25%) são calculados uma única vez em lib/eventInsights.ts
+// (classifyTopicDifficultyBand), nunca reimplementados aqui.
+const TOPIC_BAND_META: Record<TopicDifficultyBand, { label: string; badge: string }> = {
+  extreme: { label: "Extrema", badge: "border-red-300/80 bg-red-50 text-red-700" },
+  high: { label: "Alta", badge: "border-orange-300/80 bg-orange-50 text-orange-700" },
+  medium: { label: "Média", badge: "border-amber-300/80 bg-amber-50 text-amber-700" },
+  low: { label: "Baixa", badge: "border-emerald-300/80 bg-emerald-50 text-emerald-700" },
+};
 
 const DEFAULT_PARTICIPANTS_PER_PAGE = 10;
 const participantStatus = {
@@ -71,20 +85,49 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
   const [participantPage, setParticipantPage] = useState(0);
   const [participantsPerPage, setParticipantsPerPage] = useState(DEFAULT_PARTICIPANTS_PER_PAGE);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [previewQuestionRelationId, setPreviewQuestionRelationId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [professorName, setProfessorName] = useState("");
   const [controlBusy, setControlBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [rankingPdfBusy, setRankingPdfBusy] = useState(false);
+
+  // Proteção contra resposta HTTP fora de ordem: cada chamada de load()
+  // aborta a requisição anterior ainda em voo antes de iniciar a nova, e só
+  // aplica setData/setMessage se a resposta corresponder à requisição mais
+  // recente (loadAbortRef.current === controller). Sem isso, uma resposta
+  // mais antiga que demore mais para chegar (jitter de rede, GC do
+  // servidor) pode sobrescrever um estado mais novo já aplicado pelo poll
+  // seguinte — mesmo padrão já usado em app/questoes/importar/page-client.tsx.
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     const { data: auth } = await supabase.auth.getSession();
     if (!auth.session) return;
     setProfessorName(String(auth.session.user.user_metadata.full_name || auth.session.user.user_metadata.name || "").trim().replace(/^professor(?:a)?\s+/i, ""));
-    const response = await fetch(`/api/professor/events/${id}`, { cache: "no-store", headers: { Authorization: `Bearer ${auth.session.access_token}` } });
-    const json = await response.json();
-    if (json.ok) setData(json); else setMessage(json.message);
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    try {
+      const response = await fetch(`/api/professor/events/${id}`, { cache: "no-store", headers: { Authorization: `Bearer ${auth.session.access_token}` }, signal: controller.signal });
+      const json = await response.json();
+      if (loadAbortRef.current !== controller) return;
+      if (json.ok) setData(json); else setMessage(json.message);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      throw error;
+    }
   }, [id]);
 
-  useEffect(() => { const initial = window.setTimeout(() => void load(), 0); const timer = window.setInterval(() => void load(), 10_000); return () => { window.clearTimeout(initial); window.clearInterval(timer); }; }, [load]);
+  useEffect(() => {
+    const initial = window.setTimeout(() => void load(), 0);
+    const timer = window.setInterval(() => void load(), 10_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+      loadAbortRef.current?.abort();
+    };
+  }, [load]);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, []);
 
   async function action(value: string, payload: Record<string, string> = {}) {
@@ -104,6 +147,22 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
       return { ok: false, message: actionMessage };
     } finally {
       setControlBusy(false);
+    }
+  }
+  async function generateExamPdf() {
+    const { data: auth } = await supabase.auth.getSession();
+    if (!auth.session) { setMessage("Sua sessão expirou. Entre novamente para continuar."); return; }
+    setPdfBusy(true);
+    try {
+      const response = await fetch(`/api/professor/events/${id}/exam-pdf`, { cache: "no-store", headers: { Authorization: `Bearer ${auth.session.access_token}` } });
+      const json = await response.json();
+      if (!json.ok) { setMessage(json.message || "Não foi possível gerar o PDF da prova."); return; }
+      const { downloadNeutralSimuladoPdf } = await import("@/app/lib/pdf/simulado-result-pdf");
+      await downloadNeutralSimuladoPdf({ meta: json.simulado, questions: json.questions });
+    } catch {
+      setMessage("Não foi possível comunicar com o servidor. Tente novamente.");
+    } finally {
+      setPdfBusy(false);
     }
   }
   async function toggleQuestionAnnulment(relationId: string, targetStatus: "active" | "annulled") {
@@ -140,6 +199,30 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
   }
 
   const participants = useMemo(() => rankedParticipants(data?.participants || []), [data?.participants]);
+  // "Questões mais difíceis" (guia Insights) reaproveita integralmente o
+  // mesmo `data.questions` já carregado para a aba Questões/revisão (nenhum
+  // fetch novo) para abrir o modal de consulta — só um índice em memória
+  // por id da relação simulado_questions, montado uma vez por atualização.
+  const classroomQuestionsById = useMemo(() => new Map((data?.questions || []).map((question) => [question.id, question])), [data?.questions]);
+
+  async function generateRankingPdf() {
+    if (rankingPdfBusy) return;
+    setRankingPdfBusy(true);
+    let coverLoadError = "";
+    try {
+      const { downloadEventRankingPdf, RANKING_COVER_LOAD_ERROR } = await import("@/app/lib/pdf/event-ranking-pdf");
+      coverLoadError = RANKING_COVER_LOAD_ERROR;
+      await downloadEventRankingPdf({
+        eventName: data?.event.name || "Evento",
+        simuladoTitle: data?.event.simulados?.title || null,
+        participants,
+      });
+    } catch (error) {
+      setMessage(error instanceof Error && coverLoadError && error.message === coverLoadError ? error.message : "Não foi possível gerar o ranking em PDF. Tente novamente.");
+    } finally {
+      setRankingPdfBusy(false);
+    }
+  }
   if (!data) return <main className="min-h-dvh bg-slate-50 p-8 text-slate-700">{message || "Carregando dashboard..."}</main>;
   const safeQuestionIndex = Math.min(questionIndex, Math.max(0, data.questions.length - 1));
   const current = data.questions[safeQuestionIndex] || null;
@@ -151,6 +234,7 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
   const safePage = Math.min(participantPage, pageCount - 1);
   const visible = filtered.slice(safePage * participantsPerPage, (safePage + 1) * participantsPerPage);
   const selected = participants.find((item) => item.id === selectedParticipantId) || null;
+  const previewClassroomQuestion = previewQuestionRelationId ? classroomQuestionsById.get(previewQuestionRelationId) || null : null;
   const secondsToStart = Math.max(0, Math.ceil((new Date(data.event.starts_at).getTime() - now) / 1000));
   const countdown = `${Math.floor(secondsToStart / 3600)}h ${String(Math.floor((secondsToStart % 3600) / 60)).padStart(2, "0")}min ${String(secondsToStart % 60).padStart(2, "0")}s`;
   const completed = participants.filter((item) => item.result);
@@ -175,13 +259,13 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
         </div>
       </ProfessorEventBannerFrame>
     ) : (<>
-    <header className="relative flex min-h-[210px] items-center overflow-hidden rounded-[28px] border border-orange-200/70 bg-[radial-gradient(circle_at_92%_50%,rgba(255,122,0,0.16),transparent_34%),radial-gradient(circle_at_70%_18%,rgba(255,255,255,0.95),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(255,255,255,0.94)_48%,rgba(255,247,237,0.84)_100%)] px-6 py-9 shadow-[0_28px_80px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.94)] sm:px-10 lg:px-[70px]"><div aria-hidden="true" className="pointer-events-none absolute right-32 top-7 hidden text-white/75 drop-shadow-[0_16px_30px_rgba(255,122,0,0.12)] xl:block"><Trophy size={120} strokeWidth={1.35} /></div><div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-40 h-[480px] w-[650px] rounded-[50%] border border-white/70 opacity-60 shadow-[0_0_0_18px_rgba(255,255,255,0.12),0_0_0_36px_rgba(255,255,255,0.08),0_0_0_54px_rgba(255,255,255,0.05)]" /><div className="relative flex w-full flex-col gap-8 xl:flex-row xl:items-end xl:justify-between"><div className="max-w-4xl"><div className="flex flex-wrap items-center gap-4"><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Evento de Simulado</p><span className="inline-flex h-8 items-center gap-2 rounded-full border border-emerald-300/70 bg-emerald-50/90 px-4 text-[13px] font-bold text-emerald-700 shadow-[0_8px_20px_rgba(16,185,129,0.10),inset_0_1px_0_rgba(255,255,255,0.85)]"><span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" /><Radio size={13} className="sr-only" /> Atualização ao vivo</span></div><h1 className="mt-4 text-[clamp(42px,4.8vw,72px)] font-bold leading-[0.98] tracking-[-0.055em] text-[#07142f]">{data.event.name}</h1><p className="mt-[18px] text-[15px] leading-[22px] text-slate-600">{data.event.simulados?.title || "Simulado ainda não vinculado"} · dados consolidados pela tentativa oficial.</p></div><div className="relative flex flex-wrap gap-3">{data.event.simulado_id && <PremiumButton href={`/professor/eventos/${id}/preview`} variant="secondary" className="min-h-[52px] rounded-[15px] px-6 shadow-[0_14px_34px_rgba(15,23,42,0.08)]" icon={<Eye size={18} />}>Ver como aluno</PremiumButton>}<SimuladoControlMenu status={data.event.effective_status} resultPolicy={data.event.result_policy} busy={controlBusy} onAction={async (_controlAction, payload) => action(String(payload?.action || ""), payload)} />{data.event.effective_status === "scheduled" && data.event.simulado_id && <PremiumButton onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}{data.event.result_policy === "blocked" && data.summary.pending_results > 0 && <PremiumButton onClick={() => void action("release_results")} icon={<Unlock size={17} />}>Liberar resultados ({data.summary.pending_results})</PremiumButton>}</div></div></header>
+    <header className="relative flex min-h-[210px] items-center overflow-hidden rounded-[28px] border border-orange-200/70 bg-[radial-gradient(circle_at_92%_50%,rgba(255,122,0,0.16),transparent_34%),radial-gradient(circle_at_70%_18%,rgba(255,255,255,0.95),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(255,255,255,0.94)_48%,rgba(255,247,237,0.84)_100%)] px-6 py-9 shadow-[0_28px_80px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.94)] sm:px-10 lg:px-[70px]"><div aria-hidden="true" className="pointer-events-none absolute right-32 top-7 hidden text-white/75 drop-shadow-[0_16px_30px_rgba(255,122,0,0.12)] xl:block"><Trophy size={120} strokeWidth={1.35} /></div><div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-40 h-[480px] w-[650px] rounded-[50%] border border-white/70 opacity-60 shadow-[0_0_0_18px_rgba(255,255,255,0.12),0_0_0_36px_rgba(255,255,255,0.08),0_0_0_54px_rgba(255,255,255,0.05)]" /><div className="relative flex w-full flex-col gap-8 xl:flex-row xl:items-end xl:justify-between"><div className="max-w-4xl"><div className="flex flex-wrap items-center gap-4"><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Evento de Simulado</p><span className="inline-flex h-8 items-center gap-2 rounded-full border border-emerald-300/70 bg-emerald-50/90 px-4 text-[13px] font-bold text-emerald-700 shadow-[0_8px_20px_rgba(16,185,129,0.10),inset_0_1px_0_rgba(255,255,255,0.85)]"><span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" /><Radio size={13} className="sr-only" /> Atualização ao vivo</span></div><h1 className="mt-4 text-[clamp(42px,4.8vw,72px)] font-bold leading-[0.98] tracking-[-0.055em] text-[#07142f]">{data.event.name}</h1><p className="mt-[18px] text-[15px] leading-[22px] text-slate-600">{data.event.simulados?.title || "Simulado ainda não vinculado"} · dados consolidados pela tentativa oficial.</p></div><div className="relative flex flex-wrap gap-3">{data.event.simulado_id && <PremiumButton href={`/professor/eventos/${id}/preview`} variant="secondary" className="min-h-[52px] rounded-[15px] px-6 shadow-[0_14px_34px_rgba(15,23,42,0.08)]" icon={<Eye size={18} />}>Ver como aluno</PremiumButton>}{data.event.simulado_id && <PremiumButton onClick={() => void generateExamPdf()} disabled={pdfBusy} className="min-h-[52px] rounded-[15px] px-6 shadow-[0_14px_34px_rgba(15,23,42,0.08)]" icon={pdfBusy ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}>Gerar prova em PDF</PremiumButton>}<SimuladoControlMenu status={data.event.effective_status} resultPolicy={data.event.result_policy} busy={controlBusy} onAction={async (_controlAction, payload) => action(String(payload?.action || ""), payload)} />{data.event.effective_status === "scheduled" && data.event.simulado_id && <PremiumButton onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}{data.event.result_policy === "blocked" && data.summary.pending_results > 0 && <PremiumButton onClick={() => void action("release_results")} icon={<Unlock size={17} />}>Liberar resultados ({data.summary.pending_results})</PremiumButton>}</div></div></header>
     </>)}
-    {data.event.professor_banner_url && <div className="mt-3 flex flex-wrap gap-3">{data.event.simulado_id && <PremiumButton href={`/professor/eventos/${id}/preview`} variant="secondary" className="min-h-[48px] rounded-[15px] px-5 shadow-[0_10px_26px_rgba(15,23,42,0.07)]" icon={<Eye size={18} />}>Ver como aluno</PremiumButton>}<SimuladoControlMenu status={data.event.effective_status} resultPolicy={data.event.result_policy} busy={controlBusy} onAction={async (_controlAction, payload) => action(String(payload?.action || ""), payload)} />{data.event.effective_status === "scheduled" && data.event.simulado_id && <PremiumButton onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}{data.event.result_policy === "blocked" && data.summary.pending_results > 0 && <PremiumButton onClick={() => void action("release_results")} icon={<Unlock size={17} />}>Liberar resultados ({data.summary.pending_results})</PremiumButton>}</div>}
+    {data.event.professor_banner_url && <div className="mt-3 flex flex-wrap gap-3">{data.event.simulado_id && <PremiumButton href={`/professor/eventos/${id}/preview`} variant="secondary" className="min-h-[48px] rounded-[15px] px-5 shadow-[0_10px_26px_rgba(15,23,42,0.07)]" icon={<Eye size={18} />}>Ver como aluno</PremiumButton>}{data.event.simulado_id && <PremiumButton onClick={() => void generateExamPdf()} disabled={pdfBusy} className="min-h-[48px] rounded-[15px] px-5 shadow-[0_10px_26px_rgba(15,23,42,0.07)]" icon={pdfBusy ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}>Gerar prova em PDF</PremiumButton>}<SimuladoControlMenu status={data.event.effective_status} resultPolicy={data.event.result_policy} busy={controlBusy} onAction={async (_controlAction, payload) => action(String(payload?.action || ""), payload)} />{data.event.effective_status === "scheduled" && data.event.simulado_id && <PremiumButton onClick={() => void action("start")} icon={<PlayCircle size={17} />}>Iniciar agora</PremiumButton>}{data.event.result_policy === "blocked" && data.summary.pending_results > 0 && <PremiumButton onClick={() => void action("release_results")} icon={<Unlock size={17} />}>Liberar resultados ({data.summary.pending_results})</PremiumButton>}</div>}
     {data.event.effective_status === "scheduled" && <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 text-sm text-orange-800 shadow-sm">Pré-evento · começa em <strong>{countdown}</strong> · {data.summary.registered} inscritos · {data.summary.online} online.</div>}{!data.event.simulado_id && <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 font-semibold text-amber-800 shadow-sm">Evento sem Simulado vinculado. O início permanece bloqueado até a configuração pelo administrador.</div>}{message && <p className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-3 text-sm text-orange-800">{message}</p>}
-    <nav className="mt-[22px] grid gap-2 rounded-[18px] border border-slate-200/90 bg-white/90 p-2 shadow-[0_18px_46px_rgba(15,23,42,0.07),inset_0_1px_0_rgba(255,255,255,0.94)] sm:grid-cols-3" aria-label="Áreas da dashboard"><DashboardTab active={activeTab === "overview"} icon={<BarChart3 size={18} />} label="Visão geral" onClick={() => setActiveTab("overview")} /><DashboardTab active={activeTab === "participants"} icon={<Users size={18} />} label="Participantes" onClick={() => setActiveTab("participants")} /><DashboardTab active={activeTab === "questions"} icon={<Presentation size={18} />} label="Questões / revisão" onClick={() => setActiveTab("questions")} /></nav>
+    <nav className="mt-[22px] grid gap-2 rounded-[18px] border border-slate-200/90 bg-white/90 p-2 shadow-[0_18px_46px_rgba(15,23,42,0.07),inset_0_1px_0_rgba(255,255,255,0.94)] sm:grid-cols-2 lg:grid-cols-4" aria-label="Áreas da dashboard"><DashboardTab active={activeTab === "overview"} icon={<BarChart3 size={18} />} label="Visão geral" onClick={() => setActiveTab("overview")} /><DashboardTab active={activeTab === "participants"} icon={<Users size={18} />} label="Participantes" onClick={() => setActiveTab("participants")} /><DashboardTab active={activeTab === "questions"} icon={<Presentation size={18} />} label="Questões / revisão" onClick={() => setActiveTab("questions")} /><DashboardTab active={activeTab === "insights"} icon={<Sparkles size={18} />} label="Insights" onClick={() => setActiveTab("insights")} /></nav>
 
-    {activeTab === "overview" && <section className="mt-6 space-y-6"><div className="grid gap-[18px] sm:grid-cols-2 xl:grid-cols-5"><MetricCard icon={<Users size={22} />} label="Participantes" value={String(data.summary.registered)} detail={`${data.summary.online} online agora`} /><MetricCard icon={<Trophy size={22} />} label="Maior nota" value={formatScore(data.summary.highest_score)} detail="Tentativa oficial" /><MetricCard icon={<Medal size={22} />} label="Menor nota" value={formatScore(data.summary.lowest_score)} detail="Tentativa oficial" /><MetricCard icon={<BarChart3 size={22} />} label="Média do evento" value={formatScore(data.summary.average_score)} detail={`${data.summary.completed} concluídos`} featured /><MetricCard icon={<Clock3 size={22} />} label="Tempo médio" value={formatTime(data.summary.average_time_seconds)} detail="Resultados oficiais" /></div><div className="grid items-stretch gap-[22px] xl:grid-cols-[minmax(0,1.75fr)_minmax(420px,0.85fr)]"><article className="relative min-h-[420px] overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-8"><div className="flex items-start justify-between gap-4"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00] shadow-[0_10px_22px_rgba(249,115,22,0.20)]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Distribuição de desempenho</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Faixas de aproveitamento</h2></div></div><span className="rounded-full border border-slate-300/80 bg-slate-50/90 px-3.5 py-1.5 text-[13px] font-semibold text-slate-500">{completed.length} resultados</span></div><div className="mt-8 space-y-2">{bands.map((band) => <div key={band.label} className="grid min-h-[54px] grid-cols-[88px_1fr_28px] items-center gap-[18px]"><span className="text-sm text-slate-700">{band.label}</span><div className="grid grid-cols-10 gap-1.5" aria-label={`${band.label}: ${band.count} participantes`}>{Array.from({ length: 10 }, (_, index) => <span key={index} className={`h-2.5 rounded-full ${index < Math.round((band.count / Math.max(1, completed.length)) * 10) ? band.color : "bg-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"}`} />)}</div><strong className="text-right text-lg tabular-nums text-slate-950">{band.count}</strong></div>)}</div></article><article className="min-h-[420px] rounded-3xl border border-orange-200/80 bg-[radial-gradient(circle_at_92%_6%,rgba(255,122,0,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,250,245,0.92))] p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-[30px]"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Situação ao vivo</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Participação geral</h2></div></div><div className="mt-6 grid grid-cols-2 gap-3.5"><CompactMetric label="Concluídos" value={data.summary.completed} tone="text-emerald-600" icon={<CheckCircle2 size={21} />} iconTone="bg-emerald-50 text-emerald-600" /><CompactMetric label="Realizando" value={data.summary.taking} tone="text-blue-600" icon={<Loader2 size={21} />} iconTone="bg-blue-50 text-blue-600" /><CompactMetric label="Não iniciaram" value={data.summary.not_started} icon={<UserRound size={21} />} iconTone="bg-slate-100 text-slate-600" /><CompactMetric label="Pendentes" value={data.summary.pending_results} tone="text-orange-600" icon={<Hourglass size={21} />} iconTone="bg-orange-50 text-orange-600" /></div><div className="my-7 h-px bg-gradient-to-r from-transparent via-slate-300/80 to-transparent" /><div className="grid grid-cols-[54px_1fr] items-center gap-4"><div className="flex h-[54px] w-[54px] items-center justify-center rounded-[18px] border border-orange-200 bg-orange-50 text-orange-600"><Target size={28} /></div><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Precisão consolidada</p><p className="mt-2 text-[42px] font-bold leading-[0.95] tracking-[-0.045em] text-[#07142f]">{formatPercent(data.summary.accuracy_percent)}</p><p className="mt-2 text-sm text-slate-500">Acertos nas tentativas oficiais</p></div></div></article></div></section>}
+    {activeTab === "overview" && <section className="mt-6 space-y-6"><div className="grid gap-[18px] sm:grid-cols-2 xl:grid-cols-5"><MetricCard icon={<Users size={22} />} label="Participantes" value={String(data.summary.registered)} detail={`${data.summary.online} online agora`} /><MetricCard icon={<Trophy size={22} />} label="Maior nota" value={formatScore(data.summary.highest_score)} detail="Tentativa oficial" /><MetricCard icon={<Medal size={22} />} label="Menor nota" value={formatScore(data.summary.lowest_score)} detail="Tentativa oficial" /><MetricCard icon={<BarChart3 size={22} />} label="Média do evento" value={formatScore(data.summary.average_score)} detail={`${data.summary.completed} concluídos`} featured /><MetricCard icon={<Clock3 size={22} />} label="Tempo médio" value={formatTime(data.summary.average_time_seconds)} detail="Resultados oficiais" /></div><div className="grid items-stretch gap-[22px] xl:grid-cols-[minmax(0,1.75fr)_minmax(420px,0.85fr)]"><article className="relative min-h-[420px] overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-8"><div className="flex items-start justify-between gap-4"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00] shadow-[0_10px_22px_rgba(249,115,22,0.20)]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Distribuição de desempenho</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Faixas de aproveitamento</h2></div></div><span className="rounded-full border border-slate-300/80 bg-slate-50/90 px-3.5 py-1.5 text-[13px] font-semibold text-slate-500">{completed.length} resultados</span></div><div className="mt-8 space-y-2">{bands.map((band) => <div key={band.label} className="grid min-h-[54px] grid-cols-[88px_1fr_28px] items-center gap-[18px]"><span className="text-sm text-slate-700">{band.label}</span><div className="grid grid-cols-10 gap-1.5" aria-label={`${band.label}: ${band.count} participantes`}>{Array.from({ length: 10 }, (_, index) => <span key={index} className={`h-2.5 rounded-full ${index < Math.round((band.count / Math.max(1, completed.length)) * 10) ? band.color : "bg-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"}`} />)}</div><strong className="text-right text-lg tabular-nums text-slate-950">{band.count}</strong></div>)}</div></article><article className="min-h-[420px] rounded-3xl border border-orange-200/80 bg-[radial-gradient(circle_at_92%_6%,rgba(255,122,0,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,250,245,0.92))] p-6 shadow-[0_22px_58px_rgba(15,23,42,0.065),inset_0_1px_0_rgba(255,255,255,0.94)] sm:p-[30px]"><div className="flex gap-4"><span className="h-[52px] w-1 rounded-full bg-gradient-to-b from-[#ff8a00] to-[#ff6b00]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Situação ao vivo</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-slate-950">Participação geral</h2></div></div><div className="mt-6 grid grid-cols-2 gap-3.5"><CompactMetric label="Concluídos" value={data.summary.completed} tone="text-emerald-600" icon={<CheckCircle2 size={21} />} iconTone="bg-emerald-50 text-emerald-600" /><CompactMetric label="Realizando" value={data.summary.taking} tone="text-blue-600" icon={<Loader2 size={21} />} iconTone="bg-blue-50 text-blue-600" title="Tentativas em andamento com atividade recente" /><CompactMetric label="Não iniciaram" value={data.summary.not_started} icon={<UserRound size={21} />} iconTone="bg-slate-100 text-slate-600" /><CompactMetric label="Pendentes" value={data.summary.pending_results} tone="text-orange-600" icon={<Hourglass size={21} />} iconTone="bg-orange-50 text-orange-600" /></div><div className="my-7 h-px bg-gradient-to-r from-transparent via-slate-300/80 to-transparent" /><div className="grid grid-cols-[54px_1fr] items-center gap-4"><div className="flex h-[54px] w-[54px] items-center justify-center rounded-[18px] border border-orange-200 bg-orange-50 text-orange-600"><Target size={28} /></div><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Precisão consolidada</p><p className="mt-2 text-[42px] font-bold leading-[0.95] tracking-[-0.045em] text-[#07142f]">{formatPercent(data.summary.accuracy_percent)}</p><p className="mt-2 text-sm text-slate-500">Acertos nas tentativas oficiais</p></div></div></article></div></section>}
 
     {activeTab === "participants" && (
       <section className="mt-9">
@@ -191,9 +275,12 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
             <h2 className="mt-2 text-[28px] font-bold leading-[34px] tracking-[-0.035em] text-slate-950">Participantes</h2>
             <p className="mt-2 text-sm leading-5 text-slate-600">Mais acertos, depois menor tempo total com precisão de milissegundos.</p>
           </div>
-          <span className="inline-flex h-[34px] items-center justify-center rounded-full border border-slate-300/80 bg-white/85 px-3.5 text-[13px] font-semibold text-slate-500 shadow-[0_10px_24px_rgba(15,23,42,0.045),inset_0_1px_0_rgba(255,255,255,0.90)]">
-            {filtered.length} de {participants.length} participantes
-          </span>
+          <div className="flex flex-col items-start gap-3 sm:items-end">
+            <PremiumButton onClick={() => void generateRankingPdf()} disabled={rankingPdfBusy} className="min-h-[46px] rounded-[14px] px-5 shadow-[0_14px_34px_rgba(15,23,42,0.08)]" icon={rankingPdfBusy ? <Loader2 size={17} className="animate-spin" /> : <FileText size={17} />}>Exportar ranking em PDF</PremiumButton>
+            <span className="inline-flex h-[34px] items-center justify-center rounded-full border border-slate-300/80 bg-white/85 px-3.5 text-[13px] font-semibold text-slate-500 shadow-[0_10px_24px_rgba(15,23,42,0.045),inset_0_1px_0_rgba(255,255,255,0.90)]">
+              {filtered.length} de {participants.length} participantes
+            </span>
+          </div>
         </div>
 
         <div className="mt-5 inline-flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/90 bg-white/80 p-1.5 shadow-[0_10px_26px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.92)]" aria-label="Ordenação dos participantes">
@@ -222,9 +309,18 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
 
         <div className="mt-[26px] overflow-hidden rounded-[18px] border border-slate-200/90 bg-white/95 shadow-[0_22px_58px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.94)]">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="h-14 border-b border-slate-200/90 bg-gradient-to-b from-slate-50/95 to-white/95">
-                <tr>{["Posição", "Aluno", "Situação", "Nota", "Detalhes"].map((label) => <th key={label} className={`${label === "Detalhes" ? "text-right" : "text-left"} px-5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7`}>{label}</th>)}</tr>
+                <tr>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Posição</th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Aluno</th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Tempo</th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7" title="Advertências por troca/saída de tela">Advert.</th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7" title="Quantidade de ajudas da coruja utilizadas durante a tentativa"><span className="block max-w-[72px] leading-[13px]">Ajudas utilizadas</span></th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Pontos</th>
+                  <th className="px-5 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Situação</th>
+                  <th className="px-5 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 lg:px-7">Detalhes</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/70">
                 {visible.map((item, index) => {
@@ -234,14 +330,17 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
                   return (
                     <tr key={item.id} className={`${index % 2 ? "bg-slate-50/30" : "bg-white"} h-[98px] transition-colors duration-150 hover:bg-orange-50/40`}>
                       <td className="px-5 lg:px-7"><div className="flex items-center gap-2.5 text-[21px] font-bold leading-none tracking-[-0.03em] text-slate-700">{participantSort === "score" && item.rank && item.rank <= 3 && <Trophy size={24} strokeWidth={2.15} className={trophyTone} />}<span>{displayedPosition ? `${displayedPosition}º` : "—"}</span>{participantSort === "score" && item.rank_tied && <span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] tracking-normal text-violet-700">EMPATE</span>}</div></td>
-                      <td className="max-w-[420px] px-5 lg:px-7"><div className="grid grid-cols-[44px_1fr] items-center gap-3.5"><span className={`flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.90)] ${item.status === "not_started" ? "border-slate-300/80 bg-slate-100 text-slate-600" : "border-orange-200 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-600 shadow-orange-100"}`}>{participantInitials(item.name)}</span><div className="min-w-0"><p className="truncate text-[15px] font-bold leading-5 tracking-[-0.015em] text-slate-950">{item.name}</p><p className="mt-0.5 truncate text-[13px] leading-[18px] text-slate-500">{item.email}</p></div></div></td>
-                      <td className="px-5 lg:px-7"><span className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-bold ${status.className}`}>{status.label}</span></td>
+                      <td className="max-w-[420px] px-5 lg:px-7"><div className="grid grid-cols-[44px_1fr] items-center gap-3.5"><span className={`flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.90)] ${item.status === "not_started" ? "border-slate-300/80 bg-slate-100 text-slate-600" : "border-orange-200 bg-gradient-to-br from-orange-100 to-orange-50 text-orange-600 shadow-orange-100"}`}>{participantInitials(item.name)}</span><div className="min-w-0"><p className="truncate text-[15px] font-bold leading-5 tracking-[-0.015em] text-slate-950" title={item.name}>{formatRankingName(item.name)}</p><p className="mt-0.5 truncate text-[13px] leading-[18px] text-slate-500">{item.email}</p></div></div></td>
+                      <td className="px-5 text-sm tabular-nums text-slate-700 lg:px-7">{formatTimeMs(item.result?.time_spent_ms)}</td>
+                      <td className="px-5 text-sm font-semibold tabular-nums text-slate-700 lg:px-7">{item.result ? item.result.focus_violation_count : "—"}</td>
+                      <td className="px-5 text-sm font-semibold tabular-nums text-slate-700 lg:px-7">{item.result ? item.result.owl_help_used_count : "—"}</td>
                       <td className="px-5 text-base font-bold tabular-nums text-slate-950 lg:px-7">{formatScore(item.result?.display_score ?? null)}</td>
+                      <td className="px-5 lg:px-7"><span className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-bold ${status.className}`}>{status.label}</span></td>
                       <td className="px-5 text-right lg:px-7"><PremiumButton variant="secondary" className="min-h-11 rounded-[14px] px-[18px] shadow-[0_10px_24px_rgba(15,23,42,0.045)]" onClick={() => setSelectedParticipantId(item.id)} icon={<Eye size={16} strokeWidth={2.1} />}>Ver</PremiumButton></td>
                     </tr>
                   );
                 })}
-                {visible.length === 0 && <tr><td colSpan={5} className="bg-slate-50/50 px-6 py-12 text-center"><SearchX size={46} className="mx-auto text-slate-400" /><p className="mt-3.5 text-lg font-semibold leading-7 text-slate-700">Nenhum participante encontrado</p><p className="mt-1 text-sm text-slate-500">Ajuste os filtros ou aguarde novas inscrições no Evento.</p></td></tr>}
+                {visible.length === 0 && <tr><td colSpan={8} className="bg-slate-50/50 px-6 py-12 text-center"><SearchX size={46} className="mx-auto text-slate-400" /><p className="mt-3.5 text-lg font-semibold leading-7 text-slate-700">Nenhum participante encontrado</p><p className="mt-1 text-sm text-slate-500">Ajuste os filtros ou aguarde novas inscrições no Evento.</p></td></tr>}
               </tbody>
             </table>
           </div>
@@ -265,7 +364,40 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
         <div className="mt-[22px] grid gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.2fr_1fr_1fr]"><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === 0} onClick={() => selectQuestion(safeQuestionIndex - 1)} icon={<ArrowLeft size={18} />}>Anterior</PremiumButton><PremiumButton variant={showQuestionData ? "secondary" : "primary"} className={`min-h-14 rounded-2xl ${showQuestionData ? "border-slate-800 text-slate-900" : "shadow-[0_18px_38px_rgba(249,115,22,0.30)]"}`} onClick={() => setShowQuestionData((value) => !value)} icon={showQuestionData ? <EyeOff size={18} /> : <Eye size={18} />}>{showQuestionData ? "Ocultar dados" : "Exibir dados"}</PremiumButton><PremiumButton variant="secondary" className="min-h-14 rounded-2xl border-amber-300 text-amber-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={annulmentBusy} onClick={() => void toggleQuestionAnnulment(current.id, isAnnulled ? "active" : "annulled")} icon={isAnnulled ? <RotateCcw size={18} /> : <Ban size={18} />}>{isAnnulled ? "Desanular questão" : "Anular questão"}</PremiumButton><PremiumButton variant="secondary" className="min-h-14 rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.04)]" disabled={safeQuestionIndex === data.questions.length - 1} onClick={() => selectQuestion(safeQuestionIndex + 1)}>Próxima <ArrowRight size={18} /></PremiumButton></div>
       </div> : <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-white/90 p-10 text-center text-slate-500">Este Evento ainda não possui questões disponíveis para revisão.</div>}
     </section>}
-  </div>{selected && <ParticipantDetailModal participant={selected} onClose={() => setSelectedParticipantId(null)} />}</main>;
+
+    {activeTab === "insights" && <section className="mt-[34px] font-sans text-sm leading-5 text-slate-700">
+      <div><p className="text-xs font-bold uppercase leading-4 tracking-[0.18em] text-orange-600">Análise pedagógica</p><h2 className="mt-2 text-[28px] font-bold leading-[34px] tracking-[-0.035em] text-slate-950">Insights</h2><p className="mt-2 text-sm text-slate-600">Panorama do desempenho coletivo por tópico — apoio para planejar a revisão em aula.</p></div>
+
+      {data.insights.validQuestionCount === 0 ? (
+        <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-white/90 p-10 text-center text-slate-500">{data.questions.length === 0 ? "Este simulado não possui tópicos suficientes para esta análise." : "Ainda não há respostas suficientes para gerar Insights."}</div>
+      ) : (<>
+        <div className="mt-6 rounded-3xl border border-orange-200/70 bg-[radial-gradient(circle_at_92%_10%,rgba(255,122,0,0.08),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,250,245,0.94))] p-6 shadow-[0_18px_46px_rgba(15,23,42,0.06)] sm:p-8">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Panorama pedagógico do simulado</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Análise baseada no desempenho dos participantes e normalizada pela quantidade de questões associadas a cada tópico.</p>
+          <div className="mt-5 grid gap-3.5 sm:grid-cols-3">
+            <CompactMetric label="Dificuldade global" value={formatPercent((data.insights.globalDifficulty ?? 0) * 100)} icon={<Target size={21} />} iconTone="bg-orange-50 text-orange-600" />
+            <CompactMetric label="Questões analisadas" value={data.insights.validQuestionCount} icon={<Presentation size={21} />} iconTone="bg-blue-50 text-blue-600" />
+            <CompactMetric label="Tópicos avaliados" value={data.insights.topics.length} icon={<Sparkles size={21} />} iconTone="bg-violet-50 text-violet-600" />
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.06)] sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-xl font-bold tracking-[-0.02em] text-slate-950">Tópicos de maior dificuldade</h3><span title="Índice que considera a taxa de erro e a quantidade de questões que avaliaram o tópico, reduzindo distorções de amostras pequenas." className="inline-flex cursor-help items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">Dificuldade ajustada <AlertTriangle size={13} /></span></div>
+          {data.insights.topics.length === 0 ? <p className="mt-5 text-sm text-slate-500">Nenhum tópico com respostas suficientes para análise.</p> : <div className="mt-5 space-y-2.5">{data.insights.topics.map((topic, index) => <InsightsTopicRow key={topic.key} topic={topic} position={index + 1} />)}</div>}
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.06)] sm:p-8">
+          <div><h3 className="text-xl font-bold tracking-[-0.02em] text-slate-950">Questões mais difíceis</h3><p className="mt-1.5 text-sm text-slate-500">Clique em uma questão para abri-la e entender o que os participantes erraram.</p></div>
+          {data.insights.hardestQuestions.length === 0 ? <p className="mt-5 text-sm text-slate-500">Nenhuma questão válida para esta análise.</p> : <div className="mt-5 space-y-2">{data.insights.hardestQuestions.slice(0, 10).map((question) => <InsightsQuestionRow key={question.simulado_question_id} question={question} statement={classroomQuestionsById.get(question.simulado_question_id)?.questions?.statement ?? null} onOpen={() => setPreviewQuestionRelationId(question.simulado_question_id)} />)}</div>}
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-orange-200/70 bg-orange-50/50 p-6 shadow-[0_18px_46px_rgba(15,23,42,0.05)] sm:p-8">
+          <h3 className="text-xl font-bold tracking-[-0.02em] text-slate-950">O que merece revisão em aula</h3>
+          <p className="mt-3 text-[15px] leading-6 text-slate-700">{data.insights.teachingReviewSummary}</p>
+        </div>
+      </>)}
+    </section>}
+  </div>{selected && <ParticipantDetailModal participant={selected} onClose={() => setSelectedParticipantId(null)} />}{previewClassroomQuestion?.questions && <QuestionPreviewModal question={previewClassroomQuestion.questions} orderLabel={`Questão ${previewClassroomQuestion.order_number}`} onClose={() => setPreviewQuestionRelationId(null)} />}</main>;
 }
 
 function ParticipantDetailModal({ participant, onClose }: { participant: Participant; onClose: () => void }) {
@@ -323,8 +455,11 @@ function ParticipantDetailModal({ participant, onClose }: { participant: Partici
           <ParticipantMetricCard label="Erros" value={String(participant.result?.wrong_count ?? "—")} valueTone={participant.result ? "text-red-600" : "text-slate-400"} icon={<XCircle size={20} strokeWidth={2.2} />} iconTone="text-red-500" />
           <ParticipantMetricCard label="Brancos" value={String(participant.result?.blank_count ?? "—")} icon={<Circle size={20} strokeWidth={2.2} />} iconTone="text-slate-500" />
           <ParticipantMetricCard label="Tempo total" value={formatTimeMs(participant.result?.time_spent_ms)} detail={preciseTime?.detail} compact icon={<Clock3 size={20} strokeWidth={2.2} />} iconTone="text-blue-600" />
+          <ParticipantMetricCard label="Ajudas utilizadas" value={String(participant.result?.owl_help_used_count ?? "—")} icon={<Bird size={20} strokeWidth={2.2} />} iconTone="text-amber-600" />
+          <ParticipantMetricCard label="Advertências por troca de tela" value={String(participant.result?.focus_violation_count ?? "—")} valueTone={participant.result && participant.result.focus_violation_count > 0 ? "text-red-600" : "text-[#07142f]"} icon={<AlertTriangle size={20} strokeWidth={2.2} />} iconTone="text-red-500" />
           <ParticipantMetricCard label="Tentativa oficial" value={participant.representative_attempt_number ? <span className="inline-flex h-9 min-w-[58px] items-center justify-center rounded-full border border-blue-300/70 bg-blue-50 px-4 text-[15px] font-bold tracking-[-0.01em] text-blue-600">#{participant.representative_attempt_number}</span> : "—"} icon={<ShieldCheck size={20} strokeWidth={2.2} />} iconTone="text-blue-600" />
           <ParticipantMetricCard label="Situação" value={<span className={`inline-flex min-h-9 items-center justify-center rounded-full border px-4 text-sm font-bold tracking-[-0.01em] ${statusTone}`}>{status.label}</span>} icon={<CheckCircle2 size={20} strokeWidth={2.2} />} iconTone={participant.status === "completed" ? "text-emerald-500" : "text-slate-500"} />
+          <ParticipantTopicsCard topics={participant.result?.difficulty_topics ?? []} />
         </div>
 
         <button type="button" onClick={onClose} className="relative mt-[30px] flex min-h-14 w-full items-center justify-center rounded-2xl border border-orange-400/70 bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 text-[15px] font-bold text-white shadow-[0_18px_38px_rgba(249,115,22,0.30),inset_0_1px_0_rgba(255,255,255,0.30)] transition duration-200 hover:-translate-y-px hover:shadow-[0_22px_46px_rgba(249,115,22,0.38)] active:translate-y-0">Entendi</button>
@@ -333,8 +468,60 @@ function ParticipantDetailModal({ participant, onClose }: { participant: Partici
   );
 }
 
+// Consulta somente-leitura de uma questão do banco, aberta a partir de
+// "Questões mais difíceis" (guia Insights). Reaproveita QuestionDisplayCard
+// (mesmo componente já usado na aba Questões/revisão desta própria tela) e
+// `data.questions` já carregado — nenhum fetch novo, nenhuma rota nova. Sem
+// onSelect/edição: puramente uma janela de consulta.
+function QuestionPreviewModal({ question, orderLabel, onClose }: { question: NonNullable<ClassroomQuestion["questions"]>; orderLabel?: string; onClose: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 p-4 font-sans backdrop-blur-[9px] sm:p-6">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Consulta da questão do banco"
+        className="animate-modal-in relative max-h-[calc(100dvh-32px)] w-full max-w-[820px] overflow-x-hidden overflow-y-auto rounded-3xl border border-slate-200/90 bg-white shadow-[0_38px_95px_rgba(15,23,42,0.32),0_18px_44px_rgba(15,23,42,0.16)] [scrollbar-width:none] sm:rounded-[28px] [&::-webkit-scrollbar]:hidden"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-6 py-4 backdrop-blur sm:px-8">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">Banco de questões</p><p className="mt-0.5 text-sm text-slate-500">Consulta — sem edição.</p></div>
+          <button type="button" autoFocus onClick={onClose} aria-label="Fechar consulta da questão" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-300/70 bg-white text-slate-600 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-orange-300 hover:text-orange-600"><X size={18} strokeWidth={2.1} /></button>
+        </div>
+        <div className="p-5 sm:p-6 lg:p-8">
+          <QuestionDisplayCard question={question} orderLabel={orderLabel} showCorrect />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ParticipantMetricCard({ label, value, detail, icon, iconTone, valueTone = "text-[#07142f]", compact = false }: { label: string; value: React.ReactNode; detail?: string; icon: React.ReactNode; iconTone: string; valueTone?: string; compact?: boolean }) {
   return <article className="relative flex min-h-[116px] flex-col justify-between overflow-hidden rounded-[18px] border border-slate-300/80 bg-white/75 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.92)] lg:min-h-[126px] lg:p-5"><div className="flex items-center gap-2.5"><span className={`shrink-0 ${iconTone}`}>{icon}</span><p className="text-[11px] font-bold uppercase leading-[14px] tracking-[0.14em] text-slate-500">{label}</p></div><div className="mt-[18px]"><div className={`${compact ? "text-[28px]" : "text-[30px]"} font-bold leading-none tracking-[-0.04em] tabular-nums ${valueTone}`}>{value}</div>{detail && <p className="mt-1 text-xs leading-4 text-slate-500">{detail}</p>}</div></article>;
+}
+
+// "Tópicos de maior dificuldade" — mesma análise já usada na tela de
+// resultados do aluno (lib/topicDifficulty.ts), só sem agrupar por assunto.
+// Ocupa duas colunas da grade de métricas do modal (sm:col-span-2 — em
+// mobile, 1 coluna, naturalmente full-width); fica por último, depois de
+// todas as métricas já existentes.
+function ParticipantTopicsCard({ topics }: { topics: string[] }) {
+  return <article className="relative flex flex-col overflow-hidden rounded-[18px] border border-slate-300/80 bg-white/75 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.92)] sm:col-span-2 lg:p-5">
+    <div className="flex items-center gap-2.5"><span className="shrink-0 text-red-500"><AlertTriangle size={20} strokeWidth={2.2} /></span><p className="text-[11px] font-bold uppercase leading-[14px] tracking-[0.14em] text-slate-500">Tópicos de maior dificuldade</p></div>
+    <div className="mt-[14px]">
+      {topics.length ? (
+        <div className="flex max-h-[168px] flex-wrap gap-2 overflow-y-auto pr-1">
+          {topics.map((topic) => <span key={topic} className="inline-flex min-h-[30px] max-w-full items-center whitespace-normal break-words rounded-full border border-red-200 bg-red-50/70 px-3.5 text-[12px] font-bold leading-4 text-red-700 shadow-[0_4px_10px_rgba(239,68,68,0.06)]">{topic}</span>)}
+        </div>
+      ) : <p className="text-sm leading-5 text-slate-500">Nenhum tópico de maior dificuldade identificado.</p>}
+    </div>
+  </article>;
 }
 
 function AlternativeDistribution({ count, percentage, isCorrect }: { count: number; percentage: number; isCorrect: boolean }) {
@@ -354,4 +541,40 @@ function AlternativeDistribution({ count, percentage, isCorrect }: { count: numb
 function DashboardTab({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" onClick={onClick} className={`flex min-h-14 items-center justify-center gap-2.5 rounded-[13px] px-4 text-sm transition duration-200 ${active ? "bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 font-bold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28),inset_0_1px_0_rgba(255,255,255,0.28)]" : "font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-950"}`}>{icon}{label}</button>; }
 function PaginationButton({ children, label, disabled, onClick }: { children: React.ReactNode; label: string; disabled: boolean; onClick: () => void }) { return <button type="button" aria-label={label} disabled={disabled} onClick={onClick} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300/80 bg-white/90 text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-px hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{children}</button>; }
 function MetricCard({ icon, label, value, detail, featured = false }: { icon: React.ReactNode; label: string; value: string; detail: string; featured?: boolean }) { return <article className={`relative min-h-[170px] overflow-hidden rounded-[22px] border p-6 shadow-[0_18px_46px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.94)] transition duration-200 hover:-translate-y-px hover:shadow-[0_22px_52px_rgba(15,23,42,0.08)] ${featured ? "border-orange-300/80 bg-[radial-gradient(circle_at_92%_12%,rgba(255,122,0,0.12),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,250,245,0.94))]" : "border-slate-200/90 bg-white/95"}`}><div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${featured ? "bg-gradient-to-br from-[#ff8a00] via-[#ff6b00] to-orange-500 text-white shadow-[0_12px_28px_rgba(249,115,22,0.25)]" : "border border-orange-100 bg-orange-50 text-orange-600"}`}>{icon}</div><p className="mt-[22px] text-[11px] font-bold uppercase leading-[14px] tracking-[0.16em] text-slate-500">{label}</p><p className="mt-3 text-[clamp(30px,2.6vw,42px)] font-bold leading-[0.95] tracking-[-0.045em] text-slate-950 tabular-nums">{value}</p><p className="mt-3 text-sm leading-5 text-slate-600">{label === "Participantes" && <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.10)]" />}{detail}</p></article>; }
-function CompactMetric({ label, value, tone = "text-slate-950", icon, iconTone = "bg-slate-100 text-slate-600" }: { label: string; value: string | number; tone?: string; icon?: React.ReactNode; iconTone?: string }) { return <div className="grid min-h-[86px] grid-cols-[42px_1fr] items-center gap-3 rounded-2xl border border-slate-300/70 bg-white/75 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035),inset_0_1px_0_rgba(255,255,255,0.90)]"><div className={`flex h-[42px] w-[42px] items-center justify-center rounded-[14px] ${iconTone}`}>{icon}</div><div><p className="text-[10px] font-bold uppercase leading-[14px] tracking-[0.14em] text-slate-500">{label}</p><p className={`mt-1.5 text-[26px] font-bold leading-none tracking-[-0.035em] tabular-nums ${tone}`}>{value}</p></div></div>; }
+function CompactMetric({ label, value, tone = "text-slate-950", icon, iconTone = "bg-slate-100 text-slate-600", title }: { label: string; value: string | number; tone?: string; icon?: React.ReactNode; iconTone?: string; title?: string }) { return <div title={title} className="grid min-h-[86px] grid-cols-[42px_1fr] items-center gap-3 rounded-2xl border border-slate-300/70 bg-white/75 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035),inset_0_1px_0_rgba(255,255,255,0.90)]"><div className={`flex h-[42px] w-[42px] items-center justify-center rounded-[14px] ${iconTone}`}>{icon}</div><div><p className="text-[10px] font-bold uppercase leading-[14px] tracking-[0.14em] text-slate-500">{label}</p><p className={`mt-1.5 text-[26px] font-bold leading-none tracking-[-0.035em] tabular-nums ${tone}`}>{value}</p></div></div>; }
+
+// Linha do ranking de "Tópicos de maior dificuldade" (guia Insights) — usa
+// D_adjusted (dificuldade ajustada) para a faixa/cor exibida e é a ÚNICA
+// dificuldade mostrada ao professor (a bruta/observada continua calculada
+// em lib/eventInsights.ts, só deixou de aparecer nesta interface — decisão
+// de clareza do refinamento de 2026-09-10). Os rótulos de confiança da
+// amostra (baseados na quantidade de questões do tópico) também deixaram
+// de aparecer aqui pelo mesmo motivo — só o essencial fica visível.
+function InsightsTopicRow({ topic, position }: { topic: TopicInsight; position: number }) {
+  const meta = TOPIC_BAND_META[topic.band];
+  return <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-300/80 bg-slate-50 text-sm font-bold text-slate-600">{position}</span><div><p className="font-bold text-slate-950">{topic.label}</p><p className="mt-0.5 text-xs text-slate-500">{topic.questionCount} {topic.questionCount === 1 ? "questão relacionada" : "questões relacionadas"}{topic.responsesAnalyzed > 0 ? ` · ${topic.responsesAnalyzed} ${topic.responsesAnalyzed === 1 ? "resposta válida considerada" : "respostas válidas consideradas"}` : ""}</p></div></div>
+    <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-1.5"><span className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-bold ${meta.badge}`}>{meta.label}</span><span className="text-sm font-bold tabular-nums text-slate-950">{formatPercent(topic.adjustedDifficulty * 100)} de dificuldade ajustada</span></div>
+  </div>;
+}
+
+// "Questões mais difíceis" (guia Insights) — só código, título curto (texto
+// puro do enunciado, via lib/utils/rich-text já existente — reaproveitado,
+// não duplicado) e percentual de erro; branco deixou de aparecer aqui por
+// decisão de clareza (2026-09-10). Clicável (código/título e botão "Ver
+// questão") para abrir QuestionPreviewModal com o enunciado/alternativas
+// completos, reaproveitando dado já carregado (sem fetch novo).
+function InsightsQuestionRow({ question, statement, onOpen }: { question: QuestionInsight; statement: string | null; onOpen: () => void }) {
+  const plainStatement = statement ? richTextToPlainText(statement) : "";
+  const shortTitle = plainStatement.length > 110 ? `${plainStatement.slice(0, 110)}…` : plainStatement;
+  return <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+      <p className="font-bold text-slate-950 underline decoration-transparent decoration-2 underline-offset-4 transition duration-200 hover:text-orange-700 hover:decoration-orange-400">{question.code || `Questão ${question.order_number}`}</p>
+      {shortTitle && <p className="mt-0.5 truncate text-xs text-slate-500">{shortTitle}</p>}
+    </button>
+    <div className="flex shrink-0 items-center gap-3">
+      <span className="text-sm font-bold tabular-nums text-red-600">{formatPercent(question.difficulty * 100)} de erro</span>
+      <PremiumButton variant="secondary" className="min-h-9 rounded-[12px] px-3.5 text-xs shadow-none" onClick={onOpen} icon={<Eye size={14} strokeWidth={2.1} />}>Ver questão</PremiumButton>
+    </div>
+  </div>;
+}

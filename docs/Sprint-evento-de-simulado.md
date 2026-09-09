@@ -2520,3 +2520,450 @@ Anular ou desanular uma questão (`simulado_questions.status`) é uma operação
 **Fechamento (2026-09-06):** o ranking exibido na aba Participantes do Modo Aula (`rankedParticipants()`, extraída para `lib/eventRanking.ts`) já é recalculado a cada carregamento a partir de `simulado_results` — reflete automaticamente qualquer anulação/desanulação/gabarito, sem nenhuma alteração necessária, e sem cache: o polling de 10 segundos já existente (seção 95) garante atualização visível em pouco tempo mesmo sem recarregar a página. Concorrência entre duas ações de anulação/desanulação no mesmo Simulado (por dois atores, Admin e/ou Professor, inclusive de Eventos diferentes que compartilham o Simulado) é serializada pelo compare-and-swap em `simulado_questions.status` — ver `docs/Sprint-resultados.md` para o teste real de concorrência.
 
 **Fechamento cirúrgico (2026-09-07):** a notificação que o aluno recebe (`question_annulled_result_changed`/`question_reactivated_result_changed`) agora distingue duas anulações reais distintas no mesmo Simulado (ex.: Professor anula a questão X num Evento e, depois, anula a questão Y) — antes, a segunda sobrescrevia silenciosamente a primeira na mesma tentativa. Não muda nada específico de Evento: a identidade de revisão vive em `simulado_questions.status_revision_id`, consumida igualmente por Admin e Professor via o mesmo `setSimuladoQuestionAnnulment()`. Ver `docs/Sprint-resultados.md`.
+
+# 98. PDF neutro da prova gerado pelo Professor/Admin (2026-09-08)
+
+Botão "Gerar prova em PDF" em `/professor/eventos/[id]` (Admin acessa a mesma tela via `requireEventManagerPage`), ao lado de "Ver como aluno". Reaproveita o único renderer existente do PDF do aluno (`SimuladoQuestionsPdf`, `app/lib/pdf/simulado-result-pdf.ts`) — nenhum template paralelo: mesma capa, mesma tipografia, mesmas questões/alternativas/gabarito, mesmo cabeçalho/rodapé.
+
+**Fonte dos dados:** nova rota `GET /api/professor/events/[id]/exam-pdf`, guardada por `requireEventManager` (mesmo padrão da seção 97). Resolve o Simulado a partir do `simulado_id` do próprio `simulado_events` no banco — nunca de parâmetro do cliente. Sem Simulado vinculado, erro controlado: "Este evento não possui um simulado disponível para geração do PDF." A consulta é só `simulado_events` + `simulado_questions` (com `question_alternatives`/`subjects`) — nenhuma tabela de aluno, tentativa ou participante é tocada.
+
+**Neutralidade:** `student` passou a ser opcional em `SimuladoQuestionsPdf`; a nova função `downloadNeutralSimuladoPdf` chama o mesmo componente sem `student` — a marca d'água pessoal (nome/e-mail/CPF do aluno, duas vezes por página no fluxo normal) simplesmente não é renderizada, nunca com um placeholder "não informado". O fluxo do aluno (`downloadSimuladoResultPdf`) continua exatamente como antes, com a marca d'água real. Nome do arquivo e metadata do PDF (`author: "EstudoTOP Simulados"`) já eram apenas institucionais e não precisaram de ajuste.
+
+**Sem impersonation, sem depender de aluno:** o PDF é montado direto do vínculo Evento → Simulado; não há tentativa, aluno fictício, `student_id`, `participant_id` ou `attempt_id` envolvido em nenhum ponto.
+
+**Testes:** `tests/professor-exam-pdf/professor-exam-pdf.spec.ts` (10 casos — auditoria estrutural do código real, mesmo padrão das seções 90/96). Regressão confirmada: `event-professor-assignment`, `event-operations`, `event-representative-attempt`, `event-acquisition-session`, `simulado-question-annulment`, `simulado-scoring` — 131/131.
+
+**Achado fora do escopo, registrado e não corrigido:** o renderer (aluno e Professor, idêntico nos dois) não trata visualmente questão anulada nem renderiza imagens — gap pré-existente do próprio PDF, não introduzido por esta entrega; corrigi-lo alteraria também o PDF do aluno, fora do pedido desta Sprint.
+
+**Capa oficial do Ranking do Simulado (Parte B desta Sprint) — bloqueada:** o arquivo de imagem indicado na solicitação não foi encontrado em nenhum diretório acessível nesta sessão; nenhum asset foi criado nem inventado. O padrão de dimensionamento a reaproveitar já foi identificado (A4, imagem `position: absolute`, `objectFit: "cover"`, 100%×100%, mesmo mecanismo de `s.coverImage` em `simulado-result-pdf.ts`), e o sistema hoje não tem nenhum fluxo de exportação/PDF de ranking — só a tabela em tela do Modo Aula (`rankedParticipants()`). Nenhuma feature nova foi criada sem autorização; aguardando o arquivo da imagem. *(Nota: bloqueio resolvido nas seções 99–100 abaixo — o Ranking em PDF foi implementado e o arquivo da capa foi fornecido e integrado.)*
+
+### Prova Professor
+
+# 99. Caderno de prova do Professor/Admin sem gabarito + Ranking em PDF (2026-09-08)
+
+**Parte A — `showAnswerKey`, o caderno de prova do Professor deixa de mostrar o gabarito.** `SimuladoQuestionsPdf` (mesmo componente único, `app/lib/pdf/simulado-result-pdf.ts`) ganhou o parâmetro `showAnswerKey?: boolean` (default `true`). Todo o destaque de alternativa correta (fundo verde, borda, bolinha da coruja) passou a depender de uma variável local `highlightCorrect = showAnswerKey && Boolean(alternative.is_correct)` — nenhum outro trecho do componente lê `alternative.is_correct` diretamente. `downloadSimuladoResultPdf` (fluxo do aluno) chama com `showAnswerKey: true` — comportamento idêntico ao anterior, sem nenhuma mudança visível para o aluno. `downloadNeutralSimuladoPdf` (Professor/Admin, seção 98) passou a chamar com `showAnswerKey: false` — nenhuma alternativa recebe destaque/coruja, mesmo a correta no banco: caderno de prova limpo.
+
+Reforço de defesa em profundidade na rota `GET /api/professor/events/[id]/exam-pdf`: `is_correct` foi removido do `.select()` do Supabase, do tipo `QuestionRow` e do mapeamento de resposta — o gabarito nem é buscado do banco para o fluxo do Professor, não só escondido na renderização.
+
+Questão anulada: nenhum tratamento visual dedicado existe hoje no renderer (aluno e Professor, idêntico) — gap pré-existente, já registrado na seção 98, não alterado nesta entrega (corrigi-lo mudaria também o PDF do aluno).
+
+### Ranking PDF
+
+**Parte B — Exportação do Ranking oficial em PDF, dentro da própria aba Ranking.** Novo botão "Exportar ranking em PDF" no topo da aba "Participantes" de `/professor/eventos/[id]` (a aba que contém a tabela "Ranking oficial"), ao lado do contador "X de Y participantes" — deliberadamente **não** no cabeçalho geral do Evento, onde vive "Gerar prova em PDF" (seção 98); os dois botões resolvem problemas diferentes e ficam em blocos visuais diferentes.
+
+**Renderer dedicado:** `app/lib/pdf/event-ranking-pdf.ts` (documento separado do caderno de questões, conforme autorizado — estruturas visuais diferentes, sem necessidade de forçar os dois no mesmo template). Exporta `downloadEventRankingPdf({ eventName, simuladoTitle, participants })`, além de duas funções puras testáveis isoladamente: `formatCompactTime(ms)` (formato compacto sem milissegundos: `"38min 42s"`, `"59min 03s"`, `"1h 05min"`, `"1h 42min"`) e `buildRankingRows(participants)` (filtra e formata, sem reordenar nada).
+
+**Nenhuma regra de ranking nova:** `buildRankingRows` recebe a lista já processada por `rankedParticipants()` (`lib/eventRanking.ts` — a mesma função importada por `page-client.tsx` e usada pela tabela em tela) e só filtra quem tem `rank !== null` (ou seja, participantes com resultado consolidado — os mesmos que aparecem numerados na tela; quem ainda não concluiu aparece na aba como registro operacional, mas nunca teve posição numérica, então não entra no PDF de ranking). Nenhum `.sort()` próprio existe no arquivo do renderer.
+
+**Sem endpoint novo — zero N+1:** ao contrário do PDF da prova (que precisa buscar as questões do Simulado, dado que a tela do Evento não as carrega), a aba Participantes já recebe todos os dados necessários (`id`, `name`, `result.correct_count`, `result.time_spent_ms`) na resposta existente de `GET /api/professor/events/[id]`. O PDF do ranking é gerado 100% client-side a partir do mesmo array `participants` (o mesmo `useMemo(() => rankedParticipants(...))` já usado pela tabela em tela) — garantia de paridade tela↔PDF por construção (é literalmente o mesmo objeto), sem nenhuma requisição de rede adicional. A autorização já está coberta pelo carregamento da própria dashboard (`requireEventManager` em `GET /api/professor/events/[id]`): um Professor não associado ao Evento nunca chega a ter `participants` para exportar.
+
+**Botão:** `PremiumButton`, ícone `FileText`/spinner `Loader2` (mesma linguagem visual do botão "Gerar prova em PDF"), estado `rankingPdfBusy` com guarda de duplo clique (`if (rankingPdfBusy) return;`), `try/catch/finally` restaurando o estado sempre, mensagem de erro não técnica ("Não foi possível gerar o ranking em PDF. Tente novamente."). Reorganiza em coluna abaixo do bloco de título em telas estreitas (grid responsivo já existente na seção).
+
+**Conteúdo do PDF:** página 1 = capa institucional (só a imagem, nada sobreposto); páginas seguintes = cabeçalho fixo (elegível "RANKING", nome do Evento, nome do Simulado) + cabeçalho de tabela fixo (Pos. | Nome | Tempo | Acertos, repete em toda página por overflow) + linhas (`wrap: false` — nunca dividida entre páginas) + rodapé fixo ("EstudoTOP Simulados" + paginação). Só quatro colunas — nenhum CPF/e-mail/telefone/ID interno é lido ou desenhado. Top 3 recebem uma bolinha de posição com tom dourado/prateado/bronze discreto, sem aumentar a altura da linha; empate usa o mesmo `rank_tied` da tela, com selo "EMPATE" pequeno ao lado do nome. Nome de arquivo neutro: `ranking-estudotop-<slug-do-evento>.pdf`.
+
+**Capa oficial do Ranking — resolvida nesta rodada.** O arquivo indicado na solicitação (`f07be6d1-8b93-44fb-8747-7d956cf35f14.png`) foi fornecido pelo usuário diretamente em `public/images/pdf/capa-ranking-simulado.png` (1055×1491px) — exatamente o caminho que `RANKING_COVER_SRC` já esperava desde a implementação anterior. Nenhuma mudança de código foi necessária: a `Page` da capa já usava o mesmo mecanismo de `s.coverPage`/`s.coverImage` da capa do Simulado (A4, `Image` absolute full-bleed, `objectFit: "cover"`) — a capa passou a aparecer normalmente assim que o arquivo existiu no caminho esperado.
+
+**Testes:** `tests/event-ranking-pdf/event-ranking-pdf.spec.ts` (40 casos, após a seção 101 abaixo) — combina execução real (não só leitura de código): `formatCompactTime` com casos de borda (`5min 12s`, `59min 59s`, `1h 00min`, `1h 05min`, `1h 42min`, sem milissegundos), posições (1º/2º/3º/9º/10º/99º/100º), empate competitivo (1º,1º,1º,4º) reaproveitando `rankedParticipants` real de `lib/eventRanking.ts`, paridade tela×PDF (ordem preservada, participantes sem posição excluídos sem afetar os demais, acertos = `correct_count` consolidado sem recálculo), estresse com 137 participantes (sem duplicata, sem participante perdido, posições não decrescentes), nome longo preservado por completo, privacidade (nenhum CPF/e-mail/telefone/ID interno fora de comentários explicativos), ausência de `.sort()` próprio, mecanismo de capa idêntico ao do Simulado, capa isolada na página 1 sem tabela sobreposta, existência física do asset de capa em `public/images/pdf/`, carregamento robusto da capa (ver seção 101), cabeçalho de tabela fixo com as 4 colunas, `wrap:false` por linha, rodapé com o domínio oficial, ausência de marca d'água, e todo o comportamento do botão (posição na aba correta, sem fetch de rede, guarda de duplo clique, restauração de estado, mensagem de erro). Regressão confirmada: `event-professor-assignment`, `event-ranking-pdf`, `professor-exam-pdf`, `professor-management`, `simulado-question-annulment`, `simulado-scoring` — 142/142.
+
+# 100. Capa oficial e marca d'água do Ranking integradas; rodapé com domínio (2026-09-08)
+
+Os dois assets antes bloqueados (seção 99) foram fornecidos localmente pelo usuário em `public/images/pdf/` e integrados:
+
+- **`capa-ranking-simulado.png`** (1055×1491px) — mesmo arquivo antes referenciado como não localizado. `RANKING_COVER_SRC` já apontava para esse caminho exato desde a seção 99; nenhuma mudança de código foi necessária, só a presença do arquivo.
+- **`marca-dagua-oficial.png`** (2172×724px, RGBA) — nova, integrada nesta rodada como marca d'água institucional (logotipo "EstudoTOP Simulados", não dado pessoal) das páginas de conteúdo do ranking. Renderizada via `View` `fixed` (repete em toda página gerada por overflow, igual ao cabeçalho e ao rodapé), centralizada horizontalmente, `opacity: 0.06`, tamanho fixo 300×100pt — sutil, atrás do cabeçalho/tabela, nunca na Page da capa (Page separada, sem esse elemento).
+- **Rodapé:** texto do EstudoTOP passou de `"EstudoTOP Simulados"` para `"EstudoTOP Simulados - simulados.estudotop.com.br"` — mesmo estilo discreto (borda superior fina, fonte 7.5pt), ao lado do nome do Evento/Simulado e da paginação.
+
+Nenhuma mudança na Parte A (prova do Professor), nenhuma mudança de regra de ranking, nenhuma migration. Testes novos em `tests/event-ranking-pdf/event-ranking-pdf.spec.ts`: existência física dos dois arquivos (`existsSync`/tamanho mínimo — prova de que o bloqueio foi resolvido, não só declarado), estilo de opacidade baixa da marca d'água, marca d'água ausente da Page da capa e presente na Page de conteúdo, texto exato do rodapé com o domínio — 37/37 passando. Regressão completa: 139/139.
+
+*(Nota: a marca d'água descrita acima foi removida na seção 101 — ficou visualmente ruim em homologação local. O asset `marca-dagua-oficial.png` permanece em disco, só não é mais usado.)*
+
+# 101. Marca d'água removida do Ranking; capa oficial com carregamento robusto (2026-09-08)
+
+Ajuste pós-homologação local, feito ANTES de qualquer commit/push desta Sprint. Dois problemas relatados:
+
+**A) Marca d'água ficou visualmente ruim.** Decisão do usuário: remover por completo. `RANKING_WATERMARK_SRC`, o componente `PdfWatermark`, os estilos `watermark`/`watermarkImage` e a chamada `React.createElement(PdfWatermark)` na Page de conteúdo foram removidos de `app/lib/pdf/event-ranking-pdf.ts` — nenhum resquício sobrevive no renderer (confirmado por teste que varre o arquivo). O asset `public/images/pdf/marca-dagua-oficial.png` foi preservado no disco (não apagado — nenhuma política de assets exige remover um arquivo só porque um uso específico parou de referenciá-lo).
+
+**B) Capa oficial não apareceu no localhost.** Investigação:
+
+1. Confirmado fisicamente: `public/images/pdf/capa-ranking-simulado.png` existe, é um PNG válido de 1055×1491px (RGB), nome exato, sem duplicata com nome parecido, mesma dimensão da já comprovada `capa-simulado-pdf.png`.
+2. Comparação byte-a-byte com o mecanismo da capa do Simulado (`app/lib/pdf/simulado-result-pdf.ts`): `size: "A4"` + `Image` `position: absolute`, `width/height: 100%`, `objectFit: "cover"` — idêntico em ambos os arquivos. Não havia typo, variável errada ou path malformado no código do Ranking.
+3. Auditoria do código-fonte real do `@react-pdf/renderer` (`node_modules/@react-pdf/image/lib/index.browser.js`, função `resolveImage`): a resolução de imagem por URL é cacheada em memória (`IMAGE_CACHE`, `Map` de até 30 entradas) **pela vida da aba/SPA**, e o cache guarda a própria `Promise` — inclusive quando ela é rejeitada. Se a primeira tentativa de gerar o Ranking em PDF ocorrer antes do arquivo existir (404 → `getImageFormat` não reconhece o corpo vazio → rejeita), toda chamada seguinte de `resolveImage` com a mesma URL, na mesma aba, reaproveita essa promise rejeitada — a capa nunca mais aparece naquela sessão do navegador, mesmo depois do arquivo existir, sem lançar nenhum erro visível. Esse é o cenário mais provável do relato ("testei, ainda não tinha o arquivo; adicionei o arquivo; testei de novo na mesma aba; continuou sem aparecer").
+4. O mecanismo de URL relativa (`fetch(src.uri, ...)` interno do react-pdf) em si funciona como qualquer `fetch` relativo de navegador — não há diferença de comportamento entre a capa do Simulado e a do Ranking nesse ponto; o problema é o cache de falha, não a resolução de URL.
+
+**Correção:** nova função exportada `loadRankingCoverDataUri()` busca a capa por conta própria — `fetch(RANKING_COVER_SRC, { cache: "reload" })` (ignora qualquer resposta antiga guardada pelo navegador) — converte o corpo para base64 (`data:` URI, usando `Buffer` quando disponível ou codificação manual em blocos de 32KB em ambientes sem `Buffer`) e entrega esse `data:` URI já resolvido ao `<Image>`. Como o `<Image>` passa a receber o conteúdo já pronto, o `IMAGE_CACHE` interno do react-pdf nunca entra em jogo para a capa do Ranking — elimina a classe inteira desse problema, não só o sintoma observado.
+
+**Falha vira erro controlado, nunca página em branco silenciosa:** se o `fetch` falhar (rede) ou responder não-2xx, `loadRankingCoverDataUri()` lança `new Error("Não foi possível carregar a capa do ranking.")`. `downloadEventRankingPdf()` chama e aguarda essa função **antes** de montar `EventRankingPdf`/chamar `pdf(...).toBlob()` — se falhar, nenhum PDF é gerado. No painel (`page-client.tsx`), `generateRankingPdf()` reconhece essa mensagem específica (comparando com a constante exportada `RANKING_COVER_LOAD_ERROR`) e a exibe diretamente ao usuário; qualquer outra falha inesperada continua caindo no fallback genérico já existente ("Não foi possível gerar o ranking em PDF. Tente novamente.") — nunca expõe um erro técnico bruto.
+
+**Preservado sem alteração:** estrutura da tabela (posição/nome/tempo/acertos, ordenação, desempate, separadores, layout compacto), cabeçalho/rodapé fixos e repetição por página, paginação, capa como página 1 isolada sem sobreposição de tabela, mesmo dimensionamento/`objectFit` da capa do Simulado, PDF da prova do Professor (`simulado-result-pdf.ts` não foi tocado), regra de ranking (`rankedParticipants`), scoring/anulação/TopCoins/notifications/`representative_attempt_id`.
+
+**Testes:** `tests/event-ranking-pdf/event-ranking-pdf.spec.ts` — bloco de marca d'água substituído por dois testes que confirmam a ausência total de referências e a preservação do asset em disco; novo bloco de 4 testes de execução real para `loadRankingCoverDataUri()` (fetch mockado): sucesso retorna `data:` URI válida chamando a URL certa com `cache: "reload"`, resposta 404 lança o erro controlado, falha de rede lança o erro controlado, e um teste estrutural confirmando que a chamada de carregamento da capa precede a montagem do PDF dentro de `downloadEventRankingPdf`. Total: 40 casos, todos passando. Regressão completa (`event-professor-assignment`, `event-ranking-pdf`, `professor-exam-pdf`, `professor-management`, `simulado-question-annulment`, `simulado-scoring`): 142/142. `npx tsc --noEmit` e `npm run build` limpos.
+
+Nenhuma migration. Nenhum commit/push/deploy nesta etapa.
+
+# 102. Cabeçalho/rodapé do Ranking sem duplicação de nome (2026-09-09)
+
+Ajuste pré-commit, feito ANTES de qualquer commit/push desta Sprint. Problema relatado: quando o nome do Evento e o nome do Simulado vinculado são iguais (caso comum), o cabeçalho do PDF do Ranking exibia o mesmo texto duas vezes:
+
+```
+RANKING
+3º Simulado de Processo Civil
+3º Simulado de Processo Civil
+```
+
+**Causa:** `EventRankingPdf` (`app/lib/pdf/event-ranking-pdf.ts`) renderizava `eventName` no `headerTitle` e, logo abaixo, uma segunda linha (`headerSubtitle`) com `meta.simuladoTitle` sempre que presente — e no rodapé, `subtitle` era `` `${eventName} · ${meta.simuladoTitle}` ``. Quando os dois nomes coincidem, o resultado visual é a mesma string repetida.
+
+**Correção — nova regra: só o nome do Evento.** Removidos do cabeçalho: a segunda linha (`meta.simuladoTitle ? React.createElement(Text, { style: s.headerSubtitle }, ...) : null`) e o estilo `headerSubtitle` (ficou órfão). O rodapé passou a receber `subtitle: eventName` diretamente, sem concatenar com o nome do Simulado. Cabeçalho agora é sempre:
+
+```
+RANKING
+<nome do Evento>
+```
+
+E o rodapé mantém a mesma composição/posição visual de sempre — só o campo de identificação do documento (mesmo local já reservado) passou a mostrar apenas `eventName`.
+
+**`simuladoTitle` preservado no tipo/API:** `RankingPdfMeta.simuladoTitle` e o parâmetro `simuladoTitle` de `downloadEventRankingPdf()` **não foram removidos** — `page-client.tsx` continua enviando `data?.event.simulados?.title` normalmente; o campo só deixou de ser lido dentro de `EventRankingPdf` para fins de apresentação. Nenhuma mudança no chamador foi necessária.
+
+**Preservado sem alteração:** capa oficial (página 1, isolada, mesmo mecanismo/`objectFit` da capa do Simulado), tabela (posição/nome/tempo/acertos, ordenação, desempate, separadores, Top 3, cabeçalho da tabela), paginação, texto institucional do rodapé ("EstudoTOP Simulados - simulados.estudotop.com.br"), PDF da prova (`simulado-result-pdf.ts` não foi tocado).
+
+**Testes:** `tests/event-ranking-pdf/event-ranking-pdf.spec.ts` ganhou 4 casos no novo bloco "cabeçalho e rodapé — nome do Evento uma única vez": cabeçalho mostra RANKING + eventName sem segunda linha; rodapé recebe só `eventName` (não concatena mais); `meta.simuladoTitle` não é lido em nenhum ponto de `EventRankingPdf`; `simuladoTitle` continua aceito no tipo/API. Total: 44 casos, todos passando. Regressão completa: 146/146. `npx tsc --noEmit` e `npm run build` limpos.
+
+Nenhuma migration. Nenhum commit/push/deploy nesta etapa.
+
+# 103. Nova regra oficial de classificação do Ranking + novos dados na tela/PDF/modal + normalização de nomes (2026-09-09)
+
+Sprint cirúrgica: muda exclusivamente a regra de ORDENAÇÃO do ranking e a forma de APRESENTAÇÃO dos dados na tela, no modal "Ver" e no PDF. Nenhuma mudança em scoring, resultados consolidados, TopCoins, reconciliação ou `representative_attempt_id`.
+
+### Nova regra oficial de classificação
+
+Critério hierárquico, para no primeiro que diferenciar os participantes:
+
+1. **maior pontuação** (score oficial já consolidado)
+2. **menor uso da Ajuda da Coruja**
+3. **menor número de advertências por troca/saída de tela**
+4. **menor tempo de realização da prova**
+
+Pontuação continua soberana — nenhum dos critérios 2-4 jamais faz alguém com nota inferior ultrapassar alguém com nota superior. Implementada em `lib/eventRanking.ts` (`rankedParticipants()`), a mesma função já usada pela tela e agora também pelo PDF — nenhuma regra paralela em nenhum dos dois. Ranking competitivo preservado (1º, 1º, 3º) quando os quatro critérios oficiais são idênticos; desempate técnico final (não pedagógico, só para estabilidade) por nome normalizado (pt-BR) e, em último caso, por `id`.
+
+**Origem de cada critério (auditada em código antes da mudança):**
+- **Pontuação:** `simulado_results.display_score` — o mesmo valor já exibido como "Nota" na tela. Não é `correct_count` ("acertos"), que é um número diferente sob modelos de pontuação como Cebraspe (erros descontam pontos). Cai para `correct_count` só quando `display_score` não vem (compatibilidade com chamadores/fixtures de teste antigos), preservando o comportamento anterior a esta mudança.
+- **Coruja:** `simulado_attempts.owl_help_used_count` — contador oficial da tentativa, incrementado em `POST .../attempts/[attemptId]/owl-help`.
+- **Advertências:** `simulado_attempts.focus_violation_count` — não `tab_switch_count` (contador bruto de eventos de troca de aba). `focus_violation_count` é a "fonte de verdade" documentada em `lib/simulado-focus-violation.ts`, o mesmo contador usado pela regra anti-cheat real (desclassificação na 3ª violação, `FOCUS_VIOLATION_LIMIT`).
+- **Tempo:** `result.time_spent_ms` — o mesmo já usado antes desta mudança.
+
+Todos pertencem à **tentativa oficial/representativa** (`representativeAttempt`, já resolvida em `GET /api/professor/events/[id]`) — nunca somados entre tentativas descartadas.
+
+**Ausência de dado:** `focus_violation_count` é `integer not null default 0` desde a migration original (`migrations/001_simulado_attempts.sql`) — ausência/null significa realmente zero, nunca "desconhecido". `owl_help_used_count` já era tratado como `Number(attempt.owl_help_used_count || 0)` pelo próprio endpoint de ajuda da coruja — mesmo padrão reaproveitado aqui.
+
+**Pendência identificada — fora do escopo:** `simulado_attempts.owl_help_used_count` e `simulado_attempts.owl_help_data` são usados extensivamente pelo sistema (endpoint de ajuda da coruja, resultado do aluno, editor de simulados) mas **não existe nenhuma migration no repositório que crie essas colunas** — só `simulados.owl_help_limit` (`20260718120000_add_simulados_owl_help_limit.sql`) tem migration própria. As colunas claramente já existem em produção (feature funcionando e documentada), então isso não bloqueou esta Sprint (dado não está "faltando", só o registro em `supabase/migrations/` está incompleto). Nenhuma migration foi criada para isso agora — criar uma migration para uma coluna que já existe no banco causaria erro/confusão; registrado aqui para decisão futura.
+
+### Novos dados na tela do Ranking
+
+Colunas: **Posição, Aluno, Tempo, Advert., Coruja, Pontos, Situação, Detalhes** — Situação (o status que já existia) foi preservada integralmente, sem nova regra/recálculo. "Nota" foi renomeada para "Pontos" (mesmo `display_score`, sem mudança de dado). Tempo usa `formatTimeMs()` (helper já existente da tela, formato HH:MM:SS). Advert./Coruja usam os contadores oficiais direto do payload já carregado (zero N+1 — `owl_help_used_count`/`focus_violation_count` passaram a ser selecionados na MESMA query de `simulado_attempts` que já existia em `GET /api/professor/events/[id]`, sem nenhuma chamada Supabase nova). Cabeçalhos abreviados ("Advert.", "Coruja") carregam `title` explicando o significado. Tabela ganhou `min-w-[1080px]` (era 760px) para acomodar as novas colunas com conforto — mesmo padrão de scroll horizontal (`overflow-x-auto`) já existente.
+
+### Modal "Ver" (`ParticipantMetricCard`)
+
+Todo o conteúdo anterior preservado (Posição, Nota, Acertos, Erros, Brancos, Tempo total, Tentativa oficial, Situação). Adicionadas duas métricas novas: "Ajudas da coruja" e "Advertências por troca de tela", usando exatamente `participant.result.owl_help_used_count`/`focus_violation_count` — os mesmos valores já carregados para a linha da tabela, sem nenhuma consulta adicional (sem N+1 no clique de "Ver").
+
+### Normalização e abreviação de nomes
+
+Novo helper compartilhado `lib/formatRankingName.ts` (`formatRankingName(fullName)`), importado tanto pela tela (`page-client.tsx`) quanto pelo PDF (`event-ranking-pdf.ts`) — nenhuma lógica de nome duplicada. Regra: os dois primeiros componentes do nome aparecem por completo; a partir do próximo componente que não seja uma partícula comum (`da`, `de`, `do`, `das`, `dos`, `e`), mostra-se só a inicial + "."; partículas nessa faixa ficam em minúsculas, coladas ao componente seguinte — nunca viram a própria abreviação (evita algo sem sentido como "de Souza" virar "D."). Não altera nenhum dado persistido (`students.name` etc.), só apresentação. Exemplos conferidos por teste real:
+- `"MARIA EDUARDA SILVA"` → `"Maria Eduarda S."`
+- `"joÃO peDRO silVA"` → `"João Pedro S."`
+- `"ana clara ferreira santos"` → `"Ana Clara F."`
+- `"João da Silva Pereira"` → `"João da S."`
+- `"Maria"` (1 componente) → `"Maria"`
+- `"Maria Silva"` (2 componentes) → `"Maria Silva"`
+
+Acentos preservados; espaços duplicados/trim tolerados.
+
+### PDF do Ranking — novas colunas, sem Status
+
+Colunas: **Pos., Nome, Tempo, Advert., Coruja, Pontos** — sem Status (só faz sentido no painel operacional da tela). "Acertos" foi substituído por "Pontos" (usa `display_score ?? correct_count`, nunca `correct_count` puro se o score oficial for diferente). Nome usa o mesmo `formatRankingName()` da tela. Larguras de coluna ajustadas para caber com conforto (Nome com mais espaço; colunas numéricas compactas). Preservado sem alteração: capa oficial (página 1, mesmo mecanismo/carregamento robusto da seção 101), ausência de marca d'água (seção 101), cabeçalho sem duplicação de nome (seção 102), rodapé institucional, cabeçalho de tabela fixo repetindo por página, `wrap:false` por linha, paginação.
+
+### Testes
+
+`tests/event-ranking-pdf/event-ranking-pdf.spec.ts` ganhou blocos inteiros novos, todos por execução real (não só leitura de código): regra de classificação (casos A-E do pedido + 2 testes de prioridade entre critérios provando coruja > advertências > tempo, + teste de score oficial vs. correct_count, + compatibilidade com fixtures antigas, + normalização de ausência de dado para 0), `formatRankingName` (1/2/3/5+ componentes, caixa alta/baixa/mista, acentos, partícula, espaços duplicados, string vazia), paridade PDF usando o mesmo helper de nome da tela, novas colunas da tela (estrutural), novas métricas do modal (estrutural + confirmação de zero N+1), e confirmação de que `owl_help_used_count`/`focus_violation_count` entraram na MESMA query já existente de `simulado_attempts` em `GET /api/professor/events/[id]` (contagem de `.from()` inalterada: 9). Total: 82 casos no arquivo, todos passando. Regressão completa (`event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `professor-management`, `simulado-question-annulment`, `simulado-scoring`): 184/184. `npx tsc --noEmit`, `npm run build` e lint dos arquivos tocados/novos limpos.
+
+Nenhuma migration criada. Nenhum commit/push/deploy nesta etapa.
+
+# 104. "Ajudas utilizadas" (renomeação) + "Tópicos de maior dificuldade" no modal "Ver" (2026-09-09)
+
+Ajuste cirúrgico pré-commit. Regra de classificação (seção 103) preservada sem alteração — só ajustes de apresentação e reaproveitamento de dado já existente.
+
+### 1. Tela do Ranking — "Coruja" → "Ajudas utilizadas"
+
+Cabeçalho da coluna renomeado de "Coruja" para "Ajudas utilizadas" (`app/professor/eventos/[id]/page-client.tsx`), com quebra controlada em duas linhas (`<span className="block max-w-[72px] leading-[13px]">`) para caber com conforto sem esmagar Nome/Situação/Detalhes — nenhuma outra coluna teve largura reduzida. Tooltip atualizado para "Quantidade de ajudas da coruja utilizadas durante a tentativa". O valor exibido continua vindo do mesmo `item.result.owl_help_used_count` de sempre — nenhuma mudança de dado ou de regra.
+
+No modal "Ver", o card antes rotulado "Ajudas da coruja" passou a "Ajudas utilizadas", pela mesma preferência de nomenclatura.
+
+**PDF do Ranking:** decisão explícita — a coluna "Coruja" foi renomeada para "Ajudas" (`app/lib/pdf/event-ranking-pdf.ts`). Justificativa: "Coruja" e "Ajudas" têm exatamente 6 caracteres cada, então a troca não altera a largura necessária da coluna nem compromete o layout — mudança seguramente compatível, coerente com a nomenclatura agora usada na tela.
+
+### 2. Modal "Ver" — novo card "Tópicos de maior dificuldade"
+
+Novo card ao final da grade de métricas do modal (depois de Situação, a última já existente), ocupando duas colunas no desktop (`sm:col-span-2` — no 4-colunas `lg:grid-cols-4`, ocupa a largura de dois cards; no `sm:grid-cols-2`, ocupa a linha inteira; no mobile 1-coluna, ocupa naturalmente 1 coluna). Todo o conteúdo anterior do modal foi preservado sem nenhuma alteração.
+
+**Fonte dos dados — reaproveitada, não reinventada.** A mesma análise já usada em "Tópicos para revisar" na tela de resultados do aluno (`app/meus-simulados/[id]/resultado/page-client.tsx`, `buildSubjectTopicPerformance`) foi extraída (lógica idêntica, não reescrita) para um módulo compartilhado novo, `lib/topicDifficulty.ts`: `normalizeTextKey`, `canonicalizeTopicLabel`, `addTopicRollup` (movidos verbatim) e uma nova função `buildDifficultyTopics` (lista achatada, sem agrupar por assunto — a mesma regra de "tópicos para revisar": incidência de erro `wrong>0 || blank>0`, ordenada por incidência decrescente e depois por rótulo). A tela de resultados do aluno agora importa essas três funções do módulo compartilhado em vez de defini-las localmente — mesmo comportamento, sem duplicar.
+
+**Regra preservada exatamente:**
+- Questão anulada (`simulado_questions.status === "annulled"`) nunca conta como erro — filtrada antes de entrar na análise, igual à tela de resultados.
+- Status por questão: em branco (sem `selected_alternative_id`) / correta (`is_correct === true`) / errada — mesma lógica.
+- Tópico ausente cai no mesmo fallback `"Tópico não informado"` já usado na tela de resultados.
+- Canonicalização/deduplicação de variações do mesmo tópico (ex.: "TCP/IP" e "tcp ip") é a mesma função, sem reinterpretação.
+
+**De onde vêm os dados no dashboard do Professor:** `GET /api/professor/events/[id]/route.ts` ganhou `evaluated_topics` no `.select()` já existente de `simulado_questions` (nenhuma consulta nova) e monta, por participante, `result.difficulty_topics: string[]` reaproveitando o mesmo array `answers` (respostas da tentativa oficial/representativa) já buscado para os cálculos existentes — zero N+1, nenhuma consulta por tópico/questão/participante. O cálculo roda uma vez por participante, em memória, sobre dados já carregados.
+
+**Layout do card:** cabeçalho com ícone (`AlertTriangle`, vermelho — mesma linguagem visual de "erro/atenção" já usada no card de Advertências e nos chips vermelhos de "tópicos para revisar" da tela de resultados) + título "Tópicos de maior dificuldade"; conteúdo em chips arredondados (mesmo padrão visual de `TopicChip` da tela de resultados: pílula vermelha discreta), com `flex-wrap` e altura máxima com scroll interno (`max-h-[168px] overflow-y-auto`) para não deixar o modal gigantesco quando há muitos tópicos — sem esconder nenhum dado, só rolagem. Estado vazio: "Nenhum tópico de maior dificuldade identificado." (texto elegante, nunca um card quebrado).
+
+### Testes
+
+`tests/event-ranking-pdf/event-ranking-pdf.spec.ts` ganhou blocos novos: renomeação "Coruja"→"Ajudas utilizadas" na tela e "Coruja"→"Ajudas" no PDF (com verificação de que a largura não precisou mudar); presença/posição/responsividade do novo card no modal; estado vazio; ausência de N+1; execução real de `buildDifficultyTopics` (ordenação por incidência, exclusão de anuladas pelo chamador, fallback de tópico ausente, deduplicação de variações, caso de paridade do pedido A/B/B/C → B,A,C); confirmação de que a tela de resultados do aluno agora importa do módulo compartilhado em vez de duplicar; confirmação de que `evaluated_topics` entrou no select já existente sem query nova. Total: 99 casos no arquivo, todos passando. Regressão completa (`event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `professor-management`, `simulado-question-annulment`, `simulado-scoring`): 201/201. `npx tsc --noEmit` e `npm run build` limpos; lint sem nenhum problema novo (13 avisos pré-existentes em `resultado/page-client.tsx`, confirmados idênticos antes/depois da extração).
+
+**Arquivo protegido/compartilhado tocado, justificado:** `app/meus-simulados/[id]/resultado/page-client.tsx` (fluxo de resultado do aluno) foi modificado — não para mudar comportamento, mas para importar de `lib/topicDifficulty.ts` em vez de definir localmente `normalizeTextKey`/`canonicalizeTopicLabel`/`addTopicRollup`. Necessário porque a própria tarefa exige reaproveitar "exatamente a mesma lógica" da tela de resultados sem duplicar — a extração é a forma correta de atender isso. Comportamento do aluno inalterado (mesma função, só movida); regressão de `simulado-question-annulment`/`simulado-scoring` confirmada verde.
+
+Nenhuma migration criada. Nenhum commit/push/deploy nesta etapa.
+
+# 105. Nova guia "Insights" no painel do Professor — análise pedagógica dos tópicos de maior dificuldade (2026-09-09)
+
+Sprint cirúrgica: adiciona uma 4ª guia ("Insights") à dashboard do Evento do Professor, com uma análise pedagógica coletiva — "em quais tópicos os participantes tiveram, como grupo, maior dificuldade neste Simulado" — estatisticamente mais justa do que simplesmente somar erros brutos por tópico. Nenhuma mudança em scoring (`lib/simuladoScoring.ts`), notas, resultados oficiais, TopCoins, na regra de classificação do Ranking (`lib/eventRanking.ts`, seção 103) nem nas 3 guias já existentes (Visão geral, Participantes, Questões/revisão). Distinta do card "Tópicos de maior dificuldade" adicionado ao modal "Ver" na seção 104: aquele é por participante (um aluno específico); este é coletivo (todos os participantes de uma vez).
+
+### Por que não "erros brutos por tópico"
+
+Contar direto `erros/tópico` favorece tópicos com poucas questões e pune tópicos com muitas questões só por terem mais oportunidades de acumular erro. A guia usa em vez disso uma dificuldade **por questão**, depois agregada **sem peso por volume de respostas**, e por fim **suavizada estatisticamente** para não dar falsa confiança a amostras pequenas.
+
+### Fórmulas (implementadas em `lib/eventInsights.ts`, funções puras, sem acesso a banco)
+
+1. **Dificuldade por questão** — `D_q = wrong / (correct + wrong)`. Branco não entra no denominador (não é "erro"); questão anulada (`simulado_questions.status === "annulled"`, status contextual do Simulado — nunca `questions.status`) é excluída inteiramente de toda a análise, em qualquer bloco.
+2. **Dificuldade bruta do tópico** — `D_t = média(D_q)` das questões válidas do tópico, com **peso igual por questão** (nunca ponderado pela quantidade de respostas — 5 questões não pesam mais que 1 só por somarem mais oportunidades de erro).
+3. **Dificuldade global do Simulado** — `D_global = média(D_q)` de todas as questões válidas, com o mesmo peso igual por questão (nunca `total de erros / total de respostas`, que daria peso desproporcional a questões mais respondidas).
+4. **Dificuldade ajustada (suavização estatística)** — `D_adjusted = (n·D_t + k·D_global) / (n+k)`, com **k=2** (constante oficial desta Sprint). É a métrica usada para **ordenar** o ranking de tópicos; `D_t` bruto permanece **sempre visível ao lado**, nunca escondido — transparência exigida pelo pedido.
+
+Exemplo conferido por teste real (o mesmo da especificação): `D_global=40%`, `k=2` → tópico A (n=1, D_t=70%) → `D_adjusted=50%`; tópico B (n=5, D_t=55%) → `D_adjusted≈50,71%` — mesmo com D_t bruto menor, B fica ligeiramente à frente por ter mais evidência (n maior), exatamente o comportamento esperado da suavização.
+
+**Múltiplos tópicos por questão:** a questão contribui com seu `D_q` **integral** (não dividido, nunca "60%/3 tópicos") para cada tópico associado — dividir não faz sentido pedagógico (uma questão difícil sobre "Redes" e "Segurança" ao mesmo tempo é igualmente difícil nos dois, não parcialmente em cada um).
+
+**Confiança** (rótulo, nunca "certeza"): `n=1` → "Evidência inicial"; `n=2–3` → "Confiança moderada"; `n≥4` → "Confiança alta".
+
+**Faixas de dificuldade** (aplicadas sobre `D_adjusted`, não sobre `D_t` — decisão explícita do pedido): `<30%` Bom domínio (verde); `30–44%` Atenção (amarelo); `45–59%` Dificuldade relevante (laranja); `≥60%` Dificuldade crítica (vermelho).
+
+**Desempate** (não especificado explicitamente no pedido, definido e documentado nesta Sprint): para `D_adjusted` igual, ordena por (1) maior `n` (mais evidência primeiro), (2) maior `D_t` bruto, (3) nome do tópico em ordem alfabética (pt-BR) — cadeia determinística, sem aleatoriedade.
+
+**Tópico ausente:** questão sem `evaluated_topics` cai no fallback `"Tópico não informado"` (mesmo padrão já usado no card da seção 104 e na tela de resultados do aluno).
+
+### Reaproveitamento — nenhuma lógica duplicada
+
+`lib/eventInsights.ts` importa `canonicalizeTopicLabel` de `lib/topicDifficulty.ts` (o mesmo módulo compartilhado criado na seção 104) para normalizar/deduplicar variações de rótulo do mesmo tópico (ex.: "TCP/IP" e "tcp ip") — nenhuma função de canonicalização foi reescrita.
+
+### Origem dos dados — zero N+1
+
+`GET /api/professor/events/[id]/route.ts` monta o insumo do cálculo (`QuestionDifficultyInput[]`) **mapeando o `questionStats` já calculado** para a guia Questões/revisão (correct/wrong/blank/status/`evaluated_topics`/código, todos já carregados por queries pré-existentes) — **nenhuma consulta Supabase nova** foi criada. Contagem de `.from(` na rota confirmada inalterada em 9 antes/depois. O cálculo inteiro roda em memória, uma única vez por requisição, sobre dados já em mãos.
+
+Acesso do Professor à guia **não depende de `result_released_at`** — mesma regra de acesso operacional já vigente para as demais guias (Professor já enxerga dados mesmo antes da liberação de resultado ao aluno). Funciona igualmente para Evento `encerrado`/`arquivado` (usa a mesma base de tentativa oficial/representativa já consolidada pelo endpoint, nunca tentativas em andamento/descartadas/duplicadas).
+
+### UI — 5 blocos, na ordem exigida
+
+1. **Panorama pedagógico do simulado** — texto explicativo curto + 3 métricas (`Dificuldade global`, `Questões analisadas`, `Tópicos avaliados`) usando o componente já existente `CompactMetric`.
+2. **Tópicos de maior dificuldade** — lista ordenada por `D_adjusted` (posição, nome, `D_t`, `D_adjusted`, quantidade de questões, respostas analisadas, confiança). Tooltip em "Dificuldade ajustada" com o texto sugerido pelo pedido: *"Índice que considera a taxa de erro e a quantidade de questões que avaliaram o tópico, reduzindo distorções de amostras pequenas."* A fórmula não é exposta na tela principal, só no tooltip.
+3. **Questões mais difíceis** — `D_q` decrescente, excluindo anuladas, mostrando código/`%erro`/`%branco`/tópicos associados (limitado às 10 primeiras na tela, dado completo disponível em `insights.hardestQuestions`).
+4. **Mapa de domínio** — 4 colunas (Bom domínio / Atenção / Dificuldade relevante / Dificuldade crítica), cada uma com contagem de tópicos e até 6 chips de exemplo.
+5. **O que merece revisão em aula** — resumo textual **determinístico**, gerado por `buildTeachingReviewSummary()` a partir só dos 3 tópicos de maior `D_adjusted` fora de "Bom domínio" e da confiança do 1º colocado — **sem nenhuma chamada de IA/OpenAI/API externa**, exatamente como exigido.
+
+Nenhuma casa decimal falsa: toda porcentagem passa pelo helper já existente `formatPercent()` (0–1 casa decimal, vírgula pt-BR) — reaproveitado, não reimplementado.
+
+**Estados vazios:** `insights.validQuestionCount === 0` mostra "Este simulado não possui tópicos suficientes para esta análise." (quando não há nenhuma questão no Simulado) ou "Ainda não há respostas suficientes para gerar Insights." (quando há questões mas nenhuma com resposta graduada) — textos sugeridos pelo pedido, usados literalmente. Lista de tópicos vazia e lista de questões mais difíceis vazia têm mensagens próprias e elegantes, nunca uma tela quebrada.
+
+### Limitação documentada (associação, não causalidade)
+
+Para questões multi-tópico, um `D_q` alto indica que a questão foi difícil, mas **não prova isoladamente qual dos tópicos associados foi o responsável** — é uma associação estatística, não uma relação causal comprovada. Isso é inerente ao desenho (a questão contribui integralmente para todos os tópicos que avalia) e é uma limitação conhecida, não um bug.
+
+### Funcionalidade explicitamente NÃO implementada nesta Sprint (relatado, não esquecido)
+
+O alerta automático de taxa de branco alta (pedido, seção 22) **não foi implementado** — o próprio pedido autorizava essa omissão explicitamente ("Se não houver justificativa suficiente [para um threshold]: não criar alerta automático nesta Sprint. Relatar.") e não havia, nesta sessão, nenhuma base de dados real para justificar um limiar (ex.: 20%) como estatisticamente significativo. `blankRate` já é calculado e armazenado em `TopicInsight`/`QuestionInsight` (disponível para uso futuro), só o alerta visual automático ficou de fora.
+
+### Arquivos criados/modificados
+
+- **Novo:** `lib/eventInsights.ts` — funções puras (`calculateQuestionDifficulty`, `calculateTopicDifficulty`, `calculateGlobalDifficulty`, `calculateAdjustedTopicDifficulty`, `classifyTopicConfidence`, `classifyTopicDifficultyBand`, `buildTeachingReviewSummary`, `buildEventInsights`) e tipos (`QuestionDifficultyInput`, `QuestionInsight`, `TopicInsight`, `TopicConfidence`, `TopicDifficultyBand`, `EventInsightsSummary`). Escala interna sempre fração 0..1 (nunca 0..100); conversão para percentual só na UI.
+- **Novo:** `tests/event-insights/event-insights.spec.ts` — 54 casos, execução real (não estrutural), cobrindo as 14 categorias exigidas pelo pedido, os 3 cenários obrigatórios com valores calculados à mão, e a fixture obrigatória de 4 questões/3 tópicos com `D_q`/`D_t`/`D_global`/`D_adjusted`/ordem final conferidos por asserção.
+- **Modificado:** `app/api/professor/events/[id]/route.ts` — monta `insightsInput` a partir de `questionStats` já existente, chama `buildEventInsights()`, inclui `insights` na resposta JSON. Nenhuma query nova.
+- **Modificado:** `app/professor/eventos/[id]/page-client.tsx` — nova 4ª aba ("Insights"), tipo `Tab`/`Dashboard` estendidos, 2 componentes novos (`InsightsTopicRow`, `InsightsQuestionRow`), 2 mapas de constantes (`TOPIC_BAND_META`, `TOPIC_CONFIDENCE_LABEL`). As 3 guias existentes (Visão geral, Participantes, Questões/revisão) não foram redesenhadas — grade de navegação só passou de 3 para 4 colunas (`sm:grid-cols-2 lg:grid-cols-4`).
+
+### Testes e regressão
+
+`tests/event-insights/event-insights.spec.ts`: 54/54. Regressão completa (`event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `professor-management`, `simulado-question-annulment`, `simulado-scoring`, `event-insights`): **255/255**. Adicionalmente confirmados intactos (mencionados na lista de regressão do pedido, não estavam no lote anterior): `event-operations` (25/25) e `event-representative-attempt` (10/10) — **35/35**. `npx tsc --noEmit` limpo. `npm run build` limpo (rota `/simulados/[id]/print` e demais listadas, `BUILD_OK`). Lint dos 4 arquivos tocados/criados: 0 avisos, 0 erros.
+
+Nenhuma migration criada — Insights não introduz nenhuma tabela/coluna nova, é 100% derivado em memória de dados já persistidos. Nenhum commit/push/deploy nesta etapa.
+
+# 106. Refinamento de UX da guia "Insights" — classificação simplificada, remoção do Mapa de domínio, consulta de questão em modal (2026-09-10)
+
+Sprint cirúrgica de refinamento sobre a guia "Insights" entregue na seção 105 — só apresentação/clareza/usabilidade. A base matemática (D_q, D_t, D_global, `D_adjusted = (n·D_t + k·D_global)/(n+k)`, k=2, exclusão de anuladas, branco fora do denominador, contribuição integral de questão multi-tópico, independência de `result_released_at`) **não mudou em nada** — só a forma como o professor vê o resultado. Nenhuma mudança em `lib/simuladoScoring.ts`, `lib/eventRanking.ts`, resultados oficiais, TopCoins, PDFs ou nas outras 3 guias (Visão geral, Participantes, Questões/revisão).
+
+### 1. Bloco "Tópicos de maior dificuldade" — só a dificuldade ajustada
+
+A interface deixou de mostrar, nessa lista: a dificuldade "observada" (bruta) ao lado da ajustada, e os rótulos de confiança da amostra ("Evidência inicial" / "Confiança moderada" / "Confiança alta"). Esses dois conceitos continuam calculados normalmente em `lib/eventInsights.ts` (`TopicInsight.observedDifficulty` e `TopicInsight.confidence` seguem preenchidos — usados internamente por `buildTeachingReviewSummary()`), só deixaram de aparecer nesta lista por decisão de clareza: o professor via duas dificuldades lado a lado ("X% observada · Y% ajustada") e um selo técnico de confiança, exigindo interpretação estatística desnecessária. Agora cada linha mostra só: posição, nome do tópico, subtítulo claro ("1 questão relacionada" / "2 questões relacionadas", mais "· N respostas válidas consideradas" quando houver dado), o selo de nível e "X% de dificuldade ajustada".
+
+**Classificação visual — nova nomenclatura e novos limiares, centralizados em `classifyTopicDifficultyBand()` (`lib/eventInsights.ts`, única fonte, não reimplementados na tela):**
+
+| Faixa (sobre D_adjusted) | Nível exibido | Cor |
+|---|---|---|
+| ≥ 75% | Extrema | vermelho forte |
+| 50% – 74% | Alta | laranja |
+| 25% – 49% | Média | âmbar |
+| < 25% | Baixa | verde |
+
+Substitui a nomenclatura anterior (Bom domínio/Atenção/Dificuldade relevante/Dificuldade crítica, limiares 30/45/60%) — os novos limiares (25/50/75%) foram escolhidos por serem redondos, fáceis de explicar e de memorizar para o professor, mantendo o mesmo espírito de 4 faixas. `TopicDifficultyBand` mudou de `"mastery"|"attention"|"relevant"|"critical"` para `"low"|"medium"|"high"|"extreme"`; `TOPIC_BAND_META` (painel) só mapeia rótulo/cor, sem reimplementar o cálculo do limiar.
+
+### 2. Bloco "Questões mais difíceis" — só erro, clicável, com modal de consulta
+
+**Removido:** a estatística de branco (`blankRate`) deixou de aparecer nesta lista (continua calculada e disponível em `QuestionInsight.blankRate`, só não exibida aqui). Cada linha mostra agora: código da questão, um título curto (texto puro do enunciado, primeiros ~110 caracteres, via `richTextToPlainText()` de `lib/utils/rich-text.ts` — helper já existente, reaproveitado, não duplicado) e o percentual de erro ("X% de erro").
+
+**Novo — abrir a questão em modal:** cada linha é clicável (código/título e um botão explícito "Ver questão") e abre `QuestionPreviewModal`, um modal de consulta somente-leitura que reaproveita **o mesmo componente já usado na aba Questões/revisão desta mesma tela**, `QuestionDisplayCard` (`app/components/questions/QuestionDisplayCard.tsx`) — nenhum novo renderer de questão foi criado. O modal é chamado com `showCorrect` mas sem `onSelect`/`onToggleEliminate` — sem nenhuma interação de resposta ou edição possível, puramente consulta.
+
+**Zero fetch novo, zero N+1:** o modal reaproveita `data.questions` — o mesmo array já carregado por `GET /api/professor/events/[id]` para a aba Questões/revisão (mesma resposta que já inclui `statement`/`question_alternatives`/gabarito para o Professor). Um índice em memória (`classroomQuestionsById`, `useMemo` sobre `data.questions`) mapeia `simulado_question_id → questão completa`, montado uma única vez por atualização dos dados — nenhuma requisição de rede adicional ao abrir o modal. Nenhuma rota nova, nenhuma mudança de permissão: o Professor já recebia esse mesmo conteúdo (incluindo gabarito) no payload da aba Questões/revisão; o modal só apresenta um subconjunto dele já em memória.
+
+### 3. Bloco "Mapa de domínio" — removido integralmente
+
+O bloco (4 colunas agrupando tópicos por faixa, com contadores e chips) foi removido por decisão do usuário após avaliação de clareza — não comunicava valor real além do que a lista "Tópicos de maior dificuldade" já mostra. Removidos: o título "Mapa de domínio", o grid de 4 colunas, os contadores por faixa e os chips de exemplo. `TOPIC_BAND_META` foi preservado (ainda alimenta o selo de nível na lista de tópicos, seção 1 acima) — só o agrupamento visual em painéis por faixa foi eliminado.
+
+### 4. Bloco "O que merece revisão em aula" — preservado
+
+Nenhuma mudança de código necessária: `buildTeachingReviewSummary()` já não citava rótulos de faixa no texto gerado (só filtra internamente por `band !== "low"`, ajustado nesta Sprint a partir de `!== "mastery"` para acompanhar a renomeação dos valores do enum). O texto exibido ao professor continua em linguagem natural, sem jargão técnico.
+
+### Arquivos modificados
+
+- `lib/eventInsights.ts` — `TopicDifficultyBand` renomeado (`"low"|"medium"|"high"|"extreme"`); `classifyTopicDifficultyBand()` com os novos limiares (25/50/75%), documentados no próprio comentário da função; `buildTeachingReviewSummary()` ajustado para o novo valor mínimo (`"low"` em vez de `"mastery"`); comentário de cabeçalho do arquivo atualizado para não afirmar mais que a dificuldade observada "continua sempre visível" na UI (ela permanece calculada, só não é mais exibida).
+- `app/professor/eventos/[id]/page-client.tsx` — `TOPIC_BAND_META` com os 4 novos rótulos/cores; `TOPIC_CONFIDENCE_LABEL` removido (não usado mais); bloco "Mapa de domínio" removido da guia Insights; `InsightsTopicRow` reescrito (sem "observada"/confiança, novo subtítulo, texto único "X% de dificuldade ajustada"); `InsightsQuestionRow` reescrito (sem branco, título curto via `richTextToPlainText`, clicável, botão "Ver questão"); novo componente `QuestionPreviewModal` (reaproveita `QuestionDisplayCard`); novo estado `previewQuestionRelationId` e índice em memória `classroomQuestionsById`; import de `richTextToPlainText` (`@/lib/utils/rich-text`).
+- `tests/event-insights/event-insights.spec.ts` — testes existentes de faixa (seção 9) atualizados para os novos limiares/nomes; teste de estado vazio ajustado (`band === "low"`); 4 novos `test.describe` cobrindo especificamente o refinamento: bloco Tópicos (ausência de "observada"/confiança, nomenclatura Extrema/Alta/Média/Baixa, limiares centralizados, singular/plural do subtítulo), bloco Questões mais difíceis (ausência de branco, reaproveitamento de `richTextToPlainText`, clicabilidade, integração do `QuestionPreviewModal` com `QuestionDisplayCard`, ausência de `onSelect`/edição no modal, zero fetch novo), remoção do Mapa de domínio (ausência total, só os 4 blocos esperados restantes) e regressão (matemática k=2 continua correta na mesma fixture da seção 46, `lib/eventRanking.ts` intocado, `lib/simuladoScoring.ts` não referenciado, dado de resultado oficial do participante não é lido pelos componentes novos).
+
+### Testes e regressão
+
+`tests/event-insights/event-insights.spec.ts`: **74/74** (54 pré-existentes, ajustados onde a nomenclatura mudou, + 20 novos deste refinamento). Regressão completa (`event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `professor-management`, `simulado-question-annulment`, `simulado-scoring`, `event-insights`, `event-operations`, `event-representative-attempt`): **310/310**. `npx tsc --noEmit` limpo. `npm run build` limpo. Lint dos arquivos tocados (`page-client.tsx`, `lib/eventInsights.ts`, `tests/event-insights/event-insights.spec.ts`): 0 avisos, 0 erros.
+
+**Limitação:** nenhuma — o refinamento é estritamente de apresentação; nenhum dado deixou de ser calculado (dificuldade observada e confiança continuam no modelo de dados, só não exibidos nesta guia), e a permissão de leitura da questão no modal é idêntica à que o Professor já tinha na aba Questões/revisão (mesmo payload, sem escalonamento de acesso).
+
+Nenhuma migration criada. Nenhum commit/push/deploy nesta etapa.
+
+# 107. Correção da coleta de dados dos Insights — paginação completa, revalidação de status e polling seguro (2026-09-10)
+
+Sprint cirúrgica motivada por uma auditoria somente-leitura anterior ("Insights mudando sem novas respostas"), que comprovou duas causas reais na camada de coleta de dados de `GET /api/professor/events/[id]` — **nunca na matemática dos Insights** (`lib/eventInsights.ts`, inalterada: `D_q`, `D_t`, `D_global`, `D_adjusted = (n·D_t + k·D_global)/(n+k)` com k=2, faixas Extrema/Alta/Média/Baixa, desempate, UI da seção 106 — tudo preservado byte a byte).
+
+### Achado 1 corrigido — truncamento silencioso de `simulado_answers`/`simulado_results`
+
+As duas consultas dessa rota buscavam `simulado_answers`/`simulado_results` com `.in("attempt_id", representativeAttemptIds)`, **sem `.range()` e sem `.order()`**. Auditoria real, no Evento "3º Simulado de Processo Civil" (mesmo Evento do incidente `ET3582`, seção 103+), comprovou: **1587 respostas reais, apenas 1000 retornadas** — 587 (37%) omitidas silenciosamente, sem erro. Mesma classe de bug já corrigida em `lib/server/simuladoQuestionReprocessing.ts` (seção do "Incidente de truncamento silencioso", `docs/Sprint-resultados.md`), nunca antes aplicada a esta rota.
+
+**Correção:** as duas consultas agora usam `fetchAllPages()` — `.order("id", { ascending: true }).range(from, to)` por página de 1000, com `count: "exact"` conferido contra o total acumulado ao final; se algo divergir (nunca deveria), lança erro em vez de seguir com dado incompleto, e a rota devolve `{ ok: false, message: "Não foi possível carregar as estatísticas do Evento." }` (500) em vez de servir números parciais silenciosamente. **Sem `.limit()` mágico** — escala para qualquer volume futuro, não só o caso atual.
+
+**Extração, sem duplicar:** `fetchAllPages()` já existia, privada, dentro de `lib/server/simuladoQuestionReprocessing.ts`. Foi extraída verbatim para um novo módulo compartilhado `lib/server/supabasePagination.ts` (exportada, mensagem de erro parametrizável), e `simuladoQuestionReprocessing.ts` passou a importar de lá em vez de definir localmente — mesma implementação, uma única fonte, agora reaproveitada também por `app/api/professor/events/[id]/route.ts`.
+
+### Achado 2 corrigido — defesa em profundidade contra `representative_attempt_id` inválido
+
+`consolidateEventRepresentativeAttempt()` (`lib/server/simuladoEvents.ts`) só grava `representative_attempt_id` para tentativas `completed + counts_toward_limit` — único ponto de escrita não-nula em todo o repositório (confirmado por varredura). Ainda assim, a auditoria encontrou **12 de 139 `representative_attempt_id` apontando para tentativas não-completed** no ambiente de homologação (3 `in_progress`, 9 `disqualified`) — dado histórico/legado, não produzido por nenhum código do repositório, mas que a rota **consumia sem revalidar**: as respostas dessas 12 tentativas entravam em `questionStats`/Insights junto com as legítimas.
+
+**Correção:** a rota agora **revalida o status na própria leitura**, sem confiar cegamente no campo. Novo conjunto `completedRepresentativeAttemptIds` — estritamente `status === "completed"`, nunca `disqualified`/`expired`/`in_progress` — usado para filtrar `answers` (→ `completedAnswers`) antes de qualquer agregação para os Insights. Uma tentativa `in_progress`/`disqualified` incorretamente registrada como representativa (dado legado ou futuro) nunca mais contamina os números pedagógicos, mesmo sem corrigir o registro em si (fora do escopo desta etapa — ver "Não feito" abaixo).
+
+O mesmo cuidado foi aplicado ao card individual "Tópicos de maior dificuldade" do modal "Ver" (seção 104): `difficulty_topics` só é calculado quando `representativeAttempt.status === "completed"` — antes bastava a tentativa existir como representativa.
+
+### Duas bases claramente separadas — dados ao vivo vs. Insights consolidados
+
+Esta é a decisão arquitetural central da correção: **`questionStats`** (aba Questões/revisão, Modo Aula) **não foi tocada** — continua usando `completedRepresentativeIds`, a base operacional já existente (`completed` + `disqualified` + `expired`, deliberadamente ampla para refletir a situação real da turma ao vivo). Já a guia **Insights** passou a usar **`completedQuestionStats`**, uma segunda agregação, calculada separadamente a partir de `completedAnswers`/`completedRepresentativeAttemptIds` (estritamente `completed`). As duas bases nunca se misturam; `questionStats` não perdeu nenhum comportamento, `insightsInput` deixou de ser derivado dele.
+
+### Polling protegido contra resposta HTTP fora de ordem
+
+`app/professor/eventos/[id]/page-client.tsx`: `load()` (disparado a cada 10s, frequência inalterada) passou a usar `AbortController` — mesmo padrão já usado em `app/questoes/importar/page-client.tsx` (`remoteSyncAbortRef`). Antes de cada nova requisição, aborta a anterior ainda em voo (`loadAbortRef.current?.abort()`); a resposta só é aplicada (`setData`/`setMessage`) se `loadAbortRef.current` ainda for o `controller` daquela chamada específica — uma resposta antiga que demore mais para chegar nunca sobrescreve um estado mais novo já aplicado. `AbortError` é capturado e silenciosamente ignorado (nunca vira mensagem de erro ao professor); o abort também acontece no cleanup do `useEffect` (desmontagem do componente). Nenhum segundo timer foi criado.
+
+### Não feito nesta etapa (autorizado explicitamente pelo pedido)
+
+Os 12 registros históricos de `representative_attempt_id` inconsistente **não foram corrigidos** — nenhum `UPDATE` em `simulado_event_participants` foi executado. A defesa em profundidade acima já impede que contaminem os Insights; a limpeza do dado em si (se necessária) é uma etapa controlada separada, futura.
+
+### Testes
+
+Suíte dedicada nova `tests/event-insights/data-collection-fix.spec.ts` (28 casos): execução real de `fetchAllPages()` (1587→1587, sem truncar; prova do corte antigo em 1000 para contraste; rede de segurança de completude); estrutural (paginação com `.order("id")`/`count: "exact"`, ausência de `.limit()` mágico); execução real do cenário exato da auditoria (127 completed + 3 in_progress + 9 disqualified → só 127 entram em `D_global`, prova numérica de que 39/139 nunca aparece, só 27/127); cenários isolados de `in_progress`/`disqualified`; estrutural de "tentativa extra" (impossível por construção — 1 `representative_attempt_id` por linha de participante); confirmação de que `questionStats` (Modo Aula) preserva a base operacional original, sem regressão; modal individual restrito a `completed`; polling (AbortController, resposta obsoleta descartada, abort silencioso, abort no unmount, frequência inalterada); estabilidade (100 execuções idênticas); proteção de matemática/UI/ranking/scoring/PDF (grep de ausência de `fetchAllPages`/mudança nesses arquivos); reaproveitamento único de `fetchAllPages`. **28/28 passando.**
+
+Suíte `tests/event-insights/event-insights.spec.ts` original: 2 testes estruturais desatualizados pela mudança de arquitetura (`insightsInput` deixou de vir de `questionStats`) foram atualizados para refletir `completedQuestionStats` — **74/74 passando** (nenhum caso removido, só 2 ajustados).
+
+`tests/simulado-question-annulment/large-answer-set.spec.ts` e `reconciliation-recovery.spec.ts`: a extração de `fetchAllPages()` exigiu adicionar o novo import `@/lib/server/supabasePagination` ao *allowlist* do shim de `require` usado para transpilar/executar `lib/server/simuladoQuestionReprocessing.ts` em sandbox — sem isso, o motor real deixava de carregar (`Unexpected import`). Ajuste puramente mecânico do harness de teste, nenhuma mudança de comportamento do motor. **54/54 passando** (regressão completa de `simulado-question-annulment`).
+
+**Regressão completa:** `event-insights` (102 = 74 + 28 novos), `event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `professor-management`, `event-operations`, `event-representative-attempt`, `simulado-question-annulment`, `simulado-scoring` — **338/338 passando**. `npx tsc --noEmit` limpo. `npm run build` limpo. Lint de todos os arquivos tocados/criados: 0 avisos, 0 erros.
+
+### Arquivos
+
+- **Novo:** `lib/server/supabasePagination.ts` (`fetchAllPages()`, extraída de `simuladoQuestionReprocessing.ts`).
+- **Novo:** `tests/event-insights/data-collection-fix.spec.ts` (28 casos).
+- **Modificado:** `app/api/professor/events/[id]/route.ts` (paginação de `simulado_answers`/`simulado_results`; `completedRepresentativeAttemptIds`/`completedAnswers`/`completedQuestionStats` novos, separados de `questionStats`; `difficulty_topics` restrito a `completed`).
+- **Modificado:** `app/professor/eventos/[id]/page-client.tsx` (`loadAbortRef`, `AbortController` em `load()`).
+- **Modificado:** `lib/server/simuladoQuestionReprocessing.ts` (importa `fetchAllPages` do módulo compartilhado, definição local removida — comportamento idêntico).
+- **Modificado (harness de teste, mecânico):** `tests/simulado-question-annulment/large-answer-set.spec.ts`, `tests/simulado-question-annulment/reconciliation-recovery.spec.ts` (novo import no *allowlist* do shim).
+- **Modificado:** `tests/event-insights/event-insights.spec.ts` (2 testes estruturais atualizados para `completedQuestionStats`).
+
+Nenhuma migration criada — nenhuma tabela/coluna nova, correção 100% na camada de leitura/agregação em memória e no cliente. Nenhum dado histórico alterado (os 12 registros inconsistentes permanecem como estavam — decisão explícita desta etapa). Nenhum commit/push/deploy.
+
+# 108. Correção do card "Realizando" — não contar tentativas in_progress órfãs/inativas (2026-09-10)
+
+Sprint cirúrgica sobre a métrica "Realizando" da Visão geral do Evento (painel do Professor), motivada por relato real: o card mostrava "Realizando: 3" com "Online agora: 0", quando efetivamente nenhum aluno estava fazendo a prova.
+
+### Causa raiz
+
+`summary.taking` (`GET /api/professor/events/[id]`) contava `representativeAttemptIds` (tentativas representativas de cada participante) com `status === "in_progress"`. Por invariante arquitetural (`consolidateEventRepresentativeAttempt`, `lib/server/simuladoEvents.ts`), `representative_attempt_id` só deveria apontar para tentativas `completed` — um `in_progress` ali é sempre dado histórico/legado inconsistente, exatamente a mesma classe de corrupção já encontrada e tratada na seção 107 (Insights): a auditoria daquela Sprint encontrou 3 tentativas `in_progress` (abandonadas desde 2026-09-05, sem submissão) indevidamente registradas como representativas de 3 participantes. É por isso que "Realizando" mostrava 3 — eram exatamente essas 3 tentativas órfãs, não alunos realmente em prova.
+
+### Investigação — campo de atividade real
+
+`simulado_attempts.last_activity_at` (coluna já existente desde a migration original, `not null default now()`) é a evidência real de interação, comprovadamente atualizada em: resposta salva (`POST .../attempts/[attemptId]/answers`), violação de foco/troca de aba (`POST .../attempts/[attemptId]`), e o evento comportamental de inatividade ≥60s (`PATCH .../attempts/[attemptId]/behavior`). **Não existe heartbeat periódico dedicado à tentativa** — o heartbeat de 30s (`POST /api/student/events/[id]/heartbeat`, chamado a cada 30s pela página do simulado) atualiza `user_sessions` (presença/"Online agora"), **nunca** `last_activity_at` de `simulado_attempts`. Os dois mecanismos são estruturalmente independentes, confirmando por código que "Online agora" e "Realizando" já eram (e continuam sendo) fontes de dados diferentes.
+
+**Por que não reaproveitar os 60s de inatividade:** esse valor tem semântica de anti-cheat/comportamento ("aluno parado — sinal negativo de foco", métrica exibida no resultado do aluno como "Inatividade: N"), não de "sessão abandonada". Reutilizá-lo diretamente teria sido incorreto — a própria auditoria pedida analisou a distinção antes de decidir.
+
+### Regra final de "tentativa ativa" (Realizando)
+
+Conta como "Realizando" um participante que tenha uma tentativa com **status `in_progress` E `last_activity_at` dentro dos últimos 10 minutos**, deduplicado por aluno (`student_id`). Janela de 10 minutos justificada por: maior que qualquer intervalo típico entre respostas salvas (que atualizam `last_activity_at` a cada questão respondida) e bem acima do gatilho de inatividade comportamental de 60s, evitando falso-negativo por um intervalo normal de leitura/reflexão entre respostas — mas curta o suficiente para nunca contar tentativas de horas/dias atrás (o caso relatado). Documentada na própria constante `ACTIVE_ATTEMPT_WINDOW_MS`, sem número mágico solto.
+
+**Fonte de dados:** `attempts` — o array já carregado pela mesma rota para outras finalidades (Modo Aula, situação dos participantes) — nunca `representativeAttemptIds` (que, por definição, só deveria conter `completed`). Zero consulta nova: `last_activity_at` foi adicionado ao `.select()` já existente de `simulado_attempts` (contagem de `.from(` confirmada inalterada em 9).
+
+**Retomada:** não há nenhum bloqueio — assim que a tentativa recebe qualquer interação real de novo (ex.: a próxima resposta salva), `last_activity_at` é atualizado e o participante volta a contar em "Realizando" no próximo poll.
+
+**Duplicidade:** impossível por construção — `student_id` é a chave do `Set`; o índice único parcial `unique_simulado_attempts_in_progress` (`simulado_id, student_id) where status='in_progress'`) já garante no banco que um aluno nunca tem duas tentativas `in_progress` simultâneas no mesmo Simulado.
+
+**Evento encerrado:** nenhuma regra nova adicionada aqui — `closeSimuladoEvent()` não força-termina tentativas em andamento (comportamento pré-existente, preservado: "Tentativas em andamento foram preservadas"), então uma tentativa `in_progress` com atividade recente continua contando como "Realizando" mesmo com o Evento já encerrado, exatamente como o sistema já permitia o aluno terminar.
+
+### Não alterado
+
+Nenhum status foi escrito no banco por esta correção (nenhum `UPDATE` em `simulado_attempts`/`simulado_event_participants`) — é puramente uma correção de leitura/apresentação da métrica. `representative_attempt_id`, `lib/simuladoScoring.ts`, `lib/eventRanking.ts`, `lib/eventInsights.ts` (seção 107), PDFs, "Online agora" (`onlineStudentIds`/`onlineCutoff`, 90s, inalterado) e o polling protegido por `AbortController` (seção 107) permanecem exatamente como estavam.
+
+### Achado relatado, não corrigido (fora do escopo desta etapa)
+
+`questionStats` (aba Questões/revisão, Modo Aula) computa `correct`/`wrong`/`answered` a partir do array bruto `answers` — que inclui respostas de **qualquer** tentativa em `representativeAttemptIds`, sem filtrar por status. Isso significa que, se uma tentativa `in_progress`/`disqualified` corrompida (como as 3+9 encontradas na auditoria da seção 107) tiver respostas salvas, essas respostas contribuem para o numerador (acertos/erros) da aba Questões/revisão — mesmo não entrando no denominador de branco (`completedRepresentativeIds`, que já excluía `in_progress`). É a mesma classe de inconsistência já corrigida para os Insights (seção 107), agora identificada também aqui — mas **não corrigida nesta Sprint**, por estar fora do escopo explícito (o pedido pediu para relatar, não expandir silenciosamente). Registrado como pendência para decisão futura.
+
+### Testes
+
+Nova suíte `tests/event-operations/active-attempt-metric.spec.ts` (21 casos): cenário exato do pedido (A ativo entra, B parado não entra, C completed não entra, D disqualified não entra); Online ≠ Realizando (2 online + 3 ativas → 2/3 independentes; e o cenário relatado — 0 online + 3 stale → 0 realizando); tentativa órfã (dias atrás, e limite exato de 10min); retomada (stale → ativa de novo); duplicidade (mesmo aluno, duas linhas in_progress → conta 1); estrutural (nova expressão de `taking`, ausência de `representativeAttemptIds` na nova base, constante de janela nomeada, `last_activity_at` no select existente, `.from()` inalterado em 9, dedup por `student_id`, comentário distinguindo da regra de 60s); "Online agora" intocado; Insights/ranking/scoring/PDF/`questionStats`/`representative_attempt_id` intocados; polling com `AbortController` preservado; UI (rótulo "Realizando" preservado, tooltip opcional, `CompactMetric` retrocompatível). **21/21 passando.**
+
+Regressão completa (`event-operations`, `event-acquisition-session`, `event-representative-attempt`, `event-insights`, `professor-management`, `event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `simulado-question-annulment`, `simulado-scoring`): **378/378 passando**. `npx tsc --noEmit` limpo. `npm run build` limpo. Lint dos arquivos tocados: 0 avisos, 0 erros.
+
+### Arquivos
+
+- **Novo:** `tests/event-operations/active-attempt-metric.spec.ts` (21 casos).
+- **Modificado:** `app/api/professor/events/[id]/route.ts` (`last_activity_at` no tipo `AttemptRow` e no `.select()` de `simulado_attempts`; `ACTIVE_ATTEMPT_WINDOW_MS`/`activeAttemptCutoff`/`activeAttemptParticipantIds` novos; `summary.taking` recalculado).
+- **Modificado:** `app/professor/eventos/[id]/page-client.tsx` (`CompactMetric` ganhou prop opcional `title` — retrocompatível, os demais ~7 usos não passam a prop; tooltip curto adicionado só ao card "Realizando").
+
+Nenhuma migration criada — `last_activity_at` já existia desde a migration original (`migrations/001_simulado_attempts.sql`). Nenhum dado histórico corrigido (as 3 tentativas órfãs continuam `in_progress` no banco — fora do escopo desta etapa, por instrução explícita). Nenhum commit/push/deploy nesta etapa.
+
+# 109. Pré-commit — população operacional de Questões/revisão (2026-09-09)
+
+Esta seção substitui a pendência de `questionStats` registrada na seção 108 e a descrição anterior da base operacional. A implementação foi auditada exclusivamente na `main-worktree`, branch `main`.
+
+`lib/eventQuestionStats.ts` centraliza `isActiveEventAttempt(attempt, now)` (mesma janela de dez minutos de Realizando, incluindo o fallback legado de `last_activity_at` para `started_at`) e `selectEventQuestionAttempts`. A rota passa um único instante para os dois consumidores. Online continua independente, por `user_sessions` e janela de 90 segundos.
+
+A população é derivada das tentativas reais do Evento, já filtradas por `event_id` e `is_preview = false`, exigindo também correspondência de `event_participant_id` e `student_id`. Cada aluno contribui uma vez:
+
+1. Prioridade para a representativa quando ela é uma conclusão válida (`completed` e `counts_toward_limit`).
+2. Referência ausente/inválida: primeira conclusão válida por `submitted_at`, depois `attempt_number` e `id`. Datas de conclusão ausentes ficam por último. Isso é apenas fallback de leitura; não grava nem reconsolida representante.
+3. Sem conclusão válida: tentativa `in_progress` com atividade recente, por menor `attempt_number`, depois `started_at` e `id`. Datas ausentes ficam por último. Uma tentativa extra ativa nunca substitui conclusão oficial.
+4. `disqualified`, `expired`, `abandoned`, conclusões que não contam e tentativas antigas/inexistentes não entram. Referência legada não torna uma tentativa válida. Duplicidade histórica de participante é resolvida pela ordem estável de `id`, com deduplicação final por aluno.
+
+**Decisão pedagógica conservadora:** os comentários anteriores incluíam desclassificados/expirados nos brancos, mas a documentação oficial (seções 86 e 96) e `consolidateEventRepresentativeAttempt` reservam a experiência representativa à conclusão válida. Não foi encontrada uma regra consistente que exigisse manter respostas de desclassificados/expirados na distribuição. Esses estados podem conservar respostas salvas, mas não equivalem a conclusão válida; ficam excluídos dos agregados, preservando sua exibição na lista de participantes. O fluxo de envio calcula e registra `completed`; não se presume que toda expiração seja uma conclusão corrigida.
+
+Respostas são buscadas pela união dos IDs necessários ao fluxo representativo existente e ao operacional, na mesma consulta paginada. `questionStats` filtra essa coleção pelos IDs operacionais; brancos contam somente nas conclusões selecionadas. Uma questão ainda não respondida em tentativa ativa não vira branco concluído. Não há consulta por aluno ou questão, nem novo `.from()`.
+
+Insights mantém intactos `completedRepresentativeAttemptIds`, `completedAnswers`, `completedQuestionStats` e `buildEventInsights`: apenas representantes `completed`, sem misturar a população ao vivo. Ranking, PDF, scoring, TopCoins, liberação, reconciliação e identidade de revisão não foram alterados por esta correção final.
+
+Validação: nova suíte `tests/event-operations/question-stats.spec.ts` cobre os dez cenários solicitados, vínculos inválidos, retomada e execução do GET real com Supabase simulado. A regressão completa cobre paginação de 1587 respostas, 127 conclusões entre 139 referências, corrida de polling, ranking/PDF e reprocessamento. Relatório final de execução e versionamento é entregue integralmente no chat.
+
+Dívida controlada: as 3 referências antigas para `in_progress` e 9 para `disqualified`, relatadas na auditoria anterior, não foram corrigidas no banco nesta rodada. Nenhuma migration, escrita de produção ou deploy manual. `app/questoes/nova/page-client.tsx` permanece preservado e excluído do commit.
+
+Validação final do pré-commit: 395/395 testes de regressão aprovados, incluindo execução do GET em escala de 1587 respostas e callback real de polling com B chegando antes de A. `npx tsc --noEmit`, `npm run build` e `git diff --check` aprovados. Lint de 21 arquivos TypeScript: zero erros; 13 avisos na tela de resultado do aluno, com regras/mensagens idênticas ao HEAD inicial (`deb8c2736e75860f83387db0296059e81130fdec`). No Windows, a suíte usa o `grep` já instalado pelo Git, adicionado somente ao PATH do processo de testes. Testes com dados simulados e auditoria estrutural; sem nova homologação visual autenticada nem escrita remota.

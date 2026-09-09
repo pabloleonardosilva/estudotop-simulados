@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSimuladoAttemptResult, type AnswerForScoring, type SimuladoQuestionForScoring } from "@/lib/simuladoScoring";
 import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
 import { logActivity } from "@/lib/logging/activity-log";
+import { fetchAllPages } from "@/lib/server/supabasePagination";
 
 // Motor central de reprocessamento — único ponto do sistema que recalcula
 // simulado_results/simulado_answers.is_correct depois de:
@@ -80,52 +81,10 @@ type SimuladoResultDbRow = {
   display_percentage: number;
 };
 
-// PostgREST/Supabase corta silenciosamente qualquer resposta de .select()
-// no limite padrão de linhas do projeto (max_rows, tipicamente 1000) — sem
-// erro, sem aviso. Um Simulado com muitas tentativas oficiais facilmente
-// ultrapassa isso em simulado_answers (tentativas × questões): 135
-// tentativas × 12 questões já são ~1620 linhas. Uma consulta truncada aqui
-// não falha — ela silenciosamente "esquece" respostas reais, que o motor
-// então interpreta como questão em branco (incidente real: ver
-// docs/Sprint-resultados.md, "Incidente de truncamento").
-//
-// fetchAllPages() pagina de forma determinística (.order("id") — chave
-// primária, garante que nenhuma linha seja pulada nem duplicada entre
-// páginas) até a página voltar com menos que PAGE_SIZE linhas, e confere o
-// total acumulado contra o `count` exato que o Postgres relata na mesma
-// consulta — se algo ainda assim divergir (não deveria, mas é a rede de
-// segurança pedida), lança erro em vez de seguir com dado incompleto. Não é
-// "aumentar o limite": funciona para 100 linhas, 1.000, 20.000 ou qualquer
-// volume futuro, porque sempre pagina até esgotar.
-const PAGE_SIZE = 1000;
-
-async function fetchAllPages<T>(
-  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null; count?: number | null }>,
-): Promise<T[]> {
-  const rows: T[] = [];
-  let expectedTotal: number | null = null;
-  let from = 0;
-
-  for (;;) {
-    const { data, error, count } = await fetchPage(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    if (expectedTotal === null && typeof count === "number") expectedTotal = count;
-
-    const page = data || [];
-    rows.push(...page);
-
-    if (page.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
-
-  if (expectedTotal !== null && rows.length !== expectedTotal) {
-    throw new Error(
-      `Paginação incompleta ao carregar dados de reprocessamento: esperava ${expectedTotal} linha(s), carregou ${rows.length}. Reconciliação não aplicada com dado parcial — retry seguro.`,
-    );
-  }
-
-  return rows;
-}
+// fetchAllPages() — paginação determinística contra o truncamento silencioso
+// do PostgREST (ver documentação completa em lib/server/supabasePagination.ts,
+// para onde esta função foi extraída nesta Sprint — mesma implementação,
+// agora reaproveitada também pela guia Insights do painel do Professor).
 
 async function loadSimuladoQuestions(supabase: SupabaseClient, simuladoId: string): Promise<SimuladoQuestionForScoring[]> {
   const { data, error } = await supabase
@@ -176,6 +135,7 @@ export async function reprocessSimulado(
       .eq("is_preview", false)
       .order("id", { ascending: true })
       .range(from, to),
+    "Paginação incompleta ao carregar dados de reprocessamento. Reconciliação não aplicada com dado parcial — retry seguro.",
   );
   if (attempts.length === 0) return { attemptsReprocessed: 0, resultsChanged: 0, notificationsCreated: 0, topcoinsResynced: 0 };
 
@@ -188,6 +148,7 @@ export async function reprocessSimulado(
       .in("attempt_id", attemptIds)
       .order("id", { ascending: true })
       .range(from, to),
+    "Paginação incompleta ao carregar dados de reprocessamento. Reconciliação não aplicada com dado parcial — retry seguro.",
   );
   const answersByAttempt = new Map<string, (SimuladoAnswerDbRow & { attempt_id: string })[]>();
   for (const row of answersRows) {
@@ -203,6 +164,7 @@ export async function reprocessSimulado(
       .in("attempt_id", attemptIds)
       .order("id", { ascending: true })
       .range(from, to),
+    "Paginação incompleta ao carregar dados de reprocessamento. Reconciliação não aplicada com dado parcial — retry seguro.",
   );
   const resultByAttempt = new Map<string, SimuladoResultDbRow>();
   for (const row of resultsRows) resultByAttempt.set(row.attempt_id, row);
