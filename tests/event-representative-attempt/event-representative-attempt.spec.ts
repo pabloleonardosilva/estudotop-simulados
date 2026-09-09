@@ -91,18 +91,25 @@ test.describe("regra: tentativa representativa = primeira tentativa concluída v
     expect(source.match(/consolidateEventRepresentativeAttempt/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  test("F: submit só chama o helper DEPOIS de persistir status=completed e counts_toward_limit=true — em nenhum outro estado", () => {
+  test("F: submit só chama o helper DEPOIS de persistir status=completed e counts_toward_limit=true — em nenhum outro estado (atualizado 2026-09-10: persistência agora é transacional via RPC complete_student_attempt)", () => {
     const source = read(SUBMIT_ROUTE);
     expect(source).toContain('import { consolidateEventRepresentativeAttempt, releasePendingEventResults } from "@/lib/server/simuladoEvents";');
-    const completedUpdateIndex = source.indexOf('status: "completed"');
+    // status=completed + counts_toward_limit=true agora são persistidos
+    // atomicamente dentro da transação SQL de complete_student_attempt
+    // (supabase/migrations/20260909170000_atomic_attempt_transitions.sql),
+    // não mais em dois passos TypeScript separados. O helper só pode ser
+    // chamado depois que a chamada ao RPC retornar e o resultado for
+    // confirmado ok (completeResult.ok) — nunca antes, e nunca se a
+    // persistência falhar/for rejeitada (ex.: concorrência otimista).
+    const rpcCallIndex = source.indexOf('supabase.rpc("complete_student_attempt"');
+    const okCheckIndex = source.indexOf("if (!completeResult.ok)");
     const consolidateCallIndex = source.indexOf("await consolidateEventRepresentativeAttempt(supabase,");
-    expect(completedUpdateIndex).toBeGreaterThan(-1);
-    expect(consolidateCallIndex).toBeGreaterThan(completedUpdateIndex);
-    // counts_toward_limit=true é persistido no mesmo UPDATE que status=completed,
-    // antes da chamada ao helper.
-    const countsIndex = source.indexOf("counts_toward_limit: true,");
-    expect(countsIndex).toBeGreaterThan(completedUpdateIndex);
-    expect(countsIndex).toBeLessThan(consolidateCallIndex);
+    expect(rpcCallIndex).toBeGreaterThan(-1);
+    expect(okCheckIndex).toBeGreaterThan(rpcCallIndex);
+    expect(consolidateCallIndex).toBeGreaterThan(okCheckIndex);
+    const migration = read("supabase/migrations/20260909170000_atomic_attempt_transitions.sql");
+    expect(migration).toContain("update public.simulado_attempts set status = 'completed', submitted_at = r.finished_at,");
+    expect(migration).toContain("time_spent_seconds = r.time_spent_seconds, counts_toward_limit = true, counted_at = coalesce(counted_at, r.finished_at),");
     // Só existe UMA chamada ao helper neste arquivo (não há um segundo
     // caminho paralelo de consolidação).
     expect(source.match(/consolidateEventRepresentativeAttempt\(/g)?.length).toBe(1);

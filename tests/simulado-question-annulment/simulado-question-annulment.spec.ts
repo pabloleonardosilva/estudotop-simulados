@@ -123,11 +123,22 @@ test.describe("anulação/desanulação de questão — Banco ≠ Simulado, prop
     expect(submit).not.toContain("let correct = answer.is_correct;");
   });
 
-  test("38: backend é autoritativo — resposta a questão anulada é rejeitada no servidor, não só escondida no client", () => {
+  test("38: backend é autoritativo — resposta a questão anulada é rejeitada no servidor, não só escondida no client (atualizado 2026-09-10: validação migrou para dentro da transação RPC save_student_attempt_answer)", () => {
     const answersRoute = read(ANSWERS_ROUTE);
-    expect(answersRoute).toContain('.select("id, question_id, status")');
-    expect(answersRoute).toContain('if (sqValidation.status === "annulled")');
-    expect(answersRoute).toMatch(/status:\s*409/);
+    expect(answersRoute).toContain('supabase.rpc("save_student_attempt_answer"');
+    // A rota TS repassa o http_status embutido na resposta do RPC (409 é o
+    // default quando ausente) — a decisão de negócio em si (rejeitar questão
+    // anulada) agora vive na própria transação, para nunca correr o risco de
+    // uma checagem em dois passos (ler status, depois salvar) sem lock.
+    expect(answersRoute).toMatch(/status: result\.ok \? 200 : \(result\.http_status \|\| 409\)/);
+    const migration = read("supabase/migrations/20260909170000_atomic_attempt_transitions.sql");
+    const fnIndex = migration.indexOf("function public.save_student_attempt_answer(");
+    const fnBody = migration.slice(fnIndex, migration.indexOf("$$;", fnIndex));
+    // status = 'active' na simulado_questions é o equivalente positivo de
+    // "não anulada" (domínio de status é só active|annulled) — a mesma
+    // proteção de antes, agora dentro do lock da transação.
+    expect(fnBody).toContain("and status = 'active') then");
+    expect(fnBody).toContain("'http_status', 409, 'message', 'Questao indisponivel.'");
   });
 
   test("33/AL: Admin pode anular/desanular em qualquer Simulado (guard requireAdmin); professor só no Simulado do seu Evento (requireEventManager)", () => {

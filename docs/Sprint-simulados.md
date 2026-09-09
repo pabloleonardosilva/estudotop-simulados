@@ -1094,3 +1094,66 @@ Validação desta correção: TypeScript e build aprovados; lint sem novos diagn
 Confirmados novamente por SELECT: `jornadas.max_attempts` e `simulado_events.max_attempts` existem (amostra 3); `simulados.max_attempts` não existe. A migration local é somente um artefato versionado nesta entrega: não executar nem reparar seu histórico. A consulta ao histórico por API retornou PGRST106, pois `supabase_migrations` não está exposto; o registro da aplicação permanece uma pendência operacional.
 
 O usuário autorizou um único commit e push para `origin/main`, com verificação posterior do deployment automático da Vercel. As afirmações anteriores “sem commit/push/deploy” descrevem as etapas anteriores. Nenhum deploy manual está autorizado. A alteração do Criador Manual e seus trechos documentais permanecem fora deste commit. Regressão repetida: 101/105 passaram, incluindo 30/30 focais; as mesmas quatro falhas anteriores permaneceram. Não há nova falha identificada no escopo. Homologação autenticada depende de navegador/sessão disponível; não criar sessões por impersonação.
+
+## Engine de tentativas blindada transacionalmente + fluxo de abandono (2026-09-10)
+
+Continuação de uma Sprint interrompida pelo Codex (limite de uso atingido antes de terminar). Estado herdado ao assumir: `HEAD = 9f5f2f0` (== `origin/main`, "feat: move limite de tentativas para jornadas e eventos"), com trabalho parcial local não commitado: a migration transacional `supabase/migrations/20260909170000_atomic_attempt_transitions.sql` já criada e pronta (auditada nesta continuação e mantida sem alterações — correta), mais as 3 alterações locais preexistentes e não relacionadas de sempre (`app/questoes/nova/page-client.tsx`, seção do Criador Manual, e os trechos correspondentes em `docs/INDICE_FUNCOES_SISTEMA.md`/`docs/status-atual.md`) — preservadas integralmente, não tocadas.
+
+### Causa raiz — não provada, corrigido o que foi comprovadamente falho
+
+O usuário reproduziu dois sintomas: (1) desclassificação por foco aparentemente não consumindo/sendo retomada; (2) resposta a mais de 50% das questões seguida de saída não consumindo corretamente. **Não foi possível provar isoladamente qual falha específica causou o comportamento observado pelo usuário** — várias falhas reais e concretas foram encontradas e corrigidas (auditoria do Codex, confirmada nesta continuação): (a) erro do SELECT que reconta respostas era ignorado, podendo virar "zero respostas" silenciosamente; (b) `UPDATE`s de submit e desclassificação não condicionavam a escrita a `status = in_progress`, permitindo sobrescrever uma tentativa já terminal; (c) a retomada tinha uma race real (primeira consulta filtra `in_progress`, segunda busca só por ID sem revalidar status); (d) submit fazia INSERT do resultado e só depois UPDATE da tentativa, sem atomicidade. Qualquer uma delas, isoladamente ou em conjunto, poderia explicar os sintomas relatados — todas foram corrigidas.
+
+### Engine transacional — 4 operações com lock por tentativa
+
+A migration (já pronta, herdada do Codex, integralmente auditada e mantida sem alteração) define `lock_student_attempt()` (helper: `SELECT ... FOR UPDATE` na linha da própria `simulado_attempts`, valida ownership/contexto — Jornada ou Evento — e exclui `is_preview`/`professor_preview`) e 4 operações que sempre começam travando a tentativa antes de qualquer leitura/escrita:
+
+- **`save_student_attempt_answer`** — valida status/expiração/questão ativa/alternativa, faz upsert da resposta, recalcula `answered_count` e `counts_toward_limit` (>50%, estrito) na mesma transação. Erro na contagem propaga e desfaz a resposta também — nunca vira "zero respostas".
+- **`abandon_student_attempt`** — idempotente (abandonar uma tentativa já `abandoned` retorna sucesso sem reprocessar); recalcula o consumo a partir das respostas persistidas, nunca confia em contagem do client; marca `status = abandoned`.
+- **`record_student_attempt_focus`** — sequência de violação idempotente (`greatest(atual, número recebido)`, nunca soma incondicional — corrige um bug real de dupla contagem em retry de rede); 3ª violação desclassifica.
+- **`complete_student_attempt`** — insere `simulado_results` E marca `completed` na mesma transação; concorrência otimista via `updated_at` esperado (se a tentativa mudou desde a leitura que alimentou o cálculo em TypeScript, rejeita — o cliente reenvia).
+
+Segurança: todas `security invoker set search_path = ''`, revogadas de `public`/`anon`/`authenticated`, concedidas só a `service_role` — nunca chamáveis diretamente do browser, só pelas rotas server-side do próprio aluno. Scoring pedagógico continua 100% em TypeScript (`lib/simuladoScoring.ts`) — a transação só persiste um resultado já calculado (`jsonb_populate_record`), nunca recalcula pontuação em SQL.
+
+**Nenhuma coluna, tabela, status ou contador novo foi criado.** `max_attempts` continua só em Jornada/Evento; tentativas continuam em `simulado_attempts`; `counts_toward_limit` continua a fonte de verdade do consumo — a migration só adiciona funções, nada de modelagem.
+
+### Rotas migradas para os RPCs
+
+`app/api/student/simulados/[id]/attempts/[attemptId]/answers/route.ts`, `.../focus-violation/route.ts` e `.../submit/route.ts` passaram a chamar os RPCs correspondentes em vez de fazer `UPDATE`/`INSERT` diretos em dois passos. `.../submit/route.ts` preservou integralmente a orquestração pós-conclusão (Evento/`consolidateEventRepresentativeAttempt`, liberação de Jornada + e-mail, TopCoins, `logActivity`) — só a persistência do resultado+status virou atômica; nada dessa orquestração foi tocado.
+
+### Nova rota — abandono explícito
+
+`app/api/student/simulados/[id]/attempts/[attemptId]/abandon/route.ts` (novo) chama `abandon_student_attempt`. `abandoned` nunca gera `simulado_results`, `representative_attempt_id` nem TopCoins — exclusivo de `completed` via submit.
+
+### Correção da race de retomada
+
+`app/api/student/simulados/[id]/attempts/route.ts`: a segunda consulta (busca por ID, depois de encontrar um candidato `in_progress` na primeira) passou a revalidar `.eq("status", "in_progress")` — antes, uma tentativa que virasse terminal entre as duas consultas (ex.: desclassificada por foco concorrente) podia ser devolvida como retomável.
+
+### Botão "Abandonar simulado" + modal + "Voltar" interno
+
+`app/meus-simulados/[id]/page-client.tsx`: novo botão "Abandonar simulado" e um ícone de "Voltar" no cabeçalho da prova (`StickyHeader`) — ambos acionam o **mesmo** handler (`requestAbandon`), que só abre um modal de confirmação (`AbandonAttemptModal`, reaproveitando o componente premium existente `PremiumModal` — nenhum shell novo). O texto do modal muda conforme a estimativa client-side de consumo (`answered_count/total_questions > 0.5`) — o servidor sempre recalcula com autoridade em `abandon_student_attempt`, a estimativa é só para escolher o texto certo. Confirmar chama `POST .../abandon` e navega para o contexto de origem (Evento > Jornada > `/meus-simulados`, nessa ordem de prioridade). **Refresh, fechamento de aba, troca de visibilidade e queda de conexão nunca disparam abandono** — o aviso nativo `beforeunload` do navegador continua sendo o único comportamento nesses casos, sem nenhuma chamada de rede.
+
+### Documentação reconciliada
+
+`docs/modules/MASTER_SIMULADOS.md`: cinco afirmações incorretas ("segunda ocorrência" desclassifica — seção 3.24 completa, item 6 da tela de regras e o checklist da seção 10, além das duas já corrigidas na primeira passagem) corrigidas para "terceira ocorrência" (a regra vigente sempre foi 3, `FOCUS_VIOLATION_LIMIT`) — a reconciliação inicial havia corrigido apenas 2 dos 5 locais; concluída na auditoria pré-migration (2026-09-10). Notas de implementação adicionadas nas seções de risco 10.1 (resposta), 10.5 (abandono) e 10.11 (finalização) confirmando as garantias transacionais desta Sprint.
+
+### Testes
+
+Nova suíte `tests/attempt-transactions.spec.ts` (50 casos): auditoria estrutural completa da migration (lock por attempt, segurança, ausência de modelagem nova), execução real das fórmulas de negócio (limiar >50% para as 11 combinações 0-10, monotonicidade, sequência de violação idempotente com 3ª desclassificando, abandono recalculando consumo), wiring das 4 rotas para os RPCs, correção da race de retomada, UI do botão/modal/Voltar, ausência de abandono automático por refresh/visibilitychange/unmount, e preservação de scoring/ranking/Insights/PDF/`representative_attempt_id`/TopCoins. **50/50 passando.**
+
+Dois testes preexistentes precisaram de atualização estrutural (não revertidos, ajustados para a nova arquitetura): `tests/event-representative-attempt/event-representative-attempt.spec.ts` (ordem "consolidar só depois de persistir completed" agora verificada contra o RPC, não contra o UPDATE literal antigo) e `tests/simulado-question-annulment/simulado-question-annulment.spec.ts` (rejeição de questão anulada agora verificada dentro da transação SQL, não mais no código TypeScript de duas etapas).
+
+**Falha preexistente confirmada fora do escopo, não corrigida:** `tests/event-operations/active-attempt-metric.spec.ts` ("painel Realizando") — já documentada como incompatibilidade textual conhecida no fechamento anterior desta mesma Sprint de tentativas (`docs/Sprint-jornadas.md`), causada por um refresh de layout no painel do Professor feito fora desta continuação; arquivo não tocado por esta tarefa.
+
+Regressão completa (`attempt-transactions`, `context-attempt-limits`, `student-journey-access`, `event-operations`, `event-acquisition-session`, `event-representative-attempt`, `event-insights`, `professor-management`, `event-ranking-pdf`, `professor-exam-pdf`, `event-professor-assignment`, `simulado-question-annulment`, `simulado-scoring`): **474/475** (1 falha preexistente confirmada, acima). `npx tsc --noEmit` limpo. `npm run build` limpo. Lint comparado byte a byte contra a baseline pré-tarefa: mesmos 7 problemas preexistentes em `app/meus-simulados/[id]/page-client.tsx` (não relacionados a nenhuma linha tocada), zero diagnóstico novo.
+
+**Nenhuma migration nova foi criada** — a migration do Codex foi auditada integralmente e mantida sem alterações (correta). **Não executada.** Nenhum dado de produção alterado. Nenhum commit/push/deploy nesta etapa.
+
+### Auditoria pré-migration — correção do achado `recordViolation()` (2026-09-10)
+
+A auditoria pré-migration desta engine (leitura integral da migration + das 4 rotas + da UI) aprovou a migration sem achados CRÍTICOS/ALTOS, mas confirmou um achado MÉDIO real: `recordViolation()` (`app/meus-simulados/[id]/page-client.tsx`) incrementava `violationCount` otimisticamente e decidia a fase (`focus_warning`/`disqualified`) sem checar `res.ok`/`json.ok` — uma falha real de rede ou do servidor podia ser apresentada ao aluno como um aviso comum, sem nunca desclassificar de fato (o servidor continuava soberano sobre o estado persistido, mas a UI podia divergir dele silenciosamente).
+
+**Corrigido:** `recordViolation()` agora só avança `violationCount`/fase depois de confirmar `res.ok && json.ok`. Em caso de falha (rede, 400/403/409/500, ou `ok:false` com JSON válido), a fase só muda para `disqualified` se o próprio servidor confirmar explicitamente `json.disqualified === true` (ex.: a tentativa já havia sido desclassificada por uma chamada concorrente) — qualquer outra falha mantém a prova em `in_progress` e mostra um aviso não-bloqueante (`focusViolationError`, banner com auto-limpeza em 6s), sem inventar sucesso nem desclassificação fictícia, e sem disparar retry automático. Testes novos em `tests/attempt-transactions.spec.ts` (suíte 11, 8 casos) cobrem os cenários A-H do achado (sucesso com warning/disqualified, 400/403/409/500/rede, `ok:false` com JSON válido, ausência de retry automático).
+
+### Documentação — reconciliação concluída
+
+A auditoria também confirmou que a reconciliação documental da Sprint anterior havia corrigido apenas 2 dos 5 locais de `docs/modules/MASTER_SIMULADOS.md` que ainda afirmavam "segunda ocorrência desclassifica". Os 3 locais restantes (seção 3.24 completa, item 6 da tela de regras, checklist da seção 10) foram corrigidos nesta etapa — ver "Documentação reconciliada" acima, atualizado.

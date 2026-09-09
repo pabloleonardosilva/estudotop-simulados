@@ -244,12 +244,24 @@ export async function POST(
   }).format(new Date(finishedAt));
   const timeSpent = Math.max(0, Math.floor(body.time_spent_seconds || 0));
 
-  const { data: resultRow, error: resultError } = await supabase
-    .from("simulado_results")
-    .insert({
-      attempt_id: attemptId,
-      simulado_id: simuladoId,
-      student_id: student.id,
+  // Operação transacional (supabase/migrations/20260909170000_atomic_attempt_transitions.sql,
+  // complete_student_attempt): insere simulado_results E marca a attempt
+  // completed na MESMA transação — nunca mais dois passos separados (o
+  // padrão antigo podia deixar um resultado gravado sem a attempt marcada
+  // completed, ou vice-versa, se o segundo passo falhasse). `p_expected_updated_at`
+  // é uma checagem otimista: se a attempt mudou (ex.: uma resposta ou
+  // violação de foco concorrente) desde a leitura acima — a mesma que
+  // alimentou a correção calculada em TypeScript —, a transação rejeita em
+  // vez de gravar um resultado potencialmente calculado sobre estado
+  // desatualizado; o cliente reenvia o submit e recalcula do zero. Scoring
+  // continua inteiramente em TypeScript (lib/simuladoScoring.ts) — o RPC só
+  // persiste o resultado já calculado.
+  const { data: completeData, error: completeError } = await supabase.rpc("complete_student_attempt", {
+    p_attempt_id: attemptId,
+    p_student_id: student.id,
+    p_simulado_id: simuladoId,
+    p_expected_updated_at: attempt.updated_at,
+    p_result: {
       total_questions: questionRows.length,
       answered_questions: answeredQuestions,
       correct_count: correctCount,
@@ -265,40 +277,21 @@ export async function POST(
       time_spent_seconds: timeSpent,
       finished_at: finishedAt,
       result_snapshot: { entries: snapshotEntries },
-    })
-    .select("id")
-    .single();
+    },
+  });
 
-  if (resultError || !resultRow) {
-    return NextResponse.json(
-      { ok: false, message: resultError?.message || "Erro ao gravar resultado." },
-      { status: 500 },
-    );
+  if (completeError) {
+    if (completeError.message?.includes("ATTEMPT_NOT_FOUND")) return NextResponse.json({ ok: false, message: "Tentativa não encontrada." }, { status: 404 });
+    if (completeError.message?.includes("ATTEMPT_FORBIDDEN") || completeError.message?.includes("ATTEMPT_CONTEXT_INVALID")) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
+    void logSystemError({ source: "api.student.simulado_submit.complete", error: completeError, request, metadata: { attempt_id: attemptId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível finalizar o simulado." }, { status: 500 });
   }
 
-  const { error: updateError } = await supabase
-    .from("simulado_attempts")
-    .update({
-      status: "completed",
-      submitted_at: finishedAt,
-      time_spent_seconds: timeSpent,
-      counts_toward_limit: true,
-      counted_at: finishedAt,
-      answered_count: answeredQuestions,
-      progress_percent:
-        questionRows.length > 0
-          ? Math.round((answeredQuestions / questionRows.length) * 100 * 100) / 100
-          : 0,
-      last_activity_at: finishedAt,
-    })
-    .eq("id", attemptId);
-
-  if (updateError) {
-    return NextResponse.json(
-      { ok: false, message: updateError.message },
-      { status: 500 },
-    );
+  const completeResult = completeData as { ok: boolean; http_status?: number; message: string; status?: string; id?: string };
+  if (!completeResult.ok) {
+    return NextResponse.json({ ok: false, message: completeResult.message }, { status: completeResult.http_status || 409 });
   }
+  const resultRow = { id: completeResult.id as string };
 
   // Evento tem prioridade máxima sobre qualquer configuração do Simulado: se
   // a tentativa nasceu em Evento e o resultado ainda não está liberado

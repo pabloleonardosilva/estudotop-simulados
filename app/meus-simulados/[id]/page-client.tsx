@@ -20,6 +20,7 @@ import {
   Info,
   ListChecks,
   Lightbulb,
+  LogOut,
   MessageCircleQuestion,
   PlayCircle,
   RotateCcw,
@@ -294,6 +295,9 @@ export default function SimuladoExperience({
   const [simulado, setSimulado] = useState<InitialSimulado>(initialSimulado);
   const [attempt, setAttempt] = useState<AttemptData | null>(null);
   const attemptIdRef = useRef<string | null>(null);
+  const [abandonModalOpen, setAbandonModalOpen] = useState(false);
+  const [abandonBusy, setAbandonBusy] = useState(false);
+  const [abandonError, setAbandonError] = useState("");
   useEffect(() => { attemptIdRef.current = attempt?.id || null; }, [attempt]);
 
   useEffect(() => {
@@ -340,6 +344,7 @@ export default function SimuladoExperience({
   const [timeSpent, setTimeSpent] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [violationCount, setViolationCount] = useState(0);
+  const [focusViolationError, setFocusViolationError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -559,31 +564,49 @@ export default function SimuladoExperience({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remainingSeconds, phase]);
 
-  // Anti-fraud: troca de guia/minimização e perda prolongada de foco da janela
+  // Anti-fraud: troca de guia/minimização e perda prolongada de foco da janela.
+  // O servidor é sempre soberano sobre o estado real da violação — a fase da
+  // UI (warning/disqualified) só muda depois de uma resposta confirmada
+  // (res.ok + json.ok). Uma falha de rede/servidor nunca é interpretada como
+  // sucesso nem como desclassificação; `violationCount` só avança com o
+  // valor que o servidor de fato persistiu, nunca com a tentativa local.
   const recordViolation = useCallback(async () => {
-    const newCount = violationCount + 1;
-    setViolationCount(newCount);
     if (!attempt) return;
+    const attemptedNumber = violationCount + 1;
+    setFocusViolationError(null);
 
-    const headers = await getAuthHeaders();
-    const res = await fetch(
-      `/api/student/simulados/${simuladoId}/attempts/${attempt.id}/focus-violation`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ violation_number: newCount }),
-      },
-    );
-    const json = await res.json();
-    if (typeof json?.violation_count === "number") {
-      setViolationCount(json.violation_count);
+    let res: Response;
+    let json: { ok?: boolean; disqualified?: boolean; violation_count?: number; message?: string } | null = null;
+    try {
+      const headers = await getAuthHeaders();
+      res = await fetch(
+        `/api/student/simulados/${simuladoId}/attempts/${attempt.id}/focus-violation`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ violation_number: attemptedNumber }),
+        },
+      );
+      json = await res.json().catch(() => null);
+    } catch {
+      setFocusViolationError("Não foi possível registrar a violação de foco. Verifique sua conexão.");
+      return;
     }
 
-    if (json?.disqualified) {
-      setPhase("disqualified");
-    } else {
-      setPhase("focus_warning");
+    if (!res.ok || !json?.ok) {
+      if (typeof json?.violation_count === "number") setViolationCount(json.violation_count);
+      // Só refletimos "disqualified" se o servidor confirmar explicitamente
+      // que a tentativa já está encerrada — nunca por dedução local.
+      if (json?.disqualified) {
+        setPhase("disqualified");
+      } else {
+        setFocusViolationError(json?.message || "Não foi possível registrar a violação de foco.");
+      }
+      return;
     }
+
+    setViolationCount(json.violation_count ?? attemptedNumber);
+    setPhase(json.disqualified ? "disqualified" : "focus_warning");
   }, [violationCount, attempt, simuladoId]);
 
   useEffect(() => {
@@ -695,6 +718,12 @@ export default function SimuladoExperience({
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [phase]);
 
+  useEffect(() => {
+    if (!focusViolationError) return;
+    const timer = window.setTimeout(() => setFocusViolationError(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [focusViolationError]);
+
   const startAttempt = useCallback(async () => {
     setPhase("loading");
     const headers = await getAuthHeaders();
@@ -734,6 +763,47 @@ export default function SimuladoExperience({
     setShowResourcesIntro(shouldShowResourcesIntro(simuladoId, json.attempt.id));
     setPhase("in_progress");
   }, [simuladoId, jornadaQuery]);
+
+  // Abandono é sempre ação EXPLÍCITA do aluno (botão "Abandonar simulado" ou
+  // o "Voltar" interno, que aciona o mesmo fluxo) — nunca disparado por
+  // refresh, unmount, beforeunload, visibilitychange ou queda de conexão.
+  // Só abre o modal de confirmação; a chamada ao servidor só acontece em
+  // confirmAbandon(), após o aluno confirmar.
+  function requestAbandon() {
+    if (phase !== "in_progress") return;
+    setAbandonError("");
+    setAbandonModalOpen(true);
+  }
+
+  function resolveExitDestination() {
+    if (eventId) return `/meus-eventos/${eventId}`;
+    if (jornadaId) return `/minhas-jornadas/${jornadaId}?tab=simulados`;
+    return "/meus-simulados";
+  }
+
+  const confirmAbandon = useCallback(async () => {
+    if (!attempt) return;
+    setAbandonBusy(true);
+    setAbandonError("");
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(
+        `/api/student/simulados/${simuladoId}/attempts/${attempt.id}/abandon`,
+        { method: "POST", headers },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setAbandonError(json.message || "Não foi possível encerrar a tentativa. Tente novamente.");
+        setAbandonBusy(false);
+        return;
+      }
+      router.push(resolveExitDestination());
+    } catch {
+      setAbandonError("Não foi possível comunicar com o servidor. Tente novamente.");
+      setAbandonBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt, simuladoId, eventId, jornadaId, router]);
 
   const sendAnswer = useCallback(
     async (question: OrderedQuestion, alt: { id: string; label: string }): Promise<boolean> => {
@@ -1298,6 +1368,17 @@ export default function SimuladoExperience({
           wrongCount={wrongCount}
           instantFeedback={isInstantMode}
           focusMode={focusMode}
+          onRequestAbandon={requestAbandon}
+        />
+      )}
+
+      {abandonModalOpen && attempt && (
+        <AbandonAttemptModal
+          willConsume={attempt.total_questions > 0 && attempt.answered_count / attempt.total_questions > 0.5}
+          busy={abandonBusy}
+          error={abandonError}
+          onCancel={() => { if (!abandonBusy) setAbandonModalOpen(false); }}
+          onConfirm={() => void confirmAbandon()}
         />
       )}
 
@@ -1466,6 +1547,13 @@ export default function SimuladoExperience({
           onAction={() => setPhase("in_progress")}
           variant="warning"
         />
+      )}
+
+      {focusViolationError && (
+        <div className="fixed bottom-6 right-6 z-[80] flex max-w-sm items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-800 shadow-xl">
+          <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-600" />
+          <span>{focusViolationError}</span>
+        </div>
       )}
 
       {confirmFinish && currentQuestion && (
@@ -2206,6 +2294,7 @@ function StickyHeader({
   wrongCount,
   instantFeedback,
   focusMode = false,
+  onRequestAbandon,
 }: {
   title: string;
   timeSpent: number;
@@ -2217,6 +2306,7 @@ function StickyHeader({
   wrongCount: number;
   instantFeedback: boolean;
   focusMode?: boolean;
+  onRequestAbandon: () => void;
 }) {
   const warningTime = remainingSeconds !== null && remainingSeconds < 5 * 60;
   return (
@@ -2225,6 +2315,15 @@ function StickyHeader({
       <div className="pointer-events-none absolute left-[34%] top-[-90px] h-[260px] w-[330px] rotate-45 bg-orange-500/10 blur-2xl" />
       <div className="et-laptop-exam-topbar relative flex min-h-[124px] w-full flex-col gap-5 px-5 py-5 md:px-9 lg:flex-row lg:items-center lg:justify-between lg:gap-4 xl:px-[54px]">
         <div className="et-laptop-exam-heading flex min-w-0 flex-1 items-center gap-5">
+          <button
+            type="button"
+            onClick={onRequestAbandon}
+            aria-label="Voltar (encerra a tentativa em andamento)"
+            title="Voltar — encerra a tentativa em andamento"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/[0.06] text-white transition hover:border-orange-300/60 hover:bg-white/10"
+          >
+            <ChevronLeft size={20} />
+          </button>
           <div className="et-laptop-exam-badge relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] border border-orange-400/60 bg-[linear-gradient(145deg,rgba(255,138,0,0.18),rgba(255,138,0,0.035)_54%,rgba(0,0,0,0.24))] shadow-[0_0_0_1px_rgba(255,255,255,0.035)_inset,0_0_26px_rgba(255,122,24,0.42)]">
             <Shield size={36} strokeWidth={2.2} className="text-orange-300 drop-shadow-[0_0_12px_rgba(255,138,0,0.62)]" />
             <div className="pointer-events-none absolute inset-0 rounded-[1.05rem] ring-1 ring-inset ring-orange-300/10" />
@@ -2268,10 +2367,66 @@ function StickyHeader({
               <span className="flex items-center gap-1 text-red-300"><XCircle size={14} />{wrongCount}</span>
             </div>
           )}
+          <button
+            type="button"
+            onClick={onRequestAbandon}
+            className="flex h-[72px] shrink-0 items-center gap-2 rounded-[1rem] border border-red-400/30 bg-red-500/[0.07] px-4 text-xs font-black uppercase tracking-[0.08em] text-red-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:bg-red-500/15"
+          >
+            <LogOut size={18} strokeWidth={2.1} /> Abandonar simulado
+          </button>
         </div>
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-orange-400/45 to-transparent" />
     </header>
+  );
+}
+
+// Modal único de confirmação de abandono — acionado tanto pelo botão
+// "Abandonar simulado" quanto pelo "Voltar" interno (mesmo handler,
+// requestAbandon, nunca lógica duplicada). `willConsume` é só uma ESTIMATIVA
+// client-side (answered_count/total_questions já carregados) para escolher
+// o texto certo — o servidor sempre recalcula com autoridade a partir das
+// respostas persistidas (.../abandon, abandon_student_attempt), nunca confia
+// nesse valor para decidir o consumo real.
+function AbandonAttemptModal({
+  willConsume,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  willConsume: boolean;
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <PremiumModal
+      open
+      theme="dark"
+      tone="warning"
+      dismissible={!busy}
+      onClose={onCancel}
+      title="Abandonar este simulado?"
+      message={
+        willConsume
+          ? "Esta tentativa já conta para o seu limite de tentativas. Se abandonar agora, ela será encerrada e não poderá ser retomada. Se ainda houver tentativas disponíveis neste contexto, você poderá iniciar uma nova."
+          : "Se abandonar agora, esta tentativa será encerrada. Como você respondeu até 50% das questões e ainda não finalizou o simulado, ela não consumirá uma das suas tentativas disponíveis. Esta tentativa não poderá ser retomada."
+      }
+      actions={
+        <>
+          <PremiumButton variant="dark" onClick={onCancel} disabled={busy} full>
+            Continuar no simulado
+          </PremiumButton>
+          <PremiumButton variant="dark-danger" onClick={onConfirm} disabled={busy} full>
+            {busy ? "Encerrando..." : "Abandonar tentativa"}
+          </PremiumButton>
+        </>
+      }
+    >
+      {error && <p className="text-sm font-semibold text-red-300">{error}</p>}
+    </PremiumModal>
   );
 }
 

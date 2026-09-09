@@ -217,8 +217,12 @@ export async function POST(
     attemptContext,
   );
   const existingSummary = contextualAttempts.find((attempt) => attempt.status === "in_progress") || null;
+  // Revalida status=in_progress nesta segunda consulta (não confia no filtro
+  // da primeira, que pode estar desatualizado): entre as duas, a attempt
+  // pode ter virado terminal (ex.: desclassificada por foco concorrente,
+  // abandonada). Nunca devolver uma attempt terminal como retomável.
   const { data: existing, error: existingError } = existingSummary
-    ? await supabase.from("simulado_attempts").select("*").eq("id", existingSummary.id).maybeSingle()
+    ? await supabase.from("simulado_attempts").select("*").eq("id", existingSummary.id).eq("status", "in_progress").maybeSingle()
     : { data: null, error: null };
 
   if (contextualAttemptsError || existingError) {

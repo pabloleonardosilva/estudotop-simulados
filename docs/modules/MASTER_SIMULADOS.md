@@ -273,7 +273,7 @@ Exemplo com 10 questões:
 - respondeu 6: conta.
 - respondeu 3 e clicou em Finalizar: conta.
 - saiu sem finalizar e respondeu apenas 3: não conta.
-- teve segunda violação de foco: conta como tentativa consumida.
+- teve a TERCEIRA violação de foco (desclassificação — a 1ª e a 2ª geram só aviso, sem consumir nem encerrar): conta como tentativa consumida. Corrigido em 2026-09-10 — texto anterior desta seção citava "segunda violação" por engano; a regra vigente sempre foi a terceira (ver `lib/simulado-focus-violation.ts`, `FOCUS_VIOLATION_LIMIT = 3`).
 
 Se o aluno sair antes de responder mais de 50% e sem clicar em Finalizar:
 
@@ -764,7 +764,7 @@ Conceitos:
 - `tab_switch_count`;
 - `focus_violation_count`.
 
-Primeira ocorrência:
+Primeira e segunda ocorrências (corrigido em 2026-09-10 — texto anterior desta seção citava a segunda ocorrência já encerrando a tentativa, por engano; a regra vigente sempre foi a terceira, `FOCUS_VIOLATION_LIMIT = 3`, `lib/simulado-focus-violation.ts`):
 
 - exibir aviso modal;
 - registrar ocorrência;
@@ -776,7 +776,7 @@ Mensagem sugerida:
 Atenção: detectamos que você saiu da tela do simulado. Em caso de nova ocorrência, a tentativa será encerrada e contará como utilizada.
 ```
 
-Segunda ocorrência:
+Terceira ocorrência:
 
 - encerrar a tentativa atual;
 - marcar como tentativa perdida/consumida;
@@ -842,8 +842,8 @@ Ela deve mostrar, conforme as configurações do simulado:
 
 6. **Troca de aba/janela**
    - Aviso obrigatório: `Não mude de guia, janela ou saia da tela durante o simulado.`
-   - Primeira ocorrência: aviso.
-   - Segunda ocorrência: tentativa encerrada e consumida.
+   - Primeira e segunda ocorrências: aviso.
+   - Terceira ocorrência: tentativa encerrada e consumida (corrigido em 2026-09-10 — texto anterior citava "segunda ocorrência" por engano; a regra vigente sempre foi a terceira, `FOCUS_VIOLATION_LIMIT = 3`).
    - Ícone sugerido: `ShieldAlert`.
 
 7. **Gabarito e comentários**
@@ -1547,8 +1547,8 @@ Estou ciente e quero iniciar o simulado
    - sistema mostra acerto/erro;
    - bloqueia a questão respondida.
 12. Se aluno trocar de aba/janela ou perder foco:
-   - primeira ocorrência: modal de aviso e registro;
-   - segunda ocorrência: tentativa `disqualified` e consumida.
+   - primeira e segunda ocorrências: modal de aviso e registro, tentativa continua `in_progress`;
+   - terceira ocorrência: tentativa `disqualified` e consumida (corrigido em 2026-09-10 — texto anterior citava "segunda ocorrência" por engano; a regra vigente sempre foi a terceira, `FOCUS_VIOLATION_LIMIT = 3`).
 13. Aluno pode atualizar a página.
 14. Sistema retoma a tentativa existente com a mesma ordem.
 15. Aluno finaliza.
@@ -1592,7 +1592,7 @@ O dashboard do aluno deve exibir:
 - Questão anulada deve aparecer com tratamento visual claro.
 - Nota exibida ao aluno nunca deve ser negativa.
 - A tela de regras deve aparecer antes de criar a tentativa.
-- A troca de aba/janela deve ter aviso na primeira ocorrência e desclassificação na segunda.
+- A troca de aba/janela deve ter aviso na primeira e na segunda ocorrência, e desclassificação na terceira (corrigido em 2026-09-10 — texto anterior citava "segunda ocorrência" por engano; a regra vigente sempre foi a terceira, `FOCUS_VIOLATION_LIMIT = 3`).
 
 ---
 
@@ -1623,6 +1623,7 @@ Mitigação:
 - Estado `saving`.
 - Backend idempotente para resposta da mesma questão.
 - Ordem de questões e alternativas gerada na criação da tentativa, nunca no render.
+- **Implementado em 2026-09-10:** o salvamento de resposta passou a ser uma única transação com lock por tentativa (`save_student_attempt_answer`, `supabase/migrations/20260909170000_atomic_attempt_transitions.sql`) — valida status/expiração/questão/alternativa, faz upsert e recalcula `answered_count`/`counts_toward_limit` (>50%) tudo sob o mesmo lock. Corrige também um bug real preexistente: o erro da consulta que recontava respostas era ignorado no código antigo (podia silenciosamente virar "zero respostas"); na transação, qualquer erro na contagem propaga e desfaz a resposta também, nunca vira zero.
 
 ### 10.3 Duplicidade de tentativa
 
@@ -1661,6 +1662,8 @@ Regra:
 - Se respondeu mais de 50%, consome tentativa.
 - Se clicou em Finalizar, consome tentativa.
 - Se foi desclassificado, consome tentativa.
+
+**Implementado em 2026-09-10:** botão explícito "Abandonar simulado" (e o "Voltar" interno, que aciona o mesmo fluxo) na tela de execução (`app/meus-simulados/[id]/page-client.tsx`) abre um modal de confirmação antes de encerrar a tentativa — nunca automático por refresh/fechamento de aba/queda de conexão (esses continuam só emitindo o aviso nativo `beforeunload` do navegador). A transação `abandon_student_attempt` (lock por tentativa) recalcula o consumo a partir das respostas persistidas — nunca confia em contagem enviada pelo client — e é idempotente (abandonar uma tentativa já `abandoned` retorna sucesso sem reprocessar, protegendo contra duplo clique). `abandoned` nunca gera `simulado_results`, `representative_attempt_id` nem TopCoins.
 
 ### 10.6 Edição de simulado publicado
 
@@ -1743,6 +1746,7 @@ Mitigação:
 - Estado `submitting`.
 - Endpoint idempotente.
 - Finalização sempre consome tentativa.
+- **Implementado em 2026-09-10:** inserir `simulado_results` e marcar a tentativa `completed` passaram a acontecer na MESMA transação com lock por tentativa (`complete_student_attempt`, `supabase/migrations/20260909170000_atomic_attempt_transitions.sql`), nunca mais dois passos TypeScript separados (que podiam deixar um resultado gravado sem a tentativa marcada `completed`, ou vice-versa, se o segundo passo falhasse). Concorrência otimista via `updated_at` esperado: se a tentativa mudou desde a leitura que alimentou o cálculo em TypeScript (ex.: resposta ou violação de foco concorrente), a transação rejeita em vez de persistir um resultado calculado sobre estado desatualizado — o cliente reenvia. Scoring pedagógico continua inteiramente em TypeScript (`lib/simuladoScoring.ts`); a transação só persiste o resultado já calculado.
 
 ### 10.12 Score negativo
 
@@ -1767,10 +1771,11 @@ Mitigação:
 
 - Registrar `tab_switch_count`.
 - Registrar `focus_violation_count`.
-- Primeira ocorrência: modal de aviso.
-- Segunda ocorrência: tentativa `disqualified`.
+- Primeira e segunda ocorrências: modal de aviso, tentativa continua `in_progress`.
+- Terceira ocorrência: tentativa `disqualified` (corrigido em 2026-09-10 — texto anterior citava "segunda ocorrência" por engano; a regra vigente sempre foi a terceira, `FOCUS_VIOLATION_LIMIT = 3`, `lib/simulado-focus-violation.ts`).
 - Tentativa desclassificada consome tentativa.
 - Registrar suspeita de cola.
+- **Implementado em 2026-09-10:** a leitura do contador e a escrita da nova violação (incluindo a transição para `disqualified` na 3ª) agora acontecem dentro de uma única transação com lock por tentativa (`record_student_attempt_focus`, `supabase/migrations/20260909170000_atomic_attempt_transitions.sql`) — nunca mais "ler status, depois escrever sem condição", que permitia uma escrita concorrente sobrescrever uma tentativa já terminal.
 
 ### 10.14 Overrides de tentativa
 

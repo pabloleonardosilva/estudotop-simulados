@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
+import { logSystemError } from "@/app/lib/server/auditLogger";
 
 type AnswerPayload = {
   simulado_question_id?: string;
@@ -11,6 +11,13 @@ type AnswerPayload = {
   response_time_seconds?: number;
 };
 
+// Operação transacional (supabase/migrations/20260909170000_atomic_attempt_transitions.sql,
+// save_student_attempt_answer): lock por linha da própria attempt (SELECT
+// ... FOR UPDATE), valida status/expiração/questão/alternativa, faz upsert
+// da resposta e recalcula answered_count/counts_toward_limit (>50%) na MESMA
+// transação — nunca dois passos separados como antes. Erro na contagem de
+// respostas propaga e desfaz a transação inteira; nunca vira "zero
+// respostas" silenciosamente (bug real corrigido nesta Sprint).
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; attemptId: string }> },
@@ -32,191 +39,27 @@ export async function POST(
 
   const supabase = createSupabaseAdminClient();
 
-  const { data: attempt, error: attemptError } = await supabase
-    .from("simulado_attempts")
-    .select(
-      "id, simulado_id, student_id, status, total_questions, settings_snapshot, expires_at",
-    )
-    .eq("id", attemptId)
-    .single();
-
-  if (attemptError || !attempt) {
-    return NextResponse.json(
-      { ok: false, message: "Tentativa não encontrada." },
-      { status: 404 },
-    );
-  }
-
-  if (attempt.student_id !== student.id) {
-    void logSecurityEvent({ event: "student.invalid_attempt_access", actorType: "student", actorId: student.id, resourceType: "attempt", resourceId: attemptId, request, metadata: { simulado_id: simuladoId } });
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
-  }
-
-  if (attempt.simulado_id !== simuladoId) {
-    void logSecurityEvent({ event: "student.idor_attempt", actorType: "student", actorId: student.id, resourceType: "attempt", resourceId: attemptId, request, metadata: { requested_simulado_id: simuladoId } });
-    return NextResponse.json(
-      { ok: false, message: "Simulado inválido para esta tentativa." },
-      { status: 400 },
-    );
-  }
-
-  if (attempt.status !== "in_progress") {
-    return NextResponse.json(
-      { ok: false, message: "Tentativa já encerrada." },
-      { status: 409 },
-    );
-  }
-
-  if (attempt.expires_at && new Date(attempt.expires_at).getTime() < Date.now()) {
-    return NextResponse.json(
-      { ok: false, message: "Tempo esgotado." },
-      { status: 410 },
-    );
-  }
-
-  // Valida que simulado_question_id pertence a este simulado e que question_id é consistente
-  const { data: sqValidation } = await supabase
-    .from("simulado_questions")
-    .select("id, question_id, status")
-    .eq("id", body.simulado_question_id)
-    .eq("simulado_id", simuladoId)
-    .maybeSingle();
-
-  if (!sqValidation) {
-    return NextResponse.json(
-      { ok: false, message: "Questão inválida para este simulado." },
-      { status: 400 },
-    );
-  }
-
-  if (sqValidation.question_id !== body.question_id) {
-    return NextResponse.json(
-      { ok: false, message: "Dados da resposta inválidos." },
-      { status: 400 },
-    );
-  }
-
-  // Autoritativo no servidor: um frontend desatualizado (aba aberta antes de
-  // uma anulação) não pode produzir uma avaliação normal para uma questão já
-  // anulada. O client já bloqueia isso visualmente; esta é a barreira real.
-  if (sqValidation.status === "annulled") {
-    return NextResponse.json(
-      { ok: false, message: "Esta questão foi anulada e não aceita mais respostas." },
-      { status: 409 },
-    );
-  }
-
-  // Carrega resposta existente
-  const { data: existing } = await supabase
-    .from("simulado_answers")
-    .select("id, is_locked, changed_count, selected_alternative_id")
-    .eq("attempt_id", attemptId)
-    .eq("simulado_question_id", body.simulado_question_id)
-    .maybeSingle();
-
-  if (existing?.is_locked) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Resposta já confirmada. Não é possível alterar.",
-        is_locked: true,
-      },
-      { status: 409 },
-    );
-  }
-
-  const settings = (attempt.settings_snapshot || {}) as { instant_feedback_enabled?: boolean };
-  const instantFeedback = Boolean(settings.instant_feedback_enabled);
-
-  // Determina se está correta
-  let isCorrect: boolean | null = null;
-
-  const { data: alternative } = await supabase
-    .from("question_alternatives")
-    .select("id, label, is_correct")
-    .eq("id", body.selected_alternative_id)
-    .eq("question_id", sqValidation.question_id)
-    .maybeSingle();
-
-  if (!alternative) {
-    return NextResponse.json(
-      { ok: false, message: "Alternativa inválida para esta questão." },
-      { status: 400 },
-    );
-  }
-
-  isCorrect = Boolean(alternative.is_correct);
-
-  const willLock = instantFeedback;
-
-  const upsertPayload = {
-    attempt_id: attemptId,
-    simulado_question_id: body.simulado_question_id,
-    question_id: body.question_id,
-    selected_alternative_id: body.selected_alternative_id,
-    selected_alternative_label: body.selected_alternative_label || alternative?.label || null,
-    is_correct: isCorrect,
-    is_locked: willLock,
-    response_time_seconds: Math.max(0, Math.floor(body.response_time_seconds || 0)),
-    answered_at: new Date().toISOString(),
-    changed_count: existing && existing.selected_alternative_id !== body.selected_alternative_id
-      ? (existing.changed_count || 0) + 1
-      : (existing?.changed_count || 0),
-  };
-
-  const { error: upsertError } = await supabase
-    .from("simulado_answers")
-    .upsert(upsertPayload, { onConflict: "attempt_id,simulado_question_id" });
-
-  if (upsertError) {
-    void logSystemError({ source: "api.student.attempt_answers", error: upsertError, request, metadata: { attempt_id: attemptId } });
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível salvar a resposta." },
-      { status: 500 },
-    );
-  }
-
-  // Recalcula contagem de respondidas
-  const { count: answeredCount } = await supabase
-    .from("simulado_answers")
-    .select("id", { count: "exact", head: true })
-    .eq("attempt_id", attemptId)
-    .not("selected_alternative_id", "is", null);
-
-  const total = attempt.total_questions || 1;
-  const answered = answeredCount || 0;
-  const progress = total > 0 ? Math.round((answered / total) * 100 * 100) / 100 : 0;
-
-  // Threshold de contabilização (50%)
-  const updatePayload: Record<string, unknown> = {
-    answered_count: answered,
-    progress_percent: progress,
-    last_activity_at: new Date().toISOString(),
-  };
-
-  if (answered / total > 0.5) {
-    updatePayload.counts_toward_limit = true;
-    updatePayload.counted_at = new Date().toISOString();
-  }
-
-  const { error: updateError } = await supabase
-    .from("simulado_attempts")
-    .update(updatePayload)
-    .eq("id", attemptId);
-
-  if (updateError) {
-    void logSystemError({ source: "api.student.attempt_answers", error: updateError, request, metadata: { attempt_id: attemptId } });
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível salvar a resposta." },
-      { status: 500 },
-    );
-  }
-
-  return NextResponse.json({
-    ok: true,
-    is_correct: instantFeedback ? isCorrect : null,
-    is_locked: willLock,
-    answered_count: answered,
-    progress_percent: progress,
+  const { data, error } = await supabase.rpc("save_student_attempt_answer", {
+    p_attempt_id: attemptId,
+    p_student_id: student.id,
+    p_simulado_id: simuladoId,
+    p_simulado_question_id: body.simulado_question_id,
+    p_question_id: body.question_id,
+    p_alternative_id: body.selected_alternative_id,
+    p_response_time_seconds: Math.max(0, Math.floor(body.response_time_seconds || 0)),
   });
+
+  if (error) {
+    if (error.message?.includes("ATTEMPT_NOT_FOUND")) return NextResponse.json({ ok: false, message: "Tentativa não encontrada." }, { status: 404 });
+    if (error.message?.includes("ATTEMPT_FORBIDDEN") || error.message?.includes("ATTEMPT_CONTEXT_INVALID")) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
+    if (error.message?.includes("INVALID_ALTERNATIVE")) return NextResponse.json({ ok: false, message: "Alternativa inválida para esta questão." }, { status: 400 });
+    void logSystemError({ source: "api.student.attempt_answers", error, request, metadata: { attempt_id: attemptId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível salvar a resposta." }, { status: 500 });
+  }
+
+  const result = data as { ok: boolean; http_status?: number; message: string; is_correct?: boolean | null; is_locked?: boolean; answered_count?: number; progress_percent?: number };
+  return NextResponse.json(
+    { ok: result.ok, message: result.message, is_correct: result.is_correct ?? null, is_locked: Boolean(result.is_locked), answered_count: result.answered_count, progress_percent: result.progress_percent },
+    { status: result.ok ? 200 : (result.http_status || 409) },
+  );
 }

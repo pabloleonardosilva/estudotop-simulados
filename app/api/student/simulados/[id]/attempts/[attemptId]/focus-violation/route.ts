@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { logSecurityEvent, logSystemError } from "@/app/lib/server/auditLogger";
-import { FOCUS_VIOLATION_LIMIT } from "@/lib/simulado-focus-violation";
+import { logSystemError } from "@/app/lib/server/auditLogger";
 
 type ViolationPayload = {
   violation_number?: number;
 };
 
+// Operação transacional (supabase/migrations/20260909170000_atomic_attempt_transitions.sql,
+// record_student_attempt_focus): lock por linha da attempt, valida
+// status=in_progress dentro da transação (não mais "ler status, depois
+// escrever sem condição" — corrige a race real onde um UPDATE concorrente
+// podia sobrescrever uma attempt já terminal) e aplica a regra oficial da
+// 3ª violação = desclassificação. `violation_number` é tratado como
+// sequência idempotente: um retry do mesmo número nunca soma duas vezes
+// (bug de dupla contagem existente na versão anterior, corrigido no RPC).
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string; attemptId: string }> },
@@ -23,71 +30,23 @@ export async function POST(
 
   const supabase = createSupabaseAdminClient();
 
-  const { data: attempt, error } = await supabase
-    .from("simulado_attempts")
-    .select(
-      "id, simulado_id, student_id, status, tab_switch_count, focus_violation_count",
-    )
-    .eq("id", attemptId)
-    .single();
+  const { data, error } = await supabase.rpc("record_student_attempt_focus", {
+    p_attempt_id: attemptId,
+    p_student_id: student.id,
+    p_simulado_id: simuladoId,
+    p_violation_number: violationNumber,
+  });
 
-  if (error || !attempt) {
-    return NextResponse.json(
-      { ok: false, message: "Tentativa não encontrada." },
-      { status: 404 },
-    );
+  if (error) {
+    if (error.message?.includes("ATTEMPT_NOT_FOUND")) return NextResponse.json({ ok: false, message: "Tentativa não encontrada." }, { status: 404 });
+    if (error.message?.includes("ATTEMPT_FORBIDDEN") || error.message?.includes("ATTEMPT_CONTEXT_INVALID")) return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
+    void logSystemError({ source: "api.student.focus_violation", error, request, metadata: { attempt_id: attemptId } });
+    return NextResponse.json({ ok: false, message: "Não foi possível registrar a violação de foco." }, { status: 500 });
   }
 
-  if (attempt.student_id !== student.id) {
-    void logSecurityEvent({ event: "student.invalid_attempt_access", actorType: "student", actorId: student.id, resourceType: "attempt", resourceId: attemptId, request, metadata: { simulado_id: simuladoId } });
-    return NextResponse.json({ ok: false, message: "Acesso negado." }, { status: 403 });
-  }
-
-  if (attempt.simulado_id !== simuladoId) {
-    void logSecurityEvent({ event: "student.idor_attempt", actorType: "student", actorId: student.id, resourceType: "attempt", resourceId: attemptId, request, metadata: { requested_simulado_id: simuladoId } });
-    return NextResponse.json(
-      { ok: false, message: "Simulado inválido para esta tentativa." },
-      { status: 400 },
-    );
-  }
-
-  if (attempt.status !== "in_progress") {
-    return NextResponse.json(
-      { ok: false, message: "Tentativa já encerrada." },
-      { status: 409 },
-    );
-  }
-
-  const nextViolationCount = Math.max((attempt.focus_violation_count || 0) + 1, violationNumber);
-
-  const updatePayload: Record<string, unknown> = {
-    tab_switch_count: (attempt.tab_switch_count || 0) + 1,
-    focus_violation_count: nextViolationCount,
-    last_activity_at: new Date().toISOString(),
-  };
-
-  let disqualified = false;
-  if (nextViolationCount >= FOCUS_VIOLATION_LIMIT) {
-    disqualified = true;
-    updatePayload.status = "disqualified";
-    updatePayload.disqualified_at = new Date().toISOString();
-    updatePayload.disqualification_reason = "focus_violation";
-    updatePayload.counts_toward_limit = true;
-    updatePayload.counted_at = new Date().toISOString();
-  }
-
-  const { error: updateError } = await supabase
-    .from("simulado_attempts")
-    .update(updatePayload)
-    .eq("id", attemptId);
-
-  if (updateError) {
-    void logSystemError({ source: "api.student.focus_violation", error: updateError, request, metadata: { attempt_id: attemptId } });
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível registrar a violação de foco." },
-      { status: 500 },
-    );
-  }
-
-  return NextResponse.json({ ok: true, disqualified, violation_count: nextViolationCount });
+  const result = data as { ok: boolean; http_status?: number; message: string; status?: string; disqualified?: boolean; violation_count?: number };
+  return NextResponse.json(
+    { ok: result.ok, disqualified: Boolean(result.disqualified), violation_count: result.violation_count },
+    { status: result.ok ? 200 : (result.http_status || 409) },
+  );
 }
