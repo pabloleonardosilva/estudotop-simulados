@@ -228,7 +228,6 @@ function normalizeConfigSnapshot(payload: SimuladoPayload) {
     status: payload.status || "draft",
     question_count: payload.question_count ?? null,
     time_limit_minutes: payload.time_limit_minutes ?? null,
-    max_attempts: payload.max_attempts ?? null,
     show_result_on_finish: Boolean(payload.show_result_on_finish),
     show_answer_key_on_finish: Boolean(payload.show_answer_key_on_finish),
     instant_feedback_enabled: Boolean(payload.instant_feedback_enabled),
@@ -260,23 +259,18 @@ function buildAutoDescription({
   questionCount,
   timeLimitMinutes,
   scoringModel,
-  maxAttempts,
 }: {
   disciplineName?: string;
   questionCount?: number | null;
   timeLimitMinutes?: number | null;
   scoringModel: "traditional" | "cebraspe";
-  maxAttempts?: number | null;
 }) {
   const subject = disciplineName ? `Simulado de ${disciplineName}` : "Simulado geral";
   const questions = questionCount ? `com ${questionCount} quest${questionCount > 1 ? "ões" : "ão"}` : "com meta de questões não definida";
   const duration = timeLimitMinutes ? `duração de ${timeLimitMinutes} minutos` : "sem limite de tempo";
   const model = scoringModel === "cebraspe" ? "modelo CEBRASPE" : "modelo tradicional";
-  const attempts = maxAttempts
-    ? `${maxAttempts} tentativa${maxAttempts > 1 ? "s" : ""} permitida${maxAttempts > 1 ? "s" : ""}`
-    : "tentativas ilimitadas";
 
-  return `${subject}, ${questions}, ${duration}, ${model}, ${attempts}.`;
+  return `${subject}, ${questions}, ${duration}, ${model}.`;
 }
 
 type ManualAlternative = {
@@ -316,7 +310,6 @@ export default function EditarSimuladoClient({
     status: simulado.status || "draft",
     question_count: simulado.question_count ?? null,
     time_limit_minutes: simulado.time_limit_minutes ?? null,
-    max_attempts: simulado.max_attempts ?? null,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: simulado.instant_feedback_enabled,
@@ -342,7 +335,6 @@ export default function EditarSimuladoClient({
     status: simulado.status || "draft",
     question_count: simulado.question_count ?? null,
     time_limit_minutes: simulado.time_limit_minutes ?? null,
-    max_attempts: simulado.max_attempts ?? null,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: simulado.instant_feedback_enabled,
@@ -389,9 +381,8 @@ export default function EditarSimuladoClient({
         questionCount: form.question_count,
         timeLimitMinutes: form.time_limit_minutes,
         scoringModel: form.scoring_model,
-        maxAttempts: form.max_attempts,
       }),
-    [disciplineName, form.question_count, form.time_limit_minutes, form.scoring_model, form.max_attempts],
+    [disciplineName, form.question_count, form.time_limit_minutes, form.scoring_model],
   );
 
   const currentConfigSnapshot = useMemo(() => normalizeConfigSnapshot({ ...form, description: autoDescription }), [form, autoDescription]);
@@ -1068,7 +1059,6 @@ export default function EditarSimuladoClient({
             <div className="mx-auto grid max-w-5xl gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <HeroMetric label="Questões" value={form.question_count ? String(form.question_count) : String(relations.length || "—")} icon={<FileQuestion size={16} />} />
               <HeroMetric label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Livre"} icon={<Clock3 size={16} />} />
-              <HeroMetric label="Tentativas" value={form.max_attempts ? String(form.max_attempts) : "∞"} icon={<RotateCcw size={16} />} />
               <HeroMetric label="Status" value={form.status === "published" ? "Publicado" : form.status === "archived" ? "Arquivado" : "Rascunho"} icon={<ShieldCheck size={16} />} />
               <HeroMetric label="Pontuação" value={scoringLabel(form.scoring_model)} icon={<Trophy size={16} />} />
             </div>
@@ -1119,14 +1109,6 @@ export default function EditarSimuladoClient({
                     onChange={(event: any) => update("time_limit_minutes", event.target.value ? Number(event.target.value) : null)}
                     placeholder="Ex.: 90"
                   />
-                </StrategyField>
-                <StrategyField label="Tentativas" hint="Quantidade permitida por aluno">
-                  <PremiumSelect label="Tentativas" value={form.max_attempts ?? ""} onChange={(event: any) => update("max_attempts", event.target.value ? Number(event.target.value) : null)}>
-                    <option value="1">1 tentativa</option>
-                    <option value="2">2 tentativas</option>
-                    <option value="3">3 tentativas</option>
-                    <option value="">Ilimitado</option>
-                  </PremiumSelect>
                 </StrategyField>
                 <StrategyField label="Questões" hint="Meta oficial do simulado" accent>
                   <PremiumInput
@@ -1278,7 +1260,6 @@ export default function EditarSimuladoClient({
               <div className="space-y-2.5">
                 <Summary label="Status" value={form.status === "published" ? "Publicado" : form.status === "archived" ? "Arquivado" : "Rascunho"} icon={<FileQuestion size={15} />} accent={form.status === "published"} />
                 <Summary label="Publicação" value={form.status === "published" ? "Disponível" : "Não publicada"} icon={<CheckCircle2 size={15} />} accent={form.status === "published"} />
-                <Summary label="Tentativas" value={form.max_attempts ? String(form.max_attempts) : "Ilimitado"} icon={<RotateCcw size={15} />} />
                 <Summary label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Sem limite"} icon={<Clock3 size={15} />} />
                 <Summary label="Questões" value={form.question_count ? String(form.question_count) : String(relations.length || "Não definido")} icon={<Target size={15} />} />
                 <Summary label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean(form.owl_help_enabled)} />

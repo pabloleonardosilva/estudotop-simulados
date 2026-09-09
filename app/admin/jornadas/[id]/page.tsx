@@ -54,6 +54,7 @@ async function getData(id: string) {
     contest_name: j.contest_name || null,
     planned_simulados_count: j.planned_simulados_count || 0,
     duration_days: j.duration_days ?? null,
+    max_attempts: j.max_attempts,
     duration_months: j.duration_months,
     release_duration_days: j.release_duration_days,
     exam_date: j.exam_date,

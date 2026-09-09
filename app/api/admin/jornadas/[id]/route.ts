@@ -381,6 +381,11 @@ export async function PATCH(
     }
 
     // Estado final após aplicar os updates (para validação cruzada e recálculo).
+    if (body.max_attempts !== undefined) {
+      const maxAttempts = body.max_attempts;
+      if (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 2147483647) return NextResponse.json({ ok: false, message: "Tentativas permitidas deve ser um inteiro maior ou igual a 1." }, { status: 400 });
+      updates.max_attempts = maxAttempts;
+    }
     const finalDurationDays = (updates.duration_days as number | undefined) ?? existing.duration_days ?? existing.duration_months * 30;
     const finalExamDateStr = body.exam_date !== undefined ? ((updates.exam_date as string | null) ?? null) : (existing.exam_date ?? null);
     const finalReleaseDuration = Number((updates.release_duration_days as number | undefined) ?? existing.release_duration_days);

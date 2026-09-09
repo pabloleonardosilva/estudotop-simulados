@@ -95,7 +95,7 @@ export type StudentJornadaScheduleItem = {
   completed_at: string | null;
   status: string;
   title: string;
-  max_attempts: number | null;
+  attempt_limit: number | null;
   attempts_total: number;
   attempts_counting: number;
   attempts_in_progress: number;
@@ -174,11 +174,11 @@ export type StudentEventParticipation = {
     ends_at: string;
     started_at: string | null;
     simulado_id: string | null;
+    max_attempts: number;
     result_policy?: string | null;
     simulados?: {
       id: string;
       title: string;
-      max_attempts: number | null;
       time_limit_minutes: number | null;
     } | null;
   } | null;
@@ -233,7 +233,7 @@ async function getData(id: string) {
         created_at,
         welcome_email_sent_at,
         welcome_email_error,
-        jornadas:jornada_id(id, title, status),
+        jornadas:jornada_id(id, title, status, max_attempts),
         student_jornada_simulados(
           id,
           simulado_id,
@@ -244,7 +244,7 @@ async function getData(id: string) {
           release_email_error,
           completed_at,
           status,
-          simulados:simulado_id(id, title, max_attempts, correction_video_url)
+          simulados:simulado_id(id, title, correction_video_url)
         )
       `)
       .eq("student_id", id)
@@ -299,8 +299,8 @@ async function getData(id: string) {
       .select(`
         id, event_id, joined_at, source, representative_attempt_id, result_released_at,
         simulado_events:event_id(
-          id, name, status, starts_at, ends_at, started_at, simulado_id, result_policy,
-          simulados:simulado_id(id, title, max_attempts, time_limit_minutes)
+          id, name, status, starts_at, ends_at, started_at, simulado_id, max_attempts, result_policy,
+          simulados:simulado_id(id, title, time_limit_minutes)
         )
       `)
       .eq("student_id", id)
@@ -535,7 +535,7 @@ async function getData(id: string) {
           completed_at: hasValidCompletion ? item.completed_at : null,
           status: effectiveStatus,
           title: item.simulados?.title || `Simulado ${item.order_number || ""}`.trim(),
-          max_attempts: item.simulados?.max_attempts ?? null,
+          attempt_limit: sj.jornadas.max_attempts,
           attempts_total: attemptsTotal,
           attempts_counting: attemptsCounting,
           attempts_in_progress: attemptsInProgress,

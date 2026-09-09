@@ -11,7 +11,6 @@ import {
   Gauge,
   MapPinned,
   Pencil,
-  RotateCcw,
   Settings2,
   ShieldCheck,
   Target,
@@ -26,7 +25,6 @@ import SimuladoCard from "../components/SimuladoCard";
 import SimuladoShell from "../components/SimuladoShell";
 import SimuladoDetailActions from "./SimuladoDetailActions";
 import {
-  attemptsLabel,
   difficultyLabel,
   formatDateTime,
   resolveOwlHelpLimit,
@@ -427,7 +425,6 @@ export default async function SimuladoDetailPage({
               <Summary label="Tempo" value={timeLimitLabel(simulado.time_limit_minutes)} icon={<Clock3 size={15} />} />
               <Summary label="Pontuação" value={scoringLabel(simulado.scoring_model)} icon={<Trophy size={15} />} />
               <Summary label="Status" value={statusLabel(simulado.status)} icon={<FileQuestion size={15} />} />
-              <Summary label="Tentativas" value={attemptsLabel(simulado.max_attempts)} icon={<RotateCcw size={15} />} />
               <Summary label="Ajuda da Coruja" value={(simulado as any).owl_help_enabled ? `${resolveOwlHelpLimit((simulado as any).owl_help_limit, simulado.question_count || questions.length)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean((simulado as any).owl_help_enabled)} />
               <Summary label="ALT+TAB / guias" value={(simulado as any).anti_tab_switch_enabled === false ? "Inativo" : "Ativo"} icon={<ShieldCheck size={15} />} accent={(simulado as any).anti_tab_switch_enabled !== false} />
               <Summary label="Janelas lado a lado" value={(simulado as any).anti_window_blur_enabled === false ? "Inativo" : "Ativo"} icon={<ShieldCheck size={15} />} accent={(simulado as any).anti_window_blur_enabled !== false} />

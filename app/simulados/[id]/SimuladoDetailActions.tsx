@@ -42,7 +42,6 @@ type SimuladoDetailActionsProps = {
     title?: string | null;
     status?: string | null;
     time_limit_minutes?: number | null;
-    max_attempts?: number | null;
     scoring_model?: "traditional" | "cebraspe" | string | null;
     question_count?: number | null;
     owl_help_enabled?: boolean | null;
@@ -131,7 +130,6 @@ export default function SimuladoDetailActions({ simulado, questions }: SimuladoD
         title: simulado.title || "Simulado",
         status: simulado.status || "draft",
         timeLimitMinutes: simulado.time_limit_minutes,
-        maxAttempts: simulado.max_attempts,
         scoringModel: scoringLabel(simulado.scoring_model as any),
         questionCount: simulado.question_count ?? questions.length,
         owlHelpEnabled: Boolean(simulado.owl_help_enabled),

@@ -20,12 +20,13 @@ type Payload = {
       name: string;
       starts_at: string;
       ends_at: string;
+      max_attempts: number;
       simulado_id: string | null;
       result_policy: string;
       effective_status: string;
       simulados: {
         title: string;
-        max_attempts: number | null;
+
         time_limit_minutes: number | null;
         anti_tab_switch_enabled?: boolean | null;
         anti_window_blur_enabled?: boolean | null;
@@ -135,7 +136,7 @@ export default function EventoAlunoClient({ id }: { id: string }) {
   const event = data.participant.simulado_events;
   const running = data.attempts.find((attempt) => attempt.status === "in_progress");
   const used = data.attempts.filter((attempt) => attempt.counts_toward_limit).length;
-  const maxAttempts = event.simulados?.max_attempts ?? null;
+  const maxAttempts = event.max_attempts ?? null;
   const remaining = maxAttempts == null ? null : Math.max(0, maxAttempts - used);
   const professors = event.simulado_event_professors.map((item) => item.professors?.name).filter(Boolean) as string[];
   const simuladoUrl = event.simulado_id ? `/meus-simulados/${event.simulado_id}?event=${id}` : null;

@@ -72,7 +72,6 @@ export type Simulado = {
   status: SimuladoStatus;
   question_count?: number | null;
   time_limit_minutes?: number | null;
-  max_attempts?: number | null;
   attempt_count_threshold_percent?: number | null;
   show_result_on_finish: boolean;
   show_answer_key_on_finish: boolean;
@@ -108,7 +107,6 @@ export type SimuladoPayload = {
   status: SimuladoStatus;
   question_count?: number | null;
   time_limit_minutes?: number | null;
-  max_attempts?: number | null;
   show_result_on_finish: boolean;
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;

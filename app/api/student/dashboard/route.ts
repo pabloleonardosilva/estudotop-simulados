@@ -287,10 +287,6 @@ export async function GET(request: Request) {
   const inProgressJornadaData = Array.isArray(inProgressJornada?.jornadas)
     ? inProgressJornada?.jornadas[0]
     : inProgressJornada?.jornadas;
-  const availableAvulso = (avulsos || [])
-    .filter((row: any) => avulsoIds.includes(row.id) && !completedSimuladoIds.has(row.id))
-    .sort((a: any, b: any) => String(b.published_at || "").localeCompare(String(a.published_at || "")))[0] || null;
-
   let nextAction = {
     type: "refazer_simulados" as "continuar" | "resolver" | "refazer_simulados" | "ver_jornadas",
     label: "Refazer simulados",
@@ -317,15 +313,6 @@ export async function GET(request: Request) {
       description: `Disponível agora${availableJornadaItem.jornada_title ? ` na ${availableJornadaItem.jornada_title}` : ""}.`,
       href: `/meus-simulados/${availableJornadaItem.simulado_id}?jornada=${availableJornadaItem.student_jornada_id}`,
       jornada_title: availableJornadaItem.jornada_title || null,
-    };
-  } else if (availableAvulso) {
-    nextAction = {
-      type: "resolver",
-      label: "Resolver simulado",
-      title: availableAvulso.title || "Simulado liberado",
-      description: "Há um simulado avulso disponível para resolução.",
-      href: `/meus-simulados/${availableAvulso.id}`,
-      jornada_title: null,
     };
   } else if (!completedResults.length && activeJornadas.length > 0) {
     nextAction = {
@@ -357,8 +344,7 @@ export async function GET(request: Request) {
       })),
     )
     .filter((item: any) => ["available", "in_progress"].includes(item.status) && !completedSimuladoIds.has(item.simulado_id));
-  const pendingAvulsos = (avulsos || []).filter((row: any) => avulsoIds.includes(row.id) && !completedSimuladoIds.has(row.id));
-  const pendingAvailableCount = pendingJornadaAvailable.length + pendingAvulsos.length;
+  const pendingAvailableCount = pendingJornadaAvailable.length;
 
   const expiringJornada = activeJornadas
     .filter((jornada) => jornada.expires_at)

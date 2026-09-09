@@ -75,6 +75,7 @@ export async function GET(request: Request) {
         journey_highlights,
         planned_simulados_count,
         duration_days,
+        max_attempts,
         duration_months,
         release_duration_days,
         exam_date,
@@ -106,6 +107,7 @@ export async function GET(request: Request) {
       journey_highlights: Array.isArray(j.journey_highlights) ? j.journey_highlights : [],
       planned_simulados_count: j.planned_simulados_count || 0,
       duration_days: j.duration_days ?? null,
+      max_attempts: j.max_attempts,
       duration_months: j.duration_months,
       release_duration_days: j.release_duration_days,
       exam_date: j.exam_date,
@@ -133,6 +135,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    const maxAttempts = body.max_attempts === undefined ? 3 : body.max_attempts;
+    if (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 2147483647) return NextResponse.json({ ok: false, message: "Tentativas permitidas deve ser um inteiro maior ou igual a 1." }, { status: 400 });
     const title = String(body.title || "").trim();
     const description = String(body.description || "").trim() || null;
     const durationDays = Number(body.duration_days ?? (Number(body.duration_months) * 30));
@@ -219,6 +223,7 @@ export async function POST(request: Request) {
       .from("jornadas")
       .insert({
         title,
+        max_attempts: maxAttempts,
         description,
         status: "draft",
         scope_type: scope.scope_type,

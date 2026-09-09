@@ -27,7 +27,6 @@ type PdfResult = {
 
 type PdfMeta = {
   title: string;
-  max_attempts?: number | null;
   scoring_model?: string;
 };
 

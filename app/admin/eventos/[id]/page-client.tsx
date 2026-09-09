@@ -16,7 +16,7 @@ import BannerPositionModal from "../BannerPositionModal";
 import ProfessorAssignmentPicker from "./ProfessorAssignmentPicker";
 import ReminderButton, { type ReminderInfo } from "./ReminderButton";
 
-type EventData = {
+type EventData = { max_attempts: number;
   id: string;
   name: string;
   code: string;
@@ -51,7 +51,7 @@ type Participant = {
 };
 type EligibleStudent = { id: string; name: string; email: string; status: string };
 
-type EditForm = {
+type EditForm = { maxAttempts: number;
   name: string;
   simuladoId: string;
   startsAt: string;
@@ -84,6 +84,7 @@ function formFromEvent(event: EventData): EditForm {
     simuladoId: event.simulado_id || "",
     startsAt: toDateTimeLocal(new Date(event.starts_at)),
     endsAt: toDateTimeLocal(new Date(event.ends_at)),
+    maxAttempts: event.max_attempts,
     durationMinutes: event.duration_minutes,
     resultPolicy: event.result_policy,
     professorIds: event.simulado_event_professors.map((item) => item.professor_id),
@@ -344,7 +345,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
       simulado_id: form.simuladoId || null,
       starts_at: startDate.toISOString(),
       ends_at: endDate.toISOString(),
-      duration_minutes: form.durationMinutes,
+      max_attempts: form.maxAttempts, duration_minutes: form.durationMinutes,
       result_policy: form.resultPolicy,
       professor_ids: form.professorIds,
       card_image_id: form.cardImageId,
@@ -509,6 +510,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <SearchableSelect dark label="Simulado" value={form.simuladoId} onChange={(value) => updateForm("simuladoId", value)} options={simulados.map((item) => ({ value: item.id, label: item.title }))} placeholder="Selecione um simulado" />
               <PremiumInput variant="jornada" label="Início — horário de Brasília" type="datetime-local" value={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleStartChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={form.endsAt} min={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleEndChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
+              <PremiumInput variant="jornada" label="Tentativas permitidas" type="number" min={1} step={1} required value={form.maxAttempts} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, maxAttempts: Number(e.target.value) })} />
               <PremiumInput variant="jornada" label={`Duração em minutos (${formatDurationHours(form.durationMinutes)})`} type="number" min={1} step={1} value={form.durationMinutes} onChange={(change: ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(change.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={form.resultPolicy} onChange={(change: ChangeEvent<HTMLSelectElement>) => updateForm("resultPolicy", change.target.value as EditForm["resultPolicy"])}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
               <fieldset className="md:col-span-2"><legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do card do Evento</legend><p className="mb-3 text-xs text-slate-500">Escolha na biblioteca a imagem exibida no card do Evento para o aluno.</p><ImageLibraryPicker images={cardImages} value={form.cardImageId} onChange={(value) => updateForm("cardImageId", value)} /></fieldset>

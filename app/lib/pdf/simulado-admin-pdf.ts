@@ -23,7 +23,6 @@ type AdminPdfMeta = {
   title: string;
   status?: string | null;
   timeLimitMinutes?: number | null;
-  maxAttempts?: number | null;
   scoringModel?: string | null;
   questionCount?: number | null;
   owlHelpEnabled?: boolean;
@@ -271,11 +270,10 @@ export async function downloadSimuladoAdminPdf({ meta, questions }: { meta: Admi
 
   pdf.current.y = PAGE_H - 148;
   const gap = 10;
-  const w = (PAGE_W - MARGIN * 2 - gap * 3) / 4;
+  const w = (PAGE_W - MARGIN * 2 - gap * 2) / 3;
   pdf.metricCard(MARGIN, pdf.current.y - 64, w, 58, "STATUS", fmtStatus(meta.status));
   pdf.metricCard(MARGIN + (w + gap), pdf.current.y - 64, w, 58, "QUESTÕES", String(meta.questionCount ?? questions.length));
   pdf.metricCard(MARGIN + (w + gap) * 2, pdf.current.y - 64, w, 58, "TEMPO", meta.timeLimitMinutes ? `${meta.timeLimitMinutes} min` : "Sem limite");
-  pdf.metricCard(MARGIN + (w + gap) * 3, pdf.current.y - 64, w, 58, "TENTATIVAS", meta.maxAttempts ? String(meta.maxAttempts) : "Ilimitado");
   pdf.current.y -= 96;
 
   pdf.text("Configurações", MARGIN, pdf.current.y, 15, "#0F172A", true);

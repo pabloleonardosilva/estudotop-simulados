@@ -39,7 +39,6 @@ export async function GET(request: Request) {
         description,
         question_count,
         time_limit_minutes,
-        max_attempts,
         scoring_model,
         instant_feedback_enabled,
         feedback_mode,
@@ -62,24 +61,9 @@ export async function GET(request: Request) {
 
   const allIds = (simulados || []).map((row) => row.id);
 
-  const { data: jornadaLinks, error: jornadaLinksError } = await supabase
-    .from("jornada_simulados")
-    .select("simulado_id")
-    .in("simulado_id", allIds.length ? allIds : ["00000000-0000-0000-0000-000000000000"]);
-
-  if (jornadaLinksError) {
-    void logSystemError({ source: "api.student.simulados_list", error: jornadaLinksError, request });
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível carregar os simulados." },
-      { status: 500 },
-    );
-  }
-
-  const linkedToJornadaIds = new Set((jornadaLinks || []).map((row) => row.simulado_id));
-
   const { data: studentJornadas, error: studentJornadasError } = await supabase
     .from("student_jornadas")
-    .select("id, jornada_id, jornadas:jornada_id(id, title)")
+    .select("id, jornada_id, jornadas:jornada_id(id, title, max_attempts)")
     .eq("student_id", student.id)
     .eq("status", "active")
     .gt("expires_at", new Date().toISOString().slice(0, 10));
@@ -93,11 +77,12 @@ export async function GET(request: Request) {
   }
 
   const studentJornadaIds = (studentJornadas || []).map((row) => row.id);
-  const studentJornadaMeta = new Map<string, { title: string | null }>();
+  const studentJornadaMeta = new Map<string, { title: string | null; maxAttempts: number }>();
   for (const row of studentJornadas || []) {
     const jornada = Array.isArray((row as any).jornadas) ? (row as any).jornadas[0] : (row as any).jornadas;
     studentJornadaMeta.set(row.id, {
       title: jornada?.title || null,
+      maxAttempts: jornada.max_attempts,
     });
   }
 
@@ -122,6 +107,7 @@ export async function GET(request: Request) {
     released: ["available", "in_progress", "completed"].includes(row.status),
     releaseDate: row.scheduled_release_at,
     studentJornadaId: row.student_jornada_id,
+    maxAttempts: studentJornadaMeta.get(row.student_jornada_id)!.maxAttempts,
     jornadaTitle: studentJornadaMeta.get(row.student_jornada_id)?.title || null,
     eventId: null,
     eventName: null,
@@ -130,7 +116,7 @@ export async function GET(request: Request) {
 
   const { data: eventParticipants, error: eventParticipantsError } = await supabase
     .from("simulado_event_participants")
-    .select("id,event_id,result_released_at,simulado_events:event_id(id,name,status,starts_at,ends_at,simulado_id)")
+    .select("id,event_id,result_released_at,simulado_events:event_id(id,name,status,starts_at,ends_at,simulado_id,max_attempts)")
     .eq("student_id", student.id);
 
   if (eventParticipantsError) {
@@ -149,6 +135,7 @@ export async function GET(request: Request) {
       releaseDate: event.starts_at,
       studentJornadaId: null,
       jornadaTitle: null,
+      maxAttempts: event.max_attempts,
       eventId: event.id,
       eventName: event.name,
       eventResultReleased: Boolean(participant.result_released_at),
@@ -160,9 +147,7 @@ export async function GET(request: Request) {
   const visibleSimulados: Array<{ simulado: SimuladoRow; context: SimuladoContext | null }> = [];
   for (const simulado of simulados || []) {
     const matchingEventContexts = eventContexts.filter((context) => context.simuladoId === simulado.id);
-    if (!linkedToJornadaIds.has(simulado.id) && matchingEventContexts.length === 0) {
-      visibleSimulados.push({ simulado, context: null });
-    }
+
     for (const release of releaseContexts) {
       if (release.simuladoId === simulado.id) visibleSimulados.push({ simulado, context: release });
     }
@@ -208,7 +193,7 @@ export async function GET(request: Request) {
     const incomplete = limitAttempts.filter((row) => row.status !== "completed");
     const disqualified = allAttempts.filter((row) => row.status === "disqualified");
     const used = limitAttempts.length;
-    const total = simulado.max_attempts ?? null;
+    const total = context!.maxAttempts;
     const remaining = total === null ? null : Math.max(total - used, 0);
     const questionsCount = simulado.question_count ?? (simulado.simulado_questions || []).length;
 
@@ -226,7 +211,7 @@ export async function GET(request: Request) {
       description: simulado.description,
       question_count: questionsCount,
       time_limit_minutes: simulado.time_limit_minutes,
-      max_attempts: simulado.max_attempts,
+      attempt_limit: total,
       scoring_model: simulado.scoring_model,
       instant_feedback_enabled: (simulado as any).feedback_mode === "instant" || simulado.instant_feedback_enabled,
       feedback_mode: (simulado as any).feedback_mode || (simulado.instant_feedback_enabled ? "instant" : "final_only"),

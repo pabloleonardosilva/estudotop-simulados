@@ -1,3 +1,4 @@
+import { resolveAttemptLimit } from "@/lib/server/attemptLimit";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -48,7 +49,6 @@ export async function GET(
         status,
         question_count,
         time_limit_minutes,
-        max_attempts,
         show_result_on_finish,
         show_answer_key_on_finish,
         instant_feedback_enabled,
@@ -164,6 +164,10 @@ export async function GET(
     : studentJornadaSimuladoId
       ? { type: "jornada", studentJornadaSimuladoId }
       : { type: "standalone" };
+  const attemptLimit = attemptContext.type === "standalone" ? null : await resolveAttemptLimit(supabase, student.id, id, attemptContext);
+  if (attemptContext.type !== "standalone" && (!Number.isInteger(attemptLimit) || Number(attemptLimit) < 1)) {
+    return NextResponse.json({ ok: false, message: "Limite de tentativas do contexto indisponivel." }, { status: 500 });
+  }
   const { attempts: contextualAttempts, error: attemptsError } = await getContextualSimuladoAttempts(
     supabase,
     student.id,
@@ -183,7 +187,7 @@ export async function GET(
   const inProgress = attempts.find((row) => row.status === "in_progress") || null;
   const completed = attempts.filter((row) => row.status === "completed" && row.counts_toward_limit);
   const used = attempts.filter((row) => row.counts_toward_limit).length;
-  const total = simulado.max_attempts ?? null;
+  const total = attemptLimit ?? 0;
   const remaining = total === null ? null : Math.max(total - used, 0);
   const questionsCount = simulado.question_count ?? (simulado.simulado_questions || []).length;
 
@@ -197,7 +201,7 @@ export async function GET(
       description: simulado.description,
       question_count: questionsCount,
       time_limit_minutes: simulado.time_limit_minutes,
-      max_attempts: simulado.max_attempts,
+      attempt_limit: attemptLimit,
       show_result_on_finish: simulado.show_result_on_finish,
       show_answer_key_on_finish: simulado.show_answer_key_on_finish,
       instant_feedback_enabled: simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled,

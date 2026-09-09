@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
-import { logStudentActivity } from "@/app/lib/server/auditLogger";
+import { logStudentActivity, logSystemError } from "@/app/lib/server/auditLogger";
 
 type AttemptRow = {
   id: string;
@@ -83,6 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         status,
         duration_months,
         duration_days,
+        max_attempts,
         planned_simulados_count,
         exam_name,
         exam_position,
@@ -110,7 +111,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           discipline_id,
           question_count,
           time_limit_minutes,
-          max_attempts,
           owl_help_enabled,
           owl_help_limit,
           status,
@@ -122,8 +122,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     .eq("student_id", student.id)
     .maybeSingle();
 
-  if (error || !data || data.status === "cancelled") {
+  if (error) {
+    void logSystemError({ source: "api.student.jornadas.detail", error: new Error(error.message), metadata: { code: error.code }, request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar a Jornada. Tente novamente mais tarde." }, { status: 500 });
+  }
+
+  if (!data || data.status === "cancelled") {
     return NextResponse.json({ ok: false, message: "Jornada não encontrada." }, { status: 404 });
+  }
+
+  if (data.status === "paused") {
+    return NextResponse.json({ ok: false, message: "O acesso a esta Jornada está pausado. Seu histórico foi preservado." }, { status: 403 });
+  }
+
+  const attemptLimit = (data.jornadas as unknown as { max_attempts: number } | null)?.max_attempts;
+
+  if (typeof attemptLimit !== "number" || !Number.isInteger(attemptLimit) || attemptLimit < 1) {
+    void logSystemError({ source: "api.student.jornadas.detail", error: new Error("Missing or invalid journey attempt limit"), request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar a Jornada. Tente novamente mais tarde." }, { status: 500 });
   }
 
   const rows = [...((data as any).student_jornada_simulados || [])].sort(
@@ -131,25 +147,35 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   );
   const studentJornadaSimuladoIds = rows.map((row: any) => row.id).filter(Boolean);
 
-  const { data: attempts } = studentJornadaSimuladoIds.length
+  const { data: attempts, error: attemptsError } = studentJornadaSimuladoIds.length
     ? await supabase
         .from("simulado_attempts")
         .select("id, simulado_id, student_jornada_simulado_id, status, submitted_at, time_spent_seconds, progress_percent, counts_toward_limit, created_at")
         .eq("student_id", student.id)
         .in("student_jornada_simulado_id", studentJornadaSimuladoIds)
         .order("created_at", { ascending: false })
-    : { data: [] as AttemptRow[] };
+    : { data: [] as AttemptRow[], error: null };
+
+  if (attemptsError) {
+    void logSystemError({ source: "api.student.jornadas.detail.attempts", error: new Error(attemptsError.message), metadata: { code: attemptsError.code }, request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar o cronograma da Jornada." }, { status: 500 });
+  }
 
   const completedAttemptIds = ((attempts || []) as AttemptRow[])
     .filter((attempt) => attempt.status === "completed" && attempt.counts_toward_limit)
     .map((attempt) => attempt.id);
 
-  const { data: results } = completedAttemptIds.length
+  const { data: results, error: resultsError } = completedAttemptIds.length
     ? await supabase
         .from("simulado_results")
         .select("attempt_id, simulado_id, correct_count, total_questions, display_percentage, percentage, time_spent_seconds, finished_at")
         .in("attempt_id", completedAttemptIds)
-    : { data: [] as ResultRow[] };
+    : { data: [] as ResultRow[], error: null };
+
+  if (resultsError) {
+    void logSystemError({ source: "api.student.jornadas.detail.results", error: new Error(resultsError.message), metadata: { code: resultsError.code }, request });
+    return NextResponse.json({ ok: false, message: "Não foi possível carregar os resultados da Jornada." }, { status: 500 });
+  }
 
   const resultsByAttempt = new Map<string, ResultRow>();
   for (const result of ((results || []) as ResultRow[])) {
@@ -163,7 +189,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     attemptsByScheduleItem.set(attempt.student_jornada_simulado_id, list);
   }
 
-  const jornadaExpired = (data as any).expires_at <= todayDateOnly();
+  const jornadaExpired = data.status === "expired" || data.expires_at <= todayDateOnly();
 
   const simulados = rows.map((row: any, index: number) => {
     const previous = index > 0 ? rows[index - 1] : null;
@@ -209,14 +235,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       question_count: sim.question_count ?? null,
       time_label: formatTime(sim.time_limit_minutes),
       time_limit_minutes: sim.time_limit_minutes ?? null,
-      max_attempts: sim.max_attempts ?? null,
+      attempt_limit: attemptLimit,
       owl_help_enabled: Boolean(sim.owl_help_enabled),
       owl_help_limit: sim.owl_help_limit ?? null,
       attempts_used: limitAttempts.length,
       attempts_completed: completedAttempts.length,
       attempts_incomplete: incompleteAttempts.length,
-      attempts_remaining: sim.max_attempts === null || sim.max_attempts === undefined ? null : Math.max(Number(sim.max_attempts) - limitAttempts.length, 0),
-      attempts_exhausted: sim.max_attempts !== null && sim.max_attempts !== undefined && limitAttempts.length >= Number(sim.max_attempts),
+      attempts_remaining: Math.max(attemptLimit - limitAttempts.length, 0),
+      attempts_exhausted: limitAttempts.length >= attemptLimit,
       real_score_percent: realScorePercent,
       best_score_percent: realScorePercent,
       average_time_seconds: averageTimeSeconds,

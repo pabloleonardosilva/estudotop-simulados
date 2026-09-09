@@ -6,7 +6,7 @@ import { eventAcceptsReminder, getReminderStatusInfo, sendEventReminderBatch } f
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { logActivity } from "@/lib/logging/activity-log";
 
-type Payload = { action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
+type Payload = { max_attempts?: unknown; action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
 
 function bannerPosition(value: unknown) {
   const number = Number(value);
@@ -104,7 +104,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: false, message: "Não foi possível enviar o lembrete agora. Tente novamente." }, { status: 500 });
   }
   if (body.action === "duplicate") {
-    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
+    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ max_attempts: current.max_attempts, name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
     if (error || !duplicated) return NextResponse.json({ ok: false, message: "Não foi possível duplicar o Evento." }, { status: 500 });
     const { data: assignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     if (assignments?.length) await supabase.from("simulado_event_professors").insert(assignments.map((item) => ({ event_id: duplicated.id, professor_id: item.professor_id })));
@@ -167,7 +167,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: `${terminatedRows.length} tentativa(s) em andamento encerrada(s) pelo administrador.`, terminated_count: terminatedRows.length });
   }
 
-  const hasEditableFields = ["name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "card_image_id", "professor_banner_image_id", "professor_banner_position_x", "professor_banner_position_y"]
+  const hasEditableFields = ["max_attempts", "name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "card_image_id", "professor_banner_image_id", "professor_banner_position_x", "professor_banner_position_y"]
     .some((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (!hasEditableFields) return NextResponse.json({ ok: false, message: "Nenhuma alteração válida foi informada." }, { status: 400 });
 
@@ -245,6 +245,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const updates: Record<string, string | number | null> = {};
+  if (body.max_attempts !== undefined) {
+    const maxAttempts = body.max_attempts;
+    if (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 2147483647) return NextResponse.json({ ok: false, message: "Tentativas permitidas deve ser um inteiro maior ou igual a 1." }, { status: 400 });
+    updates.max_attempts = maxAttempts;
+  }
   if (typeof body.name === "string" && body.name.trim().length >= 3) updates.name = body.name.trim();
   if (body.simulado_id === null || typeof body.simulado_id === "string") updates.simulado_id = body.simulado_id;
   if (typeof body.starts_at === "string") updates.starts_at = body.starts_at;

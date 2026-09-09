@@ -26,7 +26,7 @@ type Jornada = {
   description: string | null;
   started_at: string;
   expires_at: string;
-  status: "active" | "expired" | "cancelled";
+  status: "active" | "expired" | "cancelled" | "paused";
   scope_type: "general" | "contest";
   category: "saude" | "policial" | "tribunais" | "administrativo" | null;
   card_image_url?: string | null;
@@ -47,6 +47,7 @@ function formatDate(date?: string | null) {
 }
 
 function statusLabel(status: Jornada["status"]) {
+  if (status === "paused") return "Pausada";
   if (status === "expired") return "Expirada";
   if (status === "cancelled") return "Cancelada";
   return "Ativa";
@@ -54,6 +55,7 @@ function statusLabel(status: Jornada["status"]) {
 
 
 function statusDotClasses(status: Jornada["status"]) {
+  if (status === "paused") return "bg-amber-500";
   if (status === "expired") return "bg-slate-400";
   if (status === "cancelled") return "bg-red-500";
   return "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.48)]";
@@ -126,15 +128,6 @@ export default function MinhasJornadasClient() {
               <p className="text-xs leading-5 text-slate-500 sm:text-sm">Acompanhe suas trilhas, desbloqueios e progresso.</p>
             </div>
           </div>
-
-          <Link
-            href="/meus-simulados"
-            className="student-button-secondary inline-flex h-10 shrink-0 items-center justify-center gap-2 self-start rounded-2xl px-4 text-[13px] font-semibold transition duration-200 hover:-translate-y-0.5 sm:self-auto"
-          >
-            <ShieldCheck size={15} />
-            Ver simulados avulsos
-            <ArrowRight size={14} />
-          </Link>
         </section>
 
         <section className="mt-2 min-h-0 flex-1">

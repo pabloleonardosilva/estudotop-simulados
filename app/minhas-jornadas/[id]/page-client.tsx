@@ -92,7 +92,7 @@ type Simulado = {
   correct_count: number | null;
   total_questions: number | null;
   progress_percent: number | null;
-  max_attempts: number | null;
+  attempt_limit: number | null;
   owl_help_enabled: boolean;
   owl_help_limit: number | null;
   attempts_used: number;
@@ -231,25 +231,30 @@ export default function JornadaAlunoClient({
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.replace("/login");
-      return;
-    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
 
-    const res = await fetch(`/api/student/jornadas/${id}`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) {
-      setError(json.message || "Erro ao carregar jornada.");
+      const res = await fetch(`/api/student/jornadas/${id}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.message || "Erro ao carregar jornada.");
+        setLoading(false);
+        return;
+      }
+      setJornada(json.jornada);
+      setSimulados(json.simulados || []);
+      setShowLateModal(Boolean(json.jornada?.late_simulado));
+    } catch {
+      setError("Não foi possível carregar a Jornada. Tente novamente mais tarde.");
+    } finally {
       setLoading(false);
-      return;
     }
-    setJornada(json.jornada);
-    setSimulados(json.simulados || []);
-    setShowLateModal(Boolean(json.jornada?.late_simulado));
-    setLoading(false);
   }, [id, router]);
 
   useEffect(() => { load(); }, [load]);
@@ -468,7 +473,7 @@ export default function JornadaAlunoClient({
                         aria-label="Entender contagem de tentativas"
                       >
                         <span className="student-detail-fact-icon"><RotateCcw size={14} /></span>
-                        {attemptsLabel(simulado.attempts_used, simulado.max_attempts)}
+                        {attemptsLabel(simulado.attempts_used, simulado.attempt_limit)}
                         <HelpCircle size={13} />
                       </button>
                       <Fact
@@ -574,13 +579,13 @@ export default function JornadaAlunoClient({
             </div>
             <div className="px-6 py-5 text-sm leading-6 text-slate-600">
               <p>
-                Este simulado foi configurado com limite de <strong className="font-black text-slate-950">{attemptsHelpSimulado.max_attempts === null ? "tentativas ilimitadas" : `${attemptsHelpSimulado.max_attempts} tentativa(s)`}</strong>.
+                Este contexto permite um limite de <strong className="font-black text-slate-950">{attemptsHelpSimulado.attempt_limit === null ? "tentativas ilimitadas" : `${attemptsHelpSimulado.attempt_limit} tentativa(s)`}</strong>.
               </p>
               <p className="mt-3">
                 Cada vez que você inicia o simulado, uma tentativa é registrada. Mesmo que ela não seja concluída, seja abandonada, expire pelo tempo ou seja interrompida, ela <strong className="font-black text-slate-950">é contabilizada</strong> dentro do limite de tentativas.
               </p>
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-700">
-                <p>Tentativas usadas: <strong>{attemptsHelpSimulado.attempts_used}/{attemptsHelpSimulado.max_attempts === null ? "∞" : attemptsHelpSimulado.max_attempts}</strong></p>
+                <p>Tentativas usadas: <strong>{attemptsHelpSimulado.attempts_used}/{attemptsHelpSimulado.attempt_limit === null ? "∞" : attemptsHelpSimulado.attempt_limit}</strong></p>
                 <p className="mt-1">Concluídas: <strong>{attemptsHelpSimulado.attempts_completed}</strong></p>
                 <p className="mt-1">Incompletas: <strong>{attemptsHelpSimulado.attempts_incomplete}</strong></p>
               </div>
@@ -622,7 +627,7 @@ export default function JornadaAlunoClient({
             </div>
             <div className="px-6 py-5 text-sm leading-6 text-slate-600">
               <p>
-                Este simulado foi configurado com limite de <strong className="font-black text-slate-950">{realResultHelpSimulado.max_attempts === null ? "tentativas ilimitadas" : `${realResultHelpSimulado.max_attempts} tentativa(s)`}</strong>. Cada tentativa concluída gera um resultado.
+                Este contexto permite um limite de <strong className="font-black text-slate-950">{realResultHelpSimulado.attempt_limit === null ? "tentativas ilimitadas" : `${realResultHelpSimulado.attempt_limit} tentativa(s)`}</strong>. Cada tentativa concluída gera um resultado.
               </p>
               <p className="mt-3">
                 O resultado mais realista é o da <strong className="font-black text-slate-950">primeira tentativa completa</strong>, porque ela representa uma resolução inédita, sem repetição prévia das mesmas questões.

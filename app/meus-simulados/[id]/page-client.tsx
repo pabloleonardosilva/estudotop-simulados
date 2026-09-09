@@ -60,7 +60,7 @@ type InitialSimulado = {
   description: string | null;
   question_count: number;
   time_limit_minutes: number | null;
-  max_attempts: number | null;
+  attempt_limit: number | null;
   show_result_on_finish: boolean;
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;
@@ -331,8 +331,8 @@ export default function SimuladoExperience({
 
   const [attemptInfo, setAttemptInfo] = useState<AttemptInfo>({
     used: 0,
-    remaining: initialSimulado.max_attempts,
-    total: initialSimulado.max_attempts,
+    remaining: initialSimulado.attempt_limit,
+    total: initialSimulado.attempt_limit,
   });
   const [questions, setQuestions] = useState<OrderedQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -2752,7 +2752,7 @@ function RulesScreen({
   onStart: () => void;
   onBack: () => void;
 }) {
-  const totalAttempts = simulado.max_attempts;
+  const totalAttempts = attemptInfo.total;
   const remaining = attemptInfo.remaining;
   const isInstantMode = simulado.feedback_mode === "instant" || Boolean(simulado.instant_feedback_enabled);
   const attemptsExhausted = totalAttempts !== null && (remaining ?? 0) <= 0;

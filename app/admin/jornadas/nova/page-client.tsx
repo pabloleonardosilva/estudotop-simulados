@@ -46,6 +46,7 @@ const defaultForm = {
   journey_highlights: ["cronograma_progressivo", "relatorios_desempenho", "correcao_comentada"] as string[],
   category: "policial" as "saude" | "policial" | "tribunais" | "administrativo",
   card_image_id: null as string | null,
+  max_attempts: 3,
   duration_days: 90,
   release_duration_days: 83,
   planned_simulados_count: 10,
@@ -127,6 +128,7 @@ export default function NovaJornadaClient() {
           journey_highlights: form.journey_highlights,
           category: form.category,
           card_image_id: form.card_image_id,
+          max_attempts: Number(form.max_attempts),
           duration_days: Number(form.duration_days),
           release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
@@ -463,6 +465,7 @@ function JornadaFormCard({
         </div>
 
         <div className="grid gap-5 lg:grid-cols-3">
+          <DarkField label="Tentativas permitidas" icon={<Hash size={16} />} helper="Quantidade permitida em cada Simulado desta Jornada."><DarkNumberInput value={form.max_attempts} onChange={(value) => update("max_attempts", value)} /></DarkField>
           <DarkField label="Duração da Jornada" icon={<Clock3 size={16} />} helper="Período total de acesso do aluno.">
             <DarkNumberInput
               value={form.duration_days}

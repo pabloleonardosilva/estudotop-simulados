@@ -29,10 +29,7 @@ function parseTimeLimit(value: unknown) {
   return time === null || (Number.isInteger(time) && time > 0) ? time : undefined;
 }
 
-function parseMaxAttempts(value: unknown) {
-  const attempts = nullableNumber(value);
-  return attempts === null || attempts > 0 ? attempts : undefined;
-}
+
 
 function parseQuestionCount(value: unknown) {
   const count = nullableNumber(value);
@@ -136,7 +133,6 @@ export async function POST(request: Request) {
       ? undefined
       : parseOwlHelpLimit(owlHelpEnabled, body.owl_help_limit, questionCount);
     const timeLimit = parseTimeLimit(body.time_limit_minutes);
-    const maxAttempts = parseMaxAttempts(body.max_attempts);
     const scoringModel = parseScoringModel(body.scoring_model);
     const feedbackMode = parseFeedbackMode(body.feedback_mode, body.instant_feedback_enabled);
     const antiTabSwitchEnabled = parseBooleanDefaultTrue(body.anti_tab_switch_enabled);
@@ -162,9 +158,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "A quantidade de ajudas da Coruja deve ser um número inteiro maior que zero." }, { status: 400 });
     }
 
-    if (maxAttempts === undefined) {
-      return NextResponse.json({ ok: false, message: "Número de tentativas inválido." }, { status: 400 });
-    }
+
 
     if (!scoringModel) {
       return NextResponse.json({ ok: false, message: "Sistema de pontuação inválido." }, { status: 400 });
@@ -186,7 +180,6 @@ export async function POST(request: Request) {
         status,
         question_count: questionCount,
         time_limit_minutes: timeLimit,
-        max_attempts: maxAttempts,
         show_result_on_finish: body.show_result_on_finish ?? true,
         show_answer_key_on_finish: body.show_answer_key_on_finish ?? false,
         instant_feedback_enabled: feedbackMode === "instant",

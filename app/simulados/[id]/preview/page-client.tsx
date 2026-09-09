@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  RotateCcw,
   AlertTriangle,
   BarChart3,
   Bookmark,
@@ -21,7 +22,6 @@ import {
   Info,
   ListChecks,
   MessageCircleQuestion,
-  RotateCcw,
   Scissors,
   Send,
   Shield,
@@ -45,7 +45,6 @@ type SimuladoMeta = {
   description: string | null;
   question_count: number;
   time_limit_minutes: number | null;
-  max_attempts: number | null;
   show_result_on_finish: boolean;
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;
@@ -169,7 +168,6 @@ export default function PreviewSimuladoClient({
     description: simulado.description,
     question_count: questions.length,
     time_limit_minutes: simulado.time_limit_minutes,
-    max_attempts: simulado.max_attempts,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled,
@@ -397,11 +395,6 @@ export default function PreviewSimuladoClient({
                 icon={<Timer size={20} />}
                 title={meta.time_limit_minutes ? `Tempo de prova: ${meta.time_limit_minutes} minutos` : "Sem limite de tempo"}
                 description={meta.time_limit_minutes ? "O contador inicia ao confirmar e a tentativa será finalizada automaticamente." : "Você pode levar o tempo que precisar."}
-              />
-              <RuleItem
-                icon={<RotateCcw size={20} />}
-                title={meta.max_attempts === null ? "Tentativas ilimitadas" : `${meta.max_attempts} tentativa(s) disponível(is)`}
-                description="Tentativas concluídas ou com mais de 50% respondido contam para o limite."
               />
               <RuleItem
                 icon={<ListChecks size={20} />}

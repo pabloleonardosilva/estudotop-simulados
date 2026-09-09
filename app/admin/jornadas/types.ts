@@ -5,6 +5,7 @@ export type StudentJornadaStatus = "active" | "expired" | "cancelled" | "paused"
 export type SJSStatus = "locked" | "available" | "in_progress" | "completed";
 
 export type Jornada = {
+  max_attempts: number;
   id: string;
   title: string;
   description: string | null;

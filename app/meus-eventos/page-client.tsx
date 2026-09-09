@@ -22,7 +22,8 @@ type Row = {
     simulado_id: string | null;
     effective_status: string;
     card_image_url: string;
-    simulados?: { title?: string; max_attempts?: number | null } | null;
+    max_attempts: number;
+    simulados?: { title?: string } | null;
     simulado_event_professors: Array<{ professors: { name: string } | null }>;
   };
 };
@@ -195,7 +196,7 @@ function EventCard({ row, index, isPriority, onOpenRefazer }: { row: Row; index:
     : "Não iniciado";
 
   const hasSimulado = Boolean(event.simulado_id);
-  const maxAttempts = event.simulados?.max_attempts ?? null;
+  const maxAttempts = event.max_attempts ?? null;
   const attemptsUsed = row.attempts.filter((attempt) => attempt.counts_toward_limit).length;
   const attemptsRemaining = maxAttempts === null ? null : Math.max(0, maxAttempts - attemptsUsed);
   const canStartNewAttempt = !running && hasSimulado && event.effective_status === "active" && (maxAttempts === null || (attemptsRemaining ?? 0) > 0);

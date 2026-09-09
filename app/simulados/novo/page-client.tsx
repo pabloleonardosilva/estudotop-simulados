@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Target,
   Trophy,
-  RotateCcw,
   Eye,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -37,23 +36,18 @@ function buildAutoDescription({
   questionCount,
   timeLimitMinutes,
   scoringModel,
-  maxAttempts,
 }: {
   disciplineName?: string;
   questionCount?: number | null;
   timeLimitMinutes?: number | null;
   scoringModel: "traditional" | "cebraspe";
-  maxAttempts?: number | null;
 }) {
   const subject = disciplineName ? `Simulado de ${disciplineName}` : "Simulado geral";
   const questions = questionCount ? `com ${questionCount} quest${questionCount > 1 ? "ões" : "ão"}` : "com meta de questões não definida";
   const duration = timeLimitMinutes ? `duração de ${timeLimitMinutes} minutos` : "sem limite de tempo";
   const model = scoringModel === "cebraspe" ? "modelo CEBRASPE" : "modelo tradicional";
-  const attempts = maxAttempts
-    ? `${maxAttempts} tentativa${maxAttempts > 1 ? "s" : ""} permitida${maxAttempts > 1 ? "s" : ""}`
-    : "tentativas ilimitadas";
 
-  return `${subject}, ${questions}, ${duration}, ${model}, ${attempts}.`;
+  return `${subject}, ${questions}, ${duration}, ${model}.`;
 }
 
 const defaultForm: SimuladoPayload = {
@@ -63,7 +57,6 @@ const defaultForm: SimuladoPayload = {
   status: "draft",
   question_count: 50,
   time_limit_minutes: 60,
-  max_attempts: 1,
   show_result_on_finish: true,
   show_answer_key_on_finish: false,
   instant_feedback_enabled: false,
@@ -93,9 +86,8 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
         questionCount: form.question_count,
         timeLimitMinutes: form.time_limit_minutes,
         scoringModel: form.scoring_model,
-        maxAttempts: form.max_attempts,
       }),
-    [disciplineName, form.question_count, form.time_limit_minutes, form.scoring_model, form.max_attempts],
+    [disciplineName, form.question_count, form.time_limit_minutes, form.scoring_model],
   );
 
   function update<K extends keyof SimuladoPayload>(key: K, value: SimuladoPayload[K]) {
@@ -227,7 +219,7 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
             </div>
           </SimuladoCard>
 
-          <SimuladoCard variant="dark" title="Configurações" description="Regras oficiais de tempo, tentativas, pontuação e finalização." icon={<Settings2 size={18} />}>
+          <SimuladoCard variant="dark" title="Configurações" description="Regras oficiais de tempo, pontuação e finalização." icon={<Settings2 size={18} />}>
             <div className="grid gap-5 md:grid-cols-2 dark-form">
               <PremiumSelect label="Status" value={form.status} onChange={(event: any) => update("status", event.target.value)}>
                 <option value="draft">Rascunho</option>
@@ -245,17 +237,6 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
                 onChange={(event: any) => update("time_limit_minutes", event.target.value ? Number(event.target.value) : null)}
                 placeholder="Ex.: 90"
               />
-
-              <PremiumSelect
-                label="Tentativas"
-                value={form.max_attempts ?? ""}
-                onChange={(event: any) => update("max_attempts", event.target.value ? Number(event.target.value) : null)}
-              >
-                <option value="1">1 tentativa</option>
-                <option value="2">2 tentativas</option>
-                <option value="3">3 tentativas</option>
-                <option value="">Ilimitado</option>
-              </PremiumSelect>
 
               <PremiumSelect
                 label="Sistema de pontuação"
@@ -361,7 +342,6 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
             <div className="space-y-3 p-4">
               <Rule label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Sem limite"} icon={<Clock3 size={15} />} />
               <Rule label="Questões" value={form.question_count ? String(form.question_count) : "Não definido"} icon={<Target size={15} />} />
-              <Rule label="Tentativas" value={form.max_attempts ? `${form.max_attempts}` : "Ilimitado"} icon={<RotateCcw size={15} />} />
               <Rule label="Pontuação" value={form.scoring_model === "cebraspe" ? "CEBRASPE" : "Tradicional"} icon={<Trophy size={15} />} />
               <Rule label="Em branco" value={form.allow_blank_answers ? "Permitido" : "Obrigatório responder"} icon={<CheckCircle2 size={15} />} />
               <Rule label="Feedback" value={(form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")) === "instant" ? "Imediato" : "Ao final"} icon={<Eye size={15} />} />

@@ -29,7 +29,7 @@ type StudentSimulado = {
   description: string | null;
   question_count: number;
   time_limit_minutes: number | null;
-  max_attempts: number | null;
+  attempt_limit: number | null;
   scoring_model: "traditional" | "cebraspe";
   instant_feedback_enabled: boolean;
   published_at: string | null;
@@ -113,8 +113,8 @@ function timeLabel(minutes: number | null) {
 }
 
 function attemptsText(simulado: StudentSimulado) {
-  if (simulado.max_attempts === null) return "tentativas ilimitadas";
-  return `${simulado.max_attempts} tentativas permitidas`;
+  if (simulado.attempt_limit === null) return "tentativas ilimitadas";
+  return `${simulado.attempt_limit} tentativas permitidas`;
 }
 
 function contextQuery(simulado: StudentSimulado) {
@@ -350,7 +350,7 @@ export default function MeusSimuladosClient() {
                   <div className="grid grid-cols-3 gap-3 text-center text-[11px] text-slate-500">
                     <Metric icon={<FileQuestion size={19} />} value={simulado.question_count} label="Questões" className={tone.metric} iconClassName={tone.metricIcon} />
                     <Metric icon={<Clock3 size={19} />} value={simulado.time_limit_minutes ? `${simulado.time_limit_minutes} min` : "Livre"} label="Tempo" className={tone.metric} iconClassName={tone.metricIcon} />
-                    <Metric icon={<RotateCcw size={19} />} value={`${simulado.attempts_used}/${simulado.max_attempts === null ? "∞" : simulado.max_attempts}`} label={simulado.event_id ? "No Evento" : simulado.jornada_id ? "Na Jornada" : "Avulsas"} className={tone.metric} iconClassName={tone.metricIcon} />
+                    <Metric icon={<RotateCcw size={19} />} value={`${simulado.attempts_used}/${simulado.attempt_limit === null ? "∞" : simulado.attempt_limit}`} label={simulado.event_id ? "No Evento" : simulado.jornada_id ? "Na Jornada" : "Avulsas"} className={tone.metric} iconClassName={tone.metricIcon} />
                   </div>
 
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-xs font-bold text-slate-600 shadow-sm">
@@ -451,13 +451,13 @@ export default function MeusSimuladosClient() {
             </div>
             <div className="px-6 py-5 text-sm leading-6 text-slate-600">
               <p>
-                Este simulado foi configurado com limite de <strong className="font-black text-slate-950">{attemptsHelpSimulado.max_attempts === null ? "tentativas ilimitadas" : `${attemptsHelpSimulado.max_attempts} tentativa(s)`}</strong>.
+                Este contexto permite um limite de <strong className="font-black text-slate-950">{attemptsHelpSimulado.attempt_limit === null ? "tentativas ilimitadas" : `${attemptsHelpSimulado.attempt_limit} tentativa(s)`}</strong>.
               </p>
               <p className="mt-3">
                 Cada vez que você inicia o simulado, uma tentativa é registrada. Mesmo que ela não seja concluída, seja abandonada, expire pelo tempo ou seja interrompida, ela <strong className="font-black text-slate-950">é contabilizada</strong> dentro do limite de tentativas.
               </p>
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs font-bold text-slate-700">
-                <p>Tentativas usadas: <strong>{attemptsHelpSimulado.attempts_used}/{attemptsHelpSimulado.max_attempts === null ? "∞" : attemptsHelpSimulado.max_attempts}</strong></p>
+                <p>Tentativas usadas: <strong>{attemptsHelpSimulado.attempts_used}/{attemptsHelpSimulado.attempt_limit === null ? "∞" : attemptsHelpSimulado.attempt_limit}</strong></p>
                 <p className="mt-1">Concluídas: <strong>{attemptsHelpSimulado.attempts_completed}</strong></p>
                 <p className="mt-1">Incompletas: <strong>{attemptsHelpSimulado.attempts_incomplete}</strong></p>
               </div>

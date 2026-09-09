@@ -1214,7 +1214,7 @@ function AssignedEvents({ events, onOpenEventSchedule }: { events: StudentEventP
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               <SysMini label="Situação" value={situacao.label} />
-              <SysMini label="Tentativas" value={`${se.attempts_counting}/${simulado?.max_attempts ?? "∞"}`} />
+              <SysMini label="Tentativas" value={`${se.attempts_counting}/${event?.max_attempts ?? "∞"}`} />
               <SysMini label="Resultado" value={se.latest_result_percentage !== null ? `${Math.round(se.latest_result_percentage)}%` : se.attempts_counting > 0 ? "Aguardando" : "—"} />
               <SysMini label="Período" value={event ? eventStatusLabel(event.effective_status) : "—"} />
               <SysMini label="Simulado" value={simulado?.title || "—"} />
@@ -3336,7 +3336,7 @@ export default function AlunoAdminDetalheClient({
                                 onChange={(e) => setAttemptDrafts((current) => ({ ...current, [item.id]: e.target.value }))}
                                 className="h-12 w-[105px] rounded-[13px] border border-blue-300/20 bg-black/20 px-3.5 text-sm font-bold text-white/90 shadow-inner outline-none transition focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10"
                               />
-                              <span className="text-xs text-white/35">de {item.max_attempts ?? "∞"}</span>
+                              <span className="text-xs text-white/35">de {item.attempt_limit ?? "∞"}</span>
                               <button
                                 type="button"
                                 onClick={() => handleSetAttempts(scheduleModalJornada, item)}
@@ -3532,7 +3532,7 @@ export default function AlunoAdminDetalheClient({
                             onChange={(e) => setEventAttemptDrafts((current) => ({ ...current, [scheduleModalEvent.id]: e.target.value }))}
                             className="h-12 w-[105px] rounded-[13px] border border-blue-300/20 bg-black/20 px-3.5 text-sm font-bold text-white/90 shadow-inner outline-none transition focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10"
                           />
-                          <span className="text-xs text-white/35">de {simulado?.max_attempts ?? "∞"}</span>
+                          <span className="text-xs text-white/35">de {event?.max_attempts ?? "∞"}</span>
                           <button
                             type="button"
                             onClick={() => handleSetEventAttempts(scheduleModalEvent)}

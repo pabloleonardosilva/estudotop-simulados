@@ -84,6 +84,7 @@ export default function EditarJornadaClient({
     journey_highlights: Array.isArray(jornada.journey_highlights) ? jornada.journey_highlights : [],
     category: (jornada.category || "administrativo") as JornadaCategory,
     card_image_id: jornada.card_image_id || null,
+    max_attempts: jornada.max_attempts,
     duration_days: jornada.duration_days || jornada.duration_months * 30,
     release_duration_days: jornada.release_duration_days || jornada.duration_days || jornada.duration_months * 30,
     planned_simulados_count: jornada.planned_simulados_count || Math.max(1, initialSimulados.length),
@@ -161,6 +162,7 @@ export default function EditarJornadaClient({
           journey_highlights: form.journey_highlights,
           category: form.category,
           card_image_id: form.card_image_id,
+          max_attempts: Number(form.max_attempts),
           duration_days: Number(form.duration_days),
           release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
@@ -473,6 +475,7 @@ export default function EditarJornadaClient({
               </div>
 
               <div className="grid gap-5 md:grid-cols-3">
+                <div><PremiumInput label="Tentativas permitidas" type="number" min={1} step={1} required value={form.max_attempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, max_attempts: Number(event.target.value) }))} /><p className="mt-2 text-xs text-slate-500">Quantidade permitida em cada Simulado desta Jornada.</p></div>
                 <PremiumInput
                   variant="jornada"
                   label="Duração (dias)"

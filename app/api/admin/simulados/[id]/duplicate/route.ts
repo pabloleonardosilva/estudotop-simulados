@@ -61,7 +61,6 @@ export async function POST(
       status: "draft",
       question_count: original.question_count,
       time_limit_minutes: original.time_limit_minutes,
-      max_attempts: original.max_attempts,
       attempt_count_threshold_percent: original.attempt_count_threshold_percent,
       show_result_on_finish: original.show_result_on_finish,
       show_answer_key_on_finish: original.show_answer_key_on_finish,

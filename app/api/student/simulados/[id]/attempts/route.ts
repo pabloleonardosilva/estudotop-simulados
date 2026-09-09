@@ -1,3 +1,4 @@
+import { resolveAttemptLimit } from "@/lib/server/attemptLimit";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -128,7 +129,6 @@ export async function POST(
         status,
         question_count,
         time_limit_minutes,
-        max_attempts,
         attempt_count_threshold_percent,
         show_result_on_finish,
         show_answer_key_on_finish,
@@ -206,6 +206,10 @@ export async function POST(
       ? { type: "jornada", studentJornadaSimuladoId }
       : { type: "standalone" };
 
+  const attemptLimit = attemptContext.type === "standalone" ? null : await resolveAttemptLimit(supabase, student.id, simuladoId, attemptContext);
+  if (attemptContext.type !== "standalone" && (!Number.isInteger(attemptLimit) || Number(attemptLimit) < 1)) {
+    return NextResponse.json({ ok: false, message: "Limite de tentativas do contexto indisponivel." }, { status: 500 });
+  }
   const { attempts: contextualAttempts, error: contextualAttemptsError } = await getContextualSimuladoAttempts(
     supabase,
     student.id,
@@ -241,11 +245,15 @@ export async function POST(
       entityId: existing.id,
       metadata: { simulado_id: simuladoId, simulado_title: simulado.title, jornada_id: jornadaId },
     });
-    return buildAttemptResponse(supabase, existing, simulado);
+    return buildAttemptResponse(supabase, existing, simulado, attemptLimit);
   }
 
   if (eventId && !eventCanStartNewAttempt) {
     return NextResponse.json({ ok: false, message: "O Evento não permite iniciar novas tentativas neste momento." }, { status: 403 });
+  }
+
+  if (attemptContext.type === "standalone") {
+    return NextResponse.json({ ok: false, message: "Este simulado deve ser iniciado por uma Jornada ou Evento." }, { status: 400 });
   }
 
   // Validação de tentativas restantes
@@ -254,7 +262,7 @@ export async function POST(
     (row) => row.status === "completed" || row.status === "disqualified" || row.status === "expired",
   ).length;
 
-  if (simulado.max_attempts && used >= simulado.max_attempts) {
+  if (attemptLimit !== null && used >= attemptLimit) {
     return NextResponse.json(
       { ok: false, message: "Você atingiu o limite de tentativas para este simulado." },
       { status: 403 },
@@ -360,7 +368,7 @@ export async function POST(
   const feedbackMode = getFeedbackMode(simulado);
   const settingsSnapshot = {
     time_limit_minutes: simulado.time_limit_minutes,
-    max_attempts: simulado.max_attempts,
+    attempt_limit: attemptLimit,
     attempt_count_threshold_percent: simulado.attempt_count_threshold_percent,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
@@ -437,7 +445,7 @@ export async function POST(
     ok: true,
     attempt: sanitizeAttempt(created),
     questions: orderedPayload,
-    simulado: buildSimuladoSnapshot(simulado, settingsSnapshot),
+    simulado: buildSimuladoSnapshot(simulado, settingsSnapshot, attemptLimit),
     totalAttemptsUsed: used,
     totalAttempted: totalCompleted,
   });
@@ -447,6 +455,7 @@ async function buildAttemptResponse(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   attempt: Record<string, unknown>,
   simulado: Record<string, unknown>,
+  attemptLimit: number | null,
 ) {
   const order = (attempt.question_order as QuestionOrderEntry[]) || [];
   const simuladoQuestionIds = order.map((entry) => entry.simulado_question_id);
@@ -526,7 +535,7 @@ async function buildAttemptResponse(
     attempt: sanitizeAttempt(attempt),
     questions: orderedPayload,
     answers: answers || [],
-    simulado: buildSimuladoSnapshot(simulado, attempt.settings_snapshot as Record<string, unknown> | null),
+    simulado: buildSimuladoSnapshot(simulado, attempt.settings_snapshot as Record<string, unknown> | null, attemptLimit),
   });
 }
 
@@ -551,13 +560,13 @@ function sanitizeAttempt(attempt: Record<string, unknown>) {
   };
 }
 
-function buildSimuladoSnapshot(simulado: Record<string, unknown>, attemptSettingsSnapshot?: Record<string, unknown> | null) {
+function buildSimuladoSnapshot(simulado: Record<string, unknown>, attemptSettingsSnapshot: Record<string, unknown> | null | undefined, attemptLimit: number | null) {
   const feedbackMode = getFeedbackMode(simulado);
   return {
     id: simulado.id,
     title: simulado.title,
     time_limit_minutes: simulado.time_limit_minutes,
-    max_attempts: simulado.max_attempts,
+    attempt_limit: attemptLimit,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: feedbackMode === "instant" || Boolean(simulado.instant_feedback_enabled),

@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
-type EventPayload = { name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
+type EventPayload = { max_attempts?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
 
 function bannerPosition(value: unknown) {
   const number = Number(value);
@@ -41,6 +41,8 @@ export async function POST(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
   const body = await request.json().catch(() => null) as EventPayload | null;
+  const maxAttempts = body?.max_attempts === undefined ? 3 : body.max_attempts;
+  if (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 2147483647) return NextResponse.json({ ok: false, message: "Tentativas permitidas deve ser um inteiro maior ou igual a 1." }, { status: 400 });
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const startsAt = typeof body?.starts_at === "string" ? body.starts_at : "";
   const endsAt = typeof body?.ends_at === "string" ? body.ends_at : "";
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
   }
   let created = null;
   for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
-    const result = await supabase.from("simulado_events").insert({ name, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, professor_banner_position_x: bannerImageId ? bannerPositionX : null, professor_banner_position_y: bannerImageId ? bannerPositionY : null, code: code(), created_by: admin.id }).select("*").single();
+    const result = await supabase.from("simulado_events").insert({ name, max_attempts: maxAttempts, simulado_id: simuladoId, starts_at: startsAt, ends_at: endsAt, duration_minutes: duration, result_policy: resultPolicy, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, professor_banner_position_x: bannerImageId ? bannerPositionX : null, professor_banner_position_y: bannerImageId ? bannerPositionY : null, code: code(), created_by: admin.id }).select("*").single();
     if (!result.error) created = result.data;
     else if (result.error.code !== "23505") return NextResponse.json({ ok: false, message: "Não foi possível criar o Evento." }, { status: 500 });
   }

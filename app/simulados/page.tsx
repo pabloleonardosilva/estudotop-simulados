@@ -16,7 +16,6 @@ async function getData() {
           discipline_id,
           status,
           time_limit_minutes,
-          max_attempts,
           show_result_on_finish,
           show_answer_key_on_finish,
           instant_feedback_enabled,

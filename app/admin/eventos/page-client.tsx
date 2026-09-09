@@ -68,6 +68,7 @@ export default function EventosAdminClient() {
   const [startsAt, setStartsAt] = useState(schedule.startsAt);
   const [endsAt, setEndsAt] = useState(schedule.endsAt);
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION_MINUTES);
+  const [maxAttempts, setMaxAttempts] = useState(3);
   const [resultPolicy, setResultPolicy] = useState("blocked");
   const [professorIds, setProfessorIds] = useState<string[]>([]);
   const [cardImageId, setCardImageId] = useState<string | null>(null);
@@ -98,6 +99,7 @@ export default function EventosAdminClient() {
   }, [load]);
 
   function resetForm() {
+    setMaxAttempts(3);
     const nextSchedule = initialSchedule();
     setName("");
     setSimuladoId("");
@@ -152,7 +154,7 @@ export default function EventosAdminClient() {
         body: JSON.stringify({
           name: name.trim(), simulado_id: simuladoId || null,
           starts_at: startDate.toISOString(), ends_at: endDate.toISOString(),
-          duration_minutes: durationMinutes, result_policy: resultPolicy,
+          max_attempts: maxAttempts, duration_minutes: durationMinutes, result_policy: resultPolicy,
           professor_ids: professorIds, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, professor_banner_position_x: bannerPosition.x, professor_banner_position_y: bannerPosition.y,
         }),
       });
@@ -213,6 +215,7 @@ export default function EventosAdminClient() {
               <SearchableSelect dark label="Simulado" value={simuladoId} onChange={setSimuladoId} options={simulados.map((item) => ({ value: item.id, label: item.title }))} placeholder="Selecione um simulado" />
               <PremiumInput variant="jornada" label="Início — horário de Brasília" type="datetime-local" value={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleStartChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={endsAt} min={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleEndChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
+              <PremiumInput variant="jornada" label="Tentativas permitidas" type="number" min={1} step={1} required value={maxAttempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setMaxAttempts(Number(event.target.value))} />
               <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={durationMinutes} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(event.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSelect variant="jornada" label="Resultados" value={resultPolicy} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setResultPolicy(event.target.value)}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
               <fieldset className="md:col-span-2"><legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do card do Evento</legend><p className="mb-3 text-xs text-slate-500">Escolha na biblioteca a imagem exibida no card do Evento para o aluno.</p><ImageLibraryPicker images={cardImages} value={cardImageId} onChange={setCardImageId} /></fieldset>
