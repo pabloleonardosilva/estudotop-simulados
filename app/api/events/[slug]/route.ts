@@ -8,6 +8,7 @@ import { Resend } from "resend";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSecurityEvent } from "@/lib/logging/security-log";
 import { eventContinueRegistrationPlainText, eventContinueRegistrationTemplate } from "@/lib/email/studentRegistrationTemplates";
+import { startOrTouchEventRegistrationAttempt } from "@/lib/server/studentRegistrationAttemptService";
 
 const RECAPTCHA_ACTION = "event_join_request";
 const RESEND_COOLDOWN_MS = 60_000;
@@ -129,6 +130,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     }
     return NextResponse.json({ ok: false, message: "Não foi possível enviar a confirmação agora. Tente novamente em instantes." }, { status: 502 });
   }
+
+  // Tentativa de cadastro incompleto (Configurações → "Tentativas de
+  // cadastro"): esta é a primeira etapa real do fluxo de Evento — o
+  // servidor acabou de aceitar um e-mail válido e enviar a confirmação.
+  // Só rastreamos quem ainda não é aluno (nunca cria lead para quem já
+  // tem conta íntegra). Nunca bloqueia o ingresso no Evento: falha aqui é
+  // absorvida e logada dentro da própria função.
+  const { data: existingStudent } = await supabase.from("students").select("id").eq("email", email).maybeSingle();
+  if (!existingStudent) {
+    await startOrTouchEventRegistrationAttempt(supabase, { email, eventId: event.id });
+  }
+
   return NextResponse.json({ ok: true, state: "confirmation_email_sent", message: pendingIntent ? REPLACEMENT_CONFIRMATION_MESSAGE : CONFIRMATION_MESSAGE });
 }
 

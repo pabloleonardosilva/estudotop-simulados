@@ -30,6 +30,8 @@ import {
 import { useRouter } from "next/navigation";
 import PremiumButton from "../components/ui/PremiumButton";
 import PremiumModal from "../components/ui/PremiumModal";
+import SearchableSelect from "../components/ui/SearchableSelect";
+import PremiumSimpleSelect from "../components/ui/PremiumSimpleSelect";
 import type { Discipline, Simulado } from "./types";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import {
@@ -499,25 +501,19 @@ export default function SimuladosClient({
               </div>
 
               <div className="space-y-5">
-                <label className="block">
-                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/40">Simulado base</span>
-                  <select
-                    value={duplicateSourceId}
-                    onChange={(event) => handleDuplicateSourceChange(event.target.value)}
-                    disabled={duplicatingSimulado || simulados.length === 0}
-                    className="h-12 w-full rounded-2xl border border-white/[0.10] bg-[#0D1926] px-4 text-sm font-semibold text-white/85 outline-none transition hover:border-orange-400/35 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10 disabled:opacity-60"
-                  >
-                    {simulados.length === 0 ? (
-                      <option value="">Nenhum simulado disponível</option>
-                    ) : (
-                      sortByPtBrLabel(simulados, (item) => item.title).map((simulado) => (
-                        <option key={simulado.id} value={simulado.id}>
-                          {simulado.title} · {statusLabel(simulado.status)}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
+                <SearchableSelect
+                  dark
+                  sortOptions={false}
+                  label="Simulado base"
+                  value={duplicateSourceId}
+                  onChange={handleDuplicateSourceChange}
+                  disabled={duplicatingSimulado || simulados.length === 0}
+                  placeholder="Nenhum simulado disponível"
+                  options={sortByPtBrLabel(simulados, (item) => item.title).map((simulado) => ({
+                    value: simulado.id,
+                    label: `${simulado.title} · ${statusLabel(simulado.status)}`,
+                  }))}
+                />
 
                 <label className="block">
                   <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-white/40">Nome da cópia</span>
@@ -692,18 +688,16 @@ export default function SimuladosClient({
             simulado{filtered.length !== 1 ? "s" : ""} encontrado{filtered.length !== 1 ? "s" : ""}
           </p>
 
-          <label className="flex items-center gap-3 text-xs font-medium text-slate-500">
-            Ordenar por:
-            <select
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 text-xs font-medium text-slate-500">Ordenar por:</span>
+            <PremiumSimpleSelect
+              dark
+              className="w-44"
               value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="h-10 rounded-xl border border-white/10 bg-[#0B111C] px-4 text-sm font-semibold text-slate-200 outline-none transition hover:border-orange-400/35 focus:border-orange-400/50 focus:ring-4 focus:ring-orange-500/10"
-            >
-              <option value="recent">Mais recentes</option>
-              <option value="oldest">Mais antigos</option>
-              <option value="title">Nome</option>
-            </select>
-          </label>
+              onChange={(value) => setSortMode(value as SortMode)}
+              options={[["recent", "Mais recentes"], ["oldest", "Mais antigos"], ["title", "Nome"]]}
+            />
+          </div>
         </div>
 
         {filtered.length === 0 ? (

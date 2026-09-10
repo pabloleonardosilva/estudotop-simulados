@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumModal from "@/app/components/ui/PremiumModal";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 
 // A tabela representa SOMENTE cadastros ainda não concluídos: quando a
@@ -241,14 +242,19 @@ export default function RegistrationAttemptsClient() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
               <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Busca</span>
-              <span className="flex h-12 items-center gap-2 rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-sm font-semibold text-white/80 focus-within:border-orange-400/40 focus-within:ring-2 focus-within:ring-orange-400/[0.08]">
-                <Search size={15} className="text-slate-500" />
-                <input className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-slate-600" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, e-mail ou telefone" />
+              <span className="relative block">
+                <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  className="h-12 w-full rounded-2xl border border-white/[0.08] pl-11 pr-4 text-sm font-semibold text-white/80 outline-none transition placeholder:text-slate-600 focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Nome, e-mail ou telefone"
+                />
               </span>
             </label>
-            <FilterSelect label="Situação" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-            <FilterSelect label="Etapa" value={stage} onChange={setStage} options={STAGE_OPTIONS} />
-            <FilterSelect label="Período" value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />
+            <PremiumSimpleSelect dark label="Situação" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+            <PremiumSimpleSelect dark label="Etapa" value={stage} onChange={setStage} options={STAGE_OPTIONS} />
+            <PremiumSimpleSelect dark label="Período" value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />
           </div>
         </section>
 
@@ -312,7 +318,7 @@ export default function RegistrationAttemptsClient() {
           theme="dark"
           tone="warning"
           title="Excluir registro de acompanhamento?"
-          message={`Isso remove apenas o acompanhamento de "${deleteTarget.full_name}" nesta central. Nenhum dado de conta, aluno ou histórico de e-mail é apagado.`}
+          message={`Isso remove apenas o acompanhamento de "${displayFullName(deleteTarget)}" nesta central. Nenhum dado de conta, aluno ou histórico de e-mail é apagado.`}
           onClose={() => (!deleting ? setDeleteTarget(null) : undefined)}
           dismissible={!deleting}
           actions={
@@ -359,17 +365,6 @@ function MetricCard({ icon, label, value, tone }: { icon: React.ReactNode; label
   );
 }
 
-function FilterSelect<T extends readonly (readonly [string, string])[]>({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: T }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</span>
-      <select className="h-12 w-full rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-sm font-semibold text-white/80 outline-none focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]" value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
-      </select>
-    </label>
-  );
-}
-
 function StatusBadge({ status }: { status: Attempt["status"] }) {
   const config = {
     open: { className: "et-admin-dark-badge-info", label: "Em aberto" },
@@ -399,6 +394,12 @@ function formatDate(value?: string | null) {
   }
 }
 
+// Origem Evento pode registrar a tentativa só com e-mail (nome/telefone
+// ainda não coletados nessa etapa) — nunca renderizar string vazia "crua".
+function displayFullName(attempt: Attempt) {
+  return attempt.full_name.trim() || "—";
+}
+
 function stageLabel(attempt: Attempt) {
   if (attempt.stage === "account_creation_failed" && attempt.last_failure_code) {
     return STAGE_FAILURE_LABELS[attempt.last_failure_code] || STAGE_LABELS.account_creation_failed;
@@ -410,7 +411,7 @@ function AttemptRow({ attempt, onOpen }: { attempt: Attempt; onOpen: () => void 
   return (
     <button type="button" onClick={onOpen} className="group grid w-full gap-3 px-5 py-4 text-left transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,1fr)_140px_150px_110px_40px] md:items-center">
       <div className="min-w-0">
-        <p className="truncate text-sm font-black text-white">{attempt.full_name}</p>
+        <p className="truncate text-sm font-black text-white">{displayFullName(attempt)}</p>
         <p className="truncate text-xs text-slate-500">{attempt.email}{attempt.phone ? ` · ${attempt.phone}` : ""}</p>
       </div>
       <p className="truncate text-xs font-semibold text-slate-400">{stageLabel(attempt)}</p>
@@ -474,7 +475,7 @@ function AttemptDetailModal({
       theme="dark"
       tone="info"
       size="wide"
-      title={attempt.full_name}
+      title={displayFullName(attempt)}
       onClose={onClose}
       actions={
         <>
@@ -512,6 +513,7 @@ function AttemptDetailModal({
               </div>
             ) : undefined}
           />
+          <DetailItem label="Origem" value={attempt.source === "event_signup" ? "Evento" : "Cadastro geral"} />
           <DetailItem label="Primeiro início" value={formatDate(attempt.first_started_at)} />
           <DetailItem label="Última atividade" value={`${formatDate(attempt.last_activity_at)} (${relativeTime(attempt.last_activity_at)})`} />
           <DetailItem label="Tentativas" value={`${attempt.attempt_count} tentativa(s)`} />

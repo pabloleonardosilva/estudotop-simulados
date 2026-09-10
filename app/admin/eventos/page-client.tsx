@@ -6,7 +6,7 @@ import { CalendarClock, CheckCircle2, Clock3, ImageIcon, Link2, Loader2, Plus, S
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
-import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import SearchableSelect from "@/app/components/ui/SearchableSelect";
 import ImageLibraryPicker, { loadSystemImages } from "@/app/admin/configuracoes/imagens-do-sistema/ImageLibraryPicker";
 import type { SystemImage } from "@/lib/system-images";
@@ -217,7 +217,7 @@ export default function EventosAdminClient() {
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={endsAt} min={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleEndChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
               <PremiumInput variant="jornada" label="Tentativas permitidas" type="number" min={1} step={1} required value={maxAttempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setMaxAttempts(Number(event.target.value))} />
               <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={durationMinutes} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(event.target.value))} premiumStepper onStep={handleDurationChange} required />
-              <PremiumSelect variant="jornada" label="Resultados" value={resultPolicy} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setResultPolicy(event.target.value)}><option value="blocked">Bloqueados até a liberação</option><option value="released">Liberados após a conclusão</option></PremiumSelect>
+              <PremiumSimpleSelect dark label="Resultados" value={resultPolicy} onChange={setResultPolicy} options={[["blocked", "Bloqueados até a liberação"], ["released", "Liberados após a conclusão"]]} />
               <fieldset className="md:col-span-2"><legend className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><ImageIcon size={15} className="text-orange-400" />Imagem do card do Evento</legend><p className="mb-3 text-xs text-slate-500">Escolha na biblioteca a imagem exibida no card do Evento para o aluno.</p><ImageLibraryPicker images={cardImages} value={cardImageId} onChange={setCardImageId} /></fieldset>
               <fieldset className="md:col-span-2"><legend className="mb-2 text-sm font-medium text-slate-300">Banner da área do professor</legend><ImageLibraryPicker images={bannerImages} value={bannerImageId} onChange={(value) => { setBannerImageId(value); setBannerPosition({ x: 50, y: 50 }); }} allowEmpty />{bannerImageId && <div className="mt-3"><PremiumButton type="button" variant="dark" onClick={() => setPositioningBanner(true)} icon={<ImageIcon size={16} />}>Ajustar enquadramento</PremiumButton></div>}</fieldset>
               <fieldset className="md:col-span-2">

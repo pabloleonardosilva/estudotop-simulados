@@ -9,6 +9,7 @@ import { ArrowLeft, Bot, Check, CheckCircle2, FileSearch, FileText, Layers3, Loa
 import { splitIntoQuestionBlocks } from "@/app/lib/utils/question-splitter";
 import type { BoardOption, DisciplineOption } from "../types";
 import { adminFetch } from "@/lib/supabase/adminFetch";
+import SearchableSelect from "@/app/components/ui/SearchableSelect";
 
 type EntityOption = { id: string; name: string };
 type Props = { disciplines: DisciplineOption[]; boards: BoardOption[]; contests: EntityOption[]; positions: EntityOption[] };
@@ -428,13 +429,14 @@ export default function NovaRaioXProvaClient({ disciplines, boards, contests, po
                 <p className="break-words text-sm font-black leading-6 text-white">{generatedTitle}</p>
                 <p className="mt-2 text-xs leading-5 text-orange-100/70">O nome da análise será criado nesse padrão a partir dos campos informados.</p>
               </div>
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Disciplina</span>
-                <select value={disciplineId} onChange={(e) => setDisciplineId(e.target.value)} className="w-full rounded-2xl border border-white/[0.08] bg-[#091323] px-4 py-3 text-sm font-semibold text-white outline-none focus:border-orange-300/50 focus:ring-4 focus:ring-orange-500/10">
-                  {!disciplines.length && <option value="">Informática/TI</option>}
-                  {sortByPtBrLabel(disciplines, (item) => item.name).map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
-                </select>
-              </label>
+              <SearchableSelect
+                dark
+                label="Disciplina"
+                value={disciplineId}
+                onChange={setDisciplineId}
+                options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+                placeholder={disciplines.length ? "Selecione" : "Informática/TI"}
+              />
             </div>
 
             <div className="mt-5 rounded-2xl border border-sky-300/15 bg-sky-400/10 p-4 text-sm text-sky-100">

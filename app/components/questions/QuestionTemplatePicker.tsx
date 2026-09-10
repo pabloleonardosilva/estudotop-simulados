@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, FileQuestion, Search, X } from "lucide-react";
 import PremiumButton from "../ui/PremiumButton";
 import PremiumInput from "../ui/PremiumInput";
-import PremiumSelect from "../ui/PremiumSelect";
+import SearchableSelect from "../ui/SearchableSelect";
+import PremiumSimpleSelect from "../ui/PremiumSimpleSelect";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
 import { difficultyStars } from "@/lib/utils/difficulty-stars";
 import PremiumDifficultyStars from "@/app/components/questions/PremiumDifficultyStars";
@@ -146,23 +147,34 @@ export default function QuestionTemplatePicker({
 
             <div className="grid gap-3 border-y border-slate-100 py-4 lg:grid-cols-6">
               <PremiumInput label="Texto" value={search} icon={<Search size={15} />} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Codigo ou enunciado" />
-              <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => { setDisciplineId(event.target.value); setSubjectId(""); }}>
-                <option value="">Todas</option>
-                {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
-              </PremiumSelect>
-              <PremiumSelect sortOptions label="Assunto" value={subjectId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSubjectId(event.target.value)}>
-                <option value="">Todos</option>
-                {filteredSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
-              </PremiumSelect>
-              <PremiumSelect sortOptions label="Banca" value={boardId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setBoardId(event.target.value)}>
-                <option value="">Todas</option>
-                {boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
-              </PremiumSelect>
+              <SearchableSelect
+                label="Disciplina"
+                value={disciplineId}
+                onChange={(value) => { setDisciplineId(value); setSubjectId(""); }}
+                options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+                placeholder="Todas"
+              />
+              <SearchableSelect
+                label="Assunto"
+                value={subjectId}
+                onChange={setSubjectId}
+                options={filteredSubjects.map((subject) => ({ value: subject.id, label: subject.name }))}
+                placeholder="Todos"
+              />
+              <SearchableSelect
+                label="Banca"
+                value={boardId}
+                onChange={setBoardId}
+                options={boards.map((board) => ({ value: board.id, label: board.name }))}
+                placeholder="Todas"
+              />
               <PremiumInput label="Ano" value={year} inputMode="numeric" onChange={(event: ChangeEvent<HTMLInputElement>) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="Ex.: 2023" />
-              <PremiumSelect label="Dificuldade" value={difficulty} onChange={(event: ChangeEvent<HTMLSelectElement>) => setDifficulty(event.target.value)}>
-                <option value="">Todas</option>
-                {[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{difficultyStars(level)}</option>)}
-              </PremiumSelect>
+              <PremiumSimpleSelect
+                label="Dificuldade"
+                value={difficulty}
+                onChange={setDifficulty}
+                options={[["", "Todas"], ...[1, 2, 3, 4, 5].map((level) => [String(level), difficultyStars(level)] as [string, string])]}
+              />
             </div>
 
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">

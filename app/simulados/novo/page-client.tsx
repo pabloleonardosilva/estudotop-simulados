@@ -21,7 +21,8 @@ import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumInput from "../../components/ui/PremiumInput";
 import PremiumLoadingOverlay from "../../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../../components/ui/PremiumModal";
-import PremiumSelect from "../../components/ui/PremiumSelect";
+import SearchableSelect from "../../components/ui/SearchableSelect";
+import PremiumSimpleSelect from "../../components/ui/PremiumSimpleSelect";
 import SimuladoCard from "../components/SimuladoCard";
 import SimuladoShell from "../components/SimuladoShell";
 import type { Discipline, SimuladoPayload } from "../types";
@@ -190,16 +191,13 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
 
               <PremiumInput label="Descrição automática" textarea value={autoDescription} readOnly />
 
-              <PremiumSelect sortOptions
+              <SearchableSelect
                 label="Disciplina opcional"
                 value={form.discipline_id || ""}
-                onChange={(event: any) => update("discipline_id", event.target.value)}
-              >
-                <option value="">Sem disciplina principal</option>
-                {disciplines.map((discipline) => (
-                  <option key={discipline.id} value={discipline.id}>{discipline.name}</option>
-                ))}
-              </PremiumSelect>
+                onChange={(value) => update("discipline_id", value)}
+                options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+                placeholder="Sem disciplina principal"
+              />
 
               <div className="rounded-2xl border border-orange-400/20 bg-orange-500/[0.06] p-4 shadow-sm shadow-orange-950/20">
                 <PremiumInput
@@ -221,11 +219,7 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
 
           <SimuladoCard variant="dark" title="Configurações" description="Regras oficiais de tempo, pontuação e finalização." icon={<Settings2 size={18} />}>
             <div className="grid gap-5 md:grid-cols-2 dark-form">
-              <PremiumSelect label="Status" value={form.status} onChange={(event: any) => update("status", event.target.value)}>
-                <option value="draft">Rascunho</option>
-                <option value="published">Publicado</option>
-                <option value="archived">Arquivado</option>
-              </PremiumSelect>
+              <PremiumSimpleSelect label="Status" value={form.status} onChange={(value) => update("status", value as SimuladoPayload["status"])} options={[["draft", "Rascunho"], ["published", "Publicado"], ["archived", "Arquivado"]]} />
 
               <PremiumInput
                 label="Tempo de prova (minutos)"
@@ -238,26 +232,22 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
                 placeholder="Ex.: 90"
               />
 
-              <PremiumSelect
+              <PremiumSimpleSelect
                 label="Sistema de pontuação"
                 value={form.scoring_model}
-                onChange={(event: any) => update("scoring_model", event.target.value)}
-              >
-                <option value="traditional">Tradicional</option>
-                <option value="cebraspe">CEBRASPE</option>
-              </PremiumSelect>
+                onChange={(value) => update("scoring_model", value as SimuladoPayload["scoring_model"])}
+                options={[["traditional", "Tradicional"], ["cebraspe", "CEBRASPE"]]}
+              />
 
               <Toggle label="Pode deixar questões em branco?" value={form.allow_blank_answers} onChange={(value) => update("allow_blank_answers", value)} />
               <Toggle label="Exibir resultado ao finalizar?" value={form.show_result_on_finish} onChange={(value) => update("show_result_on_finish", value)} />
               <Toggle label="Mostrar gabarito ao finalizar?" value={form.show_answer_key_on_finish} onChange={(value) => update("show_answer_key_on_finish", value)} />
-              <PremiumSelect
+              <PremiumSimpleSelect
                 label="Modo de feedback"
                 value={form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")}
-                onChange={(event: any) => update("feedback_mode", event.target.value)}
-              >
-                <option value="instant">Feedback imediato</option>
-                <option value="final_only">Navegação aberta / feedback ao final</option>
-              </PremiumSelect>
+                onChange={(value) => update("feedback_mode", value as SimuladoPayload["feedback_mode"])}
+                options={[["instant", "Feedback imediato"], ["final_only", "Navegação aberta / feedback ao final"]]}
+              />
               <Toggle label="Mostrar comentário do professor?" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
               <Toggle label="Ajuda da Coruja?" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
                 {form.owl_help_enabled && (

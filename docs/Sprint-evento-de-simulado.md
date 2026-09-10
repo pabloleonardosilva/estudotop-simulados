@@ -1,5 +1,11 @@
 # Sprint Evento de Simulado — Documentação Funcional, Técnica e Operacional
 
+## 10/09/2026 — Primeira etapa do Evento alimenta a Central de Tentativas de Cadastro
+
+`POST /api/events/[slug]/route.ts` (etapa pública de e-mail, antes do cadastro) passou a chamar `startOrTouchEventRegistrationAttempt` (novo, `lib/server/studentRegistrationAttemptService.ts`) logo após o e-mail de confirmação da intent ser enviado com sucesso, e só quando o e-mail ainda não pertence a um aluno existente — nunca bloqueia o ingresso no Evento em caso de falha. Nenhuma regra de intent/cookie/participant/consumo foi alterada; a única mudança é essa chamada adicional, best-effort, no fim do handler já existente. Detalhes completos (causa raiz, enriquecimento, proteção contra duplicação/reabertura): `docs/Sprint-cadastro-alunos.md`, entrada "Integração com Evento + correção do campo Busca + dropdown premium na Central".
+
+---
+
 ## Regra vigente no código local — tentativas por contexto (2026-09-09)
 
 **Migration preparada anteriormente; não executada pelo agente:** `supabase/migrations/20260909160000_move_attempt_limits_to_contexts.sql`. Esta seção substitui as descrições históricas abaixo que atribuem o limite ao Simulado, permitem novos inícios avulsos ou propõem herdar o limite antigo no backfill. A auditoria posterior abaixo atualiza o estado observado do schema remoto; não presumir que a migration continue pendente no banco.

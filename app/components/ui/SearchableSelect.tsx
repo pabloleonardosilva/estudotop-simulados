@@ -21,6 +21,7 @@ type Props = {
   placeholder?: string;
   dark?: boolean;
   className?: string;
+  disabled?: boolean;
 };
 
 export default function SearchableSelect({
@@ -32,6 +33,7 @@ export default function SearchableSelect({
   placeholder = "Selecione",
   dark = false,
   className = "",
+  disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -59,6 +61,7 @@ export default function SearchableSelect({
   }, [open]);
 
   function handleOpen() {
+    if (disabled) return;
     setOpen(true);
     setSearch("");
     setHighlightedIndex(-1);
@@ -108,7 +111,8 @@ export default function SearchableSelect({
         <button
           type="button"
           onClick={handleOpen}
-          className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-left text-sm font-semibold text-white/70 shadow-sm outline-none transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14]"
+          disabled={disabled}
+          className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-left text-sm font-semibold text-white/70 shadow-sm outline-none transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           <span className={`truncate ${value ? "text-white/90" : "text-white/30"}`}>
             {selectedLabel || placeholder}
@@ -198,7 +202,8 @@ export default function SearchableSelect({
       <button
         type="button"
         onClick={handleOpen}
-        className="et-clean-field flex h-12 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+        disabled={disabled}
+        className="et-clean-field flex h-12 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition hover:border-orange-200 focus:border-orange-300 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className={`truncate ${value ? "text-slate-800" : "text-slate-400"}`}>
           {selectedLabel || placeholder}

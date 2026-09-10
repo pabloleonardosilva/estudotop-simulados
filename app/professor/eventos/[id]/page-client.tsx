@@ -10,7 +10,8 @@ import { richTextToPlainText } from "@/lib/utils/rich-text";
 import PremiumCard from "@/app/components/ui/PremiumCard";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
-import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import SearchableSelect from "@/app/components/ui/SearchableSelect";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import QuestionDisplayCard from "@/app/components/questions/QuestionDisplayCard";
 import ProfessorEventBannerFrame from "./ProfessorEventBannerFrame";
 import SimuladoControlMenu from "./SimuladoControlMenu";
@@ -346,14 +347,21 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
             placeholder="Buscar participante por nome ou e-mail"
             onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setParticipantSearch(event.target.value); setParticipantPage(0); }}
           />
-          <PremiumSelect
+          <SearchableSelect
+            sortOptions={false}
             label="Situação"
-            className="h-[54px] rounded-2xl border-slate-300/80 bg-white/90 px-[18px] shadow-[0_10px_24px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.92)]"
             value={participantFilter}
-            onChange={(event: React.ChangeEvent<HTMLSelectElement>) => { setParticipantFilter(event.target.value); setParticipantPage(0); }}
-          >
-            <option value="all">Todas</option><option value="not_started">Não iniciados</option><option value="in_progress">Em andamento</option><option value="completed">Concluídos</option><option value="not_completed">Não realizados</option><option value="pending">Aguardando resultado</option><option value="available">Resultado disponível</option>
-          </PremiumSelect>
+            onChange={(value) => { setParticipantFilter(value); setParticipantPage(0); }}
+            options={[
+              { value: "all", label: "Todas" },
+              { value: "not_started", label: "Não iniciados" },
+              { value: "in_progress", label: "Em andamento" },
+              { value: "completed", label: "Concluídos" },
+              { value: "not_completed", label: "Não realizados" },
+              { value: "pending", label: "Aguardando resultado" },
+              { value: "available", label: "Resultado disponível" },
+            ]}
+          />
         </div>
 
         <div className="mt-[26px] overflow-hidden rounded-[18px] border border-slate-200/90 bg-white/95 shadow-[0_22px_58px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.94)]">
@@ -396,7 +404,15 @@ export default function ProfessorEventoClient({ id }: { id: string }) {
         </div>
 
         <div className="mt-[26px] grid items-center gap-5 sm:grid-cols-[1fr_auto_1fr]">
-          <label className="flex items-center gap-3 text-sm text-slate-600">Itens por página:<select value={participantsPerPage} onChange={(event) => { setParticipantsPerPage(Number(event.target.value)); setParticipantPage(0); }} className="h-11 min-w-[84px] rounded-[14px] border border-slate-300/80 bg-white/90 px-3.5 font-semibold text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.035)] outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100"><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            Itens por página:
+            <PremiumSimpleSelect
+              className="w-24"
+              value={String(participantsPerPage)}
+              onChange={(value) => { setParticipantsPerPage(Number(value)); setParticipantPage(0); }}
+              options={[["10", "10"], ["25", "25"], ["50", "50"]]}
+            />
+          </div>
           <div className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white/80 p-1.5 shadow-sm">
             <PaginationButton label="Primeira página" disabled={safePage === 0} onClick={() => setParticipantPage(0)}><ChevronFirst size={17} /></PaginationButton><PaginationButton label="Página anterior" disabled={safePage === 0} onClick={() => setParticipantPage(safePage - 1)}><ChevronLeft size={17} /></PaginationButton><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-orange-300 bg-orange-50 text-sm font-bold text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.12)]">{safePage + 1}</span><PaginationButton label="Próxima página" disabled={safePage === pageCount - 1} onClick={() => setParticipantPage(safePage + 1)}><ChevronRight size={17} /></PaginationButton><PaginationButton label="Última página" disabled={safePage === pageCount - 1} onClick={() => setParticipantPage(pageCount - 1)}><ChevronLast size={17} /></PaginationButton>
           </div>

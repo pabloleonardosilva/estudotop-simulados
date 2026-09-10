@@ -66,6 +66,43 @@ export async function startOrTouchRegistrationAttempt(
   );
 }
 
+/**
+ * Primeira etapa pública de ingresso em um Evento (POST
+ * /api/events/[slug]/route.ts) aceitou um e-mail válido e enviou o e-mail
+ * de confirmação — cria ou toca a tentativa de cadastro incompleta para
+ * aquele e-mail, sem exigir nome/telefone (ainda não coletados nesta
+ * etapa). O chamador já garantiu que o e-mail não pertence a um aluno
+ * existente antes de invocar esta função. Preserva nome/telefone já
+ * conhecidos de uma tentativa anterior para o mesmo e-mail (ex.: pessoa já
+ * passou pelo cadastro geral e voltou a um Evento diferente com o mesmo
+ * e-mail) — nunca sobrescreve dados reais já coletados com os valores
+ * vazios desta etapa. Nunca lança: falha aqui é registrada e absorvida,
+ * nunca bloqueia o ingresso no Evento.
+ */
+export async function startOrTouchEventRegistrationAttempt(
+  supabase: SupabaseClient,
+  input: { email: string; eventId: string },
+) {
+  try {
+    const emailNormalized = input.email.trim().toLowerCase();
+    const { data: existing } = await supabase
+      .from("student_registration_attempts")
+      .select("full_name, phone")
+      .eq("email_normalized", emailNormalized)
+      .neq("status", "completed")
+      .maybeSingle();
+    await startOrTouchRegistrationAttempt(supabase, {
+      email: input.email,
+      fullName: existing?.full_name || "",
+      phone: existing?.phone ?? null,
+      source: "event_signup",
+      sourceContextId: input.eventId,
+    });
+  } catch (error) {
+    void logSystemError({ source: "lib.studentRegistrationAttemptService.eventStart", error, metadata: { event_id: input.eventId } });
+  }
+}
+
 /** Reenvio automático de código por código incorreto (confirm-registration). */
 export async function touchRegistrationAttemptResend(supabase: SupabaseClient, email: string) {
   await safeRpc(

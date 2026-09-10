@@ -2126,7 +2126,10 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 **Pontos de integração (únicos consumidores — não criado nenhum endpoint público novo, o tracking é acoplado aos endpoints reais):**
 - `app/api/auth/register/route.ts` — chama `startOrTouchRegistrationAttempt` só depois do código gerado e do e-mail enviado com sucesso (logo antes do `return ok:true`). `source = event ? "event_signup" : "public_signup"`. Aceita `previous_email` opcional no body (ver "Corrigir dados" abaixo).
 - `app/api/auth/confirm-registration/route.ts` — dois pontos: (1) no reenvio automático por código incorreto, chama `touchRegistrationAttemptResend`; (2) logo após o código ser validado (`claimedConfirmation`), chama `markRegistrationAttemptConfirmed`. O `catch` de `createStudentAccount` chama `markRegistrationAttemptFailed` reaproveitando o mesmo `studentAccountErrorResponse(error, true)` já calculado para a resposta HTTP (nunca uma segunda sanitização); o sucesso não chama mais nada aqui — a remoção já aconteceu dentro de `createStudentAccount`.
+- `app/api/events/[slug]/route.ts` (`POST`, 2026-09-10) — primeira etapa pública do Evento (só e-mail). Logo antes do `return` final de sucesso (`state: "confirmation_email_sent"` — nunca no caminho de cooldown `confirmation_pending`, que não envia e-mail novo), com guard `students.select().eq("email", email)` imediatamente antes (pula a chamada se já existir aluno), chama a nova `startOrTouchEventRegistrationAttempt(supabase, { email, eventId: event.id })`. Essa função lê a tentativa já existente para o `email_normalized` (`status <> 'completed'`) e reenvia o `full_name`/`phone` já conhecidos (nunca vazio por cima de dado real) — protege contra a mesma pessoa reentrando em um Evento diferente depois de já ter fornecido nome/telefone em `/cadastro`. `source = "event_signup"`, `source_context_id = event.id`. Nenhuma coluna nova: `source`/`source_context_id` já existiam desde a migration original. Nunca lança (try/catch interno) — falha aqui nunca bloqueia o envio do e-mail de confirmação nem a criação da intent, que já haviam sido concluídos com sucesso antes desta chamada.
 - `lib/server/studentAccountService.ts` (`createStudentAccount`) — único ponto que chama `removeRegistrationAttemptByEmail`, cobrindo cadastro público e administrativo (ver acima). `startOrTouchRegistrationAttempt`/`touchRegistrationAttemptResend`/`markRegistrationAttemptConfirmed`/`markRegistrationAttemptFailed` continuam nunca chamados por `/api/admin/students/create` nem por dentro do próprio `studentAccountService.ts` — só a remoção é compartilhada, nunca a criação de tentativa.
+
+**Enriquecimento sem duplicar (Evento → cadastro geral, 2026-09-10):** a etapa 1 do Evento e a etapa 2 (`/cadastro` → `register`) escrevem no mesmo `upsert_student_registration_attempt` (índice único parcial por `email_normalized`) — a segunda chamada sempre atualiza a linha criada pela primeira (preenche `full_name`/`phone`, preserva `first_started_at`, incrementa contadores), nunca cria uma segunda linha. Mesmo e-mail em dois Eventos diferentes: uma única linha lógica; `source_context_id` reflete o Evento mais recente (sem histórico multi-evento nesta entrega).
 
 **"Corrigir dados" — troca de e-mail antes da conclusão (2026-09-10):** no wizard de `app/cadastro/page.tsx`, voltar de `"code"` para `"form"` e reenviar com um e-mail diferente não deixa o e-mail antigo como lead fantasma. O client guarda em `lastSubmittedEmailRef` (não é estado, não re-renderiza) o e-mail efetivamente enviado no último `/api/auth/register` bem-sucedido desta sessão de formulário; se o novo envio tem um e-mail diferente, o antigo é enviado como `previous_email` no corpo da requisição — nunca adivinhado por nome/telefone, é o contexto real da mesma sessão de formulário. No servidor, `upsert_student_registration_attempt` **renomeia** a tentativa em aberto do e-mail anterior para o novo e-mail (preserva `id`/`first_started_at`, incrementa contadores normalmente) — mas só quando o novo e-mail ainda não tem sua própria tentativa aberta; havendo conflito real (duas tentativas genuinamente distintas), a renomeação é ignorada com segurança e o fluxo normal de upsert pelo novo e-mail segue, sem apagar nem fundir a tentativa antiga indevidamente.
 
@@ -2137,6 +2140,8 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 **APIs admin:** `GET /api/admin/registration-attempts` (`requireAdmin`, paginação server-side — padrão 25, máximo 100 —, filtros `search`/`status`/`stage`/`period`, exclusão da identidade protegida, `.neq("status", "completed")` na consulta principal e na métrica `last24h` como **reconciliação defensiva de leitura** (a Central nunca mostra um cadastro já concluído, mesmo que a fonte operacional ainda não tenha removido aquela linha), e métricas globais `open`/`last24h`/`contacted`/`ignored` via 4 consultas `count:"exact", head:true` em paralelo, independentes da página atual — `completed` removida das métricas). `PATCH /api/admin/registration-attempts/[id]` (allowlist de ações `contact|ignore|reopen|note` — nunca permite editar e-mail/nome/telefone/etapa; grava `logAdminAction`; o guard `status === "completed"` permanece como defesa adicional, embora nenhuma linha real deva mais chegar a esse estado). `DELETE /api/admin/registration-attempts/[id]` (remove só o registro de acompanhamento manualmente — nunca `auth.users`/`profiles`/`students`/`student_registration_confirmations`; `logAdminAction`; distinto da remoção automática por conclusão).
 
 **Tela:** `/admin/configuracoes/tentativas-cadastro` (`page.tsx` com `requireAdminPage`, `page-client.tsx` dark premium — mesma linguagem de `/admin/logs`: hero, 4 cards de métrica — **Em aberto / Últimas 24h / Contatados / Ignorados**, sem "Recuperados" —, painel de filtros (sem opção "Concluído"/"Recuperados"), tabela com paginação, modal de detalhe `size="wide"` com linha do tempo derivada dos próprios timestamps — sem "Cadastro concluído", pois essa linha nunca é vista antes da remoção —, copiar e-mail/telefone, link `wa.me/<telefone_normalizado>`, observação administrativa, ignorar/reabrir/marcar contatado/excluir com confirmação). Link adicionado em `app/components/Sidebar.tsx` (**arquivo protegido** — alteração mínima: um novo `NavLink` dentro do grupo "Configurações" já existente, nenhum item removido ou reordenado) com badge de contagem de tentativas em aberto (reaproveita o padrão já existente de `openHelpMessagesCount`, `adminFetch` + `setInterval` de 30s — sem realtime novo).
+
+**Correções visuais (2026-09-10):** campo Busca corrigido na causa raiz (ver 19.4.2 — `<input>` deixou de viver num wrapper com fundo divergente); filtros `Situação`/`Etapa`/`Período` migrados de `<select>` nativo para `PremiumSimpleSelect` (19.4.1); nome ausente (tentativa originada em Evento, sem `full_name` ainda) renderiza `"—"` via `displayFullName()` em vez de string vazia (linha da tabela, título do modal, mensagem de exclusão); modal de detalhe ganhou item explícito `"Origem": "Evento"`/`"Cadastro geral"`.
 
 **Backfill (opcional, não executado):** `scripts/sql/student-registration-attempts-backfill-audit.sql` — script **SELECT ONLY**, reaproveita a view já existente `public.student_registration_orphans_admin` (`supabase/migrations/20260713090000_student_account_integrity.sql`, nunca antes consumida por nenhuma tela) para listar `student_registration_confirmations` legadas sem conta correspondente. Não cria nenhum script de importação automática — a ambiguidade de dados legados não foi resolvida silenciosamente, fica documentada para decisão manual futura.
 
@@ -3050,6 +3055,7 @@ Exemplo correto:
 | `placeholder` | `string` | `"Selecione"` |
 | `dark` | `boolean` | `false` |
 | `className` | `string` | `""` |
+| `disabled` | `boolean` (2026-09-10) | `false` |
 
 **Temas:**
 - `dark={true}`: fundo `#0D1B2E`, texto branco, selecionado laranja — usar em `QuestionEditor`, raio-x, páginas dark
@@ -3088,6 +3094,51 @@ Exemplo correto:
 | `components/questions/QuestionEditor.tsx` | Disciplina, Banca, Tipo | `SearchableSelect dark` | ✅ |
 
 **Regra:** usar `SearchableSelect` em TODO select novo ou existente que tenha mais de 5 opções. Para 2-3 opções (ex: Tipo de questão), `SearchableSelect` também é válido pois oferece UX consistente.
+
+---
+
+### 19.4.1 PremiumSimpleSelect — dropdown premium sem busca, para listas curtas (2026-09-10)
+
+**Arquivo:** `app/components/ui/PremiumSimpleSelect.tsx`
+
+**Motivação:** ao corrigir os filtros `Situação`/`Etapa`/`Período` de `/admin/configuracoes/tentativas-cadastro` (`<select>` nativo — menu do navegador, fora do padrão dark premium), nenhum componente existente cobria "poucas opções, sem necessidade de busca, dropdown 100% customizado": `PremiumSelect` (`app/components/ui/PremiumSelect.tsx`) é, ele mesmo, um `<select>` nativo apenas estilizado por CSS (`et-admin-dark-select`/`et-clean-field`) — abre o menu nativo do navegador ao clicar, apesar de listado como componente obrigatório "Todos os selects"; `SearchableSelect` (19.4) sempre exige um campo de busca interno, UX desnecessária para 3–5 opções.
+
+**Props:**
+
+| Prop | Tipo | Padrão |
+|---|---|---|
+| `label` | `string` | — |
+| `value` | `string` | obrigatório |
+| `onChange` | `(value: string) => void` | obrigatório |
+| `options` | `readonly [string, string][]` (`[valor, rótulo]`) | obrigatório |
+| `dark` | `boolean` | `false` |
+| `className` | `string` | `""` |
+| `compact` | `boolean` (2026-09-10) | `false` |
+| `disabled` | `boolean` (2026-09-10) | `false` |
+
+**Comportamento:** modelado na mesma interação já comprovada de `SearchableSelect` — trigger (`button`) + painel customizado (nunca `<select>` nativo), click-outside fecha, teclado completo (`ArrowDown`/`ArrowUp` navega, `Enter`/`Space` seleciona, `Escape` fecha, `Tab` fecha e segue o foco), `aria-haspopup="listbox"`, `aria-expanded`, `role="listbox"`/`role="option"`, item selecionado com check laranja. Variante `dark` (fundo `#050b13`/painel `#0D1B2E`, mesma paleta de `SearchableSelect dark`) e clean (`et-clean-field`/`et-clean-popover`). `compact` (só tema dark): trigger `h-8`/`text-xs`/`rounded-lg` para grades densas de edição inline (ex.: cards de revisão em lote no Raio-X) — sem inflar linhas ao lado de inputs compactos equivalentes já existentes. `disabled`: desabilita o trigger (`disabled:opacity-50`), nunca abre o menu.
+
+**Em uso (2026-09-10):** `/admin/configuracoes/tentativas-cadastro` (Situação/Etapa/Período), `/admin/logs` (Ator/Risco-Status-Gravidade), `/admin/jornadas/[id]` (Status/Progresso do aluno), `/admin/alunos` (itens por página), `/admin/alunos/novo` (Origem), `/admin/professores` (Status), `/admin/eventos` e `/admin/eventos/[id]` (Resultados), `/admin/raio-x-provas/[id]` (Dificuldade/Tipo, `compact`), `/professor/eventos/[id]` (itens por página), `/simulados` (Ordenar por), `/simulados/novo` e `/simulados/[id]/editar` (Status/Pontuação/Modo de feedback/Dificuldade).
+
+**Regra:** para até 5 opções sem necessidade de busca, usar `PremiumSimpleSelect`; para mais de 5 opções (ou quando busca já é útil com poucas opções), usar `SearchableSelect` (19.4). Nenhum dos dois deve ser um `<select>` nativo visível ao usuário.
+
+---
+
+### 19.4.2 Regra permanente — dropdowns e inputs compostos (2026-09-10)
+
+> Dropdowns visíveis devem utilizar os componentes premium oficiais do tema correspondente (`PremiumSimpleSelect` ou `SearchableSelect`). `<select>` nativo não deve ser utilizado como controle visual final em interfaces dark premium ou clean premium, salvo necessidade técnica justificada e não visível ao usuário.
+>
+> Listas com mais de cinco opções devem preferencialmente utilizar `SearchableSelect` ou componente pesquisável oficial equivalente.
+>
+> Menus devem respeitar tema, z-index, acessibilidade, fechamento por Escape/click outside e não podem ser cortados por containers com overflow inadequado.
+>
+> Um `<input>` composto com ícone/adorno nunca deve viver dentro de um wrapper com cor de fundo própria diferente da que o CSS global de `.et-admin-dark-content` força no próprio `<input>` (`background-color: #050b13 !important`, `app/globals.css` ~linha 728) — o `<input>` deve ser a própria caixa visual (altura/borda/radius/padding), com o ícone posicionado por `absolute` por cima. Um wrapper com fundo divergente cria um retângulo visivelmente diferente atrás do texto (causa raiz confirmada em `app/admin/configuracoes/tentativas-cadastro` e `app/admin/logs`, ambos corrigidos nesta data).
+
+**Auditoria global de dropdowns — concluída (2026-09-10):** a auditoria inicial havia identificado 10 arquivos com `<select>` nativo visível (relatado como "12" por imprecisão da primeira varredura — recontagem exata confirmou 10, com 15 elementos `<select>` no total) e 12 arquivos consumindo o `PremiumSelect` antigo (que também renderiza um `<select>` nativo por baixo). Nesta continuação, todos os consumidores fora de arquivos com diff pré-existente protegido foram migrados para `PremiumSimpleSelect` ou `SearchableSelect`, preservando value/onChange/opções/labels/`disabled`/ordenação/placeholder de cada campo. `SearchableSelect` e `PremiumSimpleSelect` ganharam suporte a `disabled` nesta etapa (ver tabelas de props acima) para cobrir os casos que exigiam esse comportamento (ex.: "Simulado base" em `/simulados` quando não há simulados; campos em edição em lote no Raio-X).
+
+Resultado: busca global por `<select>` no projeto (`git grep "<select" -- "app/**/*.tsx"`, excluindo as próprias definições de `PremiumSelect.tsx`/`PremiumSimpleSelect.tsx`) retorna **1 única ocorrência**, em `app/questoes/page-client.tsx` (bloco "Status" de edição em lote) — arquivo com diff local pré-existente de outra frente de trabalho (protegido, não tocado para não misturar diffs de sessões diferentes; ver critério em 53). `PremiumSelect` (o componente antigo, nativo por baixo) permanece consumido apenas nos 3 arquivos dessa mesma frente protegida (`app/questoes/nova/page-client.tsx`, `app/questoes/page-client.tsx`, `app/questoes/revisar/page-client.tsx`) — todos os demais 21+ consumidores anteriores foram migrados ou nunca existiram fora desses 3 arquivos. `SimpleSelectDropdown` (já um dropdown customizado, nunca nativo) permanece duplicado em 4 telas (`app/questoes/page-client.tsx`, `app/questoes/revisar/page-client.tsx` — ambos protegidos —, `app/topicos/page-client.tsx`, `app/simulados/page-client.tsx`) — consolidação não feita por já não violar a regra de "nenhum select nativo visível" (não é `<select>`, é custom) e por prioridade de estabilidade (§21/§34 da tarefa: não é obrigatório refatorar componentes já customizados só para reduzir duplicação). `ActivityPremiumSelect` (`app/admin/alunos/[id]/page-client.tsx`) é outro dropdown local já customizado (não nativo, apesar do nome) — mesma decisão.
+
+Teste automatizado (`tests/dropdown-standardization.spec.ts`) audita isso via `git grep` a cada execução — falha se um novo `<select>` nativo aparecer fora da exceção documentada.
 
 ---
 

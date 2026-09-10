@@ -19,7 +19,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import PageBackground from "../components/ui/PageBackground";
 import PremiumButton from "../components/ui/PremiumButton";
 import PremiumInput from "../components/ui/PremiumInput";
-import PremiumSelect from "../components/ui/PremiumSelect";
+import SearchableSelect from "../components/ui/SearchableSelect";
 import PremiumLoadingOverlay from "../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../components/ui/PremiumModal";
 import { normalizeComparableName, normalizeEntityName } from "@/lib/utils/text";
@@ -283,11 +283,14 @@ export default function AssuntosClient({
             <div><h2 className="et-admin-dark-section-title">Novo assunto</h2><p className="et-admin-dark-muted mt-1.5">O sistema verifica duplicidade enquanto você digita.</p></div>
           </div>
           <div className="space-y-5">
-            <PremiumSelect sortOptions variant="jornada" label="Disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
-              {activeDisciplines.length === 0 ? <option value="">Nenhuma disciplina ativa</option> : activeDisciplines.map((discipline) => (
-                <option key={discipline.id} value={discipline.id}>{discipline.name}</option>
-              ))}
-            </PremiumSelect>
+            <SearchableSelect
+              dark
+              label="Disciplina"
+              value={selectedDisciplineId}
+              onChange={setSelectedDisciplineId}
+              options={activeDisciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+              placeholder={activeDisciplines.length === 0 ? "Nenhuma disciplina ativa" : "Selecione"}
+            />
 
             <PremiumInput variant="jornada" label="Nome do assunto" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Microsoft Windows" />
 
@@ -324,11 +327,16 @@ export default function AssuntosClient({
             <div className="min-w-0"><h2 className="et-admin-dark-section-title">Assuntos cadastrados</h2><p className="et-admin-dark-muted mt-1.5 truncate">{selectedDiscipline ? `Disciplina selecionada: ${selectedDiscipline.name}` : "Selecione uma disciplina."}</p></div>
           </div>
           <div className="et-admin-dark-card mb-6 grid gap-4 p-4 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <PremiumSelect sortOptions variant="jornada" label="Filtrar por disciplina" value={selectedDisciplineId} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedDisciplineId(event.target.value)}>
-              {initialDisciplines.map((discipline) => (
-                <option key={discipline.id} value={discipline.id}>{discipline.name}{!discipline.is_active ? " (inativa)" : ""}</option>
-              ))}
-            </PremiumSelect>
+            <SearchableSelect
+              dark
+              label="Filtrar por disciplina"
+              value={selectedDisciplineId}
+              onChange={setSelectedDisciplineId}
+              options={initialDisciplines.map((discipline) => ({
+                value: discipline.id,
+                label: `${discipline.name}${!discipline.is_active ? " (inativa)" : ""}`,
+              }))}
+            />
 
             <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Pesquisar assunto..." />
           </div>

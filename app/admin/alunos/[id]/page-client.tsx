@@ -52,6 +52,7 @@ import {
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumLoadingOverlay from "@/app/components/ui/PremiumLoadingOverlay";
 import PremiumModal from "@/app/components/ui/PremiumModal";
+import SearchableSelect from "@/app/components/ui/SearchableSelect";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { formatCpf } from "@/lib/utils/cpf";
 import { eventStatusLabel } from "@/lib/ui/eventStatus";
@@ -1375,31 +1376,6 @@ function DarkTextarea({
   );
 }
 
-function DarkSelect({
-  value,
-  onChange,
-  children,
-}: {
-  value: string;
-  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={onChange}
-        className="h-12 w-full appearance-none rounded-2xl border border-white/[0.08] bg-[#132238] pl-4 pr-10 text-sm font-medium text-white outline-none transition duration-200 hover:border-white/[0.14] focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10 [color-scheme:dark] [&>option]:bg-[#0D1B2E] [&>option]:text-white"
-      >
-        {children}
-      </select>
-      <ChevronDown
-        size={16}
-        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/45"
-      />
-    </div>
-  );
-}
 
 function PremiumStatusSelect({
   value,
@@ -2556,21 +2532,18 @@ export default function AlunoAdminDetalheClient({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <DarkField label="Jornada">
-                      <DarkSelect
-                        value={assignForm.jornada_id}
-                        onChange={(e) => setAssignForm((p) => ({ ...p, jornada_id: e.target.value }))}
-                      >
-                        <option value="">Selecione a Jornada…</option>
-                        {sortByPtBrLabel(assignableJornadas, (item) => item.title).map((j) => (
-                          <option key={j.id} value={j.id}>
-                            {j.title}
-                            {j.scope_type === "contest" && j.contest_name ? ` — ${j.contest_name}` : " — Geral"}
-                            {cancelledEnrollmentJornadaIds.has(j.id) ? " — reinserir" : ""}
-                          </option>
-                        ))}
-                      </DarkSelect>
-                    </DarkField>
+                    <SearchableSelect
+                      dark
+                      sortOptions={false}
+                      label="Jornada"
+                      value={assignForm.jornada_id}
+                      onChange={(value) => setAssignForm((p) => ({ ...p, jornada_id: value }))}
+                      placeholder="Selecione a Jornada…"
+                      options={sortByPtBrLabel(assignableJornadas, (item) => item.title).map((j) => ({
+                        value: j.id,
+                        label: `${j.title}${j.scope_type === "contest" && j.contest_name ? ` — ${j.contest_name}` : " — Geral"}${cancelledEnrollmentJornadaIds.has(j.id) ? " — reinserir" : ""}`,
+                      }))}
+                    />
 
                     <DarkField label="Data de entrada">
                       <input

@@ -36,6 +36,7 @@ import PremiumInput from "../../../components/ui/PremiumInput";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import PremiumLoadingOverlay from "../../../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../../../components/ui/PremiumModal";
+import PremiumSimpleSelect from "../../../components/ui/PremiumSimpleSelect";
 import type { AvailableStudent, Jornada, JornadaSimulado, StudentJornada } from "../types";
 import {
   calcReleaseSchedule,
@@ -784,19 +785,20 @@ function AlunosPanel({ students, total, search, setSearch, statusFilter, setStat
           <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
         </div>
         <div className="flex gap-2">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-12 rounded-xl border border-white/[0.075] bg-[#050B13] px-3 text-sm font-semibold text-slate-200 outline-none">
-            <option value="all">Status</option>
-            <option value="active">Ativa</option>
-            <option value="paused">Pausada</option>
-            <option value="expired">Expirada</option>
-            <option value="cancelled">Cancelada</option>
-          </select>
-          <select value={progressFilter} onChange={(e) => setProgressFilter(e.target.value as ProgressFilter)} className="h-12 rounded-xl border border-white/[0.075] bg-[#050B13] px-3 text-sm font-semibold text-slate-200 outline-none">
-            <option value="all">Progresso</option>
-            <option value="not_started">Não iniciado</option>
-            <option value="in_progress">Em andamento</option>
-            <option value="completed">Concluído</option>
-          </select>
+          <PremiumSimpleSelect
+            dark
+            className="w-44"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[["all", "Status"], ["active", "Ativa"], ["paused", "Pausada"], ["expired", "Expirada"], ["cancelled", "Cancelada"]]}
+          />
+          <PremiumSimpleSelect
+            dark
+            className="w-44"
+            value={progressFilter}
+            onChange={(value) => setProgressFilter(value as ProgressFilter)}
+            options={[["all", "Progresso"], ["not_started", "Não iniciado"], ["in_progress", "Em andamento"], ["completed", "Concluído"]]}
+          />
         </div>
       </div>
 

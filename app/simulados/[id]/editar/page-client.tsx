@@ -46,7 +46,7 @@ import PremiumButton from "../../../components/ui/PremiumButton";
 import PremiumInput from "../../../components/ui/PremiumInput";
 import PremiumLoadingOverlay from "../../../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../../../components/ui/PremiumModal";
-import PremiumSelect from "../../../components/ui/PremiumSelect";
+import PremiumSimpleSelect from "../../../components/ui/PremiumSimpleSelect";
 import SearchableSelect from "../../../components/ui/SearchableSelect";
 import SimuladoCard from "../../components/SimuladoCard";
 import SimuladoShell from "../../components/SimuladoShell";
@@ -1077,15 +1077,14 @@ export default function EditarSimuladoClient({
                 <PremiumInput label="Nome" value={form.title} onChange={(event: any) => update("title", event.target.value)} />
                 <PremiumInput label="Descrição automática" textarea value={autoDescription} readOnly />
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <PremiumSelect sortOptions label="Disciplina" value={form.discipline_id || ""} onChange={(event: any) => update("discipline_id", event.target.value)}>
-                    <option value="">Sem disciplina principal</option>
-                    {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
-                  </PremiumSelect>
-                  <PremiumSelect label="Status" value={form.status} onChange={(event: any) => update("status", event.target.value)}>
-                    <option value="draft">Rascunho</option>
-                    <option value="published">Publicado</option>
-                    <option value="archived">Arquivado</option>
-                  </PremiumSelect>
+                  <SearchableSelect
+                    label="Disciplina"
+                    value={form.discipline_id || ""}
+                    onChange={(value) => update("discipline_id", value)}
+                    options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+                    placeholder="Sem disciplina principal"
+                  />
+                  <PremiumSimpleSelect label="Status" value={form.status} onChange={(value) => update("status", value as SimuladoPayload["status"])} options={[["draft", "Rascunho"], ["published", "Publicado"], ["archived", "Arquivado"]]} />
                   <PremiumInput label="URL Vimeo" value={form.correction_video_url || ""} onChange={(event: any) => update("correction_video_url", event.target.value)} />
                 </div>
               </div>
@@ -1123,10 +1122,7 @@ export default function EditarSimuladoClient({
                   />
                 </StrategyField>
                 <StrategyField label="Pontuação" hint="Modelo de correção">
-                  <PremiumSelect label="Pontuação" value={form.scoring_model} onChange={(event: any) => update("scoring_model", event.target.value)}>
-                    <option value="traditional">Tradicional</option>
-                    <option value="cebraspe">CEBRASPE</option>
-                  </PremiumSelect>
+                  <PremiumSimpleSelect label="Pontuação" value={form.scoring_model} onChange={(value) => update("scoring_model", value as SimuladoPayload["scoring_model"])} options={[["traditional", "Tradicional"], ["cebraspe", "CEBRASPE"]]} />
                 </StrategyField>
               </div>
             </PremiumSection>
@@ -1142,14 +1138,12 @@ export default function EditarSimuladoClient({
                 <Toggle label="Exibir resultado ao finalizar" value={form.show_result_on_finish} onChange={(value) => update("show_result_on_finish", value)} />
                 <Toggle label="Mostrar gabarito ao finalizar" value={form.show_answer_key_on_finish} onChange={(value) => update("show_answer_key_on_finish", value)} />
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <PremiumSelect
+                  <PremiumSimpleSelect
                     label="Modo de feedback"
                     value={form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")}
-                    onChange={(event: any) => update("feedback_mode", event.target.value)}
-                  >
-                    <option value="instant">Feedback imediato</option>
-                    <option value="final_only">Navegação aberta / feedback ao final</option>
-                  </PremiumSelect>
+                    onChange={(value) => update("feedback_mode", value as SimuladoPayload["feedback_mode"])}
+                    options={[["instant", "Feedback imediato"], ["final_only", "Navegação aberta / feedback ao final"]]}
+                  />
                 </div>
                 <Toggle label="Mostrar comentário do professor" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
                 <Toggle label="Ajuda da Coruja" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
@@ -2820,12 +2814,12 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
                     <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">Questão {draftIndex + 1}</p>{draft.persisted && <p className="mt-1 text-xs font-semibold text-emerald-600">Salva no Banco · {draft.persisted.code}</p>}</div>
                     <div className="flex flex-wrap gap-2"><PremiumButton variant="secondary" icon={<CopyCheck size={16} />} onClick={() => { setActiveDraftId(draft.localId); setShowTemplatePicker(true); }} disabled={saving || Boolean(draft.persisted)}>Usar modelo</PremiumButton>{drafts.length > 1 && !draft.persisted && <PremiumButton variant="danger" icon={<Trash2 size={16} />} onClick={() => removeDraft(draft)} disabled={saving}>Remover questão</PremiumButton>}</div>
                   </div>
-                  <PremiumSelect sortOptions label="Disciplina" value={draft.disciplineId} onChange={(event: any) => updateDraft(draft.localId, { disciplineId: event.target.value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)}>{disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</PremiumSelect>
+                  <SearchableSelect label="Disciplina" value={draft.disciplineId} onChange={(value) => updateDraft(draft.localId, { disciplineId: value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)} options={disciplines.map((item) => ({ value: item.id, label: item.name }))} />
 <div className="et-clean-metadata et-clean-metadata-fields grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Banca" value={draft.boardId} onChange={(value) => updateDraft(draft.localId, { boardId: value })} options={boards.map((item) => ({ value: item.id, label: item.name }))} placeholder="Selecione" /></div>
 <div className="et-clean-meta-year"><PremiumInput label="Ano" value={draft.year} onChange={(event: any) => updateDraft(draft.localId, { year: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={saving || Boolean(draft.persisted)} /></div>
 <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto" value={draft.subjectId} onChange={(value) => updateDraft(draft.localId, { subjectId: value })} options={[{ value: "", label: "Selecione" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Selecione" /></div>
-<PremiumSelect className="et-clean-meta-compact" label="Dificuldade" value={draft.difficulty} onChange={(event: any) => updateDraft(draft.localId, { difficulty: event.target.value })} disabled={saving || Boolean(draft.persisted)}>{[1,2,3,4,5].map((item) => <option key={item} value={item}>{item}</option>)}</PremiumSelect>
+<PremiumSimpleSelect className="et-clean-meta-compact" label="Dificuldade" value={draft.difficulty} onChange={(value) => updateDraft(draft.localId, { difficulty: value })} disabled={saving || Boolean(draft.persisted)} options={[1, 2, 3, 4, 5].map((item) => [String(item), String(item)] as [string, string])} />
 </div>
                   <div className="mt-4 space-y-4">
 
@@ -3024,9 +3018,12 @@ function ManualQuestionModal({ simuladoId, disciplines, subjects, boards, modelQ
         </div>
         {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
         <div className="grid gap-4 md:grid-cols-4">
-          <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: any) => { markTemplateEdited(); setDisciplineId(event.target.value); setSubjectId(""); }}>
-            {disciplines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </PremiumSelect>
+          <SearchableSelect
+            label="Disciplina"
+            value={disciplineId}
+            onChange={(value) => { markTemplateEdited(); setDisciplineId(value); setSubjectId(""); }}
+            options={disciplines.map((item) => ({ value: item.id, label: item.name }))}
+          />
           <SearchableSelect
             label="Assunto"
             value={subjectId}
@@ -3041,9 +3038,12 @@ function ManualQuestionModal({ simuladoId, disciplines, subjects, boards, modelQ
             options={boards.map((item) => ({ value: item.id, label: item.name }))}
             placeholder="Selecione"
           />
-          <PremiumSelect label="Dificuldade" value={difficulty} onChange={(event: any) => { markTemplateEdited(); setDifficulty(event.target.value); }}>
-            {[1, 2, 3, 4, 5].map((item) => <option key={item} value={item}>{"★".repeat(item)}{"☆".repeat(5 - item)}</option>)}
-          </PremiumSelect>
+          <PremiumSimpleSelect
+            label="Dificuldade"
+            value={difficulty}
+            onChange={(value) => { markTemplateEdited(); setDifficulty(value); }}
+            options={[1, 2, 3, 4, 5].map((item) => [String(item), `${"★".repeat(item)}${"☆".repeat(5 - item)}`] as [string, string])}
+          />
         </div>
         <div className="mt-4 grid gap-4">
           <PremiumInput label="Ano" value={year} onChange={(event: any) => { markTemplateEdited(); setYear(event.target.value.replace(/\D/g, "").slice(0, 4)); }} />

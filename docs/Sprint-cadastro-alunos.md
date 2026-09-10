@@ -1,5 +1,60 @@
 # Sprint Cadastro de Alunos — Central de Tentativas Incompletas
 
+## 10/09/2026 — Integração com Evento + correção do campo Busca + dropdown premium na Central
+
+### Causa raiz da ausência (caso reportado: e-mail informado no Evento não aparecia na Central)
+
+Mapeado o fluxo real de `/evento/[slug]`: a primeira etapa pública (`POST /api/events/[slug]/route.ts`) recebe só um e-mail, valida reCAPTCHA + Evento, cria/atualiza `simulado_event_join_intents` (dedupe por `event_id`+`email`, cooldown de reenvio de 60s) e envia o e-mail de confirmação — só depois disso (clique no link) a pessoa chega a `/api/events/[slug]/confirm/route.ts` e, se ainda não for aluno, é redirecionada para `/cadastro?event=slug&email=...`, onde `POST /api/auth/register` é quem sempre chamou `startOrTouchRegistrationAttempt`. **Causa raiz:** `POST /api/events/[slug]/route.ts` nunca chamava nenhuma função de `studentRegistrationAttemptService.ts` — a Central só era alimentada a partir de `/api/auth/register`, isto é, só depois que a pessoa efetivamente chegasse ao formulário completo de cadastro. Quem digitava o e-mail no Evento e abandonava ali (sem nunca chegar ao `/cadastro`) nunca gerava nenhum registro.
+
+### Regra definitiva (documentação literal solicitada)
+
+> A partir do primeiro momento em que o servidor do EstudoTOP recebe e aceita voluntariamente um endereço de e-mail válido para iniciar o ingresso em um Evento (intent criada/atualizada e e-mail de confirmação efetivamente enviado), esse endereço é registrado como tentativa de cadastro incompleta em `student_registration_attempts` — desde que ainda não pertença a um aluno existente. A tentativa pode existir só com e-mail (`full_name`/`phone` ausentes) e é enriquecida com nome/telefone quando a mesma pessoa chega a `/cadastro`, sem nunca duplicar a linha.
+
+### Ponto instrumentado
+
+`app/api/events/[slug]/route.ts` (`POST`), logo antes do `return` final de sucesso (`state: "confirmation_email_sent"`) — nunca antes do e-mail de confirmação ter sido realmente enviado com sucesso pelo Resend, e nunca no caminho de cooldown (`state: "confirmation_pending"`, que não envia e-mail novo). Guard imediatamente anterior: `supabase.from("students").select("id").eq("email", email).maybeSingle()` — se encontrar aluno existente, a chamada de tracking é pulada (nenhuma tentativa é criada para quem já tem conta). Chama a nova função `startOrTouchEventRegistrationAttempt(supabase, { email, eventId: event.id })`.
+
+### Nova função de serviço
+
+`lib/server/studentRegistrationAttemptService.ts` ganhou `startOrTouchEventRegistrationAttempt(supabase, { email, eventId })` — nunca lança (try/catch interno, log sanitizado em `system_error_logs`, nunca bloqueia o ingresso no Evento). Antes de chamar o mesmo `upsert_student_registration_attempt` já usado pelo cadastro geral (via `startOrTouchRegistrationAttempt`, `source: "event_signup"`, `source_context_id: eventId`), lê a tentativa já existente para aquele `email_normalized` (`status <> 'completed'`) e reaproveita `full_name`/`phone` já conhecidos em vez de enviar vazio — evita que uma pessoa que já passou pelo cadastro geral (ou por um Evento anterior) e volta a entrar com o mesmo e-mail em outro Evento tenha seu nome/telefone reais apagados pela etapa que só tem e-mail. Sem essa proteção, o `ON CONFLICT ... DO UPDATE` do RPC sobrescreveria incondicionalmente.
+
+### Nenhuma migration nova
+
+`source`/`source_context_id` já existiam desde a migration `20260910100000` (`source text check (source in ('public_signup', 'event_signup'))`) e `RegistrationAttemptSource` já incluía `"event_signup"` como tipo — usado pelo cadastro geral quando `eventId` está presente. A integração com Evento não precisou de nenhuma coluna nova; **nenhuma migration foi criada nesta etapa**.
+
+### Enriquecimento e deduplicação
+
+Mesmo mecanismo já existente (`upsert_student_registration_attempt`, índice único parcial por `email_normalized`): a etapa 2 (`/cadastro` → `POST /api/auth/register` → `startOrTouchRegistrationAttempt`) atualiza a MESMA linha criada na etapa 1 do Evento — `full_name`/`phone` passam a ser preenchidos, `stage` reflete o fluxo real, `first_started_at` é preservado, `attempt_count` incrementa normalmente. Mesmo e-mail em dois Eventos diferentes: uma única linha lógica, `source_context_id` passa a refletir o Evento mais recente (mesma semântica já documentada para "Corrigir dados" — não há histórico multi-evento nesta entrega).
+
+### Proteção contra aluno existente e requests atrasados
+
+Igual ao restante da Sprint: o guard `students.select().eq("email", email)` roda a cada chamada, com dado sempre atual — um request atrasado do Evento que chegue **depois** da criação integral do aluno vai encontrar o `students` já populado e pular a criação da tentativa (nunca a recria). Como `complete_student_registration_attempt` continua fazendo `DELETE`, nenhuma chamada de toque tardio pode reabri-la (`UPDATE`/upsert-por-e-mail-já-inexistente não insere sozinho quando o guard de aluno existente já barrou a chamada antes).
+
+### Cadastro administrativo e concorrência
+
+Inalterados: `/api/admin/students/create` nunca chama nenhuma função de tracking (nem antes, nem depois desta Sprint) — continua coberto só pela remoção automática dentro de `createStudentAccount`. `startOrTouchRegistrationAttempt` (cadastro geral) e `startOrTouchEventRegistrationAttempt` (Evento) escrevem através do mesmo RPC atômico com `ON CONFLICT` por `email_normalized` — concorrência entre os dois fluxos nunca cria duas linhas.
+
+### UI — Central de Tentativas de Cadastro
+
+- **Nome/telefone ausentes:** `full_name`/`phone` chegam vazios em uma tentativa recém-criada pelo Evento; `displayFullName()` (novo helper) renderiza `"—"` em vez de string vazia (linha da tabela, título do modal, mensagem de exclusão) — nunca `null`/`undefined`/vazio "cru".
+- **Origem:** o modal de detalhe já exibia um badge "Evento" quando `source === "event_signup"` (Sprint anterior); esta entrega adiciona um `DetailItem` explícito `"Origem": "Evento"` ou `"Cadastro geral"` junto dos demais campos do modal. Buscar o nome do Evento exigiria join/consulta adicional por linha — mantido fora desta entrega (badge/rótulo "Evento" é suficiente, sem N+1).
+
+### Correção do campo Busca — causa raiz real (não tentativa e erro)
+
+O campo Busca usava um wrapper `<span>` com fundo próprio (`bg-[#0D1926]`) contendo um `<input className="bg-transparent">` — mesmo padrão já existente em `app/admin/logs/page-client.tsx` (`FilterInput`, local, duplicado, não compartilhado). `app/globals.css` define uma regra global (`.et-admin-dark-content :where(input..., select, textarea) { background-color: #050b13 !important; ... }`, linha ~728) que força a cor de fundo de **todo** `<input>`/`select`/`textarea` dentro de qualquer página admin, sobrepondo `bg-transparent` (utilitário Tailwind, sem `!important`, sempre perde). Resultado: o `<input>` (só do tamanho da linha de texto, sem herdar a altura `h-12` do wrapper) ganhava seu próprio fundo `#050b13`, visivelmente diferente do `#0D1926` do wrapper ao redor — o "retângulo preto atrás/ao redor do texto" relatado. Confirmado comparando com o padrão que já funciona (`PremiumInput`/classe `.et-admin-dark-input`, que não define fundo próprio nem usa wrapper colorido — deixa a mesma regra global aplicar `#050b13` uniformemente, sem nenhum outro elemento competindo).
+
+**Correção:** o `<input>` passou a ser a própria caixa visual (altura, borda, radius, padding — sem wrapper com fundo divergente); o ícone de busca é posicionado por cima via `absolute`. A mesma correção foi aplicada em `app/admin/logs/page-client.tsx` (`FilterInput`, usado por Busca/Rota/Ação-evento/Data inicial/Data final) — mesmo componente duplicado, mesma causa raiz, mesmo bug potencial (não reportado ali, mas confirmado presente e corrigido preventivamente).
+
+### Dropdowns nativos da Central — substituídos
+
+`Situação`/`Etapa`/`Período` usavam um `<select>` nativo local (função `FilterSelect`, removida). Nenhum componente existente cobria "poucas opções, sem busca, dropdown 100% customizado" (`PremiumSelect` é um `<select>` nativo estilizado — abre o menu nativo do navegador ao clicar, mesmo problema; `SearchableSelect` sempre exige campo de busca interno, inadequado para 3–5 opções). Criado `app/components/ui/PremiumSimpleSelect.tsx` — novo componente compartilhado (dark/clean), modelado na mesma interação já comprovada de `SearchableSelect` (trigger + painel customizado, click-outside, teclado: setas/Enter/Escape/Tab, `aria-haspopup`/`aria-expanded`/`role="listbox"`/`role="option"`), só sem o campo de busca. Os três filtros da Central passaram a usá-lo; nenhuma opção, valor, filtro ou ordenação foi alterado — só o componente visual.
+
+### Auditoria global de dropdowns (mapeamento, sem substituição em massa)
+
+Levantamento (leitura, sem alteração) para o relatório desta tarefa: 12 arquivos com `<select>` nativo visível (`app/admin/logs`, `app/questoes`, `app/admin/alunos` e `[id]`, `app/professor/eventos/[id]`, `app/admin/alunos/novo`, `app/admin/raio-x-provas` e `[id]`, `app/admin/jornadas/[id]`, `app/simulados`); 21 arquivos referenciando `SearchableSelect`/`PremiumSelect`/`SimpleSelectDropdown`. Achados relevantes: **`PremiumSelect` (`app/components/ui/PremiumSelect.tsx`), listado no índice como componente obrigatório "Todos os selects", é ele mesmo um `<select>` nativo estilizado** — não resolve o problema de menu nativo por si só; `SimpleSelectDropdown` está duplicado localmente em `app/questoes/page-client.tsx`, `app/questoes/revisar/page-client.tsx`, `app/topicos/page-client.tsx` e `app/simulados/page-client.tsx`. Decisão desta entrega: **não** substituir esses 12 selects nativos nem consolidar as 4 cópias de `SimpleSelectDropdown` — mudar dropdowns de páginas como Questões/Simulados/Jornadas/Alunos está fora do relatado (retângulo preto + selects nativos da Central de Tentativas) e representa um raio de alteração muito maior, com risco real de regressão em telas de alto uso, contra a instrução explícita de não alterar o que já funciona e não está envolvido nesta demanda. Ficam mapeados para uma Sprint de padronização visual dedicada; `PremiumSimpleSelect` já existe como peça reutilizável para isso.
+
+---
+
 ## 10/09/2026 — Fechamento da Sprint: migration corretiva executada
 
 A migration `supabase/migrations/20260910120000_remove_completed_registration_attempts.sql` foi **executada manualmente no Supabase pelo responsável do projeto** — informação recebida diretamente dele, fora do escopo deste agente (nenhuma migration, SQL ou comando de banco foi executado pelo Claude em nenhuma etapa desta Sprint, incluindo esta). A partir da execução, valem no banco real:

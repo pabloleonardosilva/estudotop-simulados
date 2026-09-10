@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
-  ChevronDown,
   Mail,
   Phone,
   Send,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumLoadingOverlay from "@/app/components/ui/PremiumLoadingOverlay";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 
@@ -32,6 +32,7 @@ export default function NovoAlunoAdminPage() {
   const [cpf, setCpf] = useState("");
   const [cpfTouched, setCpfTouched] = useState(false);
   const [desiredContests, setDesiredContests] = useState("");
+  const [origin, setOrigin] = useState("Manual");
   const [notes, setNotes] = useState("");
   const [state, setState] = useState<SubmitState>({ type: "idle", message: "" });
 
@@ -101,6 +102,7 @@ export default function NovoAlunoAdminPage() {
       setCpf("");
       setCpfTouched(false);
       setDesiredContests("");
+      setOrigin("Manual");
       setNotes("");
     } catch (error) {
       setState({
@@ -218,13 +220,13 @@ export default function NovoAlunoAdminPage() {
                   />
                 </DarkField>
                 <DarkField label="Origem">
-                  <DarkSelect name="origin" defaultValue="Manual">
-                    <option value="Hotmart">Hotmart</option>
-                    <option value="Indicação">Indicação</option>
-                    <option value="Instagram">Instagram</option>
-                    <option value="Manual">Manual</option>
-                    <option value="WhatsApp">WhatsApp</option>
-                  </DarkSelect>
+                  <PremiumSimpleSelect
+                    dark
+                    value={origin}
+                    onChange={setOrigin}
+                    options={[["Hotmart", "Hotmart"], ["Indicação", "Indicação"], ["Instagram", "Instagram"], ["Manual", "Manual"], ["WhatsApp", "WhatsApp"]]}
+                  />
+                  <input type="hidden" name="origin" value={origin} />
                 </DarkField>
               </div>
 
@@ -348,38 +350,6 @@ function DarkInput({
             ? "border-red-500/40 focus:border-red-500/50 focus:ring-red-500/10"
             : "border-white/[0.08] focus:border-orange-500/50 focus:ring-orange-500/10"
         }`}
-      />
-    </div>
-  );
-}
-
-function DarkSelect({
-  name,
-  defaultValue,
-  value,
-  onChange,
-  children,
-}: {
-  name: string;
-  defaultValue?: string;
-  value?: string;
-  onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <select
-        name={name}
-        defaultValue={defaultValue}
-        value={value}
-        onChange={onChange}
-        className="h-12 w-full appearance-none rounded-2xl border border-white/[0.08] bg-white/[0.04] pl-4 pr-10 text-sm font-medium text-white/80 outline-none transition duration-200 hover:border-white/[0.14] focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10 [color-scheme:dark]"
-      >
-        {children}
-      </select>
-      <ChevronDown
-        size={16}
-        className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/30"
       />
     </div>
   );

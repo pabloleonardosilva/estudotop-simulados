@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { formatCpf } from "@/lib/utils/cpf";
 import type { StudentRow } from "./page";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 
 // ── constants ──────────────────────────────────────────────
 
@@ -364,18 +365,13 @@ export default function AlunosAdminClient({ students }: { students: StudentRow[]
                 <ChevronRight size={15} />
               </button>
 
-              <div className="relative ml-2">
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-8 appearance-none rounded-xl border border-white/[0.08] bg-white/[0.04] pl-3 pr-8 text-xs font-semibold text-white/60 outline-none transition hover:border-white/[0.14] focus:border-orange-500/50 [color-scheme:dark]"
-                >
-                  <option value={30}>30 por página</option>
-                  <option value={50}>50 por página</option>
-                </select>
-                <ChevronDown
-                  size={13}
-                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30"
+              <div className="ml-2 w-32">
+                <PremiumSimpleSelect
+                  dark
+                  compact
+                  value={String(pageSize)}
+                  onChange={(value) => setPageSize(Number(value))}
+                  options={[["30", "30 por página"], ["50", "50 por página"]]}
                 />
               </div>
             </div>

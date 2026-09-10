@@ -5,7 +5,7 @@ import { Ban, GraduationCap, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumInput from "@/app/components/ui/PremiumInput";
-import PremiumSelect from "@/app/components/ui/PremiumSelect";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 
 type Professor = {
@@ -150,10 +150,7 @@ export default function ProfessoresAdminClient() {
         <PremiumInput label="Nome" value={editName} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditName(event.target.value)} required minLength={3} />
         <PremiumInput label="E-mail" type="email" value={editEmail} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditEmail(event.target.value)} required />
         <PremiumInput label="WhatsApp" value={editPhone} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditPhone(event.target.value)} />
-        <PremiumSelect label="Status" value={editStatus} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setEditStatus(event.target.value)}>
-          <option value="active">Ativo</option>
-          <option value="inactive">Inativo</option>
-        </PremiumSelect>
+        <PremiumSimpleSelect label="Status" value={editStatus} onChange={setEditStatus} options={[["active", "Ativo"], ["inactive", "Inativo"]]} />
         {editError && <p role="alert" className="text-sm font-semibold text-red-300">{editError}</p>}
       </div>
     </PremiumModal>

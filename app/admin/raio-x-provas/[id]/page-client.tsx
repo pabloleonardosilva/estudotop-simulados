@@ -1,5 +1,4 @@
 "use client";
-import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -40,6 +39,8 @@ import {
 import { splitIntoQuestionBlocks } from "@/app/lib/utils/question-splitter";
 import RichTextEditor from "@/app/components/questions/RichTextEditor";
 import SelectionGhostBar from "@/app/components/ui/SelectionGhostBar";
+import SearchableSelect from "@/app/components/ui/SearchableSelect";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import QuestionActionModal, { type QuestionActionModalState } from "@/app/components/questions/QuestionActionModal";
 import { isHtmlContent } from "@/app/lib/markdownReport";
 import HtmlWithImageMarkers, { insertListItemBreaks } from "@/app/components/ui/HtmlWithImageMarkers";
@@ -1287,17 +1288,16 @@ export default function RaioXDetalheClient({ analysis, questions, disciplines, s
 
               {/* Disciplina */}
               {disciplines.length > 0 && (
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Disciplina</span>
-                  <select
+                <div className="sm:col-span-2">
+                  <SearchableSelect
+                    dark
+                    label="Disciplina"
                     value={editDisciplineId}
-                    onChange={(e) => setEditDisciplineId(e.target.value)}
-                    className="w-full rounded-2xl border border-white/[0.08] bg-[#091323] px-4 py-3 text-sm font-semibold text-white outline-none focus:border-orange-300/50"
-                  >
-                    <option value="">Selecione</option>
-                    {sortByPtBrLabel(disciplines, (item) => item.name).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </label>
+                    onChange={setEditDisciplineId}
+                    options={disciplines.map((d) => ({ value: d.id, label: d.name }))}
+                    placeholder="Selecione"
+                  />
+                </div>
               )}
             </div>
 
@@ -2547,8 +2547,24 @@ function QuestionCard({ question, selected, onToggleSelected, onChange, onDiscar
                 {[
                   { label: "Ano", children: <input type="number" min="1990" max="2100" value={String(questionYear)} onChange={(e) => onChange({ year: /^\d{0,4}$/.test(e.target.value) && e.target.value ? Number(e.target.value) : null })} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0D1B2A] px-2 text-xs font-semibold text-slate-300 outline-none" /> },
                   { label: "Banca", children: <input value={question.board_name || ""} onChange={(e) => onChange({ board_name: e.target.value })} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0D1B2A] px-2 text-xs font-semibold text-slate-300 outline-none" /> },
-                  { label: "Dificuldade", children: <select value={question.difficulty_level || ""} onChange={(e) => onChange({ difficulty_level: e.target.value ? Number(e.target.value) : null })} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0D1B2A] px-2 text-xs font-semibold text-slate-300 outline-none"><option value="">—</option>{[1,2,3,4,5].map((n) => <option key={n} value={n}>{n} — {difficultyLabel(n)}</option>)}</select> },
-                  { label: "Tipo", children: <select value={question.question_type} onChange={(e) => onChange({ question_type: e.target.value as RaioXQuestion["question_type"] })} className="h-8 w-full rounded-lg border border-white/[0.08] bg-[#0D1B2A] px-2 text-xs font-semibold text-slate-300 outline-none"><option value="true_false">Certo/Errado</option><option value="multiple_choice">Múltipla escolha</option></select> },
+                  { label: "Dificuldade", children: (
+                    <PremiumSimpleSelect
+                      dark
+                      compact
+                      value={String(question.difficulty_level || "")}
+                      onChange={(value) => onChange({ difficulty_level: value ? Number(value) : null })}
+                      options={[["", "—"], ...[1, 2, 3, 4, 5].map((n) => [String(n), `${n} — ${difficultyLabel(n)}`] as [string, string])]}
+                    />
+                  ) },
+                  { label: "Tipo", children: (
+                    <PremiumSimpleSelect
+                      dark
+                      compact
+                      value={question.question_type}
+                      onChange={(value) => onChange({ question_type: value as RaioXQuestion["question_type"] })}
+                      options={[["true_false", "Certo/Errado"], ["multiple_choice", "Múltipla escolha"]]}
+                    />
+                  ) },
                 ].map((item) => (
                   <label key={item.label} className="block">
                     <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{item.label}</span>

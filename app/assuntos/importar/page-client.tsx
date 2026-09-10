@@ -8,7 +8,7 @@ import PageHeader from "../../components/ui/PageHeader";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumCard from "../../components/ui/PremiumCard";
 import PremiumInput from "../../components/ui/PremiumInput";
-import PremiumSelect from "../../components/ui/PremiumSelect";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import PremiumLoadingOverlay from "../../components/ui/PremiumLoadingOverlay";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 
@@ -61,10 +61,13 @@ export default function ImportarAssuntosClient({ disciplines }: { disciplines: a
 
       <PremiumCard title="Assuntos em massa" description="Escolha a disciplina e informe um assunto por linha." icon={<Layers3 size={18} />}>
         <div className="grid gap-5">
-          <PremiumSelect sortOptions label="Disciplina" value={disciplineId} onChange={(event: any) => setDisciplineId(event.target.value)}>
-            <option value="">Selecione</option>
-            {disciplines.map((discipline) => <option key={discipline.id} value={discipline.id}>{discipline.name}</option>)}
-          </PremiumSelect>
+          <SearchableSelect
+            label="Disciplina"
+            value={disciplineId}
+            onChange={setDisciplineId}
+            options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
+            placeholder="Selecione"
+          />
 
           <PremiumInput
             label="Assuntos"

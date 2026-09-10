@@ -25,7 +25,8 @@ import PageHeader from "../../components/ui/PageHeader";
 import PremiumButton from "../../components/ui/PremiumButton";
 import PremiumCard from "../../components/ui/PremiumCard";
 import PremiumInput from "../../components/ui/PremiumInput";
-import PremiumSelect from "../../components/ui/PremiumSelect";
+import SearchableSelect from "../../components/ui/SearchableSelect";
+import PremiumSimpleSelect from "../../components/ui/PremiumSimpleSelect";
 import PremiumLoadingOverlay from "../../components/ui/PremiumLoadingOverlay";
 import SubjectMultiSelect from "../../components/questions/SubjectMultiSelect";
 import PremiumScissorsIcon from "../../components/questions/PremiumScissorsIcon";
@@ -540,39 +541,30 @@ export default function GerarQuestoesIAClient({
           >
             <div className="grid gap-5">
               <div className="grid gap-5 md:grid-cols-3">
-                <PremiumSelect sortOptions
+                <PremiumSimpleSelect
                   label="Tipo de questão"
                   value={questionType}
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    setQuestionType(
-                      event.target.value === "true_false" ? "true_false" : "multiple_choice"
-                    )
-                  }
-                >
-                  <option value="multiple_choice">Questão com alternativas</option>
-                  <option value="true_false">Questão de assertiva / Certo ou Errado</option>
-                </PremiumSelect>
+                  onChange={(value) => setQuestionType(value === "true_false" ? "true_false" : "multiple_choice")}
+                  options={[["multiple_choice", "Questão com alternativas"], ["true_false", "Questão de assertiva / Certo ou Errado"]]}
+                />
 
-                <PremiumSelect sortOptions
+                <SearchableSelect
                   label="Disciplina"
                   value={disciplineId}
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                    if (event.target.value === "__new") {
+                  onChange={(value) => {
+                    if (value === "__new") {
                       window.location.href = "/disciplinas";
                       return;
                     }
 
-                    setDisciplineId(event.target.value);
+                    setDisciplineId(value);
                     setSubjectIds([]);
                   }}
-                >
-                  {disciplines.map((discipline) => (
-                    <option key={discipline.id} value={discipline.id}>
-                      {discipline.name}
-                    </option>
-                  ))}
-                  <option value="__new">+ Cadastrar nova disciplina</option>
-                </PremiumSelect>
+                  options={[
+                    ...disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name })),
+                    { value: "__new", label: "+ Cadastrar nova disciplina" },
+                  ]}
+                />
 
                 <SubjectMultiSelect
                   subjects={filteredSubjects}
@@ -583,26 +575,23 @@ export default function GerarQuestoesIAClient({
                 />
               </div>
 
-              <PremiumSelect sortOptions
+              <SearchableSelect
                 label="Inspirado na banca"
                 value={boardId}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                  if (event.target.value === "__new") {
+                onChange={(value) => {
+                  if (value === "__new") {
                     window.location.href = "/bancas";
                     return;
                   }
 
-                  setBoardId(event.target.value);
+                  setBoardId(value);
                 }}
-              >
-                <option value="">Selecione a banca inspiradora</option>
-                {boards.map((board) => (
-                  <option key={board.id} value={board.id}>
-                    {board.name}
-                  </option>
-                ))}
-                <option value="__new">+ Cadastrar nova banca</option>
-              </PremiumSelect>
+                placeholder="Selecione a banca inspiradora"
+                options={[
+                  ...boards.map((board) => ({ value: board.id, label: board.name })),
+                  { value: "__new", label: "+ Cadastrar nova banca" },
+                ]}
+              />
 
               <div>
                 <label className="mb-3 block text-sm font-medium text-slate-700">
