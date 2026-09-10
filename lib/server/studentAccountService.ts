@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { findAuthUserByEmail, reconcileIncompleteStudentAccount } from "@/lib/server/studentAccountRepair";
+import { removeRegistrationAttemptByEmail } from "@/lib/server/studentRegistrationAttemptService";
 
 export type StudentAccountErrorCode =
   | "STUDENT_NAME_REQUIRED"
@@ -108,6 +109,11 @@ export async function createStudentAccount(supabase: SupabaseClient, input: Crea
       throw new StudentAccountError(repair.code === "NOT_STUDENT_ACCOUNT" ? "STUDENT_EMAIL_USED_BY_ADMIN" : "STUDENT_ACCOUNT_INCOMPLETE", "email");
     }
     if (!(await validateStudentAccountIntegrity(supabase, repair.userId))) throw new StudentAccountError("STUDENT_ACCOUNT_INCOMPLETE");
+    // Conta constituída integralmente (reaproveitando um Auth órfão) — a
+    // tentativa de cadastro incompleta correspondente deixa de existir,
+    // qualquer que tenha sido o caminho até aqui (cadastro público ou
+    // criação administrativa). Nunca falha o cadastro se a limpeza falhar.
+    await removeRegistrationAttemptByEmail(supabase, input.email);
     return { userId: repair.userId, repaired: true };
   }
 
@@ -144,6 +150,9 @@ export async function createStudentAccount(supabase: SupabaseClient, input: Crea
     await rollbackCreatedAccount(supabase, userId);
     throw new StudentAccountError("STUDENT_ACCOUNT_INCOMPLETE");
   }
+  // Conta constituída integralmente — mesma limpeza da tentativa incompleta
+  // do branch de reconciliação acima (ver comentário lá).
+  await removeRegistrationAttemptByEmail(supabase, input.email);
   return { userId, repaired: false };
 }
 

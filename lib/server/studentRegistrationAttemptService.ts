@@ -39,6 +39,16 @@ export async function startOrTouchRegistrationAttempt(
     phone: string | null;
     source: RegistrationAttemptSource;
     sourceContextId?: string | null;
+    /**
+     * E-mail submetido na tentativa anterior desta MESMA sessão de
+     * cadastro (rastreado pelo próprio client, nunca adivinhado por
+     * nome/telefone) — usado quando "Corrigir dados" troca o e-mail antes
+     * da conclusão, para renomear a tentativa em aberto em vez de deixar o
+     * e-mail antigo como lead fantasma. Se o novo e-mail já tiver sua
+     * própria tentativa aberta (conflito real), a renomeação é ignorada
+     * com segurança pelo RPC.
+     */
+    previousEmail?: string | null;
   },
 ) {
   await safeRpc(
@@ -50,6 +60,7 @@ export async function startOrTouchRegistrationAttempt(
       p_phone: input.phone,
       p_source: input.source,
       p_source_context_id: input.sourceContextId ?? null,
+      p_previous_email: input.previousEmail ?? null,
     },
     "lib.studentRegistrationAttemptService.start",
   );
@@ -75,13 +86,21 @@ export async function markRegistrationAttemptConfirmed(supabase: SupabaseClient,
   );
 }
 
-/** Conta constituída com sucesso (auth.users + profiles + students). */
-export async function completeRegistrationAttempt(supabase: SupabaseClient, email: string) {
+/**
+ * Conta constituída com sucesso (auth.users + profiles + students) — a
+ * tabela representa só cadastros ainda não concluídos, então a tentativa
+ * correspondente é removida (nunca mantida como "completed"). Chamada
+ * centralizada dentro de `createStudentAccount` (lib/server/studentAccountService.ts)
+ * — cobre cadastro público e criação administrativa sem lógica duplicada.
+ * Idempotente: se não existir tentativa para o e-mail, não faz nada e não
+ * lança. Nunca remove auth.users/profiles/students/student_registration_confirmations.
+ */
+export async function removeRegistrationAttemptByEmail(supabase: SupabaseClient, email: string) {
   await safeRpc(
     supabase,
     "complete_student_registration_attempt",
     { p_email: email },
-    "lib.studentRegistrationAttemptService.complete",
+    "lib.studentRegistrationAttemptService.remove",
   );
 }
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { BookOpen, Eye, EyeOff, GraduationCap, KeyRound, MailCheck, ShieldCheck, Trophy } from "lucide-react";
 import { formatCpf, isValidCpf, onlyDigits } from "@/lib/utils/cpf";
 import { supabase } from "../lib/supabase/client";
@@ -60,6 +60,10 @@ export default function CadastroPage() {
   const [passwordViolations, setPasswordViolations] = useState<string[]>([]);
   const [passwordCreated, setPasswordCreated] = useState(false);
   const [passwordAlreadyUpdated, setPasswordAlreadyUpdated] = useState(false);
+  // E-mail efetivamente enviado no último /api/auth/register desta sessão de
+  // formulário — usado só para o servidor detectar troca de e-mail via
+  // "Corrigir dados" (nunca exposto/alterado fora desse fluxo).
+  const lastSubmittedEmailRef = useRef<string | null>(null);
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
   const passwordValidation = validatePassword(password, { fullName, email });
   const canCreatePassword = passwordValidation.valid && confirmPassword.length > 0 && password === confirmPassword && !loading;
@@ -158,6 +162,8 @@ export default function CadastroPage() {
             });
         });
       });
+      const normalizedEmail = email.trim().toLowerCase();
+      const previousEmail = lastSubmittedEmailRef.current;
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -169,6 +175,7 @@ export default function CadastroPage() {
           desiredContests,
           captcha_token: captchaToken,
           ...(eventSlug ? { event: eventSlug } : {}),
+          ...(previousEmail && previousEmail !== normalizedEmail ? { previous_email: previousEmail } : {}),
         }),
       });
 
@@ -180,6 +187,7 @@ export default function CadastroPage() {
         return;
       }
 
+      lastSubmittedEmailRef.current = normalizedEmail;
       setInvalidFields([]);
       setSuccessMessage(data.message);
       setStep("code");

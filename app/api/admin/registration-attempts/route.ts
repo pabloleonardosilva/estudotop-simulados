@@ -31,6 +31,14 @@ export async function GET(request: Request) {
     let query = supabase
       .from("student_registration_attempts")
       .select("*", { count: "exact" })
+      // Reconciliação defensiva: a Central nunca mostra um cadastro já
+      // concluído. A fonte operacional (createStudentAccount) já remove a
+      // linha no momento da conclusão — este filtro só protege contra
+      // resíduo legado (linhas gravadas como "completed" antes da correção
+      // de regra) ou uma janela entre o deploy deste código e o deploy da
+      // migration corretiva, em que o RPC antigo ainda pode gravar
+      // "completed" em vez de excluir.
+      .neq("status", "completed")
       // .neq trataria NULL como "não bate" e excluiria toda linha sem falha
       // registrada (a maioria) — precisa do .or explícito para manter as
       // linhas com last_failure_code nulo.
@@ -67,12 +75,12 @@ export async function GET(request: Request) {
     // fixas de contagem (head:true, sem trazer linhas), em paralelo. Não é
     // N+1: é um número fixo de agregações, independente da quantidade de
     // tentativas.
-    const [{ data, error, count }, openCount, last24hCount, contactedCount, completedCount] = await Promise.all([
+    const [{ data, error, count }, openCount, last24hCount, contactedCount, ignoredCount] = await Promise.all([
       query,
       supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).eq("status", "open").or(identityGuard),
-      supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).gte("last_activity_at", last24h).or(identityGuard),
+      supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).neq("status", "completed").gte("last_activity_at", last24h).or(identityGuard),
       supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).eq("status", "contacted").or(identityGuard),
-      supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).eq("status", "completed").or(identityGuard),
+      supabase.from("student_registration_attempts").select("*", { count: "exact", head: true }).eq("status", "ignored").or(identityGuard),
     ]);
 
     if (error) {
@@ -90,7 +98,7 @@ export async function GET(request: Request) {
         open: openCount.count || 0,
         last24h: last24hCount.count || 0,
         contacted: contactedCount.count || 0,
-        completed: completedCount.count || 0,
+        ignored: ignoredCount.count || 0,
       },
     });
   } catch (error) {

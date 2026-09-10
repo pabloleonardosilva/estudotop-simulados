@@ -20,20 +20,23 @@ import PremiumButton from "@/app/components/ui/PremiumButton";
 import PremiumModal from "@/app/components/ui/PremiumModal";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 
+// A tabela representa SOMENTE cadastros ainda não concluídos: quando a
+// conta de aluno é constituída integralmente, a tentativa é removida (nunca
+// fica com status/stage "completed" — por isso esses valores não existem
+// mais nestes tipos, ver docs/Sprint-cadastro-alunos.md).
 type Attempt = {
   id: string;
   email: string;
   full_name: string;
   phone: string | null;
   phone_normalized: string | null;
-  status: "open" | "contacted" | "ignored" | "completed";
-  stage: "confirmation_sent" | "confirmation_confirmed" | "account_creation_failed" | "completed";
+  status: "open" | "contacted" | "ignored";
+  stage: "confirmation_sent" | "confirmation_confirmed" | "account_creation_failed";
   source: "public_signup" | "event_signup" | null;
   first_started_at: string;
   last_activity_at: string;
   confirmation_requested_at: string | null;
   confirmation_confirmed_at: string | null;
-  completed_at: string | null;
   ignored_at: string | null;
   attempt_count: number;
   confirmation_send_count: number;
@@ -45,13 +48,12 @@ type Attempt = {
   created_at: string;
 };
 
-type Metrics = { open: number; last24h: number; contacted: number; completed: number };
+type Metrics = { open: number; last24h: number; contacted: number; ignored: number };
 
 const STAGE_LABELS: Record<Attempt["stage"], string> = {
   confirmation_sent: "Código não confirmado",
   confirmation_confirmed: "Confirmado, aguardando conclusão",
   account_creation_failed: "Falha na conclusão",
-  completed: "Concluído",
 };
 
 const STAGE_FAILURE_LABELS: Record<string, string> = {
@@ -70,7 +72,6 @@ const STATUS_OPTIONS = [
   ["all", "Todos"],
   ["open", "Em aberto"],
   ["contacted", "Contatados"],
-  ["completed", "Recuperados"],
   ["ignored", "Ignorados"],
 ] as const;
 
@@ -79,7 +80,6 @@ const STAGE_OPTIONS = [
   ["confirmation_sent", "Código não confirmado"],
   ["confirmation_confirmed", "Confirmado, aguardando conclusão"],
   ["account_creation_failed", "Falha na conclusão"],
-  ["completed", "Concluído"],
 ] as const;
 
 const PERIOD_OPTIONS = [
@@ -93,7 +93,7 @@ const PAGE_SIZE = 25;
 
 export default function RegistrationAttemptsClient() {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [metrics, setMetrics] = useState<Metrics>({ open: 0, last24h: 0, contacted: 0, completed: 0 });
+  const [metrics, setMetrics] = useState<Metrics>({ open: 0, last24h: 0, contacted: 0, ignored: 0 });
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -230,7 +230,7 @@ export default function RegistrationAttemptsClient() {
           <MetricCard icon={<UserRoundSearch />} label="Em aberto" value={metrics.open} tone="orange" />
           <MetricCard icon={<Clock3 />} label="Últimas 24h" value={metrics.last24h} tone="blue" />
           <MetricCard icon={<MessageCircle />} label="Contatados" value={metrics.contacted} tone="amber" />
-          <MetricCard icon={<CheckCircle2 />} label="Recuperados" value={metrics.completed} tone="green" />
+          <MetricCard icon={<Ban />} label="Ignorados" value={metrics.ignored} tone="green" />
         </section>
 
         <section className="relative z-20 mt-5 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.035] p-5 shadow-xl shadow-black/20 backdrop-blur-sm">
@@ -374,7 +374,6 @@ function StatusBadge({ status }: { status: Attempt["status"] }) {
   const config = {
     open: { className: "et-admin-dark-badge-info", label: "Em aberto" },
     contacted: { className: "et-admin-dark-badge-warning", label: "Contatado" },
-    completed: { className: "et-admin-dark-badge-success", label: "Recuperado" },
     ignored: { className: "et-admin-dark-badge-neutral", label: "Ignorado" },
   }[status];
   return <span className={`et-admin-dark-badge ${config.className}`}>{config.label}</span>;
@@ -455,14 +454,16 @@ function AttemptDetailModal({
 }) {
   const [note, setNote] = useState(attempt.admin_notes || "");
   const whatsappUrl = useMemo(() => buildWhatsAppUrl(attempt.phone_normalized), [attempt.phone_normalized]);
-  const isCompleted = attempt.status === "completed";
 
+  // Nunca existe uma linha aqui já concluída (ela seria removida da tabela
+  // antes de poder ser exibida — ver docs/Sprint-cadastro-alunos.md), então
+  // as ações abaixo dependem só de open/contacted/ignored, sem checagem de
+  // "completed".
   const timeline = [
     { label: "Cadastro iniciado", at: attempt.first_started_at },
     { label: "Código de confirmação enviado", at: attempt.confirmation_requested_at },
     { label: "Código confirmado", at: attempt.confirmation_confirmed_at },
     attempt.stage === "account_creation_failed" ? { label: "Falha na conclusão da conta", at: attempt.last_activity_at } : null,
-    { label: "Cadastro concluído", at: attempt.completed_at },
     { label: "Marcado como ignorado", at: attempt.ignored_at },
   ].filter((item): item is { label: string; at: string } => Boolean(item?.at))
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
@@ -477,15 +478,13 @@ function AttemptDetailModal({
       onClose={onClose}
       actions={
         <>
-          {!isCompleted && attempt.status !== "ignored" && (
+          {attempt.status !== "ignored" && (
             <PremiumButton variant="dark" icon={<Ban size={16} />} onClick={onIgnore}>Ignorar</PremiumButton>
           )}
-          {!isCompleted && attempt.status === "ignored" && (
+          {attempt.status === "ignored" && (
             <PremiumButton variant="dark" icon={<RotateCcw size={16} />} onClick={onReopen}>Reabrir</PremiumButton>
           )}
-          {!isCompleted && (
-            <PremiumButton variant="dark-primary" icon={<MessageCircle size={16} />} onClick={() => onContact(note)}>Marcar como contatado</PremiumButton>
-          )}
+          <PremiumButton variant="dark-primary" icon={<MessageCircle size={16} />} onClick={() => onContact(note)}>Marcar como contatado</PremiumButton>
           <PremiumButton variant="dark-danger" icon={<Trash2 size={16} />} onClick={onDelete}>Excluir</PremiumButton>
         </>
       }

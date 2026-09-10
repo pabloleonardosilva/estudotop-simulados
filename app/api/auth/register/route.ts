@@ -27,6 +27,7 @@ type RegisterPayload = {
   concursosDesejados?: string;
   captcha_token?: string;
   event?: string;
+  previous_email?: string;
 };
 
 export async function POST(request: Request) {
@@ -38,6 +39,11 @@ export async function POST(request: Request) {
     const phone = (body.whatsapp || body.phone || "").trim();
     const cpf = body.cpf ? onlyDigits(body.cpf) : null;
     const desiredContests = (body.desiredContests || body.concursosDesejados || "").trim();
+    // "Corrigir dados" pode trocar o e-mail antes da conclusão — o próprio
+    // client (mesma sessão de formulário) informa o e-mail anteriormente
+    // submetido, nunca adivinhado por nome/telefone, para a tentativa em
+    // aberto ser renomeada em vez de virar um lead fantasma órfão.
+    const previousEmail = typeof body.previous_email === "string" ? body.previous_email.trim().toLowerCase() : null;
 
     const missingFields = [
       !name ? "fullName" : null,
@@ -253,6 +259,7 @@ export async function POST(request: Request) {
       phone: phone || null,
       source: eventId ? "event_signup" : "public_signup",
       sourceContextId: eventId,
+      previousEmail: previousEmail && previousEmail !== email ? previousEmail : null,
     });
 
     return NextResponse.json({

@@ -10,7 +10,6 @@ import { publicRegistrationCodeTemplate } from "@/lib/email/studentRegistrationT
 import {
   touchRegistrationAttemptResend,
   markRegistrationAttemptConfirmed,
-  completeRegistrationAttempt,
   markRegistrationAttemptFailed,
 } from "@/lib/server/studentRegistrationAttemptService";
 
@@ -232,11 +231,9 @@ export async function POST(request: Request) {
         extraStudentFields: { email_confirmed_at: new Date().toISOString(), ...(eventSignup ? { origin: "Evento de Simulado", origin_event_id: eventId, origin_registered_at: new Date().toISOString(), approved_at: new Date().toISOString() } : {}) },
       });
       userId = account.userId;
-      // Conta constituída (auth.users + profiles + students) — a tentativa
-      // de cadastro é considerada concluída aqui, independentemente do que
-      // acontecer depois nos passos específicos de Evento abaixo (token de
-      // senha, participante etc.), que são uma preocupação diferente.
-      await completeRegistrationAttempt(supabase, email);
+      // A remoção da tentativa de cadastro incompleta correspondente já
+      // aconteceu dentro de createStudentAccount (centralizada, cobre
+      // também a criação administrativa) — nada a fazer aqui.
     } catch (error) {
       await supabase.from("student_registration_confirmations").update({ used_at: null }).eq("id", confirmation.id).eq("used_at", claimedAt);
       void logSystemError({ source: "api.auth.confirm_registration.account", error, request });
