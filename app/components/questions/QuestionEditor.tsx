@@ -521,9 +521,18 @@ export type QuestionEditorProps = {
   // Publication queue (revisar page)
   queuedForPublication?: boolean;
   onTogglePublicationQueue?: (questionId: string) => void;
-  // Selection (revisar page)
+  // Selection (revisar page) — checkbox "Selecionar", independente do switch
+  // "Preparar para fila" abaixo.
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  /**
+   * Chamado quando o usuário adiciona um tópico avaliado ou altera o
+   * gabarito durante a sessão atual — nunca ao carregar. Liga o switch
+   * "Preparar para fila" (queuedForPublication) daquela questão, nunca o
+   * checkbox "Selecionar" — são estados independentes. Sempre ENSURE (só
+   * liga, nunca desliga um switch já ligado); não dispara envio/publicação.
+   */
+  onAutoPrepareForQueue?: () => void;
   // Save-all registration (revisar page "Salvar todos")
   onRegisterSave?: (
     questionId: string,
@@ -566,6 +575,7 @@ export default function QuestionEditor({
   onTogglePublicationQueue,
   isSelected = false,
   onToggleSelect,
+  onAutoPrepareForQueue,
   onRegisterSave,
   hidePublishButton = false,
   saveMode = "review",
@@ -653,7 +663,8 @@ export default function QuestionEditor({
       ...current,
       alternatives: current.alternatives.map((a, idx) => ({ ...a, is_correct: idx === i })),
     }));
-  }, []);
+    onAutoPrepareForQueue?.();
+  }, [onAutoPrepareForQueue]);
 
   const addAlternative = useCallback(() => {
     setQuestion((current) => {
@@ -1125,7 +1136,10 @@ export default function QuestionEditor({
               </div>
               <EvaluatedTopicsInput
                 value={question.evaluated_topics}
-                onChange={(evaluated_topics) => updateQuestion({ evaluated_topics })}
+                onChange={(evaluated_topics) => {
+                  updateQuestion({ evaluated_topics });
+                  if (evaluated_topics.length > 0) onAutoPrepareForQueue?.();
+                }}
                 subjectId={question.subject_ids[0] || null}
                 required
                 disabled={processing}

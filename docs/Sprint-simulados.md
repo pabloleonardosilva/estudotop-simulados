@@ -1,5 +1,79 @@
 # Sprint Simulados — Documentação Técnica e Funcional
 
+## 10/09/2026 (continuação) — PDF de resultado do aluno corrigido para questão anulada + auditoria de estatísticas
+
+Continuação da Sprint abaixo ("Questões anuladas não bloqueiam a finalização + selo visual corrigido"), já homologada em localhost pelo usuário quanto à finalização e ao selo. Dois pontos novos surgiram antes do fechamento:
+
+### A. PDF de resultado do aluno — questão anulada aparecia como normal
+
+**Renderer real identificado:** `app/lib/pdf/simulado-result-pdf.ts` (`SimuladoQuestionsPdf`, usada por `downloadSimuladoResultPdf` — PDF do aluno — e por `downloadNeutralSimuladoPdf` — caderno neutro do Professor/Admin). Existe um segundo arquivo homônimo, `lib/pdf/simulado-result-pdf.ts` (sem `app/`), que **não é importado em nenhum lugar do código** — código morto preexistente, não tocado.
+
+**Causa raiz:** `app/meus-simulados/[id]/resultado/page-client.tsx`, ao montar o array `questions` enviado para `downloadSimuladoResultPdf`, mapeava `order_number`/`statement`/`subject`/`alternatives`/`simulado_question_id` a partir de `payload.gabarito` — mas **omitia `status`**. A tela HTML (`ResultQuestions`, no mesmo arquivo) já usava `question.status === "annulled"` corretamente há mais tempo; só o mapeamento para o PDF não propagava esse campo, então `SimuladoQuestionsPdf` nunca tinha como saber que uma questão estava anulada e a renderizava como uma questão comum — inclusive **destacando a alternativa correta como gabarito válido** (`highlightCorrect = showAnswerKey && Boolean(alternative.is_correct)`, sem checar anulação).
+
+**Correção:**
+- `resultado/page-client.tsx`: `status: question.status` adicionado ao objeto mapeado.
+- `simulado-result-pdf.ts`: `PdfQuestion.status?: string | null` (opcional — quando ausente, comportamento idêntico a antes; o caderno neutro do Professor/Admin não envia este campo e não muda). `isAnnulled = question.status === "annulled"` calculado por questão. `highlightCorrect` passou a ser `showAnswerKey && !isAnnulled && Boolean(alternative.is_correct)` — anulada nunca marca gabarito, mesmo com `showAnswerKey=true`. Chip "Questão anulada" no cabeçalho do card (mesmo padrão visual dos outros chips do PDF). Selo "Questão Anulada" sobreposto ao card: `questionCard` ganhou `position: "relative"` (era só decorativo antes) e o selo (`annulledStamp`, `position: "absolute"`, `top/left/right/bottom: 0`) é o **último filho** do card, pintando por cima do conteúdo normal — mesmo princípio arquitetural do stacking fix já aplicado na tela do aluno, adaptado às primitivas do `@react-pdf/renderer` (que não tem `isolate`; a ordem de pintura + `position: relative` no pai bastam). Aviso textual curto abaixo das alternativas explicando a anulação (nunca usa a palavra "branco").
+- Resposta histórica do aluno: já não era marcada no PDF para **nenhuma** questão (o parâmetro `answers`/`alternativeId` nunca foi lido pelo corpo de `SimuladoQuestionsPdf` — PDF é um "caderno comentado" com gabarito, não uma prova corrigida marcando a escolha do aluno). Logo, o requisito "não marcar resposta histórica em anulada" já estava satisfeito por construção, para todas as questões — nada a mudar aqui.
+- PDF neutro do Professor/Admin (`downloadNeutralSimuladoPdf`, `showAnswerKey: false`): `status` continua não sendo enviado por esse caller (fora do escopo — o pedido é sobre o PDF de **resultado do aluno**); como o campo é opcional e `showAnswerKey` já é sempre `false` ali, o comportamento desse PDF é idêntico ao anterior.
+
+**Teste preexistente atualizado (mudança de comportamento sancionada, não regressão):** `tests/professor-exam-pdf/professor-exam-pdf.spec.ts` fixava a fórmula antiga de `highlightCorrect` — atualizado para a nova fórmula; o teste que conta ocorrências de `alternative.is_correct` no arquivo (deve haver exatamente 1) continua passando sem alteração.
+
+### B. Exportar TXT (Banco de Questões) — não existe em produção
+
+Ver seção dedicada em `docs/status-atual.md` e a suíte `tests/export-txt-question-bank.spec.ts` — resumo: a implementação inteira (`app/questoes/page-client.tsx`) existe **apenas no working tree** deste worktree, nunca foi commitada em nenhum branch/momento do histórico (`git log -S/-G --all` vazio). A documentação do recurso, por outro lado, **já está commitada** em `docs/INDICE_FUNCOES_SISTEMA.md` (introduzida incidentalmente pelo commit `830d8a5`, de um recurso não relacionado). Produção nunca teve o código — não é bug de produção, é ausência de commit. Código já auditado e correto; não foi alterado (arquivo protegido nesta sessão — alteração local preexistente fora desta Sprint). Nenhum commit feito por esta tarefa.
+
+### C. Estatísticas envolvendo questão anulada — auditadas, nenhuma alteração necessária
+
+Auditado contra o código real (nunca por suposição): `lib/simuladoScoring.ts` (fonte canônica — `gradeSimuladoQuestion` já checa `status === "annulled"` **antes** de checar resposta em branco, retorna `classification: "annulled"`/`scoreDelta: points`, nunca cai em correct/wrong/blank por acidente), `lib/eventInsights.ts` (já exclui `question.annulled` dos cálculos pedagógicos de dificuldade), `lib/eventRanking.ts` e `app/lib/server/topcoinsSync.ts` (nenhum dos dois recalcula a partir de respostas — só consomem `display_score`/`correct_count` já consolidados em `simulado_results`, então herdam automaticamente o tratamento correto do scoring canônico, sem lógica própria de anulação), `app/api/professor/events/[id]/route.ts` (dashboard do Evento — QuestionStats/Modo Aula — já trata `relation.status === "annulled"` separadamente, zerando `correct`/`wrong` e retornando `accuracy_percent`/`error_percent` como `null` em vez de um percentual calculado sobre denominador errado). **Nenhum destes arquivos foi alterado** — todos já corretos. Cobertura em `tests/annulled-question-finish.spec.ts` (seções 9 e 10).
+
+### Testes desta continuação
+
+`tests/annulled-question-finish.spec.ts` (seções 7–10, PDF + scoring + Insights/Ranking/TopCoins), `tests/export-txt-question-bank.spec.ts` (novo, auditoria completa do Export TXT — implementação e Git). Dois testes preexistentes da seção 5/6 (`tests/annulled-question-finish.spec.ts`) tinham bugs de asserção pré-existentes (regex `question` sem cobrir a grafia "questões" em português; assinatura de `locked` assumida igual entre runner e preview quando na verdade divergem legitimamente) — corrigidos para refletir corretamente o código real, sem alterar código de produção.
+
+---
+
+## 10/09/2026 — Questões anuladas não bloqueiam a finalização + selo visual corrigido
+
+### Regra oficial (documentação literal)
+
+> Quando `simulados.allow_blank_answers = false`, a finalização exige que **todas as questões respondíveis (não anuladas)** estejam respondidas. Questões com `simulado_questions.status = "annulled"` (anulação contextual a este Simulado — a mesma definição já usada em `sendAnswer`, no watermark de "Questão anulada" e no scoring) são **excluídas** dessa exigência: não precisam de resposta, não entram em nenhuma lista/contagem de pendências e nunca bloqueiam "Finalizar". Elas continuam integralmente não respondíveis (o servidor já rejeitava, com 409, qualquer resposta para uma questão anulada) — não recebem resposta fictícia nem são marcadas como "respondidas".
+
+Evitar a redação simplificada "todas as questões devem ser respondidas" — a redação correta é sempre "todas as questões respondíveis/não anuladas devem ser respondidas, quando o Simulado não permite respostas em branco".
+
+### Causa raiz do bug de finalização
+
+`app/meus-simulados/[id]/page-client.tsx` (cliente) e `app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts` (servidor) calculavam "questões em branco" como `total de questões do Simulado − respondidas`, usando o total **bruto** (`questions.length` / `questionRows.length`), que inclui questões anuladas. Como uma questão anulada nunca pode ser respondida (bloqueio já existente, preservado), ela inflava artificialmente a contagem de "em branco" e bloqueava a finalização mesmo com todas as questões respondíveis completas — reproduzido exatamente no cenário relatado (10 questões, 1 anulada, 9 respondidas → bloqueava indevidamente). O bug existia **nos dois lados** (cliente e servidor); corrigido nos dois, com a mesma fórmula.
+
+### Correção — cliente (runner real e preview admin)
+
+`app/meus-simulados/[id]/page-client.tsx` e `app/simulados/[id]/preview/page-client.tsx` (duplicado, não é componente compartilhado — corrigido identicamente nos dois para não divergir entre telas) ganharam `requiredQuestions = questions.filter(q => q.status !== "annulled")` e `answeredRequiredCount` (mesma lista, filtrando por resposta selecionada). `FinishConfirm` e o painel lateral ("Mapa da prova"/"Mapa do preview" — contadores "Respondidas"/"Faltam" e o grid de navegação numerado) passaram a usar esses valores em vez do total bruto. O grid de navegação também deixou de rotular questão anulada como "pendente" (tooltip e cor próprios, nunca contada nas métricas de pendência) — ela continua navegável (o aluno pode abrir e ver o selo "Questão anulada"), só não conta como exigência. Indicadores de progresso **gerais** (StickyHeader "questão X de Y", cabeçalho do `QuestionCard`) continuam com o total bruto — são conceito diferente (tamanho real da prova), não a exigência de finalização; não misturados.
+
+### Correção — servidor (soberano, nunca confia no client)
+
+`POST .../attempts/[attemptId]/submit` recalcula `requiredQuestionRows`/`answeredRequiredQuestions` a partir de `questionRows`/`answersBySQ` já carregados do banco (nunca de qualquer contagem enviada pelo client — `SubmitPayload` só carrega `time_spent_seconds`). Se uma questão foi anulada **depois** de já respondida durante a tentativa, a resposta permanece em `simulado_answers` (nunca apagada) mas a questão sai do denominador/numerador desta validação específica — exatamente a regra pedida.
+
+**Preservado sem alteração, conforme instruído:** `total_questions`/`answered_questions` gravados em `simulado_results`/`student_activity_log` continuam usando `questionRows.length`/`answeredQuestions` (contagem bruta, sem excluir anuladas) — mesma dívida já registrada anteriormente nesta mesma Sprint ("`total_questions` não decresce caso uma questão seja anulada durante a tentativa"), não alterada nesta correção por instrução explícita. Scoring (`lib/simuladoScoring.ts`), threshold de `counts_toward_limit` (>50%) e a engine transacional (`complete_student_attempt`, `save_student_attempt_answer`, `abandon_student_attempt`, `record_student_attempt_focus`, migration `20260909170000_atomic_attempt_transitions.sql`) **não foram tocados** — nenhuma dessas funções compartilha a validação corrigida.
+
+### Correção visual — selo "Questão Anulada" atrás do card
+
+**Causa exata:** o `<section>` do card de questão tinha `position: relative` mas **sem** `z-index` explícito — não estabelecia um stacking context próprio. O overlay do selo (`position: absolute; inset-0`, sem `z-index`) vinha **antes**, no DOM, dos blocos de cabeçalho/enunciado/alternativas (também `position: relative`, também sem `z-index` — logo `z-index: auto` nos dois). Entre irmãos com `z-index: auto` na mesma stacking context, a ordem de pintura segue a ordem do DOM: os blocos de conteúdo, por virem depois, pintavam por cima do selo — daí ele aparecer "atrás" do card.
+
+**Correção arquitetural (não um hack de z-index arbitrário):** o `<section>` ganhou `isolate` (Tailwind → `isolation: isolate`), fechando um stacking context próprio e autocontido para o card — sem vazar/competir com camadas globais da página (headers, modais). O overlay do selo ganhou `z-30` explícito, acima do maior z-index já existente dentro do card (o botão "eliminar alternativa", `z-20`). Nenhum `z-index` de milhares foi usado. `pointer-events-none` (já existente) foi preservado — o selo nunca intercepta clique/scroll/teclado. Aplicado identicamente em `app/meus-simulados/[id]/page-client.tsx` e `app/simulados/[id]/preview/page-client.tsx` (mesmo bug, mesma causa, duas cópias locais).
+
+### Telas não afetadas (auditadas, sem regressão)
+
+`/meus-simulados/[id]/resultado` (pós-envio, componente/dados diferentes — não usa `FinishConfirm` nem o watermark de anulação em progresso), Insights, PDFs (Professor/aluno) e Raio-X não compartilham `FinishConfirm`, `QuestionSidePanel`/`PreviewQuestionSidePanel` nem o watermark do `QuestionCard` do runner/preview — nenhum deles foi tocado.
+
+### Testes
+
+`tests/annulled-question-finish.spec.ts` — execução real da tabela de casos obrigatória (A–F + edge case "todas anuladas" + "permitir branco" preservado) sobre a fórmula replicada fielmente do código real, e auditoria estrutural dos 3 pontos corrigidos (runner, preview, servidor) + do stacking fix. `npx tsc --noEmit` e `npm run build` limpos; lint sem diagnóstico novo.
+
+### Pendência conhecida (não desta Sprint)
+
+`total_questions` snapshot não decresce com anulação durante a tentativa — dívida já registrada, mantida por instrução explícita desta Sprint (não é o mesmo bug: aquele é sobre o valor gravado no resultado final; este era sobre o bloqueio indevido da finalização).
+
+---
+
 ## Regra vigente no código local — tentativas por contexto (2026-09-09)
 
 **Migration preparada anteriormente; não executada pelo agente:** `supabase/migrations/20260909160000_move_attempt_limits_to_contexts.sql`. Esta seção substitui as descrições históricas abaixo que atribuem o limite ao Simulado, permitem novos inícios avulsos ou propõem herdar o limite antigo no backfill. A auditoria posterior abaixo atualiza o estado observado do schema remoto; não presumir que a migration continue pendente no banco.

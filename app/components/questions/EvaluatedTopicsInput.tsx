@@ -169,15 +169,19 @@ export default function EvaluatedTopicsInput({
       const rect = el.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const spaceBelow = viewportHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const minDesiredHeight = 160;
-      const openUpward = spaceBelow < minDesiredHeight && spaceAbove > spaceBelow;
+      const safeMargin = 12;
 
-      setMenuStyle(
-        openUpward
-          ? { position: "fixed", left: rect.left, width: rect.width, bottom: viewportHeight - rect.top + 4, maxHeight: Math.max(spaceAbove - 12, 120) }
-          : { position: "fixed", left: rect.left, width: rect.width, top: rect.bottom + 4, maxHeight: Math.max(spaceBelow - 12, 120) },
-      );
+      // O menu sempre abre para baixo — nunca para cima, mesmo com pouco
+      // espaço. Prioridade de UX: pode sobrepor a próxima questão (fica
+      // acima dela por z-index/portal), mas nunca cobre a questão atual.
+      // Com pouco espaço, encolhe (min 120px) e rola internamente.
+      setMenuStyle({
+        position: "fixed",
+        left: rect.left,
+        width: rect.width,
+        top: rect.bottom + 4,
+        maxHeight: Math.min(420, Math.max(spaceBelow - safeMargin, 120)),
+      });
     }
 
     updatePosition();
@@ -312,14 +316,28 @@ export default function EvaluatedTopicsInput({
       </div>
       {showError && <p className={dark ? "text-xs font-semibold text-red-300" : "text-xs font-semibold text-red-600"}>{showError}</p>}
       {portalReady && suggestionsOpen && suggestions.length > 0 && menuStyle && createPortal(
-        <div id={listboxId} role="listbox" style={menuStyle} className={dark ? "z-[9999] overflow-y-auto rounded-xl border border-white/10 bg-slate-950 shadow-2xl" : "z-[9999] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"}>
+        <div
+          id={listboxId}
+          role="listbox"
+          style={menuStyle}
+          className={
+            // Dark: mesma família azul premium do card "Tópicos avaliados"
+            // que hospeda este campo (border-blue-400/30, glow azul —
+            // ver QuestionEditor.tsx e questoes/page-client.tsx) — o menu
+            // precisa ler como continuação dessa superfície, nunca como uma
+            // caixa preta genérica desconectada.
+            dark
+              ? "premium-sidebar-scroll z-[9999] overflow-y-auto rounded-2xl border border-blue-400/30 bg-[linear-gradient(180deg,rgba(30,58,138,0.32)_0%,rgba(7,17,31,0.97)_55%,rgba(3,9,20,0.98)_100%)] shadow-[inset_0_1px_0_rgba(147,197,253,0.14),0_18px_45px_-14px_rgba(2,6,23,0.7),0_0_30px_-6px_rgba(59,130,246,0.35)] backdrop-blur-sm"
+              : "z-[9999] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"
+          }
+        >
           {suggestions.map((suggestion, index) => {
             const highlighted = index === highlightedIndex;
             const base = dark
-              ? "block w-full border-b border-white/[0.06] px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0"
+              ? "block w-full border-b border-blue-400/[0.10] px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0"
               : "block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm font-semibold transition last:border-b-0";
             const tone = dark
-              ? highlighted ? "bg-white/[0.10] text-orange-200" : "text-slate-200 hover:bg-white/[0.07]"
+              ? `${highlighted ? "bg-blue-400/[0.18] text-orange-200" : "text-white/95 hover:bg-blue-400/[0.10]"} [text-shadow:0_0_5px_rgba(255,255,255,0.28),0_0_10px_rgba(255,255,255,0.12)]`
               : highlighted ? "bg-orange-50 text-orange-700" : "text-slate-700 hover:bg-orange-50";
             return (
               <button

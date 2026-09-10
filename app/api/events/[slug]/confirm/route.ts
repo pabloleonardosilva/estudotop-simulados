@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { effectiveEventStatus } from "@/lib/server/simuladoEvents";
 import { logSecurityEvent } from "@/app/lib/server/auditLogger";
+import { findAuthUserByEmail } from "@/lib/server/studentAccountRepair";
 
 const COOKIE = "estudotop_event_intent";
 const FIRST_ACCESS_EXPIRATION_HOURS = 72;
@@ -102,6 +103,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       // determinado com segurança (inconsistência) — fallback de recuperação.
       next = `/esqueci-senha?email=${encodeURIComponent(intent.email)}`;
       message = RECOVERY_FALLBACK_MESSAGE;
+    }
+  } else {
+    // Nenhum Student para este e-mail — mas pode já existir uma identidade
+    // Auth/Profile de OUTRO papel (ex.: professor) sem Student ainda. Seguir
+    // para /cadastro criaria uma tentativa de nova conta que eventualmente
+    // bloquearia lá na frente (STUDENT_EMAIL_USED_BY_ADMIN) — em vez disso,
+    // orienta para autenticação da própria conta existente. A condição de
+    // aluno (linha em `students`, mesmo UUID) só é concedida depois do login
+    // real, em POST /api/events/join, com o e-mail da própria sessão
+    // autenticada — nunca aqui, a partir só do link de e-mail. Mensagem
+    // pública neutra: nunca revela qual papel a conta já possui.
+    //
+    // profile.role === "student" aqui (conta órfã sem `students`, abandonada
+    // antes de concluir o cadastro) NÃO cai neste ramo — mantém o fluxo
+    // padrão de /cadastro, que já sabe reconciliar essa conta incompleta
+    // (lib/server/studentAccountRepair.ts).
+    const existingAuthUser = await findAuthUserByEmail(supabase, intent.email);
+    if (existingAuthUser) {
+      const { data: existingProfile } = await supabase.from("profiles").select("role").eq("id", existingAuthUser.id).maybeSingle();
+      if (existingProfile && existingProfile.role !== "student") {
+        next = `/login?event=${encodeURIComponent(slug)}`;
+        message = "Este e-mail já possui uma conta no EstudoTOP. Entre com sua conta para continuar.";
+      }
     }
   }
 

@@ -1417,6 +1417,7 @@ function ResultSimuladoPdf({ payload }: { payload: ResultPayload }) {
           order_number: question.order_number,
           statement: question.statement,
           subject: question.subject,
+          status: question.status,
           alternatives: question.alternatives.map((alternative) => ({
             id: alternative.id,
             label: alternative.label,

@@ -573,6 +573,16 @@ export default function RevisarQuestoesClient({
 
   const clearPublicationQueue = useCallback(() => setPublicationQueueIds([]), []);
 
+  // Adicionar tópico avaliado ou alterar gabarito durante a sessão atual liga
+  // o switch "Preparar para fila" (publicationQueueIds) daquela questão —
+  // nunca o checkbox "Selecionar" (selectedIds), que é um conceito
+  // independente. ENSURE, não toggle: nunca desliga um switch já ligado.
+  // Chamado de dentro dos handlers de edição do QuestionEditor
+  // (onAutoPrepareForQueue), nunca ao carregar a questão.
+  const ensureQueuedForPublication = useCallback((id: string) => {
+    setPublicationQueueIds((current) => (current.includes(id) ? current : [...current, id]));
+  }, []);
+
   const toggleSelectQuestion = useCallback((id: string) => {
     setSelectedIds((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
@@ -1309,6 +1319,7 @@ export default function RevisarQuestoesClient({
               onRegisterSave={registerQuestionSave}
               isSelected={selectedIds.includes(question.id)}
               onToggleSelect={() => toggleSelectQuestion(question.id)}
+              onAutoPrepareForQueue={() => ensureQueuedForPublication(question.id)}
             />
           ))}
 

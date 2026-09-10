@@ -8,6 +8,10 @@ type PdfQuestion = {
   subject?: string | null;
   alternatives?: Array<{ id: string; label: string; text: string; is_correct?: boolean }>;
   simulado_question_id?: string;
+  // Opcional: quando ausente, mantém o comportamento anterior (nunca anulada)
+  // — o PDF neutro do Professor/Admin (downloadNeutralSimuladoPdf) não envia
+  // este campo e continua idêntico a antes desta correção.
+  status?: string | null;
 };
 
 type PdfAnswer = {
@@ -145,6 +149,53 @@ const s = StyleSheet.create({
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: C.slate200,
+    position: "relative",
+  },
+  annulledChip: {
+    paddingTop: 4,
+    paddingRight: 9,
+    paddingBottom: 4,
+    paddingLeft: 9,
+    borderRadius: 999,
+    backgroundColor: "#fffbeb",
+    color: "#b45309",
+    fontFamily: "Inter", fontWeight: 700,
+    fontSize: 8.5,
+  },
+  annulledNotice: {
+    marginTop: 10,
+    padding: 9,
+    borderRadius: 7,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    color: "#92400e",
+    fontFamily: "Inter", fontWeight: 700,
+    fontSize: 8.5,
+    lineHeight: 1.4,
+  },
+  // Selo "QUESTÃO ANULADA" sobre o card: pintado por cima do conteúdo por ser
+  // o último filho de `questionCard` (que agora é `position: relative`, seu
+  // próprio contexto de posicionamento) — mesmo princípio arquitetural do
+  // ajuste de stacking já aplicado na tela do aluno (isolate + z-index acima
+  // do conteúdo), adaptado às primitivas do @react-pdf/renderer.
+  annulledStamp: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  annulledStampText: {
+    color: "#f59e0b",
+    opacity: 0.28,
+    fontFamily: "Inter", fontWeight: 700,
+    fontSize: 26,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    transform: "rotate(-16deg)",
   },
   questionHeader: {
     flexDirection: "row",
@@ -328,8 +379,9 @@ function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }
       ),
       questions.length === 0
         ? React.createElement(Text, { style: s.statement }, "Nenhuma questão disponível neste simulado.")
-        : questions.map((question, index) =>
-            React.createElement(
+        : questions.map((question, index) => {
+            const isAnnulled = question.status === "annulled";
+            return React.createElement(
               View,
               {
                 key: question.simulado_question_id || `${index}`,
@@ -341,6 +393,7 @@ function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }
                 { style: s.questionHeader },
                 React.createElement(Text, { style: s.questionNumber }, `Questão ${index + 1}`),
                 React.createElement(Text, { style: s.subjectChip }, question.subject || "Sem assunto"),
+                ...(isAnnulled ? [React.createElement(Text, { style: s.annulledChip }, "Questão anulada")] : []),
               ),
               React.createElement(Text, { style: s.statement }, stripHtml(question.statement) || "Enunciado não informado."),
               React.createElement(
@@ -351,7 +404,10 @@ function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }
                   // (Professor/Admin, ver downloadNeutralSimuladoPdf) nenhuma
                   // alternativa recebe destaque/coruja — todas ficam com a
                   // mesma aparência neutra, mesmo que is_correct seja true.
-                  const highlightCorrect = showAnswerKey && Boolean(alternative.is_correct);
+                  // Anulada: nunca destaca a alternativa correta, mesmo com
+                  // showAnswerKey=true — gabarito de questão anulada não é
+                  // apresentado como válido (regra 13).
+                  const highlightCorrect = showAnswerKey && !isAnnulled && Boolean(alternative.is_correct);
                   return React.createElement(
                     View,
                     {
@@ -376,8 +432,26 @@ function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }
                   );
                 }),
               ),
-            ),
-          ),
+              ...(isAnnulled
+                ? [
+                    React.createElement(
+                      Text,
+                      { style: s.annulledNotice },
+                      "QUESTÃO ANULADA — não entra na correção; nenhuma alternativa é apresentada como gabarito.",
+                    ),
+                    // Selo visual por cima do card — último filho, pintado
+                    // após o conteúdo normal (mesma ordem de pintura usada
+                    // pela marca d'água pessoal, `fixed`, que já é impressa
+                    // por cima do texto das páginas internas).
+                    React.createElement(
+                      View,
+                      { style: s.annulledStamp },
+                      React.createElement(Text, { style: s.annulledStampText }, "Questão Anulada"),
+                    ),
+                  ]
+                : []),
+            );
+          }),
       // Marca d'água pessoal: exclusiva do PDF do aluno. Quando `student` não
       // é informado (PDF neutro do Professor/Admin gerado direto do Evento —
       // ver downloadNeutralSimuladoPdf), nenhuma marca é renderizada — nunca

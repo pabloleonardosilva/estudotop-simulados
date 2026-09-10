@@ -141,7 +141,13 @@ test("student PDF flow is untouched — downloadSimuladoResultPdf keeps sending 
 test("SimuladoQuestionsPdf only highlights the correct alternative when showAnswerKey is true — Professor/Admin caderno never shows the gabarito", () => {
   const renderer = read(RENDERER);
   expect(renderer).toContain("showAnswerKey?: boolean");
-  expect(renderer).toContain("const highlightCorrect = showAnswerKey && Boolean(alternative.is_correct);");
+  // Atualizado em 2026-09-10 (Sprint questões anuladas — PDF de resultado):
+  // além de showAnswerKey, uma questão anulada nunca destaca a alternativa
+  // correta, mesmo quando showAnswerKey é true (ver docs/Sprint-simulados.md).
+  // Como showAnswerKey já é sempre false no caderno do Professor/Admin
+  // (verificado abaixo), esta mudança não altera o comportamento coberto por
+  // este teste.
+  expect(renderer).toContain("const highlightCorrect = showAnswerKey && !isAnnulled && Boolean(alternative.is_correct);");
 
   // Todo o estilo/marca de "correta" (destaque verde, coruja) é decidido
   // exclusivamente por `highlightCorrect`, nunca diretamente por

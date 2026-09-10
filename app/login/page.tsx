@@ -181,12 +181,19 @@ export default function LoginPage() {
     }
 
     let destination = profile.role === "admin" ? "/dashboard" : profile.role === "professor" ? "/professor/eventos" : "/aluno";
-    if (profile.role === "student" && data.session?.access_token) {
+    // Professor existente com uma intenção de ingresso de Evento válida
+    // (link do Evento → login) também tenta /api/events/join — o contexto
+    // do Evento prevalece sobre o destino profissional padrão. Sem
+    // intenção pendente, ou se a conta ainda não é elegível para ganhar a
+    // condição de aluno, o endpoint recusa (401/400/403) e o destino
+    // profissional padrão acima é mantido — nunca uma segunda identidade,
+    // nunca troca de papel.
+    if ((profile.role === "student" || profile.role === "professor") && data.session?.access_token) {
       const joinResponse = await fetch("/api/events/join", { method: "POST", headers: { Authorization: `Bearer ${data.session.access_token}` } });
       const joinResult = await joinResponse.json().catch(() => null) as { ok?: boolean; event_id?: string } | null;
       if (joinResponse.ok && joinResult?.ok && joinResult.event_id) {
         destination = `/meus-eventos/${joinResult.event_id}`;
-      } else {
+      } else if (profile.role === "student") {
         // Sem intenção de ingresso pendente: usa a mesma fonte única de
         // navegação do aluno (lib/student-nav.ts) usada por Header/Sidebar/
         // AppShell, para que aluno exclusivamente de Evento também caia em

@@ -162,7 +162,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       router.replace(isEventOnlyStudent(studentNavAccess) ? "/meus-eventos" : "/minhas-jornadas");
     }
 
-    if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor") && !isEventAcquisitionRoute) {
+    // /meus-eventos fica de fora do redirect padrão do professor: é o
+    // destino que POST /api/events/join produz quando um professor existente
+    // também ganha a condição de aluno (mesmo UUID, papel de professor
+    // preservado) — sem essa exceção, o redirect abaixo devolveria a pessoa
+    // para /professor/eventos antes de conseguir ver o Evento como aluno.
+    // Um professor sem `students` que navegue manualmente para lá só
+    // encontra uma tela vazia (as APIs de aluno continuam exigindo
+    // `students` válido) — nunca dado de outro aluno.
+    if (user && profile?.role === "professor" && !isChangePasswordRoute && !pathname.startsWith("/professor") && !pathname.startsWith("/meus-eventos") && !isEventAcquisitionRoute) {
       router.replace("/professor/eventos");
     }
   }, [loading, user, profile, pathname, isPublicRoute, isPublicViewRoute, isChangePasswordRoute, router, awaitingStudentHome, studentNavAccess, isEventAcquisitionRoute]);

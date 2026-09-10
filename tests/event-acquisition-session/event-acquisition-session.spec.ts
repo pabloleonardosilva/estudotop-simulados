@@ -16,7 +16,10 @@ test("AppShell never redirects an existing session away from the event/cadastro 
   expect(appShell).toContain("if (user && profile && isPublicRoute && !isEventAcquisitionRoute) {");
   // Os guards mais específicos de aluno e professor também precisam da mesma exceção.
   expect(appShell).toContain("!isAllowedStudentRoute && !isEventAcquisitionRoute) {");
-  expect(appShell).toContain('!pathname.startsWith("/professor") && !isEventAcquisitionRoute) {');
+  // 2026-09-10: ganhou a exceção /meus-eventos (professor existente também
+  // ganhando a condição de aluno via Evento) — a exceção de
+  // isEventAcquisitionRoute continua presente na mesma condição.
+  expect(appShell).toContain('!pathname.startsWith("/professor") && !pathname.startsWith("/meus-eventos") && !isEventAcquisitionRoute) {');
   // A tela de loading que aguarda studentNavAccess não pode bloquear essas rotas.
   expect(appShell).toContain("isPublicRoute && !isEventAcquisitionRoute && !studentNavAccess");
 });

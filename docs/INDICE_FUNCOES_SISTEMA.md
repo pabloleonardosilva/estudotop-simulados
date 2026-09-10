@@ -2151,6 +2151,30 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 ---
 
+### 10.X.1 Identidade existente também pode ser aluno — professor + aluno, mesmo UUID (2026-09-10)
+
+**Regra definitiva:** uma identidade já cadastrada como professor (`auth.users`+`profiles`, `role="professor"`) pode também possuir uma representação em `public.students`, usando o **mesmo UUID**, sem alterar ou perder o papel profissional. A existência de `students` representa a condição de aluno; `profiles.role` continua representando o papel principal/profissional e nunca é sobrescrito para isso. A condição de aluno só pode ser concedida **depois** de autenticação válida do próprio titular — nunca a partir de um e-mail informado anonimamente em formulário público.
+
+**Decisão arquitetural (sem migration, sem RBAC novo):** `public.students.id` já é `FOREIGN KEY REFERENCES auth.users(id)`, sem qualquer dependência de `profiles.role` — o schema já suporta a identidade compartilhada. Os guards de aluno realmente usados (`getStudentFromRequest` em `lib/server/supabaseStudentAuth.ts`, consumido por todas as rotas `/api/student/**` e `/api/events/**`; `requireStudentPage` em `lib/server/authGuard.ts`) já checam só `students.id`/`students.status`, nunca `profiles.role` — nenhuma alteração foi necessária neles. Os guards de professor/admin (`requireAdmin`, `requireProfessor`, `requireEventManager*`, `requireAdminPage`, `requireProfessorPage`) continuam exigindo `profiles.role` + `profiles.is_active` exatamente como antes, também sem alteração. Não foi criada nenhuma tabela de papéis múltiplos (`profile_roles`/`user_roles`).
+
+**Nova função central:** `ensureStudentRecordForExistingIdentity` (`lib/server/studentAccountService.ts`) — recebe um UUID **já autenticado** na mesma requisição, cria `students` (`status: "active"`, `origin: "Evento de Simulado"`, `origin_event_id`, `origin_registered_at`, `approved_at` — os mesmos valores que um cadastro público novo recebe via Evento) se ainda não existir; idempotente (unique_violation 23505 tratado como sucesso); nunca cria `auth.users`; nunca cria/atualiza `profiles`; sempre chama `removeRegistrationAttemptByEmail` ao final. Diferente de `createStudentAccount`/`reconcileIncompleteStudentAccount`, que continuam intocados e continuam recusando `profile.role !== "student"` no fluxo de cadastro público anônimo (`studentAccountRepair.ts:107`) — proteção contra takeover preservada integralmente.
+
+**Novo fluxo do Evento:**
+1. `POST /api/events/[slug]/confirm/route.ts` — quando não há `students` para o e-mail, além do fluxo já existente, agora também verifica `auth.users` (`findAuthUserByEmail`, reaproveitada de `studentAccountRepair.ts`, nenhuma busca nova). Identidade de outro papel (`role !== "student"`) → `next = /login?event=slug`, mensagem neutra "Este e-mail já possui uma conta no EstudoTOP. Entre com sua conta para continuar." (nunca revela o papel). `role === "student"` órfão continua caindo em `/cadastro` (reconciliação já existente, preservada).
+2. `app/login/page.tsx` — a chamada a `POST /api/events/join` (antes só `profile.role === "student"`) passa a também acontecer para `profile.role === "professor"`; o fallback de `/api/student/nav-access` continua restrito a `student`.
+3. `POST /api/events/join/route.ts` — quando `getStudentFromRequest` não encontra `students`, autentica o Bearer token diretamente, exige `profiles.role === "professor"` + `profiles.is_active` + `professors.status === "active"`, valida `intent.email === e-mail da sessão` **antes** de chamar `ensureStudentRecordForExistingIdentity` — segurança contra takeover: só uma sessão autenticada com a senha real da conta pode conceder a condição de aluno a ela mesma. Log de auditoria (`security_event_logs`, evento `student_identity_extended`) só na criação real, nunca em chamadas idempotentes.
+4. `app/components/AppShell.tsx` — o redirect que manda todo professor fora de `/professor/**` de volta para `/professor/eventos` ganhou uma exceção cirúrgica para `/meus-eventos` (destino que o passo 2 produz); nenhuma outra rota de aluno foi liberada, nenhum chooser de perfil foi criado.
+
+**`profiles.is_active` — achado crítico documentado, não contornado:** auditoria de todos os consumidores mostrou que hoje é um **bloqueio global de login** — `app/login/page.tsx` recusa a autenticação inteira, para qualquer `profiles.role`, quando `is_active` é `false`, antes de qualquer lógica de Evento (era exatamente o caso real que motivou esta Sprint). `POST /api/events/join` exige o mesmo campo pela mesma razão: consistência com o login, nunca um atalho. Uma identidade profissional desativada não completa este novo fluxo até reativação administrativa (sem código novo) ou uma decisão arquitetural própria para separar "bloqueio de função profissional" de "bloqueio global de identidade" — fora do escopo desta Sprint.
+
+**Escopo — só professor:** `POST /api/events/join` restringe explicitamente o caminho estendido a `profiles.role === "professor"`. `admin` foi avaliado (a mesma modelagem funcionaria tecnicamente) mas **não ativado** — decisão de produto/segurança separada, não tomada nesta Sprint.
+
+**Pendências conhecidas:** `/alunos/[id]`, `/alunos/[id]/approve`, `/alunos/[id]/hard-delete` continuam exigindo `profiles.role === "student"` (não alterados) — um admin não gerencia o lado "aluno" de um professor+aluno por essas telas ainda; `lib/auth/passwordRecoveryPolicy.ts` idem, não avaliado; uma tentativa de cadastro (`student_registration_attempts`) pode aparecer temporariamente na Central para o e-mail de um professor antes da conversão (a etapa 1 do Evento só verifica `students`, não `profiles`) — sempre limpa automaticamente após a conversão via `ensureStudentRecordForExistingIdentity`, não antes.
+
+**Testes:** `tests/professor-student-identity.spec.ts` (35 casos, estrutural).
+
+---
+
 ## 11. E-MAILS
 
 ### 11.0 URL pública canônica dos links de e-mail (Sprint Cadastro 2026-07-11)

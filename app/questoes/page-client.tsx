@@ -40,6 +40,7 @@ import {
   ListPlus,
   Archive,
   ArchiveRestore,
+  Download,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import PageBackground from "../components/ui/PageBackground";
@@ -60,6 +61,52 @@ import {
 } from "@/lib/questions/question-subjects";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
+
+// ─── Exportação TXT em lote ─────────────────────────────────────────────────
+// "Quatro quebras de parágrafo" entre uma questão e outra: 1 \n fecha a
+// última linha da questão anterior + 4 \n produzem 4 linhas em branco antes
+// da próxima questão começar — 5 \n ao todo.
+const TXT_EXPORT_QUESTION_SEPARATOR = "\n\n\n\n\n";
+// BOM UTF-8 (U+FEFF): sem ele, o Bloco de Notas do Windows pode exibir
+// acentuação (ç, ã, é...) incorretamente ao abrir o .txt exportado.
+const TXT_EXPORT_BOM = String.fromCharCode(0xfeff);
+
+type TxtExportAlternative = { label: string; text: string; is_correct?: boolean | null; order_number?: number | null };
+type TxtExportQuestion = { statement?: string | null; status?: string | null; question_alternatives?: TxtExportAlternative[] | null };
+
+function stripHtmlForTxtExport(value?: string | null) {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function formatQuestionForTxtExport(question: TxtExportQuestion): string {
+  const alternatives = [...(question.question_alternatives || [])].sort(
+    (a, b) => (a.order_number ?? 0) - (b.order_number ?? 0),
+  );
+  const lines = [stripHtmlForTxtExport(question.statement)];
+  if (question.status === "annulled") lines.push("[QUESTÃO ANULADA]");
+  lines.push("");
+  for (const alt of alternatives) {
+    // Asterisco vem sempre de is_correct (nunca reconstruído por label) —
+    // uma questão anulada sem gabarito definido simplesmente não marca
+    // nenhuma alternativa, nunca inventa uma correta.
+    const prefix = alt.is_correct ? `*${alt.label})` : `${alt.label})`;
+    lines.push(`${prefix} ${stripHtmlForTxtExport(alt.text)}`);
+  }
+  return lines.join("\n");
+}
 
 type Feedback = { type: "success" | "error" | "warning"; message: string } | null;
 type PublicationQueueBulkEditFields = {
@@ -686,6 +733,43 @@ export default function QuestoesClient({
       renderedQuestions.forEach((question) => merged.add(question.id));
       return [...merged];
     });
+  }
+
+  // Exporta exatamente as questões selecionadas, na ordem em que aparecem em
+  // filteredQuestions (mesma ordem visual da lista filtrada) — nunca uma
+  // ordem própria (id/created_at). Gerado 100% no client: os dados já
+  // carregados (statement, question_alternatives com is_correct, order_number)
+  // são completos, sem necessidade de nova chamada à API.
+  function buildTxtExportFileName() {
+    const datePart = new Date().toISOString().slice(0, 10);
+    if (subjectIds.length === 1) {
+      const subject = subjects.find((s) => s.id === subjectIds[0]);
+      const slug = (subject?.name || "")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      if (slug) return `questoes-${slug}-${datePart}.txt`;
+    }
+    return `questoes-exportadas-${datePart}.txt`;
+  }
+
+  function exportSelectedQuestionsAsTxt() {
+    const selectedQuestions = filteredQuestions.filter((question) => selectedIds.includes(question.id));
+    if (selectedQuestions.length === 0) return;
+    const content = selectedQuestions.map(formatQuestionForTxtExport).join(TXT_EXPORT_QUESTION_SEPARATOR);
+    // BOM no início para o Bloco de Notas do Windows reconhecer UTF-8 e
+    // exibir acentuação corretamente.
+    const blob = new Blob([TXT_EXPORT_BOM + content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = buildTxtExportFileName();
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function toggleDifficultyLevel(level: string) {
@@ -2587,6 +2671,9 @@ export default function QuestoesClient({
                   variant: "secondary" as const,
                 },
               ]
+            : []),
+          ...(selectedIds.length > 0
+            ? [{ label: "Exportar TXT", icon: <Download size={14} />, onClick: exportSelectedQuestionsAsTxt, variant: "secondary" as const }]
             : []),
           ...(selectedIds.length > 0
             ? status === READY_TO_PUBLISH_STATUS

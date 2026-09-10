@@ -95,7 +95,15 @@ test.describe("2. Centralização — createStudentAccount é o único ponto que
   test("studentAccountService.ts chama removeRegistrationAttemptByEmail nos dois branches de sucesso", () => {
     const source = read(ACCOUNT_SERVICE);
     expect(source).toContain('import { removeRegistrationAttemptByEmail } from "@/lib/server/studentRegistrationAttemptService";');
-    const calls = source.match(/removeRegistrationAttemptByEmail\(supabase, input\.email\)/g) || [];
+    // Escopado ao corpo de createStudentAccount especificamente — desde
+    // 2026-09-10 o mesmo arquivo também tem ensureStudentRecordForExistingIdentity
+    // (professor também pode ser aluno), que chama a mesma função de
+    // limpeza pelo mesmo motivo, sem violar "createStudentAccount é o único
+    // ponto que constitui uma conta nova/reconciliada".
+    const createStart = source.indexOf("export async function createStudentAccount(");
+    const createEnd = source.indexOf("export type EnsureStudentRecordInput");
+    const createBody = source.slice(createStart, createEnd);
+    const calls = createBody.match(/removeRegistrationAttemptByEmail\(supabase, input\.email\)/g) || [];
     expect(calls.length).toBe(2);
   });
 

@@ -1115,6 +1115,20 @@ export default function SimuladoExperience({
     () => Object.keys(answers).filter((id) => answers[id]?.alternativeId).length,
     [answers],
   );
+  // Questões anuladas nunca são respondíveis (bloqueadas em sendAnswer,
+  // abaixo) — a exigência de "todas respondidas" quando o Simulado não
+  // permite branco vale só para as questões respondíveis, nunca para as
+  // anuladas. Fonte da anulação: `simulado_questions.status` (contextual a
+  // este Simulado — mesma definição já usada em sendAnswer/isAnnulled do
+  // QuestionCard/scoring, nunca uma segunda definição paralela).
+  const requiredQuestions = useMemo(
+    () => questions.filter((question) => question.status !== "annulled"),
+    [questions],
+  );
+  const answeredRequiredCount = useMemo(
+    () => requiredQuestions.filter((question) => Boolean(answers[question.simulado_question_id]?.alternativeId)).length,
+    [requiredQuestions, answers],
+  );
   const correctCount = useMemo(
     () =>
       Object.values(answers).filter((a) => a.isCorrect === true).length,
@@ -1500,8 +1514,8 @@ export default function SimuladoExperience({
             answers={answers}
             currentIndex={currentIndex}
             onGoTo={isInstantMode ? (() => {}) : goTo}
-            answeredCount={answeredCount}
-            totalQuestions={questions.length}
+            answeredCount={answeredRequiredCount}
+            totalQuestions={requiredQuestions.length}
             focusMode={focusMode}
             onToggleFocusMode={() => setFocusMode((current) => !current)}
             notesOpen={notesOpen}
@@ -1559,8 +1573,8 @@ export default function SimuladoExperience({
       {confirmFinish && currentQuestion && (
         <FinishConfirm
           allowBlank={simulado.allow_blank_answers}
-          answeredCount={answeredCount}
-          total={questions.length}
+          answeredCount={answeredRequiredCount}
+          total={requiredQuestions.length}
           onCancel={() => setConfirmFinish(false)}
           onConfirm={() => {
             setConfirmFinish(false);
@@ -2566,11 +2580,17 @@ function QuestionCard({
   const isTrueFalse = isTrueFalseQuestionType(question.question_type);
 
   return (
-    <section className="relative overflow-hidden rounded-[2rem] border border-slate-200/85 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(255,253,249,0.96))] p-5 shadow-[0_22px_62px_rgba(15,23,42,0.08),0_1px_0_rgba(255,255,255,0.9)_inset] ring-1 ring-white/90 backdrop-blur-xl md:p-7">
+    <section className="relative isolate overflow-hidden rounded-[2rem] border border-slate-200/85 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(255,253,249,0.96))] p-5 shadow-[0_22px_62px_rgba(15,23,42,0.08),0_1px_0_rgba(255,255,255,0.9)_inset] ring-1 ring-white/90 backdrop-blur-xl md:p-7">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-300/70 to-transparent" />
       <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-orange-100/35 blur-3xl" />
       {isAnnulled && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        // `isolate` na section fecha um stacking context próprio do card, e
+        // z-30 aqui garante que o selo pinte por cima de qualquer elemento
+        // interno com z-index próprio (ex.: o botão de eliminar alternativa
+        // usa z-20) — sem isso, a ordem do DOM (este overlay vem antes do
+        // conteúdo) fazia os irmãos `relative` seguintes (cabeçalho,
+        // enunciado, alternativas) pintarem por cima dele.
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
           <span className="rotate-[-12deg] text-4xl font-black uppercase tracking-widest text-amber-500/20 md:text-6xl">Questão Anulada</span>
         </div>
       )}
@@ -2787,11 +2807,16 @@ function QuestionSidePanel({
         <div className="relative mt-4 max-h-[42vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-4 gap-2.5">
             {questions.map((question, index) => {
+              // Anulada nunca é "pendente": não é respondível, não entra na
+              // obrigação de preenchimento (ver requiredQuestions acima) —
+              // por isso ganha um estado visual próprio aqui também, em vez
+              // de cair no mesmo cinza de "ainda não respondida".
+              const isAnnulled = question.status === "annulled";
               const answered = Boolean(answers[question.simulado_question_id]?.alternativeId);
               const active = index === currentIndex;
               return <button key={question.simulado_question_id} type="button" onClick={() => onGoTo(index)}
-                className={`h-11 rounded-xl border text-sm font-black transition duration-200 ${active ? "border-orange-500 bg-orange-50 text-orange-600 shadow-[0_0_18px_rgba(255,138,0,0.12)]" : answered ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-slate-200 bg-slate-50 text-slate-500 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50"}`}
-                title={answered ? `Questão ${index + 1} respondida` : `Questão ${index + 1} pendente`}>{index + 1}</button>;
+                className={`h-11 rounded-xl border text-sm font-black transition duration-200 ${active ? "border-orange-500 bg-orange-50 text-orange-600 shadow-[0_0_18px_rgba(255,138,0,0.12)]" : isAnnulled ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100" : answered ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-slate-200 bg-slate-50 text-slate-500 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50"}`}
+                title={isAnnulled ? `Questão ${index + 1} anulada` : answered ? `Questão ${index + 1} respondida` : `Questão ${index + 1} pendente`}>{index + 1}</button>;
             })}
           </div>
         </div>
@@ -3126,6 +3151,7 @@ function FinishConfirm({
   onConfirm,
 }: {
   allowBlank: boolean;
+  /** Já excluem questões anuladas — ver requiredQuestions/answeredRequiredCount no chamador. */
   answeredCount: number;
   total: number;
   onCancel: () => void;

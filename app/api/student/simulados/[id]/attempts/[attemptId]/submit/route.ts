@@ -175,13 +175,28 @@ export async function POST(
 
   const answeredQuestions = answers.filter((row) => row.selected_alternative_id).length;
 
-  if (!allowBlank && answeredQuestions < questionRows.length) {
+  // Questões anuladas nunca são respondíveis — POST .../answers já rejeita
+  // (409) resposta para simulado_questions.status = "annulled" (mesma
+  // definição de anulação usada no scoring abaixo, contextual a este
+  // Simulado). A exigência de "nenhuma em branco" vale só para as
+  // questões respondíveis: servidor é soberano aqui, nunca confia em
+  // contagem enviada pelo client, sempre recalcula a partir de
+  // questionRows/answersBySQ já carregados acima. Se uma questão foi
+  // anulada depois de já respondida, a resposta histórica não é apagada
+  // (preservada em simulado_answers) — ela só sai do denominador/numerador
+  // desta validação específica, nunca da exigência das demais questões.
+  const requiredQuestionRows = questionRows.filter((row) => row.status !== "annulled");
+  const answeredRequiredQuestions = requiredQuestionRows.filter(
+    (row) => Boolean(answersBySQ.get(row.id)?.selected_alternative_id),
+  ).length;
+
+  if (!allowBlank && answeredRequiredQuestions < requiredQuestionRows.length) {
     return NextResponse.json(
       {
         ok: false,
         message:
           "Existem questões em branco. Responda todas as questões antes de finalizar.",
-        unanswered: questionRows.length - answeredQuestions,
+        unanswered: requiredQuestionRows.length - answeredRequiredQuestions,
       },
       { status: 400 },
     );

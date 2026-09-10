@@ -778,8 +778,9 @@ export default function NovaQuestaoClient({
         </div>
       )}
 
-      <article className="et-clean-question overflow-visible rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-950/5 ring-1 ring-slate-100">
-        <div className="et-clean-metadata et-clean-metadata-fields grid gap-3 border-b border-slate-200 bg-slate-50/70 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
+      <article className="et-clean-question et-clean-question-body overflow-visible rounded-[2rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-950/5 ring-1 ring-slate-100">
+        <div className="et-clean-metadata mb-5 rounded-[1.5rem] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-3 text-slate-700 shadow-sm">
+          <div className="et-clean-metadata-grid flex flex-wrap items-end gap-3">
 <SearchableSelect className="et-clean-meta-compact" label="Tipo" value={questionType} onChange={(value) => {
             markTemplateEdited();
             const nextType = value as "multiple_choice" | "true_false";
@@ -789,7 +790,7 @@ export default function NovaQuestaoClient({
             }
           }} options={[{ value: "multiple_choice", label: "Alternativas" }, { value: "true_false", label: "Assertivas" }]} />
 
-<SearchableSelect label="Banca" value={boardId} onChange={(value) => {
+<SearchableSelect className="et-clean-meta-board" label="Banca" value={boardId} onChange={(value) => {
             markTemplateEdited();
             setPossibleDuplicate(null);
             setBoardId(value);
@@ -812,9 +813,10 @@ export default function NovaQuestaoClient({
             markTemplateEdited();
             setDifficulty(value);
           }} /></div>
-</div>
+          </div>
+        </div>
 
-        <div className="grid gap-3 border-b border-slate-200 px-6 py-4 md:grid-cols-[1fr_240px]">
+        <div className="mb-5 grid gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-[1fr_240px]">
           <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
             markTemplateEdited();
             setDisciplineId(value);
@@ -834,7 +836,7 @@ export default function NovaQuestaoClient({
         className={
           possibleDuplicate
             ? "border-2 border-red-500/40 bg-red-500/[0.05] p-4 md:p-6"
-            : "p-4 md:p-6"
+            : ""
         }
       >
         <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-5">

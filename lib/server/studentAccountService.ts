@@ -156,6 +156,82 @@ export async function createStudentAccount(supabase: SupabaseClient, input: Crea
   return { userId, repaired: false };
 }
 
+export type EnsureStudentRecordInput = {
+  /** UUID de uma identidade auth.users/profiles JÁ AUTENTICADA nesta requisição — nunca um e-mail informado anonimamente. */
+  userId: string;
+  /** E-mail real da própria identidade autenticada (auth.users.email), nunca um valor arbitrário do cliente. */
+  email: string;
+  fullName: string | null;
+  /** Evento cujo ingresso originou a concessão da condição de aluno (registrado em students.origin_event_id). */
+  eventId: string;
+};
+
+export type EnsureStudentRecordResult =
+  | { ok: true; alreadyExisted: boolean }
+  | { ok: false; code: StudentAccountErrorCode };
+
+/**
+ * Adiciona a condição de aluno (linha em `students`, MESMO UUID) a uma
+ * identidade Auth/Profile já existente e já autenticada — nunca cria um
+ * novo `auth.users`, nunca cria/atualiza `profiles`, nunca toca
+ * `profiles.role`. O papel principal (ex.: professor) é preservado
+ * integralmente; esta função só concede a capacidade adicional de aluno.
+ *
+ * Diferente de `createStudentAccount`: aqui a conta já existe de ponta a
+ * ponta (Auth + Profile) — só falta a representação em `students`. O
+ * chamador é responsável por autenticar o usuário e decidir se o papel
+ * atual é elegível para ganhar a condição de aluno (ex.: só "professor"
+ * nesta Sprint) antes de invocar esta função.
+ *
+ * Idempotente: se `students` já existir para este UUID, não altera nada e
+ * retorna sucesso. Concorrência: uma corrida entre duas chamadas resulta
+ * numa única linha (unique_violation tratado como sucesso idempotente).
+ *
+ * Status "active" e origem "Evento de Simulado" espelham exatamente o que
+ * um cadastro público novo recebe quando concluído através de um Evento
+ * (`app/api/auth/confirm-registration/route.ts`, `eventSignup: true`) —
+ * nunca concede mais acesso do que um aluno normal teria na mesma situação.
+ */
+export async function ensureStudentRecordForExistingIdentity(
+  supabase: SupabaseClient,
+  input: EnsureStudentRecordInput,
+): Promise<EnsureStudentRecordResult> {
+  const { data: existing } = await supabase.from("students").select("id").eq("id", input.userId).maybeSingle();
+  if (existing) {
+    await removeRegistrationAttemptByEmail(supabase, input.email);
+    return { ok: true, alreadyExisted: true };
+  }
+
+  const now = new Date().toISOString();
+  const { error: insertError } = await supabase.from("students").insert({
+    id: input.userId,
+    name: input.fullName || input.email,
+    email: input.email,
+    status: "active",
+    origin: "Evento de Simulado",
+    origin_event_id: input.eventId,
+    origin_registered_at: now,
+    approved_at: now,
+    email_confirmed_at: now,
+  });
+
+  if (insertError) {
+    // Corrida: outra requisição criou a linha entre o SELECT e o INSERT
+    // acima — idempotente, não é uma falha real.
+    if (insertError.code === "23505") {
+      await removeRegistrationAttemptByEmail(supabase, input.email);
+      return { ok: true, alreadyExisted: true };
+    }
+    return { ok: false, code: "STUDENT_RECORD_CREATION_FAILED" };
+  }
+
+  // Nenhuma tentativa de cadastro incompleta deve sobreviver a uma
+  // identidade que acabou de ganhar a condição de aluno (mesma limpeza
+  // best-effort usada por createStudentAccount).
+  await removeRegistrationAttemptByEmail(supabase, input.email);
+  return { ok: true, alreadyExisted: false };
+}
+
 export async function updateStudentAccountEmail(supabase: SupabaseClient, userId: string, oldEmail: string, newEmail: string) {
   const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: newEmail, email_confirm: true, user_metadata: { email: newEmail } });
   if (authError) throw new StudentAccountError("STUDENT_EMAIL_UPDATE_FAILED", "email");
