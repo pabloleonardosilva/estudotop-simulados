@@ -17,7 +17,10 @@ const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 const HELPER_PATH = "lib/server/simuladoEvents.ts";
 const ATTEMPTS_ROUTE = "app/api/student/simulados/[id]/attempts/route.ts";
-const SUBMIT_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts";
+// Extraído em 2026-09-10 (Sprint "Timeout server-side"): a chamada ao RPC e
+// a consolidação do representative saíram de submit/route.ts para esta
+// função compartilhada (reaproveitada também pelo job de timeout server-side).
+const COMPLETION_LIB = "lib/server/simuladoAttemptCompletion.ts";
 const PROFESSOR_ROUTE = "app/api/professor/events/[id]/route.ts";
 const ADMIN_PARTICIPANT_ROUTE = "app/api/admin/events/[id]/participants/[studentId]/route.ts";
 
@@ -91,8 +94,8 @@ test.describe("regra: tentativa representativa = primeira tentativa concluída v
     expect(source.match(/consolidateEventRepresentativeAttempt/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  test("F: submit só chama o helper DEPOIS de persistir status=completed e counts_toward_limit=true — em nenhum outro estado (atualizado 2026-09-10: persistência agora é transacional via RPC complete_student_attempt)", () => {
-    const source = read(SUBMIT_ROUTE);
+  test("F: submit só chama o helper DEPOIS de persistir status=completed e counts_toward_limit=true — em nenhum outro estado (atualizado 2026-09-10: persistência transacional via RPC, extraída para lib/server/simuladoAttemptCompletion.ts, reaproveitada pelo job de timeout server-side)", () => {
+    const source = read(COMPLETION_LIB);
     expect(source).toContain('import { consolidateEventRepresentativeAttempt, releasePendingEventResults } from "@/lib/server/simuladoEvents";');
     // status=completed + counts_toward_limit=true agora são persistidos
     // atomicamente dentro da transação SQL de complete_student_attempt

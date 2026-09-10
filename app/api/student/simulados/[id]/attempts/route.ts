@@ -233,6 +233,33 @@ export async function POST(
   }
 
   if (existing) {
+    // Attempt vencida (expires_at já no passado, fonte: banco, nunca o
+    // relógio do client) não é devolvida como prova normalmente editável —
+    // ela precisa ser encerrada compulsoriamente antes de qualquer outra
+    // coisa. O client, ao receber `needs_timeout_completion`, chama
+    // imediatamente o mesmo endpoint de submit (soberano, já tolera
+    // questões em branco quando realmente expirada — ver .../submit/route.ts)
+    // em vez de renderizar a prova como se ainda houvesse tempo.
+    const isExpired = Boolean(existing.expires_at) && new Date(existing.expires_at as string).getTime() <= Date.now();
+    if (isExpired) {
+      await logActivity({
+        request,
+        actorType: "student",
+        actorId: student.id,
+        actorName: student.name,
+        actorEmail: student.email,
+        action: "simulado_attempt_resumed_expired",
+        entityType: "simulado_attempt",
+        entityId: existing.id,
+        metadata: { simulado_id: simuladoId, simulado_title: simulado.title, jornada_id: jornadaId, expires_at: existing.expires_at },
+      });
+      return NextResponse.json({
+        ok: true,
+        attempt: sanitizeAttempt(existing),
+        needs_timeout_completion: true,
+      });
+    }
+
     // representative_attempt_id NÃO é gravado aqui: esta tentativa ainda
     // está em andamento (in_progress), não é uma conclusão válida. A
     // referência oficial do Evento só é consolidada em

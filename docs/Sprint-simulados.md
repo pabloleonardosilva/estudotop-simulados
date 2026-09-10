@@ -1,5 +1,73 @@
 # Sprint Simulados — Documentação Técnica e Funcional
 
+## 10/09/2026 — Encerramento compulsório por tempo esgotado
+
+Origem: investigação forense do caso real da aluna Luciana Cabral Jacinto (Evento "3º Simulado de Processo Civil", 05/09/2026) — ela deixou a última questão (válida, nunca anulada) sem resposta; o simulado não permitia branco; o tempo da tentativa (60 min) esgotou; ela retomou várias vezes ao longo do dia, mas o servidor recusava a conclusão por existir questão em branco, e a tentativa permaneceu `in_progress` para sempre, sem `simulado_result`.
+
+### Regra definitiva (documentação literal)
+
+> **Finalização voluntária** (o aluno clica "Finalizar" com tempo ainda disponível): se `allow_blank_answers = false`, continua exigindo todas as questões respondíveis preenchidas — bloqueia com a mesma mensagem de sempre. **Encerramento por tempo esgotado** (`attempt.expires_at` já foi atingido, fonte: banco, nunca o relógio do navegador nem qualquer flag enviada pelo client): a exigência de "nenhuma em branco" deixa de valer — a tentativa é concluída com o estado real das respostas persistidas; questões válidas não respondidas entram no scoring como `blank` (nunca recebem resposta fictícia, nunca viram "erro" artificialmente). São dois mecanismos conceitualmente distintos que não devem ser confundidos: um é uma trava de UX/validação de intenção do aluno; o outro é o fechamento inevitável de um relógio que já zerou.
+
+### Causa raiz
+
+`app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts` aplicava o bloqueio de "questões em branco" incondicionalmente, sem nunca considerar se o prazo da tentativa já havia terminado. Um auto-submit disparado pelo client ao `remainingSeconds` chegar a zero (mecanismo que já existia) sempre recebia a mesma rejeição 400 que um clique manual receberia — a tentativa nunca alcançava um estado terminal sozinha.
+
+### Correção — servidor (fonte de verdade)
+
+`submit/route.ts` calcula `isExpired = Boolean(attempt.expires_at) && new Date(attempt.expires_at).getTime() <= Date.now()` a partir do `expires_at` já persistido no banco (comparado contra o relógio deste servidor — nunca o `body` da requisição, que nem chega a carregar uma flag de "auto-submit" confiável). O bloqueio de branco passou de `if (!allowBlank && answeredRequiredQuestions < requiredQuestionRows.length)` para `if (!allowBlank && !isExpired && answeredRequiredQuestions < requiredQuestionRows.length)`. Um client não pode se autodeclarar "expirado" antes da hora — só quando o próprio `expires_at` gravado já passou é que o bloqueio cede. Scoring (`lib/simuladoScoring.ts`), `complete_student_attempt` (migration `20260909170000`), threshold de `counts_toward_limit` (>50%) e o `total_questions` snapshot **não foram alterados** — o encerramento por timeout segue exatamente a mesma engine transacional/atômica já usada pela finalização manual.
+
+### Correção — retomada de tentativa vencida
+
+`app/api/student/simulados/[id]/attempts/route.ts`: ao retomar uma tentativa `in_progress` cujo `expires_at` já passou, o servidor **não** devolve mais o payload completo de questões/respostas como se fosse uma prova normalmente editável — devolve `{ ok: true, attempt, needs_timeout_completion: true }`. O cliente, ao ver essa flag, chama imediatamente o mesmo endpoint de submit (sem renderizar a interface de resposta) para encerrar compulsoriamente. `simulado_attempt_resumed_expired` é o novo valor de `action` usado no log dessa retomada (mesma coluna de texto já existente em `system_activity_logs`, nenhuma tabela/coluna nova).
+
+### Correção — client (robustez do auto-submit)
+
+`app/meus-simulados/[id]/page-client.tsx`: `submitAttempt` ganhou `overrides` (attemptId/timeSpentSeconds), permitindo chamá-lo sem depender do estado React `attempt` (necessário para o caminho de retomada vencida, que nunca faz `bindAttempt`). Retry controlado (`AUTO_SUBMIT_MAX_ATTEMPTS = 3`, `AUTO_SUBMIT_RETRY_DELAY_MS = 4000ms`) cobre o desalinhamento de relógio entre client/servidor perto do limite: se o auto-submit falhar, tenta de novo poucas vezes, espaçado — nunca em loop apertado, nunca mais que 3 tentativas, cancelado ao desmontar o componente. Mensagem "Tempo esgotado. Seu simulado está sendo finalizado com as respostas registradas até este momento." substitui a mensagem técnica de "questões em branco" durante esse processo (o aluno não pode mais agir). Idempotência: se o servidor responder que a tentativa já estava `completed` (ex.: um retry chegou depois de um envio anterior já ter tido sucesso), o `submit/route.ts` agora devolve o `result_id` já existente (sem criar um segundo resultado) e o client navega até ele em vez de travar numa mensagem de erro sem saída.
+
+### Preservado sem alteração, auditado explicitamente
+
+`save_student_attempt_answer` já rejeitava (410, "Tempo esgotado.") qualquer resposta após `expires_at` — não precisou de mudança. `lock_student_attempt` (row lock `for update`) já serializa corretamente todos os cenários de concorrência considerados (resposta simultânea ao timeout, dois auto-submits, foco/abandono concorrentes com o timeout) — auditado, sem necessidade de alteração na migration `20260909170000_atomic_attempt_transitions.sql`. `consolidateEventRepresentativeAttempt`/`releasePendingEventResults`/TopCoins/e-mails de Jornada seguem exatamente o mesmo fluxo pós-conclusão de sempre (chamados de dentro do mesmo `submit/route.ts`, agora também alcançável pelo caminho de timeout) — nenhuma duplicação de lógica, nenhum atalho criado.
+
+### Auditoria histórica (somente leitura, sem correção retroativa)
+
+Ver `docs/status-atual.md` para a contagem da população de `simulado_attempts` com `status='in_progress' AND expires_at < now()` no banco remoto — nenhuma dessas linhas foi alterada nesta Sprint. A tentativa `df5df158-1a61-48d0-843c-f0bc30233989` (Luciana) foi usada como controle positivo da consulta.
+
+### Testes
+
+`tests/attempt-timeout-completion.spec.ts` (novo) — casos 1–13 do pedido (bloqueio manual preservado, timeout completa com brancos reais, idempotência, retomada vencida não é devolvida como editável, retry controlado, race com resposta/última pergunta). Regressão: `attempt-transactions`, `simulado-scoring`, `simulado-question-annulment`, `context-attempt-limits`, `annulled-question-finish`.
+
+---
+
+## 10/09/2026 (continuação) — Timeout server-side: encerramento mesmo sem retorno do aluno
+
+As correções acima resolvem timeout com a página aberta e retomada de tentativa vencida — mas exigem que o aluno volte. O inventário remoto encontrou 18 `simulado_attempts` presas em `in_progress` com `expires_at` no passado, provando o caso real: um aluno pode sair antes do tempo acabar e nunca mais voltar. Esta continuação fecha essa lacuna com um mecanismo puramente server-side.
+
+### Extração — fonte única de conclusão
+
+`lib/server/simuladoAttemptCompletion.ts` (novo) — `completeSimuladoAttempt()` reúne, extraído verbatim de `submit/route.ts` (comportamento idêntico, nenhuma regra nova): guard de branco (com o bypass por `isExpired` desta mesma Sprint), scoring via `lib/simuladoScoring.ts`, chamada à RPC atômica `complete_student_attempt`, idempotência (result_id existente em vez de erro sem saída), e todo o pós-processamento (`consolidateEventRepresentativeAttempt`, `releasePendingEventResults`, TopCoins, progressão/e-mail de Jornada, `student_activity_log`, `logActivity`). `submit/route.ts` virou um wrapper fino: só autentica o aluno, valida ownership (`attempt.student_id === student.id`) e contexto (`attempt.simulado_id === simuladoId`), e delega. **Nenhuma lógica de negócio duplicada** — auditado por teste estrutural (`tests/attempt-timeout-completion.spec.ts`, seção 12) que confirma `submit/route.ts` não contém mais `computeSimuladoAttemptResult(`/`supabase.rpc("complete_student_attempt"` diretamente.
+
+`origin: "manual" | "timeout_cron"` — parâmetro novo, só para rotular a origem no log de auditoria (`metadata.completion_origin`, mesmo campo JSONB já existente em `system_activity_logs` — nenhuma coluna/tabela nova). `"timeout_cron"` grava `actorType: "system"` (sem sessão de aluno envolvida); `"manual"` cobre tanto um clique em "Finalizar" quanto o auto-submit do client com a página aberta (a requisição chega pela sessão real do aluno nos dois casos — o `SubmitPayload` nunca carregou, e continua sem carregar, uma flag de "sou automático" vinda do client).
+
+### Job de cron — `app/api/admin/simulados/attempts-timeout-job/route.ts` (novo)
+
+Reaproveita 100% a infraestrutura de cron já existente no projeto: `verifyCronSecret()` (`app/lib/server/cronAuth.ts`, `timingSafeEqual`, já usado por `jornadas/release-job` e `events/status-job`) e o mesmo padrão de rota (`GET`, try/catch, `logAdminAction`/`logSystemError`, resposta com contadores). **Job diário único** — Vercel Cron no plano Hobby deste projeto só permite 1x/dia por job (confirmado pelo próprio comentário de `events/status-job/route.ts`, já em produção) — registrado em `vercel.json` às 09:00 UTC (escalonado após os dois jobs existentes, 07:00 e 08:00). **Atraso máximo esperado documentado, não escondido:** até ~24h entre `expires_at` e o fechamento automático, no pior caso — sem impacto na nota, porque `save_student_attempt_answer` já rejeita (410, pelo relógio do Postgres) qualquer resposta registrada após `expires_at`, então o atraso do job nunca permite pontuação adicional, só atrasa a transição para `completed`. **Limitação operacional aceita nesta Sprint, não contornada:** essa latência é inerente ao plano Hobby da Vercel (1 execução/dia por cron); poderá ser reduzida no futuro com um plano/infra que permita execução mais frequente (ex.: a cada poucos minutos) — decisão de produto/custo fora do escopo desta entrega.
+
+**Seleção de candidatos:** `status='in_progress' AND is_preview=false AND attempt_context IN ('event','jornada') AND expires_at IS NOT NULL AND expires_at <= now() AND expires_at >= AUTO_TIMEOUT_ACTIVATION_AT`, ordenado deterministicamente (`expires_at asc, id asc`) e limitado a `BATCH_SIZE = 50` por execução (nunca um SELECT ilimitado).
+
+**Marco de ativação (`AUTO_TIMEOUT_ACTIVATION_AT = "2026-09-10T18:20:00.000Z"`), documentado e não escondido:** protege integralmente o backlog histórico de 18 tentativas (todas com `expires_at` estritamente anterior a este valor) — nenhuma delas, incluindo a da aluna Luciana Cabral Jacinto e as 2 outras com `representative_attempt_id`/`result_released_at` incorretos, é tocada pelo primeiro deploy deste job. Reconciliação dessas 18 permanece uma etapa separada, não autorizada nesta Sprint.
+
+**Contextos elegíveis (`event`, `jornada`) — decisão explícita:** tentativas `standalone` já não podem mais ser criadas (`app/api/student/simulados/[id]/attempts/route.ts` rejeita esse contexto com 400) — as 7 standalone vencidas no banco são 100% legado pré-restrição. O marco de ativação já as excluiria sozinho (todas vencidas antes do marco), mas o filtro de contexto é uma segunda camada explícita e intencional, documentada por decisão e não por efeito colateral.
+
+**Concorrência/idempotência:** preservada integralmente pela engine já existente (`lock_student_attempt`, `for update`, e `p_expected_updated_at` otimista) — auditado, não alterado. Uma tentativa que outra execução (client, retry, ou o próprio cron rodando de novo) já fechou entre a seleção e a chamada retorna 409 do RPC, tratado pelo job como `already_terminal` (estado esperado), não como falha. Falha real de uma tentativa (`try/catch` por item) nunca interrompe o restante do lote — fica elegível para a próxima execução diária, sem mecanismo de retry próprio além disso. Resposta final é só contadores (`processed`/`completed`/`already_terminal`/`failed`) — nunca nome/e-mail/CPF de aluno.
+
+### Testes
+
+`tests/attempt-timeout-completion.spec.ts`, seções 10–14 (novo): autenticação do cron, filtros de elegibilidade (contexto, preview, marco de ativação, `expires_at`), ordenação/lote, reaproveitamento comprovado da engine (`completeSimuladoAttempt`, nunca duplicada), concorrência/idempotência (409 → `already_terminal`), isolamento de falha por item, ausência de PII na resposta, registro em `vercel.json`. Seções 1–9 (Sprint anterior) revalidadas contra a nova localização da lógica (`lib/server/simuladoAttemptCompletion.ts`). Regressão: `attempt-transactions`, `simulado-scoring`, `simulado-question-annulment`, `context-attempt-limits`, `annulled-question-finish`, `student-journey-access`, `event-representative-attempt`.
+
+**Nenhuma migration.** `complete_student_attempt`/`save_student_attempt_answer`/`lock_student_attempt` (migration `20260909170000`) não foram tocados — a regra de expiração já vivia lá para respostas; o job só decide QUANDO fechar a tentativa, nunca reimplementa a trava de tempo. Nenhum dado histórico alterado — as 18 tentativas seguem exatamente como estavam, incluindo a da Luciana.
+
+---
+
 ## 10/09/2026 (continuação) — PDF de resultado do aluno corrigido para questão anulada + auditoria de estatísticas
 
 Continuação da Sprint abaixo ("Questões anuladas não bloqueiam a finalização + selo visual corrigido"), já homologada em localhost pelo usuário quanto à finalização e ao selo. Dois pontos novos surgiram antes do fechamento:

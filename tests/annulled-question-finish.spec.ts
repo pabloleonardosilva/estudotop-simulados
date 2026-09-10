@@ -15,6 +15,12 @@ const read = (relativePath: string) => fs.readFileSync(path.join(root, relativeP
 const RUNNER = "app/meus-simulados/[id]/page-client.tsx";
 const PREVIEW = "app/simulados/[id]/preview/page-client.tsx";
 const SUBMIT_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts";
+// Extraído em 2026-09-10 (Sprint "Timeout server-side"): a lógica de
+// conclusão (guard de branco, scoring, RPC atômica, pós-processamento) mora
+// agora em lib/server/simuladoAttemptCompletion.ts — reaproveitada também
+// pelo job de timeout server-side. submit/route.ts virou um wrapper fino
+// (auth/ownership) que delega a ela.
+const COMPLETION_LIB = "lib/server/simuladoAttemptCompletion.ts";
 
 // ─── Lógica replicada fielmente (mesma fórmula usada nos 3 pontos reais:
 // FinishConfirm do runner, FinishConfirm do preview, e o guard de blank do
@@ -116,13 +122,18 @@ test.describe("3. Cliente — preview admin (app/simulados/[id]/preview/page-cli
   });
 });
 
-test.describe("4. Servidor é soberano — POST submit/route.ts", () => {
+test.describe("4. Servidor é soberano — lib/server/simuladoAttemptCompletion.ts (reaproveitado pelo submit e pelo job de timeout)", () => {
   test("guard de branco recalculado a partir de questionRows/answersBySQ, nunca confia em contagem do client", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     expect(source).toContain('const requiredQuestionRows = questionRows.filter((row) => row.status !== "annulled");');
     expect(source).toContain("const answeredRequiredQuestions = requiredQuestionRows.filter(");
     expect(source).toContain("answersBySQ.get(row.id)?.selected_alternative_id");
-    expect(source).toContain("if (!allowBlank && answeredRequiredQuestions < requiredQuestionRows.length) {");
+    // Atualizado em 2026-09-10 (Sprint "Encerramento compulsório por tempo
+    // esgotado"): o guard ganhou !isExpired — quando o tempo da tentativa já
+    // acabou, o bloqueio de branco cede (ver tests/attempt-timeout-completion.spec.ts).
+    // A exigência para anuladas (nunca respondíveis, nunca pendência) permanece
+    // idêntica quando ainda há tempo.
+    expect(source).toContain("if (!allowBlank && !isExpired && answeredRequiredQuestions < requiredQuestionRows.length) {");
   });
 
   test("o body enviado pelo client (SubmitPayload) não carrega answeredCount/blankCount — servidor não confia nele", () => {
@@ -135,21 +146,29 @@ test.describe("4. Servidor é soberano — POST submit/route.ts", () => {
   });
 
   test("answeredQuestions original (snapshot de total_questions/answered_questions) permanece intocado — total_questions continua questionRows.length", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     expect(source).toContain("const answeredQuestions = answers.filter((row) => row.selected_alternative_id).length;");
     expect(source).toContain("total_questions: questionRows.length,");
     expect(source).toContain("answered_questions: answeredQuestions,");
   });
 
   test("engine transacional (complete_student_attempt) não foi tocada — mesma chamada RPC de antes", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     expect(source).toContain('supabase.rpc("complete_student_attempt"');
     expect(source).toContain("p_expected_updated_at: attempt.updated_at");
   });
 
   test("scoring (computeSimuladoAttemptResult) não foi tocado — mesma importação/uso de lib/simuladoScoring.ts", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     expect(source).toContain('import { computeSimuladoAttemptResult, type AnswerForScoring, type SimuladoQuestionForScoring } from "@/lib/simuladoScoring";');
+  });
+
+  test("submit/route.ts delega para a função compartilhada em vez de duplicar a lógica — só valida ownership/contexto antes", () => {
+    const source = read(SUBMIT_ROUTE);
+    expect(source).toContain('import { completeSimuladoAttempt } from "@/lib/server/simuladoAttemptCompletion";');
+    expect(source).toContain("const result = await completeSimuladoAttempt(supabase, {");
+    expect(source).not.toContain('supabase.rpc("complete_student_attempt"');
+    expect(source).not.toContain("computeSimuladoAttemptResult(");
   });
 });
 

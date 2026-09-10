@@ -31,16 +31,23 @@ test("status-job cron reconciles status idempotently without overriding manual a
   expect(job).toContain('.select("id")\n        .maybeSingle();');
 });
 
-test("vercel.json keeps exactly two daily cron jobs, matching the Hobby plan constraint", () => {
+test("vercel.json keeps exactly three daily cron jobs, matching the Hobby plan constraint", () => {
+  // Atualizado em 2026-09-10 (Sprint "Timeout server-side"): terceiro job
+  // diário adicionado (attempts-timeout-job), escalonado após os dois já
+  // existentes — mesma restrição de frequência (Hobby = 1x/dia por job).
   const vercelConfig = JSON.parse(read("vercel.json")) as { crons: Array<{ path: string; schedule: string }> };
-  expect(vercelConfig.crons).toHaveLength(2);
+  expect(vercelConfig.crons).toHaveLength(3);
   expect(vercelConfig.crons.map((cron) => cron.path)).toEqual([
     "/api/admin/jornadas/release-job",
     "/api/admin/events/status-job",
+    "/api/admin/simulados/attempts-timeout-job",
   ]);
   for (const cron of vercelConfig.crons) {
     expect(cron.schedule).toMatch(/^\d+ \d+ \* \* \*$/);
   }
+  // Nenhum horário duplicado — cada job roda numa janela própria.
+  const schedules = vercelConfig.crons.map((cron) => cron.schedule);
+  expect(new Set(schedules).size).toBe(schedules.length);
 });
 
 test("reminder is exclusively manual — no automatic window, no automatic source, no scheduler helper survives in the codebase", () => {

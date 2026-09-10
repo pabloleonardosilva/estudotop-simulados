@@ -20,7 +20,10 @@ const PROFESSOR_ANNUL_ROUTE = "app/api/professor/events/[id]/questions/[relation
 const ANSWER_KEY_QUICK_ROUTE = "app/api/admin/questions/[id]/answer/route.ts";
 const QUESTION_EDIT_ROUTE = "app/api/admin/questions/[id]/route.ts";
 const ANSWERS_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/answers/route.ts";
-const SUBMIT_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts";
+// Extraído em 2026-09-10 (Sprint "Timeout server-side"): o scoring saiu de
+// submit/route.ts para esta função compartilhada, reaproveitada também
+// pelo job de timeout server-side.
+const COMPLETION_LIB = "lib/server/simuladoAttemptCompletion.ts";
 const SIMULADO_QUESTIONS_ROUTE = "app/api/admin/simulados/[id]/questions/route.ts";
 const QUESTION_BANK_LOADER = "app/questoes/page.tsx";
 const QUESTION_BANK_LIST = "app/questoes/page-client.tsx";
@@ -114,8 +117,8 @@ test.describe("anulação/desanulação de questão — Banco ≠ Simulado, prop
     expect(answersMapBuild).not.toContain("is_correct");
   });
 
-  test("submit usa a mesma fonte única de verdade do reprocessamento (lib/simuladoScoring) — não existe mais loop de correção duplicado no submit", () => {
-    const submit = read(SUBMIT_ROUTE);
+  test("submit usa a mesma fonte única de verdade do reprocessamento (lib/simuladoScoring) — não existe mais loop de correção duplicado (atualizado 2026-09-10: extraído para lib/server/simuladoAttemptCompletion.ts, reaproveitado pelo job de timeout server-side)", () => {
+    const submit = read(COMPLETION_LIB);
     expect(submit).toContain('import { computeSimuladoAttemptResult, type AnswerForScoring, type SimuladoQuestionForScoring } from "@/lib/simuladoScoring";');
     expect(submit).toContain("computeSimuladoAttemptResult(scoringQuestions, scoringAnswers, scoringModel)");
     // O atalho antigo que confiava em answer.is_correct armazenado (risco:

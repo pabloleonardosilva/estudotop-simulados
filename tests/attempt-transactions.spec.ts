@@ -30,6 +30,12 @@ const FOCUS_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/focus-v
 const ABANDON_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/abandon/route.ts";
 const SUBMIT_ROUTE = "app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts";
 const ATTEMPTS_ROUTE = "app/api/student/simulados/[id]/attempts/route.ts";
+// Extraído em 2026-09-10 (Sprint "Timeout server-side"): a chamada ao RPC,
+// o scoring e a orquestração pós-conclusão saíram de SUBMIT_ROUTE e foram
+// para esta função compartilhada, reaproveitada também pelo job de timeout
+// server-side (app/api/admin/simulados/attempts-timeout-job/route.ts) —
+// SUBMIT_ROUTE virou um wrapper fino (auth/ownership) que delega a ela.
+const COMPLETION_LIB = "lib/server/simuladoAttemptCompletion.ts";
 const PANEL = "app/meus-simulados/[id]/page-client.tsx";
 const read = (relativePath: string) => fs.readFileSync(path.join(root, relativePath), "utf8");
 
@@ -243,20 +249,20 @@ test.describe("5. Estrutural — wiring das rotas TypeScript nos RPCs transacion
     expect(source).toContain("getStudentFromRequest");
   });
 
-  test("submit/route.ts chama complete_student_attempt via supabase.rpc, sem mais INSERT+UPDATE separados na attempt/resultado", () => {
-    const source = read(SUBMIT_ROUTE);
+  test("lib/server/simuladoAttemptCompletion.ts chama complete_student_attempt via supabase.rpc, sem mais INSERT+UPDATE separados na attempt/resultado", () => {
+    const source = read(COMPLETION_LIB);
     expect(source).toContain('supabase.rpc("complete_student_attempt"');
     expect(source).not.toMatch(/\.from\("simulado_results"\)\s*\.insert/);
     expect(source).not.toMatch(/\.from\("simulado_attempts"\)\s*\.update\(\{\s*status: "completed"/);
   });
 
-  test("submit/route.ts passa p_expected_updated_at a partir da leitura original da attempt (concorrência otimista)", () => {
-    const source = read(SUBMIT_ROUTE);
+  test("lib/server/simuladoAttemptCompletion.ts passa p_expected_updated_at a partir da leitura original da attempt (concorrência otimista)", () => {
+    const source = read(COMPLETION_LIB);
     expect(source).toContain("p_expected_updated_at: attempt.updated_at,");
   });
 
   test("scoring (computeSimuladoAttemptResult) continua sendo chamado em TypeScript antes do RPC — não foi movido para SQL", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     const scoringIndex = source.indexOf("computeSimuladoAttemptResult(");
     const rpcIndex = source.indexOf('supabase.rpc("complete_student_attempt"');
     expect(scoringIndex).toBeGreaterThan(-1);
@@ -264,12 +270,20 @@ test.describe("5. Estrutural — wiring das rotas TypeScript nos RPCs transacion
   });
 
   test("orquestração pós-conclusão (Evento/Jornada/TopCoins/logging) continua depois do RPC, sem mudança de comportamento", () => {
-    const source = read(SUBMIT_ROUTE);
+    const source = read(COMPLETION_LIB);
     const rpcIndex = source.indexOf('supabase.rpc("complete_student_attempt"');
     const after = source.slice(rpcIndex);
     expect(after).toContain("consolidateEventRepresentativeAttempt(supabase,");
     expect(after).toContain("resyncTopCoinEarnings(supabase,");
     expect(after).toContain('action: "simulado_completed"');
+  });
+
+  test("submit/route.ts (wrapper fino) delega para a função compartilhada — não duplica RPC/scoring/orquestração", () => {
+    const source = read(SUBMIT_ROUTE);
+    expect(source).toContain('import { completeSimuladoAttempt } from "@/lib/server/simuladoAttemptCompletion";');
+    expect(source).toContain("await completeSimuladoAttempt(supabase,");
+    expect(source).not.toContain('supabase.rpc("complete_student_attempt"');
+    expect(source).not.toContain("computeSimuladoAttemptResult(");
   });
 });
 

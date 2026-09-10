@@ -42,6 +42,12 @@ import { getTopCoinMaxValue } from "@/app/lib/gamification/topcoins";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 const WINDOW_BLUR_GRACE_MS = 10_000;
+// Retry controlado do auto-submit por tempo esgotado: perto do limite, um
+// pequeno desalinhamento de rel\u00F3gio entre client e servidor pode fazer o
+// client acreditar que j\u00E1 expirou um pouco antes do servidor concordar \u2014
+// tenta de novo poucas vezes, espa\u00E7ado, nunca em loop apertado.
+const AUTO_SUBMIT_MAX_ATTEMPTS = 3;
+const AUTO_SUBMIT_RETRY_DELAY_MS = 4_000;
 
 type Phase =
   | "loading"
@@ -348,6 +354,8 @@ export default function SimuladoExperience({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
+  const [pendingTimeoutAttempt, setPendingTimeoutAttempt] = useState<{ id: string; startedAt: string } | null>(null);
   const [instantResultQuestionId, setInstantResultQuestionId] = useState<string | null>(null);
   const [eliminatedAlternatives, setEliminatedAlternatives] = useState<Record<string, string[]>>({});
   const [notesOpen, setNotesOpen] = useState(false);
@@ -370,6 +378,8 @@ export default function SimuladoExperience({
 
   const submittingRef = useRef(false);
   const autoSubmitTriggeredRef = useRef(false);
+  const autoSubmitAttemptsRef = useRef(0);
+  const autoSubmitRetryTimeoutRef = useRef<number | null>(null);
   const lastViolationTime = useRef(0);
   const windowBlurGraceTimerRef = useRef<number | null>(null);
   const windowBlurCountdownIntervalRef = useRef<number | null>(null);
@@ -438,6 +448,20 @@ export default function SimuladoExperience({
       if (!res.ok || !json.ok) {
         setErrorMessage(json.message || "Erro ao retomar tentativa.");
         setPhase("error");
+        return;
+      }
+
+      if (json.needs_timeout_completion) {
+        // Tempo já esgotado antes mesmo de retomar: o servidor não devolveu
+        // questões/respostas para renderizar a prova como editável — só o
+        // suficiente para encerrar compulsoriamente pelo mesmo endpoint de
+        // submit (soberano, já tolera questões em branco quando realmente
+        // expirada). Nunca reabre a interface de resposta. O encerramento em
+        // si é disparado pelo efeito abaixo (que observa pendingTimeoutAttempt)
+        // — nunca chamado diretamente daqui, para não referenciar
+        // submitAttempt antes de sua declaração.
+        setAttempt(json.attempt);
+        setPendingTimeoutAttempt({ id: json.attempt.id, startedAt: json.attempt.started_at });
         return;
       }
       bindAttempt(json);
@@ -947,21 +971,28 @@ export default function SimuladoExperience({
   );
 
   const submitAttempt = useCallback(
-    async (auto = false) => {
-      if (!attempt) return;
+    async (auto = false, overrides?: { attemptId?: string; timeSpentSeconds?: number }) => {
+      const attemptId = overrides?.attemptId || attempt?.id;
+      if (!attemptId) return;
       if (submittingRef.current) return;
+      if (autoSubmitRetryTimeoutRef.current !== null) {
+        window.clearTimeout(autoSubmitRetryTimeoutRef.current);
+        autoSubmitRetryTimeoutRef.current = null;
+      }
       submittingRef.current = true;
       setSubmitError(null);
+      setIsAutoSubmitting(auto);
       setPhase("submitting");
 
+      const timeSpentSeconds = overrides?.timeSpentSeconds ?? timeSpent;
       const headers = await getAuthHeaders();
       const res = await fetch(
-        `/api/student/simulados/${simuladoId}/attempts/${attempt.id}/submit`,
+        `/api/student/simulados/${simuladoId}/attempts/${attemptId}/submit`,
         {
           method: "POST",
           headers,
           body: JSON.stringify({
-            time_spent_seconds: timeSpent,
+            time_spent_seconds: timeSpentSeconds,
             auto_submission: auto,
           }),
         },
@@ -970,8 +1001,40 @@ export default function SimuladoExperience({
       submittingRef.current = false;
 
       if (!res.ok || !json.ok) {
-        if (!auto) autoSubmitTriggeredRef.current = false;
-        setSubmitError(json.message || "Erro ao finalizar simulado.");
+        // Idempotência: a tentativa já estava concluída (ex.: um retry
+        // chegou depois de um envio anterior ter tido sucesso) — o servidor
+        // devolve o result_id já existente; navega até ele em vez de travar
+        // numa mensagem de erro sem saída.
+        if (json.result_id) {
+          setPhase("done");
+          router.replace(buildResultUrl(attemptId));
+          return;
+        }
+        let retrying = false;
+        if (!auto) {
+          autoSubmitTriggeredRef.current = false;
+        } else if (autoSubmitAttemptsRef.current < AUTO_SUBMIT_MAX_ATTEMPTS) {
+          // Retry controlado, espaçado (nunca em loop apertado): perto do
+          // limite de tempo, um pequeno desalinhamento entre o relógio do
+          // client e o do servidor pode fazer o client acreditar que já
+          // expirou antes do servidor concordar — o servidor, soberano,
+          // ainda aplica corretamente o bloqueio de branco nesse caso e
+          // devolve a mesma mensagem de "questões em branco". Tenta de novo
+          // poucas vezes; nunca finge sucesso, nunca reabre a prova como
+          // editável enquanto o timeout já foi detectado no client.
+          retrying = true;
+          autoSubmitAttemptsRef.current += 1;
+          autoSubmitRetryTimeoutRef.current = window.setTimeout(() => {
+            autoSubmitRetryTimeoutRef.current = null;
+            void submitAttempt(true, overrides);
+          }, AUTO_SUBMIT_RETRY_DELAY_MS);
+        }
+        // Enquanto há retry automático pendente, mantém a mensagem de "tempo
+        // esgotado" (não a mensagem técnica de "questões em branco", que o
+        // aluno já não pode resolver) — só exibe o erro cru quando as
+        // tentativas automáticas se esgotam ou quando foi um envio manual.
+        setIsAutoSubmitting(retrying);
+        if (!retrying) setSubmitError(json.message || "Erro ao finalizar simulado.");
         setPhase("in_progress");
         return;
       }
@@ -996,10 +1059,33 @@ export default function SimuladoExperience({
       }
 
       setPhase("done");
-      router.replace(buildResultUrl(attempt.id));
+      router.replace(buildResultUrl(attemptId));
     },
     [attempt, simuladoId, timeSpent, router, buildResultUrl, eventId],
   );
+
+  // Dispara o encerramento compulsório de uma tentativa vencida detectada na
+  // retomada (ver resumeAttempt/needs_timeout_completion) — feito aqui, e não
+  // diretamente de dentro de resumeAttempt, apenas para referenciar
+  // submitAttempt já declarado.
+  useEffect(() => {
+    if (!pendingTimeoutAttempt) return;
+    void submitAttempt(true, {
+      attemptId: pendingTimeoutAttempt.id,
+      timeSpentSeconds: Math.max(0, Math.floor((Date.now() - new Date(pendingTimeoutAttempt.startedAt).getTime()) / 1000)),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTimeoutAttempt]);
+
+  // Cancela um retry de auto-submit ainda pendente se o componente
+  // desmontar (ex.: navegação para o resultado já concluída por outra via).
+  useEffect(() => {
+    return () => {
+      if (autoSubmitRetryTimeoutRef.current !== null) {
+        window.clearTimeout(autoSubmitRetryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function closeTopCoinsReward() {
     setTopCoinsReward(null);
@@ -1415,13 +1501,15 @@ export default function SimuladoExperience({
 
       <div className={`relative z-10 mx-auto grid w-full gap-5 px-4 py-5 md:px-6 xl:px-8 ${focusMode ? "max-w-[1280px] pt-18" : "et-laptop-exam-grid max-w-[1680px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
         <div className="min-w-0">
-          {phase === "submitting" && (
+          {(phase === "submitting" || isAutoSubmitting) && (
             <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
-              Enviando suas respostas...
+              {isAutoSubmitting
+                ? "Tempo esgotado. Seu simulado está sendo finalizado com as respostas registradas até este momento."
+                : "Enviando suas respostas..."}
             </div>
           )}
 
-          {submitError && (
+          {submitError && !isAutoSubmitting && (
             <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {submitError}
             </div>
