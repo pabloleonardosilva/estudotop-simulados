@@ -334,6 +334,46 @@ async function testHotmartExternalClient() {
       : new Response(JSON.stringify({ items: [] }), { status: 200 });
     refund.resetHotmartAccessTokenCache();
     await assert.rejects(() => hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), (error) => error.code === "not_configured");
+
+    const adminProductsRouteSource = fs.readFileSync("app/api/admin/hotmart/products/route.ts", "utf8");
+    assert.equal(adminProductsRouteSource.includes("requireAdmin(request)"), true);
+    assert.equal(adminProductsRouteSource.includes("listHotmartSandboxProducts"), true);
+    assert.equal(adminProductsRouteSource.includes("A integração Hotmart não está configurada corretamente."), true);
+    assert.equal(/access_token|client_secret|client_id|basicAuthorization|Authorization/i.test(adminProductsRouteSource), false);
+
+    configureHotmart("sandbox");
+    const listRequests = [];
+    global.fetch = async (input) => {
+      listRequests.push(String(input));
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-list", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      if (String(input).includes("page_token=next")) return new Response(JSON.stringify({ items: [{ ucode: "UCODE-B", name: "Produto B" }], page_info: {} }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ ucode: "UCODE-A", name: "Produto A", internal_id: 999 }], page_info: { next_page_token: "next" } }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    const sandboxList = await hotmartProducts.listHotmartSandboxProducts();
+    assert.deepEqual(sandboxList, [{ ucode: "UCODE-A", name: "Produto A" }, { ucode: "UCODE-B", name: "Produto B" }]);
+    for (const product of sandboxList) assert.deepEqual(Object.keys(product).sort(), ["name", "ucode"]);
+    assert.equal(listRequests.some((url) => url.startsWith("https://sandbox.hotmart.com/products/api/v1/products")), true);
+    assert.equal(listRequests.every((url) => !url.startsWith("https://developers.hotmart.com")), true);
+
+    configureHotmart("production");
+    let productionListUrl = "";
+    global.fetch = async (input) => {
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-list-production", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      productionListUrl = String(input);
+      return new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(await hotmartProducts.listHotmartSandboxProducts(), []);
+    assert.equal(productionListUrl.startsWith("https://developers.hotmart.com/products/api/v1/products"), true);
+
+    configureHotmart("sandbox");
+    delete process.env.HOTMART_CLIENT_SECRET;
+    calls = 0;
+    global.fetch = async () => { calls += 1; throw new Error("unexpected fetch"); };
+    refund.resetHotmartAccessTokenCache();
+    await assert.rejects(() => hotmartProducts.listHotmartSandboxProducts(), (error) => error.code === "not_configured");
+    assert.equal(calls, 0);
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();
