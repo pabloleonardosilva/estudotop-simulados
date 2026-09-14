@@ -9,6 +9,10 @@ export class HotmartRefundRequestError extends Error {
   constructor(message: string, public readonly certainty: "not_sent" | "uncertain") { super(message); }
 }
 
+function logHotmartOauthDiagnostic(details: Record<string, unknown>) {
+  console.error("[HOTMART_OAUTH_DIAGNOSTIC]", JSON.stringify({ phase: "oauth_token", ...details }));
+}
+
 export function classifyHotmartRefundHttpStatus(status: number): "accepted" | "rejected" | "uncertain" {
   if (status >= 200 && status < 300) return "accepted";
   if (status >= 400 && status < 500 && ![408, 409, 429].includes(status)) return "rejected";
@@ -21,6 +25,7 @@ export async function getHotmartAccessToken(forceRefresh = false) {
   try {
     config = getHotmartExternalConfig();
   } catch {
+    logHotmartOauthDiagnostic({ code: "HOTMART_OAUTH_NOT_CONFIGURED" });
     throw new HotmartRefundRequestError("HOTMART_OAUTH_NOT_CONFIGURED", "not_sent");
   }
   const tokenUrl = new URL(config.oauthUrl);
@@ -32,12 +37,19 @@ export async function getHotmartAccessToken(forceRefresh = false) {
       headers: { "Content-Type": "application/json", Authorization: config.basicAuthorization },
       cache: "no-store",
     });
-  } catch {
+  } catch (error) {
+    logHotmartOauthDiagnostic({ environment: config.environment, network_error: true, error_name: error instanceof Error ? error.name : "unknown" });
     throw new HotmartRefundRequestError("HOTMART_OAUTH_FAILED", "not_sent");
   }
-  if (!response.ok) throw new HotmartRefundRequestError("HOTMART_OAUTH_FAILED", "not_sent");
+  if (!response.ok) {
+    logHotmartOauthDiagnostic({ environment: config.environment, status: response.status, status_text: response.statusText, code: "HOTMART_OAUTH_FAILED" });
+    throw new HotmartRefundRequestError("HOTMART_OAUTH_FAILED", "not_sent");
+  }
   const payload = await response.json() as { access_token?: unknown; token_type?: unknown; expires_in?: unknown };
-  if (typeof payload.access_token !== "string" || String(payload.token_type).toLowerCase() !== "bearer") throw new HotmartRefundRequestError("HOTMART_OAUTH_INVALID_RESPONSE", "not_sent");
+  if (typeof payload.access_token !== "string" || String(payload.token_type).toLowerCase() !== "bearer") {
+    logHotmartOauthDiagnostic({ environment: config.environment, status: response.status, status_text: response.statusText, code: "HOTMART_OAUTH_INVALID_RESPONSE" });
+    throw new HotmartRefundRequestError("HOTMART_OAUTH_INVALID_RESPONSE", "not_sent");
+  }
   const expiresIn = typeof payload.expires_in === "number" ? payload.expires_in : Number(payload.expires_in) || 300;
   cachedToken = { value: payload.access_token, expiresAt: Date.now() + expiresIn * 1000 };
   return cachedToken.value;
