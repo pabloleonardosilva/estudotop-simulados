@@ -374,6 +374,52 @@ async function testHotmartExternalClient() {
     refund.resetHotmartAccessTokenCache();
     await assert.rejects(() => hotmartProducts.listHotmartSandboxProducts(), (error) => error.code === "not_configured");
     assert.equal(calls, 0);
+
+    // A/B: UCODE real retornado pela Hotmart (fora do nibble de versão/variante RFC 4122) é aceito, em qualquer caixa.
+    assert.equal(hotmartProducts.HOTMART_UCODE_PATTERN.test("57912595-BA4B-02E0-8C72-71CB71E13136"), true);
+    assert.equal(hotmartProducts.HOTMART_UCODE_PATTERN.test("57912595-ba4b-02e0-8c72-71cb71e13136"), true);
+    // E: UCODE sintético anterior continua válido.
+    assert.equal(hotmartProducts.HOTMART_UCODE_PATTERN.test("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"), true);
+    // F: fora da estrutura 8-4-4-4-12 hexadecimal é inválido.
+    for (const invalid of ["not-a-ucode", "57912595-BA4B-02E0-8C72-71CB71E1313", "57912595-BA4B-02E0-8C72-71CB71E131366", "57912595_BA4B_02E0_8C72_71CB71E13136", ""]) {
+      assert.equal(hotmartProducts.HOTMART_UCODE_PATTERN.test(invalid), false);
+    }
+
+    // C: input em minúsculas casa com item retornado pela API em maiúsculas; resultado normalizado em minúsculas.
+    configureHotmart("sandbox");
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-marketing", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-BA4B-02E0-8C72-71CB71E13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProducts.lookupHotmartProductByUcode("57912595-ba4b-02e0-8c72-71cb71e13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    // D: input em maiúsculas casa com item retornado pela API em minúsculas.
+    configureHotmart("sandbox");
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-marketing-2", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProducts.lookupHotmartProductByUcode("57912595-BA4B-02E0-8C72-71CB71E13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    // G: rota de lookup e rota de criação de mapping usam exatamente a mesma regra (mesma constante importada), sem divergência.
+    const productLookupRouteSourceUcode = fs.readFileSync("app/api/admin/hotmart/products/lookup/route.ts", "utf8");
+    assert.equal(productLookupRouteSourceUcode.includes("HOTMART_UCODE_PATTERN"), true);
+    assert.equal(productLookupRouteSourceUcode.includes('from "@/app/lib/server/hotmart/products"'), true);
+    assert.equal(hotmartAdminRouteSource.includes("HOTMART_UCODE_PATTERN"), true);
+    assert.equal(hotmartAdminRouteSource.includes('from "@/app/lib/server/hotmart/products"'), true);
+    assert.equal(hotmartAdminRouteSource.includes("Informe um Product UCODE válido."), true);
+
+    // H: normalização para minúsculas ocorre antes de qualquer comparação/gravação de ucode nas duas rotas
+    // e na busca de mapping durante o webhook — evita que só a caixa produza um vínculo duplicado.
+    assert.equal(productLookupRouteSourceUcode.includes("rawUcode.toLowerCase()"), true);
+    assert.equal(hotmartAdminRouteSource.includes("body.hotmart_product_ucode.trim().toLowerCase()"), true);
+    assert.equal(processorSource.includes('.eq("hotmart_product_ucode", event.product.ucode.toLowerCase())'), true);
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();

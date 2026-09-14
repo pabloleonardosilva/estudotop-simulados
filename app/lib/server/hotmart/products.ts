@@ -11,6 +11,11 @@ type HotmartProductPage = {
 
 export type HotmartProductLookupCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable";
 
+// Product UCODE Hotmart: 8-4-4-4-12 caracteres hexadecimais. A Hotmart não garante o nibble de
+// versão/variante do UUID RFC 4122 (ex.: "57912595-BA4B-02E0-8C72-71CB71E13136"), então não
+// exigimos esse formato — apenas a estrutura hexadecimal.
+export const HOTMART_UCODE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class HotmartProductLookupError extends Error {
   constructor(public readonly code: HotmartProductLookupCode) {
     super(`HOTMART_PRODUCT_LOOKUP_${code.toUpperCase()}`);
@@ -22,7 +27,7 @@ function productFromPage(payload: HotmartProductPage, ucode: string) {
     ? payload.items.find((item) => typeof item.ucode === "string" && item.ucode.toLowerCase() === ucode.toLowerCase())
     : null;
   return product && typeof product.name === "string" && product.name.trim()
-    ? { ucode: String(product.ucode), name: product.name.trim() }
+    ? { ucode: String(product.ucode).toLowerCase(), name: product.name.trim() }
     : null;
 }
 

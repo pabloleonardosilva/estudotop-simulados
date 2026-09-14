@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
-
-const UCODE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { HOTMART_UCODE_PATTERN, HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
 
 function lookupErrorResponse(error: HotmartProductLookupError) {
   if (error.code === "not_found") return NextResponse.json({ ok: false, message: "Produto não encontrado na sua conta Hotmart." }, { status: 404 });
@@ -17,8 +15,9 @@ function lookupErrorResponse(error: HotmartProductLookupError) {
 export async function GET(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
-  const ucode = new URL(request.url).searchParams.get("ucode")?.trim() || "";
-  if (!UCODE_PATTERN.test(ucode)) return NextResponse.json({ ok: false, message: "Informe um Product UCODE válido." }, { status: 400 });
+  const rawUcode = new URL(request.url).searchParams.get("ucode")?.trim() || "";
+  if (!HOTMART_UCODE_PATTERN.test(rawUcode)) return NextResponse.json({ ok: false, message: "Informe um Product UCODE válido." }, { status: 400 });
+  const ucode = rawUcode.toLowerCase();
 
   const supabase = createSupabaseAdminClient();
   const { data: existing, error: existingError } = await supabase.from("hotmart_product_mappings")

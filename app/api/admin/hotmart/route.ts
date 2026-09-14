@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getHotmartReadiness } from "@/app/lib/server/hotmart/config";
-import { HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
+import { HOTMART_UCODE_PATTERN, HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
 
 export async function GET(request: Request) {
   const admin = await requireAdmin(request);
@@ -31,12 +31,13 @@ export async function POST(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const ucode = typeof body?.hotmart_product_ucode === "string" ? body.hotmart_product_ucode.trim() : "";
+  const ucode = typeof body?.hotmart_product_ucode === "string" ? body.hotmart_product_ucode.trim().toLowerCase() : "";
   const submittedName = typeof body?.hotmart_product_name === "string" ? body.hotmart_product_name.trim() : "";
   const verifyWithHotmart = body?.verify_product_with_hotmart === true;
   const type = body?.destination_type === "jornada" || body?.destination_type === "event" ? body.destination_type : null;
   const destinationId = typeof body?.destination_id === "string" ? body.destination_id.trim() : "";
   if (!ucode || (!submittedName && !verifyWithHotmart) || !type || !destinationId) return NextResponse.json({ ok: false, message: "Informe ucode, produto, tipo e destino." }, { status: 400 });
+  if (!HOTMART_UCODE_PATTERN.test(ucode)) return NextResponse.json({ ok: false, message: "Informe um Product UCODE válido." }, { status: 400 });
   const supabase = createSupabaseAdminClient();
   const { data: existingMapping, error: existingMappingError } = await supabase.from("hotmart_product_mappings").select("id").eq("hotmart_product_ucode", ucode).maybeSingle();
   if (existingMappingError) return NextResponse.json({ ok: false, message: "Não foi possível verificar os vínculos existentes." }, { status: 500 });
