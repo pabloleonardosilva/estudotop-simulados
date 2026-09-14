@@ -505,6 +505,90 @@ async function testHotmartExternalClient() {
       { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" },
     );
     assert.equal(sandboxAfterProductionRequests.some((url) => url.startsWith("https://sandbox.hotmart.com/products/api/v1/products")), true);
+
+    // --- lookup dividido por ambiente (Sandbox x Produção) ---
+
+    const productionLookupRouteSource = fs.readFileSync("app/api/admin/hotmart/products/production/lookup/route.ts", "utf8");
+    const pageClientSource = fs.readFileSync("app/admin/configuracoes/hotmart/page-client.tsx", "utf8");
+
+    // C: lookup de produção usa somente HOTMART_PRODUCTION_* (via productionCatalog.ts) — nunca Sandbox.
+    assert.equal(productionLookupRouteSource.includes('from "@/app/lib/server/hotmart/productionCatalog"'), true);
+    assert.equal(productionLookupRouteSource.includes("lookupHotmartProductionProductByUcode"), true);
+    assert.equal(productionLookupRouteSource.includes("HOTMART_BASIC_TOKEN"), false);
+    assert.equal(/access_token|client_secret|client_id|basicAuthorization|Authorization/i.test(productionLookupRouteSource), false);
+
+    // D: lookup Sandbox segue usando só a infra Sandbox — não referencia nada de produção.
+    assert.equal(productLookupRouteSourceUcode.includes("productionCatalog"), false);
+    assert.equal(productLookupRouteSourceUcode.includes("PRODUCTION"), false);
+
+    // I: mensagens de erro por ambiente são distintas (produção não pode virar mensagem Sandbox).
+    assert.equal(productionLookupRouteSource.includes("A credencial de produção da Hotmart não está configurada corretamente."), true);
+    assert.equal(productLookupRouteSourceUcode.includes("A integração Hotmart não está configurada corretamente."), true);
+    assert.notEqual(
+      productionLookupRouteSource.includes("A integração Hotmart não está configurada corretamente."),
+      true,
+    );
+
+    // J: nenhuma escrita — só GET à Hotmart (OAuth + catálogo) e só SELECT no Supabase, sem insert/update/delete.
+    assert.equal(productionLookupRouteSource.includes(".insert("), false);
+    assert.equal(productionLookupRouteSource.includes(".update("), false);
+    assert.equal(productionLookupRouteSource.includes(".delete("), false);
+    assert.equal(productionCatalogSource.includes('method: "PUT"'), false);
+    assert.equal(productionCatalogSource.includes('method: "DELETE"'), false);
+
+    // B/E: lookup de produção encontra produto real por UCODE, case-insensitive nos dois sentidos.
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-1", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-BA4B-02E0-8C72-71CB71E13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-ba4b-02e0-8c72-71cb71e13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-2", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-BA4B-02E0-8C72-71CB71E13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    // B: produto ausente no catálogo real → not_found (nunca confundido com not_configured).
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-3", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-ba4b-02e0-8c72-71cb71e13136"), (error) => error.code === "not_found");
+
+    // A: lookup Sandbox continua funcionando após todo o uso do lookup de produção (sem contaminação de token/cache).
+    configureHotmart("sandbox");
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-sandbox-lookup-final", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" }], page_info: {} }), { status: 200 });
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"),
+      { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" },
+    );
+
+    // F/G: "Usar este produto" define a origem correta em cada listagem.
+    assert.equal(pageClientSource.includes('fillProductFromCatalog(product, "production")'), true);
+    assert.equal(pageClientSource.includes('fillProductFromCatalog(product, "sandbox")'), true);
+    assert.equal(pageClientSource.includes('function fillProductFromCatalog(product: { name: string; ucode: string }, source: "sandbox" | "production")'), true);
+    assert.equal(pageClientSource.includes("setProductSource(source)"), true);
+
+    // H: o botão "Buscar produto" escolhe o endpoint conforme a origem selecionada.
+    assert.equal(pageClientSource.includes('productSource === "production" ? "/api/admin/hotmart/products/production/lookup" : "/api/admin/hotmart/products/lookup"'), true);
+
+    // Seletor de origem visível na UI (item 13).
+    assert.equal(pageClientSource.includes("Origem do produto Hotmart"), true);
+    assert.equal(pageClientSource.includes("Produção — meus produtos reais"), true);
+    assert.equal(pageClientSource.includes("Sandbox — produtos fictícios de homologação"), true);
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();

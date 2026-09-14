@@ -10,7 +10,7 @@ import "server-only";
 type CachedToken = { value: string; expiresAt: number };
 let cachedProductionToken: CachedToken | null = null;
 
-export type HotmartProductionCatalogCode = "not_configured" | "unauthorized" | "timeout" | "unavailable";
+export type HotmartProductionCatalogCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable";
 
 export class HotmartProductionCatalogError extends Error {
   constructor(public readonly code: HotmartProductionCatalogCode) {
@@ -110,6 +110,72 @@ export async function listHotmartProductionProducts() {
       if (!pageToken) break;
     }
     return products;
+  } catch (error) {
+    if (error instanceof HotmartProductionCatalogError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout");
+    throw new HotmartProductionCatalogError("unavailable");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+type HotmartProductionProductPage = {
+  items?: Array<{ ucode?: unknown; name?: unknown }>;
+  page_info?: { next_page_token?: unknown };
+};
+
+function productionProductFromPage(payload: HotmartProductionProductPage, ucode: string) {
+  const product = Array.isArray(payload.items)
+    ? payload.items.find((item) => typeof item.ucode === "string" && item.ucode.toLowerCase() === ucode.toLowerCase())
+    : null;
+  return product && typeof product.name === "string" && product.name.trim()
+    ? { ucode: String(product.ucode).toLowerCase(), name: product.name.trim() }
+    : null;
+}
+
+export async function lookupHotmartProductionProductByUcode(ucode: string) {
+  let accessToken: string;
+  try {
+    accessToken = await getHotmartProductionAccessToken();
+  } catch (error) {
+    if (error instanceof HotmartProductionCatalogError) throw error;
+    throw new HotmartProductionCatalogError("not_configured");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  let pageToken: string | null = null;
+  try {
+    for (let page = 0; page < 20; page += 1) {
+      const url = new URL("https://developers.hotmart.com/products/api/v1/products");
+      url.searchParams.set("max_results", "50");
+      if (pageToken) url.searchParams.set("page_token", pageToken);
+      const send = () => fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      let response = await send();
+      if (response.status === 401) {
+        try {
+          accessToken = await getHotmartProductionAccessToken(true);
+        } catch {
+          throw new HotmartProductionCatalogError("unauthorized");
+        }
+        response = await send();
+      }
+      if (response.status === 401 || response.status === 403) throw new HotmartProductionCatalogError("unauthorized");
+      if (!response.ok) throw new HotmartProductionCatalogError("unavailable");
+      const payload = await response.json() as HotmartProductionProductPage;
+      const product = productionProductFromPage(payload, ucode);
+      if (product) return product;
+      pageToken = typeof payload.page_info?.next_page_token === "string" && payload.page_info.next_page_token
+        ? payload.page_info.next_page_token
+        : null;
+      if (!pageToken) break;
+    }
+    throw new HotmartProductionCatalogError("not_found");
   } catch (error) {
     if (error instanceof HotmartProductionCatalogError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout");
