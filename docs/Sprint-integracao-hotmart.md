@@ -1820,3 +1820,85 @@ O refund passou a registrar `requesting/refund_reconciliation_required` antes da
 A data comercial da Jornada continua sendo exclusivamente `purchase_approved_at`; processamento inicial e reprocessamento não a substituem por `now()`. Antes de criar, converter ou ativar uma matrícula, o processador calcula a expiração com a duração vigente da Jornada. Se a validade já terminou ou a aprovação é ausente/inválida, a concessão não cria matrícula, cronograma ou vínculo de acesso e permanece em `processing_error` com `COMMERCIAL_DATE_REQUIRES_REVIEW`. O histórico registra `commercial_date_requires_review` com aprovação, expiração calculada, destino e Jornada, sem segredos. A aba Pendências apresenta esses dados para revisão administrativa.
 
 Na criação manual de mapping, o Admin informa o UCODE e aciona **Buscar produto**. O backend protegido por Admin consulta `GET /products/api/v1/products` com paginação controlada, OAuth server-side compartilhado, timeout e retry único após 401, respeitando estritamente `HOTMART_ENVIRONMENT`. Somente `ucode` e `name` retornam ao browser. O nome fica somente leitura e, ao salvar, é validado novamente no servidor; produto ausente, credencial inválida, indisponibilidade, timeout e mapping duplicado falham fechados. O modal de Pendências continua usando o nome e o UCODE persistidos pelo webhook, sem consulta externa adicional.
+
+## 52. Homologação de 2026-09-14 — OAuth Sandbox, catálogos Sandbox/Production, lookup por UCODE por ambiente e redesign do card de Transações
+
+Esta seção consolida toda a Sprint de homologação executada em 2026-09-14 na branch `hotmart-homologacao` (worktree isolada; `main` nunca foi tocada). Reconstruída a partir do histórico Git da branch e do código atual, sem inventar fatos.
+
+### 52.1 Reset do ambiente de homologação
+
+O mapping sintético `fb056612-bcc6-4217-9e6d-2a5d1110ac2f` ("Produto test postback2") foi removido do banco (mapping + transação + access link + histórico associados), após confirmar que pertencia exclusivamente ao produto sandbox, apontava só para a "Jornada de Teste" e não tinha nenhuma outra transação legítima vinculada. Objetivo: reproduzir do zero o fluxo `nova compra → produto desconhecido → pending_mapping → Admin cria vínculo manual → reprocessa → acesso concedido`. Nenhuma migration foi necessária; nenhuma outra Jornada ou mapping foi tocado.
+
+### 52.2 Diagnóstico e correção do OAuth Sandbox (401)
+
+Auditoria mostrou que o card "Configurada" do painel dependia somente de `HOTMART_HOTTOK` (usado só pela assinatura do webhook), nunca de `HOTMART_CLIENT_ID/CLIENT_SECRET/BASIC_TOKEN` — por isso o painel podia mostrar "Configurada"/"sandbox" mesmo com o lookup falhando. Foi adicionado logging sanitizado (`[HOTMART_OAUTH_DIAGNOSTIC]`, sem nunca logar client_id/client_secret/Basic/token/Authorization) diretamente em `getHotmartAccessToken()` (`app/lib/server/hotmart/refund.ts`), cobrindo falha de config, erro de rede e resposta HTTP não-ok do OAuth, com `phase`, `environment`, `status` e `status_text`. Com o log ativo em Preview, identificou-se HTTP 401 na chamada real a `POST https://api-sec-vlc.hotmart.com/security/oauth/token`. A causa raiz confirmada foi a credencial armazenada em `HOTMART_BASIC_TOKEN` conter o prefixo literal `"Basic "` duplicado — o código já monta `` `Basic ${HOTMART_BASIC_TOKEN}` ``, então a variável deve conter só o token puro. Corrigido operacionalmente na Vercel (fora do código); após a correção e um redeploy sem cache, o OAuth Sandbox passou a autenticar corretamente, confirmado pelo mesmo log de diagnóstico sem mais 401.
+
+### 52.3 Catálogo Sandbox e listagem administrativa temporária
+
+Com o OAuth funcionando, foi criada uma consulta read-only ao catálogo Sandbox (`GET /products/api/v1/products` contra `sandbox.hotmart.com`), exposta por `listHotmartSandboxProducts()` em `app/lib/server/hotmart/products.ts` e pela rota `GET /api/admin/hotmart/products`, reaproveitando o OAuth já existente. A UI ganhou o botão "Listar produtos Sandbox" na aba Produtos vinculados, mostrando somente `name`/`ucode`, com "Copiar UCODE". Essa listagem confirmou que o catálogo Sandbox da Hotmart é **sintético** — produtos fictícios de teste, diferentes do catálogo real da conta — o que já era esperado, mas ficou comprovado na prática: o UCODE sintético `fb056612-...` ("Produto test postback2") não corresponde a nenhum produto real.
+
+### 52.4 UCODE fora do UUID RFC estrito
+
+Ao listar o catálogo Sandbox, foi obtido um produto real do tipo "Marketing Digital do Zero" com UCODE `57912595-BA4B-02E0-8C72-71CB71E13136`. O lookup por esse UCODE falhava com "Informe um Product UCODE válido.". Causa raiz: o regex de validação (`products/lookup/route.ts`) exigia formato UUID RFC 4122 estrito (nibble de versão `[1-5]` e variante `[89ab]`); o 3º grupo desse UCODE (`02E0`) começa com `0`, fora de `[1-5]`. A Hotmart não garante esses nibbles. A regra foi substituída por `HOTMART_UCODE_PATTERN` (exportada de `app/lib/server/hotmart/products.ts`): estrutura hexadecimal 8-4-4-4-12, sem exigência de versão/variante, `case-insensitive`, reaproveitada por todas as rotas que validam UCODE (lookup Sandbox, criação de mapping, lookup Production).
+
+### 52.5 Normalização case-insensitive do UCODE
+
+Todo UCODE é normalizado para minúsculas antes de comparar ou gravar: no lookup (Sandbox e Production), na criação de mapping (`POST /api/admin/hotmart`) e na busca de mapping durante o processamento do webhook (`processor.ts`, comparação `.eq("hotmart_product_ucode", event.product.ucode.toLowerCase())` — única linha alterada no processor, sem tocar em mais nada do webhook). A comparação entre o UCODE informado pelo Admin e o `ucode` devolvido pela API Hotmart (que pode vir em maiúsculas) já usava `.toLowerCase()` dos dois lados. Isso resolve duplicidade por diferença de caixa **na camada de aplicação**; o índice único do banco (`unique_hotmart_product_mappings_ucode`) continua case-sensitive no schema — nenhuma migration foi criada para isso, pois a aplicação garante hoje que só se grava/compara em minúsculas.
+
+### 52.6 Lookup Sandbox por UCODE homologado
+
+Com regex e normalização corrigidos, `GET /api/admin/hotmart/products/lookup?ucode=...` passou a encontrar corretamente tanto o UCODE sintético anterior (`fb056612-...`) quanto o UCODE real (`57912595-...`) obtido do catálogo Sandbox.
+
+### 52.7 Credenciais read-only de Production isoladas
+
+Foram criadas, somente no escopo Preview da Vercel, três variáveis novas: `HOTMART_PRODUCTION_CLIENT_ID`, `HOTMART_PRODUCTION_CLIENT_SECRET`, `HOTMART_PRODUCTION_BASIC_TOKEN`. Elas alimentam exclusivamente o módulo novo `app/lib/server/hotmart/productionCatalog.ts`, com cache de token próprio (`cachedProductionToken`, variável de módulo isolada — nunca compartilha token/cache com `refund.ts`), sem nenhuma dependência de `HOTMART_ENVIRONMENT` e sem nenhum uso por webhook, processor, refund, reprocessamento ou mapping automático. Um 503 inicial ("A credencial de produção da Hotmart não está configurada corretamente.") foi diagnosticado por leitura de código como o mesmo padrão já visto no OAuth Sandbox (env var ausente/vazia no runtime daquele deployment específico ou variável adicionada após o build — env vars da Vercel não são retroativas); resolvido após configuração/redeploy pelo responsável.
+
+### 52.8 Catálogo Production read-only
+
+`GET /api/admin/hotmart/products/production` lista o catálogo **real** da conta Hotmart (`GET https://developers.hotmart.com/products/api/v1/products`, nunca `sandbox.hotmart.com`), devolvendo somente `name`/`ucode`. Confirmado listando corretamente os produtos reais da conta. A UI ganhou "Listar meus produtos Hotmart" na mesma aba, em seção visualmente distinta (âmbar, aviso "Consulta somente leitura. Nenhuma venda, acesso ou configuração da Hotmart será alterada."), com "Copiar UCODE" e "Usar este produto".
+
+### 52.9 Lookup por UCODE dividido por ambiente
+
+`GET /api/admin/hotmart/products/lookup` (Sandbox) e a nova `GET /api/admin/hotmart/products/production/lookup` (Production, via `lookupHotmartProductionProductByUcode()` em `productionCatalog.ts`, reaproveitando o mesmo OAuth/paginação/timeout/retry-401 do catálogo Production) resolvem a inconsistência em que um UCODE real não podia ser encontrado pelo botão "Buscar produto" enquanto o Preview estivesse em `HOTMART_ENVIRONMENT=sandbox`. O formulário "Vincular produto" ganhou o estado explícito `productSource` ("sandbox" | "production", default "sandbox" nesta branch de homologação para preservar comportamento) e um seletor visível "Origem do produto Hotmart"; o botão "Buscar produto" chama o endpoint correspondente à origem selecionada, sem o Admin precisar saber qual rota existe.
+
+### 52.10 "Usar este produto"
+
+Implementado nas duas listagens (Sandbox e Production): preenche `Product UCODE` e `Nome do produto` diretamente, sem nova consulta, e define a origem correspondente (`fillProductFromCatalog(product, "sandbox" | "production")`). Salvar o vínculo continua usando o fluxo existente e não foi alterado nesta Sprint — o teste funcional de salvar um mapping real de produção fica para autorização separada.
+
+### 52.11 Nenhuma alteração de ambiente global nem escrita em Production
+
+Em nenhum momento desta Sprint `HOTMART_ENVIRONMENT` foi alterado (permanece `sandbox`), nem foi feita qualquer operação de escrita na conta Hotmart de produção — a consulta a `developers.hotmart.com` é exclusivamente `GET`, sem mapping automático, sem reprocessamento, sem refund, sem webhook.
+
+### 52.12 Redesign premium do card de Transações
+
+O card de transação (compartilhado por Transações, Pendências e Compras em duplicidade via a função `renderTransactionCard`, reduzindo a duplicação anterior entre um formato rico só em Pendências e um formato técnico de uma linha nas demais abas) segue o Dark Premium oficial (`et-admin-dark-list-card`, `et-admin-dark-badge-*`, `et-admin-dark-label`, `et-admin-dark-divider`, sem paleta paralela), com hierarquia Produto → Compra → Comprador → Acesso no EstudoTOP → Transação/situação. Mostra: nome do produto (fallback "Produto não identificado"), UCODE com "Copiar UCODE", data comercial (`purchase_approved_at`, com fallback para `purchase_created_at` quando ausente — nunca `received_at`/`created_at` interno), situação da compra e situação no EstudoTOP sempre traduzidas (reaproveita `purchaseStatusLabel`/`processingStatusLabel` já existentes, não duplicadas), comprador (nome quando existir, e-mail sempre, sem CPF/telefone).
+
+**Valor/moeda:** `hotmart_transactions.amount`/`currency` já são persistidos pelo webhook. Com os dois presentes, formata com `Intl.NumberFormat("pt-BR", {style:"currency",currency})` usando a moeda REAL da transação — **nunca assume `"BRL"` como padrão**. Com `amount` presente e `currency` ausente, mostra o valor numérico neutro (`formatPlainAmount`) com a nota "(moeda não informada)", sem inventar moeda. Com `amount` ausente, nada é exibido.
+
+**Bloco de Acesso — estado do vínculo (`linkState`), derivado exclusivamente do mapping do produto por UCODE, nunca de `processing_status`:**
+- **Vinculado** (`linkState === "linked"`): existe mapping **ativo** para o UCODE E seu destino (Jornada/Evento) foi resolvido — mostra tipo + nome do destino; **não mostra o botão Vincular**.
+- **Destino indisponível** (`linkState === "destination_unavailable"`): existe mapping **ativo**, mas o destino não pôde ser resolvido — alerta âmbar, sem fingir "Vinculado"; sem botão Vincular (evitaria criar um segundo mapping para o mesmo UCODE, rejeitado pela API com 409).
+- **Vínculo inativo** (`linkState === "mapping_inactive"`): existe um mapping para o UCODE, mas está `inactive`/`archived` — **não conta como vínculo operacional**; orienta reativar em Produtos vinculados; sem botão Vincular pelo mesmo motivo do 409 acima.
+- **Produto não vinculado** (`linkState === "unlinked"`): **nenhum** mapping existe para o UCODE, em qualquer status — mostra "Destino: Nenhum" e o botão **Vincular** (laranja, `dark-primary`).
+
+`canLink` (exibição do botão Vincular) = `linkState === "unlinked"`, **independente do `processing_status` da transação** — corrigido nesta revisão após constatar que a condição original (`processing_status === "pending_mapping" && !mapping`) escondia indevidamente o botão em transações sem nenhum mapping mas com outro `processing_status` (ex.: `processing_error`, `blocked_financial`). `processing_status` continua sendo exibido normalmente como a situação da transação (badge "Situação no EstudoTOP"), mas deixou de ser critério para esconder a ação Vincular.
+
+**Reutilização de modal:** "Vincular" reaproveita integralmente `openMappingModal`/`PremiumModal`/`savePendingMapping` já homologados em Pendências — nenhuma lógica server-side nova, nenhuma rota nova. O modal sempre oferece "Salvar vínculo"; oferece também **"Vincular e reprocessar"** somente quando o `processing_status` da transação está na mesma lista de elegibilidade que `processor.ts::HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE` (`received`, `pending_mapping`, `pending_destination`, `processing_error`, `refund_reconciliation_required`) — espelhada no frontend como `HOTMART_REPROCESS_ELIGIBLE_STATUSES`, já que o módulo do processor é server-only e não pode ser importado no client component. Fora dessa lista, só "Salvar vínculo" é oferecido, evitando propor reprocessamento sem sentido para o estado atual da transação. Nenhum reprocessamento é disparado automaticamente pelo Admin clicar em "Vincular" — só ao clicar explicitamente em "Vincular e reprocessar".
+
+**Mapping é por produto, não por transação:** o vínculo Hotmart (`hotmart_product_mappings`) é definido por `hotmart_product_ucode` → destino, nunca por `transaction_code` individual. Consequência: todas as transações de um mesmo UCODE compartilham o mesmo `linkState` — se o UCODE já tem mapping ativo válido, toda transação desse produto aparece "Vinculada" ao mesmo destino; não é criado (nem permitido pela API, que responde 409) mapping duplicado por transação.
+
+Responsivo: empilha em telas estreitas, duas colunas a partir de `lg` (≥1024px), UCODE quebra com `break-all`.
+
+### 52.13 Destino de mapping: Jornada e Evento suportados; Simulado direto não
+
+Auditado o schema (`hotmart_product_mappings_destination_check`, `hotmart_transactions_destination_check`, `hotmart_access_links_destination_check` na migration `20260828110000_create_hotmart_integration.sql`): todos os três `CHECK` só permitem `destination_type` `'jornada'` ou `'event'`; não existe coluna `simulado_id` em nenhuma das tabelas Hotmart. **Simulado direto não é destino suportado pelo modelo atual** e exigiria extensão arquitetural (nova coluna + ajuste dos três `CHECK` + `processor.ts`). Nenhuma migration foi criada; a decisão de ampliar o modelo é do responsável pelo projeto.
+
+### 52.14 Limitação conhecida do Sandbox — postback sintético reutiliza o mesmo transaction_code
+
+Confirmado por `hotmart_webhook_events`: o "Testar postback" do Sandbox Hotmart sempre reutiliza o mesmo `transaction_code` sintético (`HP16015479281022`) a cada novo disparo, dentro de um lote fixo de ~8 tipos de evento. Isso significa que testes futuros de ponta a ponta no Sandbox vão colidir com qualquer linha anterior ainda existente para esse código — a limpeza (52.1) pode precisar ser repetida antes de cada rodada de teste limpa.
+
+### 52.15 O que está homologado e o que ainda não está
+
+**Homologado nesta Sprint, em `hotmart-homologacao`:** OAuth Sandbox; catálogo Sandbox (listagem e lookup); regra de UCODE (8-4-4-4-12 hex, case-insensitive); OAuth Production read-only; catálogo Production read-only (listagem e lookup); separação de origem no formulário de vínculo; card premium de Transações/Pendências/Compras em duplicidade.
+
+**Não homologado / pendente:** salvamento efetivo de um mapping com UCODE real de produção (só o preenchimento do formulário foi implementado); merge de `hotmart-homologacao` com `main`; qualquer deploy em Production da Vercel; webhook autenticado real vindo da Hotmart de produção; refund real; Simulado como destino direto de mapping (exige extensão de schema, não implementada). Nada disso deve ser considerado concluído até autorização e validação explícitas do responsável.

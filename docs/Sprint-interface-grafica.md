@@ -42,3 +42,12 @@ Particularidades locais devem atender somente necessidades funcionais ou de comp
 A consolidação não converteu páginas, alterou regras de negócio ou redesenhou componentes. Responsividade, shells, header, sidebar, footer e rotas de foco foram preservados.
 
 Nenhuma migration foi criada ou alterada nesta Sprint.
+
+
+## 14/09/2026 - Card premium de Transações Hotmart
+
+Aplicado somente em `app/admin/configuracoes/hotmart/page-client.tsx`, branch `hotmart-homologacao`. O card de transação (compartilhado por Transações, Pendências e Compras em duplicidade, função `renderTransactionCard`) segue o Dark Premium oficial, reaproveitando exclusivamente tokens já existentes em `app/globals.css`: `.et-admin-dark-list-card` (superfície do card, com o mesmo hover `-translate-y-0.5`/`border-white/[0.12]` já usado em `/assuntos`), `.et-admin-dark-label`, `.et-admin-dark-card-title`, `.et-admin-dark-text`, `.et-admin-dark-muted`, `.et-admin-dark-divider` e a família `.et-admin-dark-badge`/`.et-admin-dark-badge-{success,warning,danger,info,neutral}` para os estados semânticos (vinculado/processado = verde, pendência/revisão = âmbar, chargeback/bloqueio = vermelho). Ações usam `PremiumButton` (`dark-primary` para a ação principal **Vincular**, `dark`/`dark-warning`/`dark-success` para as demais, mesmo padrão já usado no resto da página). Nenhum token, cor ou componente novo foi criado; nenhuma terceira identidade visual foi introduzida.
+
+Hierarquia do card: Produto (nome + UCODE com botão copiar, reaproveitando o mesmo padrão de "Produtos vinculados") → Compra (data comercial, valor/moeda quando existentes, badge de situação) → Comprador (nome quando existir, e-mail) → Acesso no EstudoTOP (badge Vinculado + destino, ou Destino indisponível, ou Produto não vinculado + botão Vincular) → Transação (código secundário) e situação interna traduzida. Responsivo: empilha em coluna única abaixo de `lg` (1024px), duas colunas lado a lado a partir daí; UCODE longo quebra com `break-all`. Testado com TypeScript e build; validação visual manual no Preview fica pendente de confirmação do responsável.
+
+Nenhuma migration foi criada ou alterada nesta Sprint. Nenhuma outra tela foi redesenhada.
