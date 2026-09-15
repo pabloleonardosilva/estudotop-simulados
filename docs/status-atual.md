@@ -1547,3 +1547,10 @@ No cadastro administrativo do aluno, ajustar as tentativas de um Evento agora at
 - [x] Nenhuma migration foi criada ou alterada nesta Sprint. Nenhuma operação de escrita foi feita na Hotmart de produção. `HOTMART_ENVIRONMENT` permanece `sandbox`.
 - [ ] **NÃO homologado ainda:** salvamento efetivo de mapping com UCODE real de produção (só o preenchimento do formulário foi implementado); merge de `hotmart-homologacao` com `main`; qualquer deploy em Production; webhook real de produção; refund real; Simulado como destino direto de mapping (exige extensão de schema — três `CHECK constraints` só permitem `jornada`/`event`, sem coluna `simulado_id`).
 - [x] Detalhes completos, arquivos e rotas envolvidos em `docs/Sprint-integracao-hotmart.md` (seção 52).
+
+## 15/09/2026 — Refinamento visual final do card de Transações Hotmart
+
+- [x] Acabamento visual do card de Transações (`renderTransactionCard`) elevado ao padrão Dark Premium maduro de `/bancas`: cabeçalho com `et-admin-dark-icon-box-orange` + badge de situação da compra no canto, UCODE/código de transação em `font-mono`, painel lateral ("Acesso no EstudoTOP" / "Transação" / "Situação no EstudoTOP") com superfície própria (`rounded-xl border border-white/10 bg-white/[0.03]`). Nenhum token/componente/biblioteca novo.
+- [x] Microcopy ajustada apenas no frontend: quando o produto está sem vínculo algum e o `processing_status` também indica ausência de destino/mapeamento, a "Situação no EstudoTOP" mostra "Aguardando definição de destino" em vez de repetir uma mensagem redundante ao lado de "Produto não vinculado". Não altera `processing_status`, `linkState` nem estados financeiros específicos (chargeback, bloqueio, revisão de data comercial mantêm mensagem própria).
+- [x] Nenhuma regra de negócio, backend, banco ou migration alterados. Escopo restrito a `app/admin/configuracoes/hotmart/page-client.tsx`.
+- [x] Validado com `npx tsc --noEmit`, `npm run build`, `eslint` do arquivo e `node scripts/test-hotmart-unit.cjs` (35/35 + asserções de string do card, PASS). Homologação visual manual (Preview, 1366×768 e mobile) pendente de confirmação do responsável.
