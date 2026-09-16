@@ -65,7 +65,6 @@ type CandidateAttemptRow = {
   settings_snapshot: unknown;
   started_at: string;
   attempt_context: string;
-  students: { name: string | null; email: string | null } | { name: string | null; email: string | null }[] | null;
 };
 
 export async function GET(request: Request) {
@@ -84,7 +83,7 @@ export async function GET(request: Request) {
     const { data: candidates, error } = await supabase
       .from("simulado_attempts")
       .select(
-        "id,student_id,simulado_id,expires_at,updated_at,event_participant_id,event_id,student_jornada_simulado_id,settings_snapshot,started_at,attempt_context,students:student_id(name,email)",
+        "id,student_id,simulado_id,expires_at,updated_at,event_participant_id,event_id,student_jornada_simulado_id,settings_snapshot,started_at,attempt_context",
       )
       .eq("status", "in_progress")
       .eq("is_preview", false)
@@ -100,8 +99,19 @@ export async function GET(request: Request) {
 
     const rows = (candidates || []) as unknown as CandidateAttemptRow[];
 
+    // `simulado_attempts.student_id` não tem FK declarada para `students` no
+    // schema exposto ao PostgREST (não é o mesmo caso de outras tabelas do
+    // projeto) — o embed `students:student_id(...)` falha com PGRST200. Busca
+    // os alunos à parte, num único round-trip, e mapeia em memória.
+    const studentIds = [...new Set(rows.map((row) => row.student_id))];
+    const { data: studentsData, error: studentsError } = studentIds.length
+      ? await supabase.from("students").select("id,name,email").in("id", studentIds)
+      : { data: [], error: null };
+    if (studentsError) throw studentsError;
+    const studentById = new Map((studentsData || []).map((student) => [student.id, student]));
+
     for (const row of rows) {
-      const studentRef = Array.isArray(row.students) ? row.students[0] || null : row.students;
+      const studentRef = studentById.get(row.student_id) || null;
       const timeSpentSeconds = Math.max(0, Math.floor((Date.now() - new Date(row.started_at).getTime()) / 1000));
 
       try {

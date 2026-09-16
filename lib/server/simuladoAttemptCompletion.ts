@@ -93,11 +93,14 @@ export type SimuladoAttemptRow = any;
 // auto-submit disparado pelo client com a página ainda aberta — em ambos os
 // casos a requisição chega pela sessão real do aluno. "timeout_cron" é
 // exclusivo do job de fechamento server-side (nenhuma sessão de aluno
-// envolvida). SubmitPayload não carrega (nem nunca carregou) uma flag de
-// "sou automático" enviada pelo client — a distinção não é usada para
-// nenhuma decisão de segurança, só para rotular a origem no log de
-// auditoria (metadata.completion_origin).
-export type CompletionOrigin = "manual" | "timeout_cron";
+// envolvida). "historical_reconciliation" é exclusivo do script
+// administrativo one-shot que fecha o backlog de tentativas vencidas
+// anteriores à ativação do timeout server-side (scripts/reconcile-expired-attempts.ts,
+// 2026-09-10) — nunca finge que o aluno clicou "Finalizar" hoje. SubmitPayload
+// não carrega (nem nunca carregou) uma flag de "sou automático" enviada pelo
+// client — a distinção não é usada para nenhuma decisão de segurança, só
+// para rotular a origem no log de auditoria (metadata.completion_origin).
+export type CompletionOrigin = "manual" | "timeout_cron" | "historical_reconciliation";
 
 export type CompleteSimuladoAttemptParams = {
   attempt: SimuladoAttemptRow;
@@ -555,7 +558,7 @@ export async function completeSimuladoAttempt(
   // campo `metadata` JSONB já existente.
   await logActivity({
     request,
-    actorType: origin === "timeout_cron" ? "system" : "student",
+    actorType: origin === "timeout_cron" || origin === "historical_reconciliation" ? "system" : "student",
     actorId: studentId,
     actorName: studentName,
     actorEmail: studentEmail,

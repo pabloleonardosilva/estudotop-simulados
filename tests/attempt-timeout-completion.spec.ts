@@ -368,7 +368,9 @@ test.describe("12. Cron de timeout — reaproveitamento da engine (nunca duplica
 
   test("origin diferencia manual/cron no log de auditoria sem criar schema novo (mesmo campo metadata JSONB já existente)", () => {
     const source = read(COMPLETION_LIB);
-    expect(source).toContain('actorType: origin === "timeout_cron" ? "system" : "student"');
+    // Atualizado em 2026-09-10 (Sprint "Reconciliação histórica"): terceira
+    // origem (historical_reconciliation) também mapeia para actorType "system".
+    expect(source).toContain('actorType: origin === "timeout_cron" || origin === "historical_reconciliation" ? "system" : "student"');
     expect(source).toContain("completion_origin: origin,");
   });
 
