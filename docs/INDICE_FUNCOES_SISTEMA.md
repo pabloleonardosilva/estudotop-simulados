@@ -1,5 +1,14 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Infraestrutura test-only: admin sintetico (Fase 6B.2, 17/09/2026)
+
+- Configuracao: .env.test.example documenta TEST_ADMIN_EMAIL/TEST_ADMIN_PASSWORD; somente .env.test.local ignorado ou variaveis explicitas do processo podem conter valores reais. O guard das seis variaveis Supabase permanece obrigatorio antes de Auth Admin e login; os dois campos novos nao sao enviados ao Next.
+- Provisionamento explicito e idempotente: scripts/setup-test-admin.cjs (npm run test:admin:setup), somente auth.users e public.profiles (full_name sintetico exigido por NOT NULL). Fixture persistente exclusiva do projeto descartavel, sem aluno/professor ou outros dados de dominio; nao executa ao importar modulo. Usuario existente deve ter a senha local configurada; nao ha reset automatico de senha.
+- Autenticacao central: tests/helpers/test-admin-auth.cjs, getTestAdminAccessToken/getTestAdminAuthHeaders. Login normal com anon key, token de usuario distinto de anon/service role, cache em memoria ate 60 segundos antes da expiracao e invalidacao por mudanca do conjunto de configuracao. Nao grava sessao, nao loga tokens e nao fornece service role ao browser.
+- Consumidores HTTP: adminRequest/postJson em tests/master-registrations/helpers.ts e chamadas GET/DELETE/PATCH nos specs de cadastros/questoes; import-ai utiliza postJson. Rotas da aplicacao e requireAdmin nao foram alterados. Playwright de integracao nao guarda traces autenticados.
+- Smoke explicito: scripts/smoke-test-admin.cjs (npm run test:admin:smoke), handler GET de busca de bancas e requireAdmin reais, logger em memoria para impedir escrita de auditoria fora do escopo. Esperado 401 sem Bearer, 401 com token invalido, 200 com admin; sem fixture de dominio. Nao provisiona automaticamente. Testes locais sem rede: npm run test:auth-unit; regressao do guard: npm run test:guard.
+- Preview exige cookies/sessao browser e permanece pendente. Status de execucao remota, validacoes e bloqueios: entrada da Fase 6B.2 em docs/status-atual.md. Nenhum segredo, UUID ou identificador de usuario e documentado.
+
 ## Infraestrutura test-only: protecao Supabase (Fase 6B.1, 17/09/2026)
 
 - Fonte central: tests/helpers/supabase-test-environment.cjs. assertSafeSupabaseTestEnvironment compara o conjunto efetivo com TEST_SUPABASE_URL, TEST_SUPABASE_ANON_KEY e TEST_SUPABASE_SERVICE_ROLE_KEY; loadSafeSupabaseTestEnvironment le somente .env.test.local, aceita apenas as seis variaveis Supabase e recusa conflitos herdados antes de alterar o ambiente. Nenhum cliente/rede e criado pelo guard.

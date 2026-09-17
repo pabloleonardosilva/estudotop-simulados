@@ -4,6 +4,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { APIRequestContext } from "@playwright/test";
 import { assertSafeSupabaseTestEnvironment, loadSafeSupabaseTestEnvironment } from "../helpers/supabase-test-environment.cjs";
 
+import { getTestAdminAuthHeaders } from "../helpers/test-admin-auth.cjs";
+
 export type AttemptResult = {
   input: string;
   normalized: string;
@@ -95,9 +97,29 @@ export async function listNames(client: SupabaseClient, table: string, prefix: s
   return (data || []).map((item: { name: string }) => item.name);
 }
 
+export async function adminRequest(
+  request: APIRequestContext,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  url: string,
+  options: Omit<NonNullable<Parameters<APIRequestContext["fetch"]>[1]>, "method" | "maxRedirects"> = {},
+) {
+  assertSafeSupabaseTestEnvironment();
+  if (!url.startsWith("/api/admin/") || url.includes("\\") || new URL(url, "http://127.0.0.1").pathname !== url.split("?")[0]) {
+    throw new Error("Administrative test requests must use a relative /api/admin/ path.");
+  }
+  const headers = new Headers(options.headers);
+  const auth = await getTestAdminAuthHeaders();
+  headers.set("Authorization", auth.Authorization);
+  try {
+    return await request.fetch(url, { ...options, method, headers: Object.fromEntries(headers.entries()), maxRedirects: 0 });
+  } catch {
+    throw new Error("Administrative test request failed. Request details are omitted to protect credentials.");
+  }
+}
+
 export async function postJson(request: APIRequestContext, url: string, body: unknown) {
   assertSafeSupabaseTestEnvironment();
-  const response = await request.post(url, { data: body });
+  const response = await adminRequest(request, "POST", url, { data: body });
   let json: Record<string, unknown> = {};
 
   try {

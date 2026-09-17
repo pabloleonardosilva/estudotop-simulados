@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import {
+  adminRequest,
   assertNoUnexpectedLogicalDuplicates,
   cleanupMasterTestData,
   listNames,
@@ -285,7 +286,7 @@ test("bancas bloqueiam vazios e duplicidades logicas", async ({ request }) => {
     );
   }
 
-  const accentSearch = await request.get(
+  const accentSearch = await adminRequest(request, "GET",
     `/api/admin/exam-boards/search?q=${encodeURIComponent(`${prefix} Fundacao Getulio Vargas`)}`,
   );
   const accentSearchResult = await accentSearch.json();
@@ -336,7 +337,7 @@ test("bancas bloqueiam vazios e duplicidades logicas", async ({ request }) => {
     throw new Error(`Nao foi possivel criar questao para testar exclusao: ${questionResult.message}`);
   }
 
-  const deleteResponse = await request.delete(`/api/admin/exam-boards?id=${deleteBoardId}`);
+  const deleteResponse = await adminRequest(request, "DELETE", `/api/admin/exam-boards?id=${deleteBoardId}`);
   const deleteResponseJson = await deleteResponse.json();
 
   const { data: movedQuestion, error: movedQuestionError } = await client

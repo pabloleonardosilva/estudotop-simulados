@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import {
+  adminRequest,
   cleanupMasterTestData,
   normalizeBoardLikeApp,
   normalizeEntityLikeApp,
@@ -394,7 +395,7 @@ test("alternativa correta e edicao persistem apos reload logico", async ({ reque
   const questionId = createResult.json.questionId as string | undefined;
   if (!questionId) throw new Error(`Falha ao criar questão base: ${createResult.message}`);
 
-  const noneCorrect = await request.patch(`/api/admin/questions/${questionId}`, {
+  const noneCorrect = await adminRequest(request, "PATCH", `/api/admin/questions/${questionId}`, {
     data: {
       question_type: "multiple_choice",
       subject_id: subjectId,
@@ -419,7 +420,7 @@ test("alternativa correta e edicao persistem apos reload logico", async ({ reque
     { label: "D", text: "Alternativa D mantida", is_correct: false },
     { label: "E", text: "Alternativa E mantida", is_correct: false },
   ];
-  const patchResult = await request.patch(`/api/admin/questions/${questionId}`, {
+  const patchResult = await adminRequest(request, "PATCH", `/api/admin/questions/${questionId}`, {
     data: {
       question_type: "multiple_choice",
       subject_id: secondSubjectId,

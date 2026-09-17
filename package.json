@@ -11,7 +11,10 @@
     "test:masters": "playwright test tests/master-registrations",
     "test:questions": "playwright test tests/question-bank",
     "test:import-ai": "playwright test tests/import-ai",
-    "test:guard": "node --test tests/helpers/supabase-test-environment.test.cjs"
+    "test:guard": "node --test tests/helpers/supabase-test-environment.test.cjs",
+    "test:auth-unit": "node --test tests/helpers/test-admin-auth.test.cjs",
+    "test:admin:setup": "node scripts/setup-test-admin.cjs",
+    "test:admin:smoke": "node scripts/smoke-test-admin.cjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

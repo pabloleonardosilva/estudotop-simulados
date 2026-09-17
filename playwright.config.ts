@@ -26,7 +26,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    trace: "retain-on-failure",
+    trace: localOnly ? "retain-on-failure" : "off",
     screenshot: "only-on-failure",
   },
   webServer: localOnly ? undefined : {

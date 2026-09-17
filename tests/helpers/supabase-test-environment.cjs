@@ -9,6 +9,7 @@ const ENV_NAMES = [
   "TEST_SUPABASE_URL", "TEST_SUPABASE_ANON_KEY", "TEST_SUPABASE_SERVICE_ROLE_KEY",
   "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
 ];
+const FILE_ENV_NAMES = [...ENV_NAMES, "TEST_ADMIN_EMAIL", "TEST_ADMIN_PASSWORD"];
 
 /** @returns {never} */
 function refuse() { throw new Error(MESSAGE); }
@@ -57,7 +58,7 @@ function loadSafeSupabaseTestEnvironment(env = process.env, directory = process.
     let parsed;
     try { parsed = parseEnv(fs.readFileSync(filename, "utf8")); } catch { refuse(); }
     for (const [name, value] of Object.entries(parsed)) {
-      if (!ENV_NAMES.includes(name)) refuse();
+      if (!FILE_ENV_NAMES.includes(name)) refuse();
       if (candidate[name] !== undefined) {
         const matches = name.endsWith("_URL")
           ? normalizeUrl(candidate[name]) === normalizeUrl(value)
@@ -68,7 +69,9 @@ function loadSafeSupabaseTestEnvironment(env = process.env, directory = process.
     }
   }
   const validated = assertSafeSupabaseTestEnvironment(candidate);
-  for (const name of ENV_NAMES) env[name] = candidate[name];
+  for (const name of FILE_ENV_NAMES) {
+    if (candidate[name] !== undefined) env[name] = candidate[name];
+  }
   env.NEXT_PUBLIC_SUPABASE_URL = validated.url;
   env.TEST_SUPABASE_URL = validated.url;
   return validated;
