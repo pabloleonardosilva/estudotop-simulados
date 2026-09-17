@@ -103,3 +103,7 @@ test("admin reset and first access keep their dedicated first-access flow", () =
   expect(read("app/api/admin/students/[id]/reset-password/route.ts")).toContain("sendFirstAccessEmail");
   expect(read("app/api/auth/first-access/route.ts")).toContain('.eq("purpose", "first_access")');
 });
+
+test("Hotmart first access keeps its dedicated first-access flow", () => {
+  expect(read("app/lib/server/hotmart/email.ts")).toContain('.eq("purpose", "first_access")');
+});
