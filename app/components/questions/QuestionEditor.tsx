@@ -33,7 +33,7 @@ import DraftRestoreModal from "@/app/components/ui/DraftRestoreModal";
 import { useLocalDraft } from "@/app/lib/useLocalDraft";
 import { extractQuestionSubjectIds } from "@/lib/questions/question-subjects";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
-import { isQuestionImagePending } from "@/lib/questions/image-pending";
+import { findCandidateImageOccurrences, isQuestionImagePending, toggleImageOccurrenceRejection, type ImageOccurrence } from "@/lib/questions/image-pending";
 import { adminFetch } from "@/lib/supabase/adminFetch";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -658,6 +658,31 @@ export default function QuestionEditor({
     }));
   }, []);
 
+  // Referências de arquivo de imagem que a heurística contextual ainda trata como "possível imagem"
+  // (ver lib/questions/image-pending.ts), em qualquer campo de texto da questão — cada uma pode ser
+  // rejeitada/restaurada individualmente pelo professor via "Não é uma imagem".
+  type QuestionImageOccurrence = ImageOccurrence & { field: "statement" | "explanation_text" | "review_comment" | "alternative"; fieldLabel: string; alternativeIndex?: number };
+  const imageOccurrences = useMemo<QuestionImageOccurrence[]>(() => {
+    const list: QuestionImageOccurrence[] = [];
+    findCandidateImageOccurrences(question.statement).forEach((occurrence) => list.push({ ...occurrence, field: "statement", fieldLabel: "Enunciado" }));
+    findCandidateImageOccurrences(question.explanation_text).forEach((occurrence) => list.push({ ...occurrence, field: "explanation_text", fieldLabel: "Explicação" }));
+    findCandidateImageOccurrences(question.review_comment).forEach((occurrence) => list.push({ ...occurrence, field: "review_comment", fieldLabel: "Comentário interno" }));
+    question.alternatives.forEach((alternative, index) => {
+      findCandidateImageOccurrences(alternative.text).forEach((occurrence) => list.push({ ...occurrence, field: "alternative", alternativeIndex: index, fieldLabel: `Alternativa ${alternative.label || String.fromCharCode(65 + index)}` }));
+    });
+    return list;
+  }, [question.statement, question.explanation_text, question.review_comment, question.alternatives]);
+
+  const toggleImageOccurrence = useCallback((occurrence: QuestionImageOccurrence) => {
+    if (occurrence.field === "statement") { updateQuestion({ statement: toggleImageOccurrenceRejection(question.statement || "", occurrence) }); return; }
+    if (occurrence.field === "explanation_text") { updateQuestion({ explanation_text: toggleImageOccurrenceRejection(question.explanation_text || "", occurrence) }); return; }
+    if (occurrence.field === "review_comment") { updateQuestion({ review_comment: toggleImageOccurrenceRejection(question.review_comment || "", occurrence) }); return; }
+    if (occurrence.field === "alternative" && occurrence.alternativeIndex !== undefined) {
+      const current = question.alternatives[occurrence.alternativeIndex];
+      if (current) updateAlternative(occurrence.alternativeIndex, { text: toggleImageOccurrenceRejection(current.text || "", occurrence) });
+    }
+  }, [question.statement, question.explanation_text, question.review_comment, question.alternatives, updateQuestion, updateAlternative]);
+
   const markCorrect = useCallback((i: number) => {
     setQuestion((current) => ({
       ...current,
@@ -1075,6 +1100,26 @@ export default function QuestionEditor({
                 className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-base text-white/80 outline-none focus:ring-2 focus:ring-orange-400/[0.08]"
               />
             </div>
+
+            {imageOccurrences.length > 0 && (
+              <div className="mb-3 space-y-2 rounded-xl border border-blue-400/25 bg-blue-500/[0.06] p-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-300">Possíveis imagens detectadas</p>
+                {imageOccurrences.map((occurrence, index) => (
+                  <div key={`${occurrence.field}-${occurrence.alternativeIndex ?? ""}-${occurrence.start}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
+                    <span className="min-w-0 truncate text-sm">
+                      <span className="text-white/40">{occurrence.fieldLabel}: </span>
+                      <span className={occurrence.rejected ? "text-white/40 line-through" : "font-semibold text-red-300"}>{occurrence.text}</span>
+                    </span>
+                    <button type="button" onClick={() => toggleImageOccurrence(occurrence)}
+                      className={occurrence.rejected
+                        ? "shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-white/60 transition hover:border-orange-400/30 hover:text-orange-300"
+                        : "shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-blue-400/25 bg-blue-500/[0.10] px-2.5 py-1 text-xs font-semibold text-blue-200 transition hover:border-blue-400/45 hover:bg-blue-500/[0.16]"}>
+                      {occurrence.rejected ? "Marcar como imagem" : "Não é uma imagem"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="mb-3 flex justify-end">
               <button type="button"

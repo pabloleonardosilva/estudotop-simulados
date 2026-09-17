@@ -3,8 +3,28 @@
 import { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Code2, Eraser, Highlighter, Italic, Underline } from "lucide-react";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
+import { IMAGE_REQUIRED_PHRASE_REGEX, findCandidateImageOccurrences } from "@/lib/questions/image-pending";
 
-const IMAGE_MARKER_REGEX = /(imagem\s+associada\s+para\s+resolu[cç][aã]o\s+da\s+quest[aã]o|\b[\w][\w\s.-]*\.(?:png|jpe?g|gif|bmp|webp|tiff?|svg)(?:\s*\(\d+\s*[×x]\s*\d+\))?)/gi;
+// Um único trecho de texto pode conter tanto a frase-marcador quanto referências de arquivo;
+// unifica as duas fontes (mesma lógica de lib/questions/image-pending.ts — sem duplicar a regra)
+// numa lista ordenada por posição para o realce em uma só passada. findCandidateImageOccurrences já
+// aplica a heurística contextual (uma referência que ela reconhece como nome de arquivo citado — ex.:
+// enumeração de arquivos, "considere os arquivos ... logotipo.png" — nem chega a ser destacada em
+// vermelho) e já isola só o token do nome de arquivo, mesmo trecho que a ação "Não é uma imagem" usa.
+function collectTextNodeMarkers(value: string): Array<{ start: number; end: number; text: string }> {
+  const markers: Array<{ start: number; end: number; text: string }> = [];
+
+  for (const match of value.matchAll(IMAGE_REQUIRED_PHRASE_REGEX)) {
+    if (match.index === undefined) continue;
+    markers.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+  }
+
+  for (const occurrence of findCandidateImageOccurrences(value)) {
+    markers.push({ start: occurrence.start, end: occurrence.end, text: occurrence.text });
+  }
+
+  return markers.sort((a, b) => a.start - b.start);
+}
 
 function highlightImageMarkersInHtml(html: string) {
   if (!html || typeof document === "undefined") return html;
@@ -30,27 +50,29 @@ function highlightImageMarkersInHtml(html: string) {
   while (current) {
     const textNode = current as Text;
     const parent = textNode.parentElement;
-    if (parent && !parent.closest('mark, script, style, textarea, code')) {
-      if (IMAGE_MARKER_REGEX.test(textNode.nodeValue || "")) textNodes.push(textNode);
-      IMAGE_MARKER_REGEX.lastIndex = 0;
+    // [data-image-ref="rejected"]: trecho que o professor já marcou como "Não é uma imagem" — o texto
+    // permanece, mas deixa de ganhar o destaque vermelho (ver lib/questions/image-pending.ts).
+    if (parent && !parent.closest('mark, script, style, textarea, code, [data-image-ref="rejected"]')) {
+      if (collectTextNodeMarkers(textNode.nodeValue || "").length > 0) textNodes.push(textNode);
     }
     current = walker.nextNode();
   }
 
   for (const textNode of textNodes) {
     const value = textNode.nodeValue || "";
+    const markers = collectTextNodeMarkers(value);
     const fragment = document.createDocumentFragment();
     let lastIndex = 0;
-    value.replace(IMAGE_MARKER_REGEX, (match, _group, offset) => {
-      if (offset > lastIndex) fragment.appendChild(document.createTextNode(value.slice(lastIndex, offset)));
+    for (const marker of markers) {
+      if (marker.start < lastIndex) continue;
+      if (marker.start > lastIndex) fragment.appendChild(document.createTextNode(value.slice(lastIndex, marker.start)));
       const span = document.createElement("span");
       span.setAttribute("data-image-marker", "true");
       span.style.cssText = "font-weight:700;color:#dc2626;font-size:1.3em;background:none;display:inline-block;line-height:1.4;";
-      span.textContent = match;
+      span.textContent = marker.text;
       fragment.appendChild(span);
-      lastIndex = offset + match.length;
-      return match;
-    });
+      lastIndex = marker.end;
+    }
     if (lastIndex < value.length) fragment.appendChild(document.createTextNode(value.slice(lastIndex)));
     textNode.parentNode?.replaceChild(fragment, textNode);
   }
