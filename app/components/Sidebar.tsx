@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  CreditCard,
   Home,
   GraduationCap,
   Layers,
@@ -444,6 +445,10 @@ export function SidebarContent({ onNavigate, studentDrawer = false }: { onNaviga
 
               <NavLink href="/admin/configuracoes/tentativas-cadastro" active={isActive("/admin/configuracoes/tentativas-cadastro")} icon={<UserRoundSearch size={16} />} badge={openRegistrationAttemptsCount && openRegistrationAttemptsCount > 0 ? openRegistrationAttemptsCount : null} onNavigate={onNavigate}>
                 Tentativas de cadastro
+              </NavLink>
+
+              <NavLink href="/admin/configuracoes/hotmart" active={isActive("/admin/configuracoes/hotmart")} icon={<CreditCard size={16} />} onNavigate={onNavigate}>
+                Hotmart
               </NavLink>
             </AdminGroup>
           </nav>
