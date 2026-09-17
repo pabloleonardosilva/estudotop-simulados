@@ -1,5 +1,12 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Infraestrutura test-only: fixtures e browser (Fase 6B.3, 17/09/2026)
+
+- tests/helpers/test-domain-fixtures.cjs: createTestDomainFixtures(runId), create e cleanup. Disciplina/assunto/banca/questao/vinculo/duas alternativas, nomes sinteticos, IDs estaveis por run, ledger em memoria e remocao estritamente por IDs e propriedade. Guard antes de cada operacao; reaproveitamento e cleanup idempotentes. Dificuldade explicita e evaluated_topics vazio evitam IA e criacao de topicos.
+- tests/helpers/test-browser-auth.cjs: prepareTestBrowserState, login normal pelo SDK SSR com anon/publishable, usuario/profile validados e cookies reais para servidor local. Estado gravado somente em test-results/browser-auth/admin.json ignorado; sem service role no browser. Nao altera usuario/profile nem cria outro admin.
+- playwright.preview.config.ts + tests/question-bank/admin-preview.smoke.spec.ts: npm run test:preview executa apenas smoke de /disciplinas e preview, confirma conteudo sintetico e redirecionamento sem cookies, fecha browser e limpa fixtures em finally. tests/helpers/preview-test-env.cjs conserva preload anti-dotenv e limita fetch a Supabase autorizado/loopback. Traces, video e screenshots desativados.
+- npm run test:fixtures-unit executa tests/helpers/test-domain-browser.test.cjs (10 casos locais sem rede); guard e auth continuam com 44 e 21 casos. Efeitos automaticos de question_code_pool/sequence explicitamente autorizados, nunca manipulados manualmente; logs inevitaveis e admin persistente sao preservados. Detalhes de execucao/cleanup em docs/status-atual.md.
+
 ## Infraestrutura test-only: admin sintetico (Fase 6B.2, 17/09/2026)
 
 - Configuracao: .env.test.example documenta TEST_ADMIN_EMAIL/TEST_ADMIN_PASSWORD; somente .env.test.local ignorado ou variaveis explicitas do processo podem conter valores reais. O guard das seis variaveis Supabase permanece obrigatorio antes de Auth Admin e login; os dois campos novos nao sao enviados ao Next.

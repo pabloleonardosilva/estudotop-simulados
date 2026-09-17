@@ -14,7 +14,9 @@
     "test:guard": "node --test tests/helpers/supabase-test-environment.test.cjs",
     "test:auth-unit": "node --test tests/helpers/test-admin-auth.test.cjs",
     "test:admin:setup": "node scripts/setup-test-admin.cjs",
-    "test:admin:smoke": "node scripts/smoke-test-admin.cjs"
+    "test:admin:smoke": "node scripts/smoke-test-admin.cjs",
+    "test:fixtures-unit": "node --test tests/helpers/test-domain-browser.test.cjs",
+    "test:preview": "playwright test --config=playwright.preview.config.ts --project=chromium"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
