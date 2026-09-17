@@ -30,6 +30,7 @@ const hotmartConfig = loadTypeScript("app/lib/server/hotmart/config.ts");
 const hotmartEmail = loadTypeScript("app/lib/server/hotmart/email.ts");
 const hotmartProcessor = loadTypeScript("app/lib/server/hotmart/processor.ts");
 const hotmartProducts = loadTypeScript("app/lib/server/hotmart/products.ts");
+const hotmartProductionCatalog = loadTypeScript("app/lib/server/hotmart/productionCatalog.ts");
 
 const previousSecret = process.env.HOTMART_HOTTOK;
 delete process.env.HOTMART_HOTTOK;
@@ -231,6 +232,19 @@ function configureHotmart(environment = "sandbox") {
   process.env.HOTMART_CLIENT_ID = "test-client-id";
   process.env.HOTMART_CLIENT_SECRET = "test-client-secret";
   process.env.HOTMART_BASIC_TOKEN = "test-basic-token";
+}
+
+const hotmartProductionEnvNames = ["HOTMART_PRODUCTION_CLIENT_ID", "HOTMART_PRODUCTION_CLIENT_SECRET", "HOTMART_PRODUCTION_BASIC_TOKEN"];
+const previousHotmartProductionEnv = Object.fromEntries(hotmartProductionEnvNames.map((name) => [name, process.env[name]]));
+function restoreHotmartProductionEnv() {
+  for (const name of hotmartProductionEnvNames) {
+    if (previousHotmartProductionEnv[name] === undefined) delete process.env[name]; else process.env[name] = previousHotmartProductionEnv[name];
+  }
+}
+function configureHotmartProduction() {
+  process.env.HOTMART_PRODUCTION_CLIENT_ID = "prod-client-id";
+  process.env.HOTMART_PRODUCTION_CLIENT_SECRET = "prod-client-secret";
+  process.env.HOTMART_PRODUCTION_BASIC_TOKEN = "prod-basic-token";
 }
 
 async function testHotmartExternalClient() {
@@ -437,10 +451,152 @@ async function testHotmartExternalClient() {
     assert.equal(productLookupRouteSourceUcode.includes("rawUcode.toLowerCase()"), true);
     assert.equal(hotmartAdminRouteSource.includes("body.hotmart_product_ucode.trim().toLowerCase()"), true);
     assert.equal(processorSource.includes('.eq("hotmart_product_ucode", event.product.ucode.toLowerCase())'), true);
+
+    const productionRouteSource = fs.readFileSync("app/api/admin/hotmart/products/production/route.ts", "utf8");
+    const productionCatalogSource = fs.readFileSync("app/lib/server/hotmart/productionCatalog.ts", "utf8");
+
+    // A: rota de produção exige admin.
+    assert.equal(productionRouteSource.includes("requireAdmin(request)"), true);
+
+    // B: usa somente credenciais HOTMART_PRODUCTION_*.
+    assert.equal(productionCatalogSource.includes('requiredProductionEnv("HOTMART_PRODUCTION_CLIENT_ID")'), true);
+    assert.equal(productionCatalogSource.includes('requiredProductionEnv("HOTMART_PRODUCTION_CLIENT_SECRET")'), true);
+    assert.equal(productionCatalogSource.includes('requiredProductionEnv("HOTMART_PRODUCTION_BASIC_TOKEN")'), true);
+
+    // C: nunca usa a credencial/cache Sandbox — módulo isolado, sem importar refund.ts nem HOTMART_BASIC_TOKEN Sandbox.
+    assert.equal(productionCatalogSource.includes("HOTMART_BASIC_TOKEN"), false);
+    assert.equal(productionCatalogSource.includes('from "./refund"'), false);
+    assert.equal(productionCatalogSource.includes("getHotmartAccessToken"), false);
+    assert.equal(productionCatalogSource.includes("HOTMART_ENVIRONMENT"), false);
+
+    // D/E: usa developers.hotmart.com (host de produção), nunca sandbox.hotmart.com.
+    assert.equal(productionCatalogSource.includes("https://developers.hotmart.com/products/api/v1/products"), true);
+    assert.equal(productionCatalogSource.includes("sandbox.hotmart.com"), false);
+
+    // G: nenhum secret/token/header é devolvido na resposta da rota.
+    assert.equal(/access_token|client_secret|client_id|basicAuthorization|Authorization/i.test(productionRouteSource), false);
+    assert.equal(productionRouteSource.includes("A credencial de produção da Hotmart não está configurada corretamente."), true);
+
+    // I: ausência de credenciais de produção falha fechado, sem nenhuma chamada de rede.
+    restoreHotmartProductionEnv();
+    for (const name of hotmartProductionEnvNames) delete process.env[name];
+    let productionCalls = 0;
+    global.fetch = async () => { productionCalls += 1; throw new Error("unexpected fetch"); };
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionProducts(), (error) => error.code === "not_configured");
+    assert.equal(productionCalls, 0);
+
+    // F: resposta contém somente name + ucode; H: 401 no OAuth de produção é sanitizado (unauthorized).
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(null, { status: 401 })
+      : new Response(JSON.stringify({ items: [] }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionProducts(), (error) => error.code === "unauthorized");
+
+    configureHotmartProduction();
+    const productionRequests = [];
+    global.fetch = async (input) => {
+      productionRequests.push(String(input));
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-production-catalog", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ ucode: "REAL1234-BA4B-02E0-8C72-71CB71E13136", name: "Marketing Digital do Zero", price: 997, sales_page: "https://x" }], page_info: {} }), { status: 200 });
+    };
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    const productionList = await hotmartProductionCatalog.listHotmartProductionProducts();
+    assert.deepEqual(productionList, [{ ucode: "real1234-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" }]);
+    for (const product of productionList) assert.deepEqual(Object.keys(product).sort(), ["name", "ucode"]);
+    assert.equal(productionRequests.some((url) => url.startsWith("https://developers.hotmart.com/products/api/v1/products")), true);
+    assert.equal(productionRequests.every((url) => !url.startsWith("https://sandbox.hotmart.com")), true);
+
+    // J: fluxo Sandbox existente continua funcionando sem interferência do token/cache de produção.
+    configureHotmart("sandbox");
+    const sandboxAfterProductionRequests = [];
+    global.fetch = async (input) => {
+      sandboxAfterProductionRequests.push(String(input));
+      if (String(input).includes("oauth/token")) return new Response(JSON.stringify({ access_token: "mock-sandbox-after-production", token_type: "bearer", expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [{ ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" }], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"),
+      { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" },
+    );
+    assert.equal(sandboxAfterProductionRequests.some((url) => url.startsWith("https://sandbox.hotmart.com/products/api/v1/products")), true);
+
+    // --- lookup dividido por ambiente (Sandbox x Produção) ---
+
+    const productionLookupRouteSource = fs.readFileSync("app/api/admin/hotmart/products/production/lookup/route.ts", "utf8");
+
+    // C: lookup de produção usa somente HOTMART_PRODUCTION_* (via productionCatalog.ts) — nunca Sandbox.
+    assert.equal(productionLookupRouteSource.includes('from "@/app/lib/server/hotmart/productionCatalog"'), true);
+    assert.equal(productionLookupRouteSource.includes("lookupHotmartProductionProductByUcode"), true);
+    assert.equal(productionLookupRouteSource.includes("HOTMART_BASIC_TOKEN"), false);
+    assert.equal(/access_token|client_secret|client_id|basicAuthorization|Authorization/i.test(productionLookupRouteSource), false);
+
+    // D: lookup Sandbox segue usando só a infra Sandbox — não referencia nada de produção.
+    assert.equal(productLookupRouteSourceUcode.includes("productionCatalog"), false);
+    assert.equal(productLookupRouteSourceUcode.includes("PRODUCTION"), false);
+
+    // I: mensagens de erro por ambiente são distintas (produção não pode virar mensagem Sandbox).
+    assert.equal(productionLookupRouteSource.includes("A credencial de produção da Hotmart não está configurada corretamente."), true);
+    assert.equal(productLookupRouteSourceUcode.includes("A integração Hotmart não está configurada corretamente."), true);
+    assert.notEqual(
+      productionLookupRouteSource.includes("A integração Hotmart não está configurada corretamente."),
+      true,
+    );
+
+    // J: nenhuma escrita — só GET à Hotmart (OAuth + catálogo) e só SELECT no Supabase, sem insert/update/delete.
+    assert.equal(productionLookupRouteSource.includes(".insert("), false);
+    assert.equal(productionLookupRouteSource.includes(".update("), false);
+    assert.equal(productionLookupRouteSource.includes(".delete("), false);
+    assert.equal(productionCatalogSource.includes('method: "PUT"'), false);
+    assert.equal(productionCatalogSource.includes('method: "DELETE"'), false);
+
+    // B/E: lookup de produção encontra produto real por UCODE, case-insensitive nos dois sentidos.
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-1", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-BA4B-02E0-8C72-71CB71E13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-ba4b-02e0-8c72-71cb71e13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-2", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-BA4B-02E0-8C72-71CB71E13136"),
+      { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
+    );
+
+    // B: produto ausente no catálogo real → not_found (nunca confundido com not_configured).
+    configureHotmartProduction();
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-lookup-prod-3", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.lookupHotmartProductionProductByUcode("57912595-ba4b-02e0-8c72-71cb71e13136"), (error) => error.code === "not_found");
+
+    // A: lookup Sandbox continua funcionando após todo o uso do lookup de produção (sem contaminação de token/cache).
+    configureHotmart("sandbox");
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-sandbox-lookup-final", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" }], page_info: {} }), { status: 200 });
+    refund.resetHotmartAccessTokenCache();
+    assert.deepEqual(
+      await hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"),
+      { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" },
+    );
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();
+    restoreHotmartProductionEnv();
     refund.resetHotmartAccessTokenCache();
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
   }
 }
 
