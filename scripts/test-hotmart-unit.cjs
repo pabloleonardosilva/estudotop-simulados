@@ -172,6 +172,22 @@ assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, null), true);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, "reconciliation_required"), false);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest("confirmed", "confirmed"), false);
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("received"), "process");
+const contemporaryDates = hotmartProcessor.evaluateHotmartJornadaCommercialDates("2026-09-01T12:00:00Z", 15, new Date("2026-09-02T12:00:00Z"));
+assert.equal(contemporaryDates.ok, true);
+assert.equal(contemporaryDates.expiresAt, "2026-09-16T12:00:00.000Z");
+const expiredDates = hotmartProcessor.evaluateHotmartJornadaCommercialDates("2017-11-27T11:49:06Z", 15, new Date("2026-09-02T12:00:00Z"));
+assert.deepEqual(expiredDates, { ok: false, reason: "expired", approvedAt: "2017-11-27T11:49:06.000Z", expiresAt: "2017-12-12T11:49:06.000Z" });
+assert.equal(hotmartProcessor.evaluateHotmartJornadaCommercialDates(null, 15).reason, "missing_approved_at");
+assert.equal(processorSource.includes('action: "commercial_date_requires_review"'), true);
+assert.equal(processorSource.includes('errorCode: "COMMERCIAL_DATE_REQUIRES_REVIEW"'), true);
+// NÃO restaurada (Fase 5B.0): a asserção original de e254e37 exigia que a validação de datas
+// ocorresse ANTES da checagem de matrícula duplicada (`existing?.access_origin === "hotmart"`).
+// Na integração da Fase 5A a ordem ficou invertida — duplicidade é checada primeiro, validação de
+// datas depois — o que muda o resultado apenas no caso raro de uma notificação de compra duplicada
+// com data de aprovação inválida/expirada (hoje vira "pending_duplicate_purchase"; no desenho
+// original viraria "processing_error"/COMMERCIAL_DATE_REQUIRES_REVIEW). Divergência estrutural
+// real, encontrada ao tentar restaurar esta cobertura — reportada para decisão humana, não
+// corrigida silenciosamente aqui (nem a ordem do código, nem esta asserção foram forçadas a bater).
 
 // Painel Hotmart: as chamadas administrativas (/api/admin/hotmart/**) exigem Authorization: Bearer
 // (requireAdmin) — precisam de adminFetch (app/lib/supabase/adminFetch.ts), nunca fetch() puro, que
