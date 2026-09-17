@@ -202,8 +202,11 @@ assert.equal(hotmartAdminRouteSource.includes("name = (await lookupHotmartProduc
 assert.equal(pageClientSource.includes('import { adminFetch } from "@/lib/supabase/adminFetch";'), true);
 const rawFetchCallCount = (pageClientSource.match(/\bfetch\(/g) || []).length;
 assert.equal(rawFetchCallCount, 0, "Nenhuma chamada deste painel deve usar fetch() puro contra rota requireAdmin — use adminFetch().");
+// Fase 5B.3: a UI final acrescenta busca/listagem de catálogo Sandbox e Produção e o fluxo de
+// vínculo por pendência (savePendingMapping + reprocessar), elevando de 6 para 11 chamadas — todas
+// via adminFetch, nenhuma via fetch() puro (checado acima).
 const adminFetchCallCount = (pageClientSource.match(/adminFetch\(/g) || []).length;
-assert.equal(adminFetchCallCount, 6, "As 6 chamadas administrativas conhecidas (carregar, criar vínculo, alterar status, reprocessar/ação, estorno, recuperar e-mails) devem usar adminFetch.");
+assert.equal(adminFetchCallCount, 11, "As 11 chamadas administrativas conhecidas (carregar, criar vínculo, buscar produto no catálogo, listar catálogo sandbox, listar catálogo produção, alterar status, estorno, reprocessar/ação, recuperar e-mails, salvar vínculo pendente, reprocessar via pendência) devem usar adminFetch.");
 
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("pending_mapping"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("refund_reconciliation_required"), "process");
@@ -591,6 +594,140 @@ async function testHotmartExternalClient() {
       await hotmartProducts.lookupHotmartProductByUcode("fb056612-bcc6-4217-9e6d-2a5d1110ac2f"),
       { ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" },
     );
+
+    // F/G: "Usar este produto" define a origem correta em cada listagem.
+    assert.equal(pageClientSource.includes('fillProductFromCatalog(product, "production")'), true);
+    assert.equal(pageClientSource.includes('fillProductFromCatalog(product, "sandbox")'), true);
+    assert.equal(pageClientSource.includes('function fillProductFromCatalog(product: { name: string; ucode: string }, source: "sandbox" | "production")'), true);
+    assert.equal(pageClientSource.includes("setProductSource(source)"), true);
+
+    // H: o botão "Buscar produto" escolhe o endpoint conforme a origem selecionada.
+    assert.equal(pageClientSource.includes('productSource === "production" ? "/api/admin/hotmart/products/production/lookup" : "/api/admin/hotmart/products/lookup"'), true);
+
+    // Seletor de origem visível na UI (item 13).
+    assert.equal(pageClientSource.includes("Origem do produto Hotmart"), true);
+    assert.equal(pageClientSource.includes("Produção — meus produtos reais"), true);
+    assert.equal(pageClientSource.includes("Sandbox — produtos fictícios de homologação"), true);
+
+    // --- Card premium de Transações (Sprint redesign) ---
+
+    // G: nome do produto ausente cai no fallback.
+    assert.equal(pageClientSource.includes('item.product_name_snapshot || "Produto não identificado"'), true);
+    // D/B: produto sem vínculo mostra "Produto não vinculado" / "Nenhum" / botão Vincular (gated por canLink).
+    assert.equal(pageClientSource.includes("Produto não vinculado"), true);
+    assert.equal(pageClientSource.includes("Destino: Nenhum"), true);
+    assert.equal(pageClientSource.includes(`{canLink ? <PremiumButton variant="dark-primary" icon={<Link2 size={16} />} onClick={() => openMappingModal(item)}>Vincular</PremiumButton> : null}`), true);
+    // C: condição FINAL de "Vincular" depende só do estado do mapping (linkState "unlinked"), nunca de processing_status.
+    assert.equal(pageClientSource.includes('const canLink = linkState === "unlinked";'), true);
+    assert.equal(pageClientSource.includes("canLink = item.processing_status"), false);
+    // A: vinculado mostra tipo (Jornada padrão, Evento quando destination_type === "event") + nome do destino.
+    assert.equal(pageClientSource.includes('activeMapping?.destination_type === "event" ? "Evento" : "Jornada"'), true);
+    assert.equal(pageClientSource.includes('et-admin-dark-badge-success">Vinculado</span>'), true);
+    assert.equal(pageClientSource.includes('linkState === "linked" ?'), true);
+    // D: mapping ativo com destino não resolvido não finge "Vinculado" — mostra "Destino indisponível" distinto de mapping inativo.
+    assert.equal(pageClientSource.includes('linkState === "destination_unavailable" ?'), true);
+    assert.equal(pageClientSource.includes("Destino indisponível"), true);
+    // C (mapping inexistente/inativo): mapping existente porém inativo é estado próprio, nunca tratado como vínculo operacional.
+    assert.equal(pageClientSource.includes('linkState === "mapping_inactive" ?'), true);
+    assert.equal(pageClientSource.includes("Vínculo inativo"), true);
+    // linkState é derivado só do mapping — nunca mistura os 4 estados na mesma condição.
+    assert.equal(pageClientSource.includes('activeMapping && destinationName ? "linked"'), true);
+    assert.equal(pageClientSource.includes('activeMapping ? "destination_unavailable"'), true);
+    assert.equal(pageClientSource.includes('anyMapping ? "mapping_inactive"'), true);
+    // Simulado direto: não é um destination_type tratado — só "event" é distinguido, resto cai em "Jornada"; nenhuma opção Simulado no modal.
+    assert.equal(pageClientSource.includes('"simulado"'), false);
+    assert.equal(pageClientSource.includes("simulado_id"), false);
+    assert.equal((pageClientSource.match(/options=\{\[\{ value: "jornada", label: "Jornada" \}, \{ value: "event", label: "Evento" \}\]\}/g) || []).length >= 2, true);
+    // M: mapping é por UCODE do produto (não por transaction_code) — mesma classificação vale para toda transação desse UCODE.
+    assert.equal(pageClientSource.includes("candidate.hotmart_product_ucode === item.hotmart_product_ucode && candidate.status"), true);
+    assert.equal(pageClientSource.includes("candidate.transaction_code"), false);
+    // I: "Vincular e reprocessar" só é oferecido quando o processing_status atual é elegível para reprocessamento
+    // (mesma lista de app/lib/server/hotmart/processor.ts::HOTMART_COMMERCIAL_PROCESSING_ELIGIBLE); nunca automático.
+    assert.equal(pageClientSource.includes("const HOTMART_REPROCESS_ELIGIBLE_STATUSES ="), true);
+    assert.equal(pageClientSource.includes('"received", "pending_mapping", "pending_destination", "processing_error", "refund_reconciliation_required"'), true);
+    assert.equal(pageClientSource.includes(`HOTMART_REPROCESS_ELIGIBLE_STATUSES.includes(mappingTarget.processing_status) ? <PremiumButton variant="dark-primary"`), true);
+    // E: "Vincular" reaproveita o mesmo modal já usado em Pendências (openMappingModal/PremiumModal existentes); nenhuma lógica server-side nova.
+    assert.equal(pageClientSource.includes("function openMappingModal(item: Transaction)"), true);
+    assert.equal((pageClientSource.match(/openMappingModal\(item\)/g) || []).length, 1);
+    assert.equal(pageClientSource.includes("async function savePendingMapping"), true);
+    assert.equal((pageClientSource.match(/async function savePendingMapping/g) || []).length, 1);
+    // F: "Copiar UCODE" do card reaproveita copyUcode/copiedUcode já usados em Produtos vinculados.
+    assert.equal(pageClientSource.includes("onClick={() => void copyUcode(item.hotmart_product_ucode)}"), true);
+    // H/I: comprador com/sem nome.
+    assert.equal(pageClientSource.includes("{item.students?.name || item.buyer_email}"), true);
+    assert.equal(pageClientSource.includes('{item.students?.name ? <p className="mt-1 text-xs text-slate-500">{item.buyer_email}</p> : null}'), true);
+    // J-Q: situação da compra e situação EstudoTOP reaproveitam as funções de tradução já existentes (não duplicadas).
+    assert.equal(pageClientSource.includes("purchaseStatusLabel(item.purchase_status)"), true);
+    assert.equal(pageClientSource.includes("processingStatusLabel(item.processing_status, item.refund_request_state, item.processing_error_code)"), true);
+    assert.equal((pageClientSource.match(/function purchaseStatusLabel/g) || []).length, 1);
+    assert.equal((pageClientSource.match(/function processingStatusLabel/g) || []).length, 1);
+    // T: datas de acesso só aparecem quando existem (sem inventar/forçar campo vazio).
+    assert.equal(pageClientSource.includes("{accessStarted ? <p"), true);
+    assert.equal(pageClientSource.includes("{accessExpires ? <p"), true);
+    // U: responsividade — empilha em telas estreitas, duas colunas a partir de lg.
+    assert.equal(pageClientSource.includes("flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between"), true);
+    assert.equal(pageClientSource.includes("w-full space-y-5 lg:w-80 lg:flex-shrink-0"), true);
+    // L: BRL não é mais presumido quando currency está ausente.
+    assert.equal(pageClientSource.includes('currency: currency || "BRL"'), false);
+    assert.equal(pageClientSource.includes("moeda não informada"), true);
+    assert.equal(pageClientSource.includes("function formatPlainAmount("), true);
+
+    // --- Mirrors funcionais (funções puras copiadas do arquivo para teste isolado sem parser JSX) ---
+    function formatCurrencyAmountMirror(amount, currency) {
+      if (amount === null || amount === undefined || Number.isNaN(Number(amount)) || !currency) return null;
+      try {
+        return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(Number(amount));
+      } catch {
+        return amount + " " + currency;
+      }
+    }
+    function formatPlainAmountMirror(amount) {
+      if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return null;
+      return Number(amount).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function formatDateTimeMirror(value) {
+      if (!value) return null;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return null;
+      const datePart = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(date);
+      const timePart = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }).format(date);
+      return datePart + " às " + timePart;
+    }
+    function computeLinkStateMirror(hasActiveMapping, hasDestinationName, hasAnyMapping) {
+      return hasActiveMapping && hasDestinationName ? "linked"
+        : hasActiveMapping ? "destination_unavailable"
+        : hasAnyMapping ? "mapping_inactive"
+        : "unlinked";
+    }
+
+    const normalizeSpace = (s) => s.replace(/\s/g, " ");
+    // 8: amount + BRL -> R$ formatado.
+    assert.equal(normalizeSpace(formatCurrencyAmountMirror(97, "BRL")), "R$ 97,00");
+    // 9: amount + USD -> USD formatado corretamente.
+    assert.equal(normalizeSpace(formatCurrencyAmountMirror(150.5, "USD")), "US$ 150,50");
+    // 10: amount + currency nula/ausente -> NÃO assume BRL.
+    assert.equal(formatCurrencyAmountMirror(97, null), null);
+    assert.equal(formatCurrencyAmountMirror(97, ""), null);
+    assert.equal(normalizeSpace(formatPlainAmountMirror(97)), "97,00");
+    // 11: amount nulo/indefinido -> não inventa valor, mesmo com moeda presente.
+    assert.equal(formatCurrencyAmountMirror(null, "BRL"), null);
+    assert.equal(formatCurrencyAmountMirror(undefined, "USD"), null);
+    assert.equal(formatPlainAmountMirror(null), null);
+    assert.equal(formatDateTimeMirror(null), null);
+    assert.equal(formatDateTimeMirror("2026-09-14T15:32:00.000Z"), "14/09/2026 às 15:32");
+
+    // 1/2/3: canLink independe de processing_status — só depende de existir mapping para o UCODE.
+    assert.equal(computeLinkStateMirror(false, null, false), "unlinked"); // pending_mapping + sem mapping
+    assert.equal(computeLinkStateMirror(false, null, false), "unlinked"); // processing_error + sem mapping
+    assert.equal(computeLinkStateMirror(false, null, false), "unlinked"); // outro processing_status + sem mapping
+    // 4: mapping ativo + Jornada válida -> linked (Vinculado, sem Vincular).
+    assert.equal(computeLinkStateMirror(true, "Jornada PCMG 2026", true), "linked");
+    // 5: mapping ativo + Evento válido -> linked (rótulo "Evento" vem de destination_type, testado via source acima).
+    assert.equal(computeLinkStateMirror(true, "Evento Revisão Final PCMG", true), "linked");
+    // 6: mapping inativo -> mapping_inactive, nunca tratado como Vinculado operacional.
+    assert.equal(computeLinkStateMirror(false, null, true), "mapping_inactive");
+    // 7: mapping ativo + destino não resolvido -> destination_unavailable (alerta), nunca falso "linked".
+    assert.equal(computeLinkStateMirror(true, null, true), "destination_unavailable");
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();
