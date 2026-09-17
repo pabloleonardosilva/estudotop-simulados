@@ -364,7 +364,7 @@ export async function processHotmartEvent(supabase: SupabaseClient, event: Norma
       ? { id: transaction.student_id, created: false, possibleDuplicate: false }
       : await resolveStudent(supabase, event, transaction.id);
     const { data: mapping } = await supabase.from("hotmart_product_mappings")
-      .select("id,status,destination_type,jornada_id,event_id").eq("hotmart_product_ucode", event.product.ucode).maybeSingle();
+      .select("id,status,destination_type,jornada_id,event_id").eq("hotmart_product_ucode", event.product.ucode.toLowerCase()).maybeSingle();
     if (!mapping || mapping.status !== "active") {
       const status = "pending_mapping";
       await supabase.from("hotmart_transactions").update({ student_id: student.id, processing_status: status }).eq("id", transaction.id);

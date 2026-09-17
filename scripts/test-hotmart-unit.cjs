@@ -423,6 +423,20 @@ async function testHotmartExternalClient() {
       await hotmartProducts.lookupHotmartProductByUcode("57912595-BA4B-02E0-8C72-71CB71E13136"),
       { ucode: "57912595-ba4b-02e0-8c72-71cb71e13136", name: "Marketing Digital do Zero" },
     );
+
+    // G: rota de lookup e rota de criação de mapping usam exatamente a mesma regra (mesma constante importada), sem divergência.
+    const productLookupRouteSourceUcode = fs.readFileSync("app/api/admin/hotmart/products/lookup/route.ts", "utf8");
+    assert.equal(productLookupRouteSourceUcode.includes("HOTMART_UCODE_PATTERN"), true);
+    assert.equal(productLookupRouteSourceUcode.includes('from "@/app/lib/server/hotmart/products"'), true);
+    assert.equal(hotmartAdminRouteSource.includes("HOTMART_UCODE_PATTERN"), true);
+    assert.equal(hotmartAdminRouteSource.includes('from "@/app/lib/server/hotmart/products"'), true);
+    assert.equal(hotmartAdminRouteSource.includes("Informe um Product UCODE válido."), true);
+
+    // H: normalização para minúsculas ocorre antes de qualquer comparação/gravação de ucode nas duas rotas
+    // e na busca de mapping durante o webhook — evita que só a caixa produza um vínculo duplicado.
+    assert.equal(productLookupRouteSourceUcode.includes("rawUcode.toLowerCase()"), true);
+    assert.equal(hotmartAdminRouteSource.includes("body.hotmart_product_ucode.trim().toLowerCase()"), true);
+    assert.equal(processorSource.includes('.eq("hotmart_product_ucode", event.product.ucode.toLowerCase())'), true);
   } finally {
     global.fetch = originalFetch;
     restoreHotmartEnv();
