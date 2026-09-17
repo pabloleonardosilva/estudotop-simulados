@@ -453,6 +453,22 @@ export async function DELETE(
   try {
     const supabase = createSupabaseAdminClient();
 
+    // Histórico comercial Hotmart bloqueia exclusão mesmo sem matrícula ativa
+    // (ex.: transação registrada, mas nunca resolvida em student_jornadas):
+    // hotmart_transactions.jornada_id usa "on delete restrict", então o
+    // banco já rejeitaria a exclusão — este check só antecipa a resposta com
+    // mensagem amigável (nunca expor erro bruto de FK ao Admin).
+    const { count: hotmartCount } = await supabase
+      .from("hotmart_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("jornada_id", id);
+    if (hotmartCount) {
+      return NextResponse.json(
+        { ok: false, message: "Esta Jornada possui histórico Hotmart e não pode ser excluída. Arquive-a." },
+        { status: 409 },
+      );
+    }
+
     const { count } = await supabase
       .from("student_jornadas")
       .select("id", { count: "exact", head: true })

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { completeSimuladoAttempt } from "@/lib/server/simuladoAttemptCompletion";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 type SubmitPayload = {
   time_spent_seconds?: number;
@@ -51,6 +52,17 @@ export async function POST(
       { status: 409 },
     );
   }
+
+  // Bloqueio comercial (Hotmart): só se aplica aqui — origin "manual" é a
+  // única chamada desta função disparada por uma requisição real do aluno.
+  // NUNCA propagado para dentro de completeSimuladoAttempt: o job de
+  // timeout (origin "timeout_cron") e a reconciliação histórica (origin
+  // "historical_reconciliation") continuam podendo concluir a mesma
+  // tentativa mesmo com o acesso comercial bloqueado — política aprovada na
+  // Fase 4B, para nunca deixar uma tentativa presa em in_progress só porque
+  // o aluno perdeu o acesso comercial no meio dela.
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   // Ownership/contexto já validados acima (sessão do aluno + attempt.student_id
   // + attempt.simulado_id) — a partir daqui, a conclusão em si (scoring,

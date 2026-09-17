@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 import { resolveOwlHelpLimit } from "@/app/simulados/utils";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 function pickTwoWrong<T>(items: T[]) {
   const pool = [...items];
@@ -31,6 +32,8 @@ export async function POST(
   }
 
   const supabase = createSupabaseAdminClient();
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   const { data: attempt, error: attemptError } = await supabase
     .from("simulado_attempts")

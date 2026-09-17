@@ -20,6 +20,10 @@ export function generateSecureToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+export function deriveHotmartFirstAccessToken(transactionId: string, userId: string) {
+  return crypto.createHmac("sha256", getTokenSecret()).update(`hotmart-first-access:${transactionId}:${userId}`).digest("hex");
+}
+
 export function hashRegistrationValue(value: string) {
   return crypto.createHmac("sha256", getTokenSecret()).update(value).digest("hex");
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 type AnswerPayload = {
   simulado_question_id?: string;
@@ -38,6 +39,8 @@ export async function POST(
   }
 
   const supabase = createSupabaseAdminClient();
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   const { data, error } = await supabase.rpc("save_student_attempt_answer", {
     p_attempt_id: attemptId,

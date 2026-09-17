@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/app/lib/server/auditLogger";
+import { assertAttemptCommercialAccess } from "@/lib/server/studentAssertions";
 
 // Abandono explícito de uma tentativa in_progress (botão "Abandonar
 // Simulado" e o botão "Voltar" interno, que aciona o mesmo fluxo — ver
@@ -29,6 +30,8 @@ export async function POST(
 
   const { id: simuladoId, attemptId } = await params;
   const supabase = createSupabaseAdminClient();
+  const commercialAccessError = await assertAttemptCommercialAccess(student.id, attemptId, supabase);
+  if (commercialAccessError) return commercialAccessError;
 
   const { data, error } = await supabase.rpc("abandon_student_attempt", {
     p_attempt_id: attemptId,

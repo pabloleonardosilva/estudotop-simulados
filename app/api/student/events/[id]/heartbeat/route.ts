@@ -10,11 +10,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const supabase = createSupabaseAdminClient();
   const { data: participant } = await supabase
     .from("simulado_event_participants")
-    .select("id")
+    .select("id,access_status")
     .eq("event_id", id)
     .eq("student_id", student.id)
     .maybeSingle();
-  if (!participant) return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
+  if (!participant || participant.access_status !== "active") return NextResponse.json({ ok: false, message: "Acesso negado a este Evento." }, { status: 403 });
 
   await touchUserSession({
     request,
