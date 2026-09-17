@@ -95,6 +95,7 @@ const migration = fs.readFileSync("supabase/migrations/20260830120000_complete_h
 const processorSource = fs.readFileSync("app/lib/server/hotmart/processor.ts", "utf8");
 const emailSource = fs.readFileSync("app/lib/server/hotmart/email.ts", "utf8");
 const actionsSource = fs.readFileSync("app/api/admin/hotmart/transactions/[id]/actions/route.ts", "utf8");
+const pageClientSource = fs.readFileSync("app/admin/configuracoes/hotmart/page-client.tsx", "utf8");
 for (const contract of [
   "increment_hotmart_processing_attempt", "claim_hotmart_transaction_email", "complete_hotmart_transaction_email",
   "resolve_hotmart_duplicate_student_separate", "HOTMART_ENROLLMENT_NOT_ELIGIBLE", "for update",
@@ -171,6 +172,16 @@ assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, null), true);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest(null, "reconciliation_required"), false);
 assert.equal(hotmartProcessor.shouldRegisterHotmartProtest("confirmed", "confirmed"), false);
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("received"), "process");
+
+// Painel Hotmart: as chamadas administrativas (/api/admin/hotmart/**) exigem Authorization: Bearer
+// (requireAdmin) — precisam de adminFetch (app/lib/supabase/adminFetch.ts), nunca fetch() puro, que
+// nunca anexa o header e faria a rota responder 401/403 na prática (bug real corrigido nesta Sprint).
+assert.equal(pageClientSource.includes('import { adminFetch } from "@/lib/supabase/adminFetch";'), true);
+const rawFetchCallCount = (pageClientSource.match(/\bfetch\(/g) || []).length;
+assert.equal(rawFetchCallCount, 0, "Nenhuma chamada deste painel deve usar fetch() puro contra rota requireAdmin — use adminFetch().");
+const adminFetchCallCount = (pageClientSource.match(/adminFetch\(/g) || []).length;
+assert.equal(adminFetchCallCount, 6, "As 6 chamadas administrativas conhecidas (carregar, criar vínculo, alterar status, reprocessar/ação, estorno, recuperar e-mails) devem usar adminFetch.");
+
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("pending_mapping"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("refund_reconciliation_required"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("processing"), "wait");
