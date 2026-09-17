@@ -180,14 +180,12 @@ assert.deepEqual(expiredDates, { ok: false, reason: "expired", approvedAt: "2017
 assert.equal(hotmartProcessor.evaluateHotmartJornadaCommercialDates(null, 15).reason, "missing_approved_at");
 assert.equal(processorSource.includes('action: "commercial_date_requires_review"'), true);
 assert.equal(processorSource.includes('errorCode: "COMMERCIAL_DATE_REQUIRES_REVIEW"'), true);
-// NÃO restaurada (Fase 5B.0): a asserção original de e254e37 exigia que a validação de datas
-// ocorresse ANTES da checagem de matrícula duplicada (`existing?.access_origin === "hotmart"`).
-// Na integração da Fase 5A a ordem ficou invertida — duplicidade é checada primeiro, validação de
-// datas depois — o que muda o resultado apenas no caso raro de uma notificação de compra duplicada
-// com data de aprovação inválida/expirada (hoje vira "pending_duplicate_purchase"; no desenho
-// original viraria "processing_error"/COMMERCIAL_DATE_REQUIRES_REVIEW). Divergência estrutural
-// real, encontrada ao tentar restaurar esta cobertura — reportada para decisão humana, não
-// corrigida silenciosamente aqui (nem a ordem do código, nem esta asserção foram forçadas a bater).
+// Precedência comercial (Fase 5B.0.1): a validação de datas precisa ocorrer ANTES da checagem de
+// matrícula duplicada (`existing?.access_origin === "hotmart"`) — uma compra com approved_at
+// ausente/inválido/já expirado não deve ser classificada como pending_duplicate_purchase antes de
+// sabermos se ela própria tem dados comerciais válidos. Restaurado o desenho original de e254e37,
+// corrigindo uma inversão introduzida na integração da Fase 5A (achado reportado na Fase 5B.0).
+assert.equal(processorSource.indexOf("const commercialDates = evaluateHotmartJornadaCommercialDates") < processorSource.indexOf('from("student_jornadas")'), true);
 
 // Painel Hotmart: as chamadas administrativas (/api/admin/hotmart/**) exigem Authorization: Bearer
 // (requireAdmin) — precisam de adminFetch (app/lib/supabase/adminFetch.ts), nunca fetch() puro, que

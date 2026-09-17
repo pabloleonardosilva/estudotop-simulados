@@ -109,13 +109,6 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
     .eq("id", mapping.jornada_id).maybeSingle();
   if (!jornada || jornada.status !== "published") return { status: "pending_destination" as const };
 
-  const { data: existing } = await supabase.from("student_jornadas")
-    .select("id,status,access_origin,started_at,expires_at")
-    .eq("student_id", studentId).eq("jornada_id", jornada.id).maybeSingle();
-  if (existing?.access_origin === "hotmart" && existing.status !== "expired") {
-    return { status: "pending_duplicate_purchase" as const };
-  }
-
   const durationDays = Number(jornada.duration_days || jornada.duration_months * 30);
   const commercialDates = evaluateHotmartJornadaCommercialDates(event.purchase.approvedAt, durationDays);
   if (!commercialDates.ok) {
@@ -138,6 +131,13 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
       errorCode: "COMMERCIAL_DATE_REQUIRES_REVIEW",
       errorMessage: "A data de aprovação informada pela Hotmart requer verificação antes da concessão do acesso.",
     };
+  }
+
+  const { data: existing } = await supabase.from("student_jornadas")
+    .select("id,status,access_origin,started_at,expires_at")
+    .eq("student_id", studentId).eq("jornada_id", jornada.id).maybeSingle();
+  if (existing?.access_origin === "hotmart" && existing.status !== "expired") {
+    return { status: "pending_duplicate_purchase" as const };
   }
 
   const approvedAt = new Date(commercialDates.approvedAt);
