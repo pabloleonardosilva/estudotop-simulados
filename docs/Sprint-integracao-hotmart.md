@@ -1,47 +1,61 @@
-# Sprint Integração Hotmart — Reconciliação com a main
+# Sprint Integração Hotmart — reconciliação na branch técnica
 
-Este documento registra apenas o que foi efetivamente reconciliado com a `main` até o momento. A especificação funcional completa e o histórico de implementação da integração Hotmart vivem na branch `hotmart-homologacao` (`docs/Sprint-integracao-hotmart.md` dessa branch) e não foram copiados aqui — este arquivo cresce à medida que cada fase de reconciliação avança, documentando o estado real do código na `main`, nunca um histórico importado às cegas.
+## 17/09/2026 — Estado reconciliado após as Fases 5A e 5B
 
-## 16/09/2026 — Fase 5A: core comercial (mesclagem semântica de `b682ec1`)
+Implementado em `reconcile/main-hotmart`, sobre a arquitetura atual da main. Este registro substitui o escopo parcial da Fase 5A: catálogo, UI, first access e detector já foram reconciliados. A branch técnica não foi mergeada na main, não foi pushada como branch oficial e não foi deployada. As referências remotas de backup são apenas âncoras de preservação.
 
-### Escopo integrado
+### Core e acesso comercial
 
-Commit fundador da integração Hotmart (`b682ec1`, "feat: integra Hotmart V1") mesclado semanticamente sobre a arquitetura atual da `main` — nunca um `git cherry-pick` bruto (o commit original mistura 42 arquivos entre exclusivos Hotmart, compartilhados, migrations e docs). Duas correções imediatas dos commits seguintes foram incorporadas por serem indispensáveis à correção do próprio core:
+- `app/api/webhooks/hotmart/route.ts` recebe e valida o webhook. Os módulos em `app/lib/server/hotmart/` normalizam eventos, registram histórico e processam transações com idempotência, claim e lease de processamento.
+- Mappings associam produtos a Jornada ou Evento por decisão explícita do Admin. O processor concede ou bloqueia acesso conforme o evento comercial, preservando transações, vínculos e histórico. Duplicidades e situações que exigem revisão permanecem visíveis para tratamento administrativo.
+- First access usa o fluxo próprio de ativação e `deriveHotmartFirstAccessToken` em `lib/security/registrationTokens.ts`; o recovery convencional continua separado. A regressão específica está em `tests/password-recovery/password-recovery.spec.ts`.
+- Refund mantém requisição e reconciliação próprias, controle de concorrência e histórico; `PURCHASE_PROTEST` sinaliza revisão de estorno sem conceder ou revogar acesso automaticamente.
+- A exclusão de Jornada com transações Hotmart é rejeitada com orientação para arquivamento.
 
-- `b51b0de` ("fix: corrige eventos Hotmart em homologacao") — completo: adiciona controle de concorrência/idempotência no processamento de webhook (`claimHotmartCommercialProcessing`/`waitForHotmartCommercialProcessing`, evita duas execuções simultâneas processarem a mesma transação), tratamento de erro com `try/catch` (marca `processing_error` em vez de falhar silenciosamente) e o evento `PURCHASE_PROTEST` (disputa/contestação, registra `refund_reconciliation_required` sem conceder nem revogar acesso automaticamente).
-- `e254e37` ("feat: valida datas e consulta produtos Hotmart") — **parcial**: trazida somente a validação `evaluateHotmartJornadaCommercialDates` (recusa conceder acesso de Jornada quando a data de aprovação da compra é ausente, inválida ou já expiraria a matrícula no ato da concessão — grava `commercial_date_requires_review` no histórico e marca a transação como `processing_error` para revisão administrativa). O restante do commit (rota de consulta/lookup de catálogo de produtos, tela correspondente) **não foi trazido** — é catálogo avançado, fora do escopo desta subfase.
+### Política de tentativas e resultados
 
-### Arquivos exclusivos Hotmart transportados (sem equivalente na main)
+`assertAttemptCommercialAccess`, em `lib/server/studentAssertions.ts`, bloqueia ações interativas (`answers`, `behavior`, `owl-help`, `submit` manual e `abandon`) quando o contexto comercial está bloqueado. Criação e retomada também verificam o acesso ao contexto.
 
-`app/lib/server/hotmart/{auth,config,email,history,normalize,processor,refund,types}.ts`, `app/api/webhooks/hotmart/route.ts`, `app/api/admin/hotmart/route.ts`, `app/api/admin/hotmart/mappings/[id]/route.ts`, `app/api/admin/hotmart/recover-emails/route.ts`, `app/api/admin/hotmart/transactions/[id]/actions/route.ts`, `app/api/admin/hotmart/transactions/[id]/refund/route.ts`, `app/admin/configuracoes/hotmart/page.tsx` e `page-client.tsx` (versão inicial do commit fundador + o fix de `b51b0de` — sem os filtros/dropdown customizado/lista compacta das Sprints de 14–16/09/2026 na branch Hotmart, que pertencem à cadeia de UI/catálogo tratada em fase posterior), `scripts/test-hotmart-unit.cjs`, `scripts/homologate-hotmart-internal.cjs` (teste de integração real contra Supabase configurado — não executado nesta fase).
+A conclusão automática em `lib/server/simuladoAttemptCompletion.ts`, o job de timeout e `scripts/reconcile-expired-attempts.ts` continuam funcionando durante bloqueio comercial. O anti-cheat também continua podendo desclassificar: as rotas de violação de foco e o endpoint legado da tentativa não recebem o guard comercial. Essa decisão evita deixar tentativas eternamente em andamento e diverge deliberadamente do desenho original Hotmart.
 
-### Migrations transportadas, não executadas
+Histórico e resultados não são apagados. A visualização do resultado fica oculta durante o bloqueio e volta após a reativação, respeitando as demais condições de acesso e liberação de resultados. O histórico avulso permanece preservado; isso não autoriza novos inícios avulsos.
 
-`supabase/migrations/20260828110000_create_hotmart_integration.sql` e `20260830120000_complete_hotmart_admin_workflows.sql`. Verificado por leitura direta do banco remoto (Supabase MCP, somente `SELECT`/introspecção, antes de qualquer edição de código) que todas as tabelas (`hotmart_product_mappings`, `hotmart_transactions`, `hotmart_webhook_events`, `hotmart_access_links`, `hotmart_history`), colunas (`access_status`/`access_origin`/`commercial_block_reason`/`commercial_blocked_at` em `student_jornadas` e `simulado_event_participants`) e funções (`register_hotmart_webhook_event`, `increment_hotmart_processing_attempt`, `claim_hotmart_transaction_email`, `complete_hotmart_transaction_email`, `begin_hotmart_refund_request`, `finalize_hotmart_refund_request`, `resolve_hotmart_duplicate_student_separate`, `extend_hotmart_duplicate_jornada`) já existem no banco de produção compartilhado — as migrations já foram aplicadas historicamente (fora do controle de `supabase_migrations.schema_migrations`, mesmo padrão observado em outras migrations do projeto). Nenhum conflito de nome/timestamp com migrations posteriores da main; nenhuma migration posterior da main redefine essas mesmas colunas/constraints. As migrations aqui são transportadas como artefato de repositório — **não executadas nesta fase**.
+### Datas e UCODE
 
-### Política comercial de attempts
+- `evaluateHotmartJornadaCommercialDates`, em `processor.ts`, valida as datas comerciais antes de analisar compra duplicada. Data ausente, inválida ou que já produziria matrícula expirada exige revisão administrativa.
+- UCODE aceita o formato hexadecimal 8-4-4-4-12, com trim e lowercase. A resolução do mapping é case-insensitive, inclusive para valores históricos em caixa diferente.
 
-Ver `docs/status-atual.md`, entrada de 16/09/2026, para o resumo completo da política aplicada (bloqueio de ações interativas, exceção do motor de conclusão automática, exceção do anti-cheat, comportamento do resultado). Resumo técnico:
+### Catálogos e configuração
 
-- `lib/server/studentAssertions.ts` ganhou `assertAttemptCommercialAccess(studentId, attemptId, supabase)` — desenho idêntico ao commit fundador da Hotmart (nunca alterado nos 22+ commits subsequentes daquela branch). Bloqueia por `simulado_event_participants.access_status` (contexto Evento) ou `student_jornadas.status`/`expires_at` (contexto Jornada, via `student_jornada_simulados`). Standalone nunca é afetado.
-- Rotas que agora chamam o guard, sempre antes de qualquer efeito colateral: `answers`, `behavior`, `owl-help`, `submit` (antes de `completeSimuladoAttempt`), `abandon` (antes do RPC `abandon_student_attempt`).
-- Rotas que **nunca** chamam o guard, por decisão explícita: `lib/server/simuladoAttemptCompletion.ts`, `attempts-timeout-job/route.ts`, `scripts/reconcile-expired-attempts.ts` (finalização automática do sistema — nunca bloqueada comercialmente, sob risco de reproduzir o incidente real de tentativa eternamente `in_progress` já documentado na Sprint de timeout server-side), `focus-violation/route.ts` e o endpoint legado `[attemptId]/route.ts` (anti-cheat — a desclassificação por 3ª violação de foco precisa continuar funcionando mesmo durante o bloqueio; esta é uma correção deliberada em relação ao desenho original da Hotmart, que bloqueava essas duas rotas).
-- `attempts/route.ts`: contexto Evento ganhou a checagem `participant.access_status !== "active"`, aplicada antes do branch de retomada — bloqueia criação e retomada igualmente. Contexto Jornada já tinha checagem equivalente de `status`/`expires_at` na main, preservada sem alteração.
-- `resultado/route.ts`: três pontos de checagem (`?jornada=`, `?event=`, e o fallback sem parâmetro explícito quando a tentativa pertence a um Evento) retornam 403 (`JORNADA_ACCESS_BLOCKED`/`EVENT_ACCESS_BLOCKED`/`EVENT_RESULT_BLOCKED`) sem nunca apagar ou alterar `simulado_results`.
-- `app/api/student/jornadas/[id]/route.ts` (detalhe): já distinguia `cancelled` (404) de `paused` (403, com mensagem própria mencionando preservação de histórico) de forma mais completa que o desenho original da Hotmart — preservado sem alteração.
-- `app/api/student/simulados/route.ts`/`[id]/route.ts`, `app/api/student/events/route.ts`/`[id]/route.ts`/`[id]/heartbeat/route.ts`: passaram a considerar `access_status` na listagem/detalhe/heartbeat de Evento, mesmo padrão do commit fundador.
-- `app/api/admin/jornadas/[id]/route.ts` (DELETE): passou a rejeitar (409) exclusão de Jornada com `hotmart_transactions` associadas, com mensagem orientando arquivamento — antecipa, com mensagem amigável, o que a constraint `on delete restrict` do banco já impediria de qualquer forma.
+- Sandbox: `products.ts`, `/api/admin/hotmart/products` e `/products/lookup`.
+- Produção read-only: `productionCatalog.ts`, `/api/admin/hotmart/products/production` e `/production/lookup`.
+- O lookup usa origem explícita; consultar um produto nunca cria mapping automaticamente. O Admin precisa confirmar o vínculo.
+- `.env.example` documenta, sem valores, `HOTMART_PRODUCTION_CLIENT_ID`, `HOTMART_PRODUCTION_CLIENT_SECRET` e `HOTMART_PRODUCTION_BASIC_TOKEN`.
+- Essas três credenciais servem exclusivamente ao catálogo Produção read-only. Não são usadas pelo webhook, processor ou refund; não alteram `HOTMART_ENVIRONMENT` nem promovem globalmente Sandbox/Preview para Produção.
+- O diagnóstico OAuth de apoio não substitui homologação integrada e não deve expor credenciais.
 
-### Infraestrutura de apoio
+### Interface administrativa
 
-- `lib/security/registrationTokens.ts` ganhou `deriveHotmartFirstAccessToken(transactionId, userId)` — função aditiva, todas as funções existentes da main (`hashPasswordRecoveryFingerprint` incluída) preservadas sem alteração.
-- `app/components/Sidebar.tsx`: item de navegação "Hotmart" adicionado ao grupo de Configurações administrativas, sem alterar nenhum outro item.
-- `.env.example`: `HOTMART_HOTTOK`, `HOTMART_CLIENT_ID`, `HOTMART_CLIENT_SECRET`, `HOTMART_BASIC_TOKEN`, `HOTMART_ENVIRONMENT` adicionados; nenhum segredo real, nenhuma variável existente removida.
+`app/admin/configuracoes/hotmart/page-client.tsx` usa `adminFetch`, lista compacta de transações, detalhes em modal, filtros e catálogo Sandbox/Produção. O componente local `HotmartDropdown` e o popover de data renderizam seus painéis por portal, acompanhando posição, scroll e resize. Ações de mapping e reprocessamento continuam explícitas e autenticadas.
 
-### Não integrado nesta fase (fica para fases posteriores)
+O portal de Tópicos pertence a `EvaluatedTopicsInput`, não à UI Hotmart. Foi preservada a implementação mais recente da main, incluindo posicionamento adaptativo. A preparação automática para a fila (`onAutoPrepareForQueue`) também foi preservada.
 
-Catálogo avançado de produtos (lookup/consulta), redesenho da UI de Transações/filtros/dropdown customizado (Sprints de 14–16/09/2026 da branch Hotmart), qualquer commit já classificado como "mescla manual futura" (`c36f80f`, `00a0292`, `2e1858b`, `84b548f`, partes de `abd9e50`/`9946c40`) ou "não levar" (`51e0ed5`, `0acfed7`, `379d79b`, `509af77`) na auditoria prévia, e o merge `99db7aa` (não replayado). Detector de falso positivo de imagens e demais melhorias de interface da branch Hotmart permanecem exclusivamente lá, sem relação com o core comercial.
+### Auditoria de fechamento do delta
 
-### Validação
+Foram revisados **22 commits exclusivos Hotmart, incluindo um merge**, no intervalo `20af0a5..2e1858b`, e **44 entradas dirty/untracked** da worktree Sistema, somente em leitura. Classificação das entradas: 5 já integradas (A), 28 versões antigas/superadas (B), 6 em quarentena G5, incluindo seu bloco documental em Sprint-resultados (C), e 5 documentos/hunks históricos absorvidos ou reconstruídos (E). Nenhum item D (funcionalidade legítima ausente) ou F (desconhecido) identificado nesse inventário.
 
-`npx tsc --noEmit` limpo. `npm run build` limpo (Next.js 16.2.4/Turbopack). `node scripts/test-hotmart-unit.cjs` PASS. `tests/commercial-access-policy.spec.ts` (novo, 21 casos) + regressão completa (`attempt-timeout-completion`, `attempt-transactions`, `context-attempt-limits`, `annulled-question-finish`, `student-journey-access`, `dropdown-standardization`, `simulado-scoring`, `event-representative-attempt`) — 223 + 21 = 244 testes verdes, nenhuma falha, nenhum teste pulado. Lint: todos os achados são pré-existentes na `main` original (confirmados idênticos, mesma mensagem e mesma posição relativa, antes desta reconciliação) — nenhum diagnóstico novo introduzido. Nenhuma migration executada. Nenhum dado alterado no banco. Nenhum push.
+G5 permanece QUARENTENADO / NÃO LEVAR: helper alternativo de recálculo, script de recuperação, migration alternativa, rotas alternativas e sua documentação. Quando o mesmo caminho existe na main, a quarentena se refere ao conteúdo alternativo de Sistema; a implementação vigente da main foi preservada.
+
+O detector contextual de imagens foi integrado em `19b2eb1`; funcionamento, ocorrências individuais, rejeição/restauração e limites do teste HTML estão registrados no índice funcional. Não foram importados textos históricos como prova de disponibilidade em produção.
+
+### Validação, limites e pendências
+
+Validação local da Fase 5B.6: `node scripts/test-hotmart-unit.cjs` PASS; `node scripts/test-image-detector-unit.cjs` PASS, incluindo round-trip DOM/HTML sem banco; `tests/dropdown-standardization.spec.ts` 9/9 PASS com configuração temporária sem servidor; `npx tsc --noEmit` PASS; `npm run build` PASS; `git diff --check` PASS. Esses testes não equivalem a homologação autenticada ou à suíte final.
+
+A Fase 5B.6 altera somente este documento, o índice, o status e `.env.example`. Nenhum código TS/TSX, teste, migration, asset ou dependência foi alterado nesta fase. Migrations não foram executadas nesta reconciliação; banco e Vercel não foram alterados.
+
+A decisão humana de lint exige **nenhum diagnóstico novo**. Permanecem os dois erros preexistentes `react-hooks/set-state-in-effect` em QuestionEditor e o aviso de `compact` não utilizado em RichTextEditor, iguais aos anteriores à Fase 5B.5; sua correção está fora do escopo.
+
+**As 20 falhas 401 já registradas continuam impeditivas do MERGE FINAL.** Não estão atribuídas à UI Hotmart; exigem auditoria específica de causa e suíte final antes de qualquer integração à main. Não foram corrigidas nem investigadas nesta fase. Fechamento funcional do delta não equivale a aprovação de merge ou deploy.
+
+Referência histórica: o core foi reconciliado em `47c4927`/`c17625d`, com documentação inicial em `8b03a96`; as fases seguintes incorporaram autenticação, datas, catálogos, UCODE, UI, proteção de first access e detector. A leitura de schema relatada na Fase 5A pertence àquela auditoria anterior; esta fase não fez nova consulta nem escrita no banco.

@@ -1,8 +1,21 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
-## 16/09/2026 — Reconciliação Fase 5A: core comercial Hotmart integrado à main
+## 17/09/2026 — Fase 5B.6: fechamento técnico do delta Hotmart
 
-Primeira integração real de código Hotmart na `main` (branch `reconcile/main-hotmart`, worktree isolada, `main` original intocada). Estratégia híbrida: em vez de merge bruto ou cherry-pick de toda a cadeia de 22+ commits exclusivos da branch `hotmart-homologacao`, foi feita mesclagem semântica do commit fundador (`b682ec1`) sobre a arquitetura atual da main, incorporando somente duas correções imediatas indispensáveis dos commits seguintes (`b51b0de`: concorrência/idempotência do processamento de webhook + evento `PURCHASE_PROTEST`; `e254e37`, parcial: validação de data de aprovação em `grantJornada`, sem trazer o recurso de consulta de catálogo do mesmo commit). Não foi trazida a cadeia posterior de catálogo avançado, UI redesenhada ou os commits já classificados como "mescla manual futura" ou "não levar".
+- Reconciliados core comercial, política interativa de attempts, datas antes de duplicidade, UCODE, catálogos Sandbox/Produção read-only, UI administrativa e first access. Contratos e caminhos: [Sprint Hotmart](Sprint-integracao-hotmart.md) e seção 34 do [índice funcional](INDICE_FUNCOES_SISTEMA.md).
+- Detector contextual integrado: ocorrências individuais, “Não é uma imagem”, restauração e `data-image-ref="rejected"`; contador ignora rejeitados. Round-trip HTML validado localmente com persistência simulada, sem banco real. Portal de Tópicos e `onAutoPrepareForQueue` preservados.
+- Auditoria: 22 commits exclusivos (incluindo um merge) e 44 entradas locais de Sistema. Resultado: A=5, B=28, C=6, E=5, D=0, F=0. Nenhuma funcionalidade legítima conhecida ficou apenas no inventário antigo; G5 e seu bloco documental permanecem em quarentena.
+- `.env.example` recebe somente os três placeholders `HOTMART_PRODUCTION_*` para o catálogo read-only; variáveis existentes e `HOTMART_ENVIRONMENT` preservados.
+- **Somente branch técnica `reconcile/main-hotmart`: sem merge na main, push oficial ou deploy.** Migrations não executadas, banco e Vercel intocados. Backups remotos não representam publicação da branch oficial.
+- **MERGE FINAL BLOQUEADO pelas 20 falhas 401 previamente registradas.** Causa ainda exige auditoria específica; não atribuída à UI Hotmart. Não corrigidas nesta fase.
+- Lint: decisão humana aceita ausência de diagnósticos novos. Dois erros preexistentes em QuestionEditor e um aviso em RichTextEditor permanecem como débito técnico, sem refatoração nesta fase.
+- Próximo passo recomendado, não executado: auditoria das 20 falhas 401 + suíte final.
+
+## 16/09/2026 - Histórico da Fase 5A: core comercial na branch técnica
+
+Registro do escopo à época; o fechamento acima atualiza catálogo, UI e detector.
+
+Primeira integração de código Hotmart sobre a base da `main` (branch `reconcile/main-hotmart`, worktree isolada, `main` original intocada). Estratégia híbrida: em vez de merge bruto ou cherry-pick de toda a cadeia de 22 commits exclusivos da branch `hotmart-homologacao`, foi feita mesclagem semântica do commit fundador (`b682ec1`) sobre a arquitetura atual da main, incorporando somente duas correções imediatas indispensáveis dos commits seguintes (`b51b0de`: concorrência/idempotência do processamento de webhook + evento `PURCHASE_PROTEST`; `e254e37`, parcial: validação de data de aprovação em `grantJornada`, sem trazer o recurso de consulta de catálogo do mesmo commit). Não foi trazida a cadeia posterior de catálogo avançado, UI redesenhada ou os commits já classificados como "mescla manual futura" ou "não levar".
 
 **Infraestrutura comercial transportada (Categoria A — exclusiva Hotmart, sem equivalente na main):** `app/lib/server/hotmart/{auth,config,email,history,normalize,processor,refund,types}.ts`, `app/api/webhooks/hotmart/route.ts`, `app/api/admin/hotmart/{route.ts,mappings/[id]/route.ts,recover-emails/route.ts,transactions/[id]/{actions,refund}/route.ts}`, `app/admin/configuracoes/hotmart/{page.tsx,page-client.tsx}` (versão inicial, sem os filtros/dropdowns/lista compacta de Sprints posteriores — fora do escopo desta subfase), `scripts/test-hotmart-unit.cjs`, `scripts/homologate-hotmart-internal.cjs`, migrations `20260828110000_create_hotmart_integration.sql` e `20260830120000_complete_hotmart_admin_workflows.sql` (transportadas como arquivo, **não executadas** — o schema correspondente já existe no banco remoto, verificado por leitura via Supabase MCP antes de qualquer edição).
 

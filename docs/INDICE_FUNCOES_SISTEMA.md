@@ -4144,10 +4144,28 @@ Confirmados novamente por SELECT: `jornadas.max_attempts` e `simulado_events.max
 
 O usuário autorizou um único commit e push para `origin/main`, com verificação posterior do deployment automático da Vercel. As afirmações anteriores “sem commit/push/deploy” descrevem as etapas anteriores. Nenhum deploy manual está autorizado. A alteração do Criador Manual e seus trechos documentais permanecem fora deste commit. Regressão repetida: 101/105 passaram, incluindo 30/30 focais; as mesmas quatro falhas anteriores permaneceram. Não há nova falha identificada no escopo. Homologação autenticada depende de navegador/sessão disponível; não criar sessões por impersonação.
 
-## 34. Integração comercial Hotmart — core reconciliado com a main (2026-09-16)
+## 34. Integração Hotmart — estado da branch técnica (2026-09-17)
 
-Primeira integração real de código Hotmart na `main` (branch/worktree isolada `reconcile/main-hotmart`, `main` original intocada), mesclando semanticamente o commit fundador da integração (`b682ec1`) mais duas correções imediatas indispensáveis (`b51b0de` completo; `e254e37` parcial — só a validação de data de aprovação de Jornada, sem o recurso de catálogo do mesmo commit). Infraestrutura comercial (`app/lib/server/hotmart/**`, webhook, rotas admin de mapping/transações/refund, tela `/admin/configuracoes/hotmart` em sua versão inicial) transportada sem equivalente prévio na main. Migrations `20260828110000`/`20260830120000` transportadas como arquivo, **não executadas** — o schema correspondente já existe no banco remoto (`hotmart_product_mappings`, `hotmart_transactions`, `hotmart_webhook_events`, `hotmart_access_links`, `hotmart_history`, colunas `access_status`/`access_origin`/`commercial_block_reason` em `student_jornadas`/`simulado_event_participants`, e as 8 funções RPC associadas), verificado por leitura direta antes de qualquer edição.
+Implementado em `reconcile/main-hotmart`, ainda sem merge na main ou deploy. Regras comerciais, política de attempts, catálogo e limites: [Sprint Integração Hotmart](Sprint-integracao-hotmart.md).
 
-Política comercial de attempts: `assertAttemptCommercialAccess` (`lib/server/studentAssertions.ts`) bloqueia `answers`/`behavior`/`owl-help`/`submit`/`abandon` quando o Evento/Jornada de origem está com acesso inativo; standalone nunca é afetado. `lib/server/simuladoAttemptCompletion.ts`, o job de timeout e a reconciliação histórica **nunca** recebem esse guard (finalização automática do sistema não pode ficar presa por bloqueio comercial). Violação de foco (`focus-violation/route.ts` e o endpoint legado `[attemptId]/route.ts`) também nunca recebe o guard — correção deliberada em relação ao desenho original da Hotmart, para que a desclassificação por 3ª violação continue funcionando durante o bloqueio. Resultado (`resultado/route.ts`) preserva o registro em `simulado_results`, só bloqueia a visualização. Detalhes completos: `docs/Sprint-integracao-hotmart.md`.
+| Responsabilidade | Caminho |
+| --- | --- |
+| Webhook e core: idempotência, claim/lease, concessão, bloqueio, first access, refund e histórico | `app/api/webhooks/hotmart/route.ts`; `app/lib/server/hotmart/{auth,config,email,history,normalize,processor,refund,types}.ts` |
+| Mapping, ações administrativas e reenvio | `app/api/admin/hotmart/` |
+| Catálogo Sandbox e lookup | `app/lib/server/hotmart/products.ts`; `app/api/admin/hotmart/products/{route.ts,lookup/route.ts}` |
+| Catálogo Produção read-only e lookup, com credenciais separadas | `app/lib/server/hotmart/productionCatalog.ts`; `app/api/admin/hotmart/products/production/{route.ts,lookup/route.ts}` |
+| Lista compacta, modal, filtros, `adminFetch`, `HotmartDropdown` e popover de data via portal | `app/admin/configuracoes/hotmart/page-client.tsx` |
+| Guard comercial interativo; conclusão automática e anti-cheat preservados | `lib/server/studentAssertions.ts` |
+| Token próprio Hotmart e regressão de first access | `lib/security/registrationTokens.ts`; `tests/password-recovery/password-recovery.spec.ts` |
+| Testes locais do core e datas comerciais | `scripts/test-hotmart-unit.cjs` |
 
-Validação: `npx tsc --noEmit` e `npm run build` limpos; `scripts/test-hotmart-unit.cjs` PASS; suíte nova `tests/commercial-access-policy.spec.ts` (21 casos) + regressão completa (244 testes) verdes; lint sem diagnóstico novo (achados remanescentes confirmados idênticos ao main original). Nenhuma migration executada, nenhum dado alterado, nenhum commit pushado.
+Datas comerciais são validadas antes da compra duplicada; UCODE hexadecimal 8-4-4-4-12 é normalizado com trim/lowercase e mapping case-insensitive. Consulta de catálogo não cria mapping. As três variáveis `HOTMART_PRODUCTION_*` em `.env.example` são exclusivas do catálogo read-only; não mudam o ambiente do webhook/processor/refund.
+
+### 34.1. Detector contextual de referências de imagem e separação de Tópicos
+
+- `lib/questions/image-pending.ts`: detecção contextual que reduz falsos positivos e enumera ocorrências individuais.
+- `app/components/questions/QuestionEditor.tsx` e `RichTextEditor.tsx`: ação **“Não é uma imagem”** por ocorrência e restauração. A rejeição é mantida no HTML com `data-image-ref="rejected"`; o contador ignora ocorrências rejeitadas.
+- `scripts/test-image-detector-unit.cjs`: detector e round-trip HTML local, incluindo rejeitar, serializar, reabrir e restaurar. Usa DOM local e persistência simulada; **não usa banco real**.
+- `app/components/questions/EvaluatedTopicsInput.tsx`: portal de sugestões de Tópicos, separado dos dropdowns Hotmart; preservada a evolução da main. `onAutoPrepareForQueue` e os fluxos recentes do Banco/Revisão também foram preservados.
+
+O fechamento técnico do delta não libera merge: permanecem as 20 falhas 401 pendentes de auditoria e o débito de lint preexistente, sem diagnóstico novo introduzido pelo detector. G5 alternativo permanece em quarentena.
