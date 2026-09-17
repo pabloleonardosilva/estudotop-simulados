@@ -1,9 +1,20 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { createNextTestEnvironment, loadSafeSupabaseTestEnvironment } from "./tests/helpers/supabase-test-environment.cjs";
+
+const localOnly = process.env.PLAYWRIGHT_LOCAL_ONLY === "1";
+if (!localOnly) loadSafeSupabaseTestEnvironment();
+
 const port = Number(process.env.PLAYWRIGHT_PORT || 3000);
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.ts",
+  testIgnore: localOnly ? [
+    "**/master-registrations/master-registrations.spec.ts",
+    "**/question-bank/**", "**/import-ai/**",
+    "**/password-policy/**", "**/student-account-integrity/**",
+  ] : [],
   timeout: 60_000,
   workers: 1,
   expect: {
@@ -18,10 +29,11 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: {
+  webServer: localOnly ? undefined : {
     command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
+    env: createNextTestEnvironment(),
     timeout: 120_000,
   },
   projects: [

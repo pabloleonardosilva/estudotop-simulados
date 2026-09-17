@@ -1,5 +1,13 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Infraestrutura test-only: protecao Supabase (Fase 6B.1, 17/09/2026)
+
+- Fonte central: tests/helpers/supabase-test-environment.cjs. assertSafeSupabaseTestEnvironment compara o conjunto efetivo com TEST_SUPABASE_URL, TEST_SUPABASE_ANON_KEY e TEST_SUPABASE_SERVICE_ROLE_KEY; loadSafeSupabaseTestEnvironment le somente .env.test.local, aceita apenas as seis variaveis Supabase e recusa conflitos herdados antes de alterar o ambiente. Nenhum cliente/rede e criado pelo guard.
+- Consumidores: playwright.config.ts e tests/master-registrations/helpers.ts (tres specs de integracao). createNextTestEnvironment limpa variaveis herdadas fora da lista permitida; tests/helpers/next-test-env.cjs impede o Next 16.2.4 de carregar outros arquivos dotenv, inclusive em workers e recargas. Revalidar esse contrato ao atualizar Next. Servidor existente nunca e reutilizado.
+- Configuracao futura: preencher .env.test.local a partir de .env.test.example com os dois conjuntos correspondentes do projeto descartavel. Nao copiar .env.local. Alternativamente fornecer as seis variaveis explicitamente no processo. Nunca fornecer o projeto operacional como TEST_SUPABASE_*. Nenhuma credencial real fica no Git.
+- Verificacao local: npm run test:guard usa node:test, fixtures ficticias e mocks de filesystem, sem Playwright, banco ou rede. Requer Node com node:util.parseEnv (20.12+; validado com Node 24). Para os 33 specs locais, definir PLAYWRIGHT_LOCAL_ONLY=1 no processo do runner; nao carrega env de teste nem inicia servidor. O modo padrao falha fechado sem autorizacao explicita.
+- Fora do escopo: autenticacao HTTP/browser, usuarios, fixtures, mocks OpenAI, execucao integrada e scripts de homologacao Hotmart. Nenhuma migration. Estado e limites: docs/status-atual.md, entrada da Fase 6B.1.
+
 ## Regra vigente no código local — tentativas por contexto (2026-09-09)
 
 **Migration preparada anteriormente; não executada pelo agente:** `supabase/migrations/20260909160000_move_attempt_limits_to_contexts.sql`. Esta seção substitui as descrições históricas abaixo que atribuem o limite ao Simulado, permitem novos inícios avulsos ou propõem herdar o limite antigo no backfill. A auditoria posterior abaixo atualiza o estado observado do schema remoto; não presumir que a migration continue pendente no banco.

@@ -1,5 +1,15 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 17/09/2026 - Fase 6B.1: guard do ambiente Supabase de testes
+
+- O responsavel informou a existencia de um Supabase descartavel exclusivo de testes, com estrutura equivalente ao operacional e buckets vazios. Esta fase nao consulta nem modifica nenhum banco.
+- Integracoes Playwright passam a exigir seis variaveis explicitas e correspondentes: TEST_SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY e NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY. O guard compara URL HTTPS canonica (normalizando apenas barras finais) e chaves por hashes SHA-256 com timingSafeEqual; nao depende de decodificacao JWT.
+- Somente .env.test.local (ignorado) pode fornecer configuracao por arquivo. .env.test.example contem apenas placeholders, rejeitados pelo guard. Variaveis herdadas divergentes abortam; nenhum segredo e armazenado no Git. Producao nunca pode ser destino da suite destrutiva. O conjunto TEST_SUPABASE_* e a autorizacao fornecida pelo operador: deve pertencer ao projeto descartavel; igualdade local nao comprova remotamente a origem das chaves.
+- Guard central em tests/helpers/supabase-test-environment.cjs, aplicado antes do cliente administrativo, cleanup compartilhado e POST HTTP; a configuracao Playwright valida antes de iniciar servidor ou executar testes. webServer nao reutiliza servidor existente e recebe ambiente filtrado. Preload test-only substitui o carregador @next/env no processo Next e seus filhos, impedindo fallback/recarga de .env.local, .env ou outros arquivos operacionais. Dev/build comuns nao recebem esse preload.
+- PLAYWRIGHT_LOCAL_ONLY=1 seleciona os 33 specs exclusivamente locais e desabilita webServer; os cinco arquivos com integracao/interface sao excluidos. Mesmo nesse modo o helper recusa criar cliente real. Os testes Node do guard rodam separadamente com npm run test:guard.
+- Validacao: 44/44 testes locais do guard aprovados; TypeScript sem emissao e lint dos cinco arquivos JS/TS alterados aprovados; npm run build aprovado (112 paginas estaticas), com credenciais ficticias, dotenv operacional bloqueado e rede externa bloqueada no processo temporario de validacao. Nenhuma integracao Playwright ou chamada Supabase/OpenAI executada. Ajustes no harness temporario permitiram somente o IPC local do Turbopack; nenhum arquivo da aplicacao foi alterado.
+- Sem criacao de admin, fixtures, migrations, autenticacao Bearer/storageState, mock de IA ou correcao dos sete testes antigos. O script opcional de homologacao Hotmart permanece fora desta protecao e nao foi executado. Essas pendencias continuam bloqueando a homologacao completa.
+
 ## 17/09/2026 — Fase 5B.6: fechamento técnico do delta Hotmart
 
 - Reconciliados core comercial, política interativa de attempts, datas antes de duplicidade, UCODE, catálogos Sandbox/Produção read-only, UI administrativa e first access. Contratos e caminhos: [Sprint Hotmart](Sprint-integracao-hotmart.md) e seção 34 do [índice funcional](INDICE_FUNCOES_SISTEMA.md).

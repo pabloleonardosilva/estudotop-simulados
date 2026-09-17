@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { APIRequestContext } from "@playwright/test";
+import { assertSafeSupabaseTestEnvironment, loadSafeSupabaseTestEnvironment } from "../helpers/supabase-test-environment.cjs";
 
 export type AttemptResult = {
   input: string;
@@ -20,41 +21,10 @@ export type Finding = {
   detail: string;
 };
 
-const envLoaded = new Set<string>();
-
-export function loadLocalEnv() {
-  const envPath = path.join(process.cwd(), ".env.local");
-  if (!fs.existsSync(envPath) || envLoaded.has(envPath)) return;
-
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const separator = trimmed.indexOf("=");
-    if (separator === -1) continue;
-
-    const key = trimmed.slice(0, separator).trim();
-    let value = trimmed.slice(separator + 1).trim();
-    value = value.replace(/^['"]|['"]$/g, "");
-
-    if (!process.env[key]) process.env[key] = value;
-  }
-
-  envLoaded.add(envPath);
-}
-
 export function supabaseAdmin(): SupabaseClient {
-  loadLocalEnv();
+  const { url, serviceRoleKey } = loadSafeSupabaseTestEnvironment();
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY precisam estar configuradas.");
-  }
-
-  return createClient(url, key, {
+  return createClient(url, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -96,6 +66,7 @@ export function logicalKey(value: string, options?: { slashSpaces?: boolean; pun
 }
 
 export async function cleanupMasterTestData(client: SupabaseClient, prefix: string) {
+  assertSafeSupabaseTestEnvironment();
   const { data: disciplines } = await client
     .from("disciplines")
     .select("id")
@@ -125,6 +96,7 @@ export async function listNames(client: SupabaseClient, table: string, prefix: s
 }
 
 export async function postJson(request: APIRequestContext, url: string, body: unknown) {
+  assertSafeSupabaseTestEnvironment();
   const response = await request.post(url, { data: body });
   let json: Record<string, unknown> = {};
 

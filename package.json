@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "test:masters": "playwright test tests/master-registrations",
     "test:questions": "playwright test tests/question-bank",
-    "test:import-ai": "playwright test tests/import-ai"
+    "test:import-ai": "playwright test tests/import-ai",
+    "test:guard": "node --test tests/helpers/supabase-test-environment.test.cjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
