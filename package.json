@@ -18,7 +18,8 @@
     "test:fixtures-unit": "node --test tests/helpers/test-domain-browser.test.cjs",
     "test:preview": "playwright test --config=playwright.preview.config.ts --project=chromium",
     "test:ai-fake-unit": "node --test tests/helpers/test-ai-fake.test.cjs",
-    "test:ai-fake:smoke": "node scripts/smoke-test-ai-fake.cjs"
+    "test:ai-fake:smoke": "node scripts/smoke-test-ai-fake.cjs",
+    "test:ai-fake-smoke-cleanup-unit": "node --test tests/helpers/test-smoke-ai-fake-cleanup.test.cjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

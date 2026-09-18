@@ -18,11 +18,34 @@ const { createTestDomainFixtures } = require("../tests/helpers/test-domain-fixtu
 async function smokeTestAiFake() {
   const config = loadSafeSupabaseTestEnvironment();
   const headers = await getTestAdminAuthHeaders();
-  assertSafeSupabaseTestEnvironment();
+  assertSafeSupabaseTestEnvironment(); // guard: continua rodando antes de qualquer fixture
 
+  // Fase 6B.6-E: a criação da fixture (linha abaixo) e TUDO que roda depois dela —
+  // carregamento dos módulos reais, montagem do handler, execução do smoke e suas
+  // asserções — precisam ficar dentro do MESMO try/finally. Antes desta fase, apenas
+  // a chamada da rota (após os load()) tinha finally; uma exceção durante load()
+  // (import quebrado, erro de compilação TS, dependência inesperada) deixava a
+  // fixture já criada órfã no Supabase de teste.
   const fixtures = createTestDomainFixtures("6b4aifake" + randomUUID().replace(/-/g, "").slice(0, 20));
-  const { names } = await fixtures.create();
+  let fixturesCreated = false;
+  try {
+    const created = await fixtures.create();
+    fixturesCreated = true;
+    return await runSmokeAgainstFixtures(config, headers, created.names);
+  } finally {
+    if (fixturesCreated) {
+      try {
+        await fixtures.cleanup();
+      } catch (cleanupError) {
+        // Não relança: um erro de cleanup aqui nunca deve mascarar uma falha real do
+        // smoke que esteja se propagando pelo try acima. Fica visível no console.
+        console.error("AI fake smoke cleanup failed (fixtures may remain in the test project):", cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+      }
+    }
+  }
+}
 
+async function runSmokeAgainstFixtures(config, headers, names) {
   let auditEvents = 0;
   const allowedReads = new Set(["/auth/v1/user", "/rest/v1/profiles", "/rest/v1/exam_boards", "/rest/v1/questions", "/rest/v1/question_alternatives"]);
   const client = createClient(config.url, config.serviceRoleKey, {
@@ -94,30 +117,27 @@ async function smokeTestAiFake() {
     body: JSON.stringify({ text, subject_id: null, year: 2025, batch_index: 0 }),
   });
 
-  let result;
-  try {
-    const response = await route.POST(request);
-    const body = await response.json();
-    if (response.status !== 200 || body.ok !== true) {
-      throw new Error("Unexpected response: status=" + response.status + " ok=" + body.ok + " message=" + body.message);
-    }
-    if (!Array.isArray(body.questions) || body.questions.length < 1) {
-      throw new Error("Fake response did not produce the expected questions array.");
-    }
-    const fakeMarkerPresent = body.questions.every((q) => typeof q.difficulty_level === "number" || q.difficulty_level === null);
-    if (!fakeMarkerPresent) throw new Error("Unexpected question shape from fake AI path.");
-    result = {
-      status: response.status,
-      ok: body.ok,
-      questionCount: body.questions.length,
-      boardResolved: Boolean(body.questions[0]?.exam_board_id),
-      auditEventsInMemory: auditEvents,
-      transport: "real route handler in process; TEST_AI_MODE=fake; real Supabase Auth/SELECT restricted to exam_boards/profiles/auth.user",
-    };
-  } finally {
-    await fixtures.cleanup();
+  // Fase 6B.6-E: o cleanup das fixtures agora é responsabilidade exclusiva do
+  // try/finally em smokeTestAiFake, que envolve esta função inteira — nenhum
+  // try/finally próprio aqui, para não duplicar nem mascarar essa responsabilidade.
+  const response = await route.POST(request);
+  const body = await response.json();
+  if (response.status !== 200 || body.ok !== true) {
+    throw new Error("Unexpected response: status=" + response.status + " ok=" + body.ok + " message=" + body.message);
   }
-  return result;
+  if (!Array.isArray(body.questions) || body.questions.length < 1) {
+    throw new Error("Fake response did not produce the expected questions array.");
+  }
+  const fakeMarkerPresent = body.questions.every((q) => typeof q.difficulty_level === "number" || q.difficulty_level === null);
+  if (!fakeMarkerPresent) throw new Error("Unexpected question shape from fake AI path.");
+  return {
+    status: response.status,
+    ok: body.ok,
+    questionCount: body.questions.length,
+    boardResolved: Boolean(body.questions[0]?.exam_board_id),
+    auditEventsInMemory: auditEvents,
+    transport: "real route handler in process; TEST_AI_MODE=fake; real Supabase Auth/SELECT restricted to exam_boards/profiles/auth.user",
+  };
 }
 
 if (require.main === module) {
