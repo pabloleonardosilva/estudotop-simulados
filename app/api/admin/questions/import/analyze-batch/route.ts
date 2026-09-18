@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { calculateDuplicateScore, jaccardSimilarity } from "@/lib/questions/duplicate-service";
 import { requireAdmin } from "@/lib/server/authGuard";
+import { isAiFakeModeActive, requestChatCompletion } from "@/lib/server/ai/aiProvider";
 
 function clean(value?: string | null) {
   return (value || "").trim();
@@ -1122,7 +1123,7 @@ export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey && !isAiFakeModeActive()) {
       return NextResponse.json(
         {
           ok: false,
@@ -1241,33 +1242,26 @@ Texto:
 ${text}
 `;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+    const response = await requestChatCompletion({
+      model: process.env.OPENAI_IMPORT_MODEL || "gpt-4o-mini",
+      temperature: 0.1,
+      response_format: {
+        type: "json_object",
       },
-      body: JSON.stringify({
-        model: process.env.OPENAI_IMPORT_MODEL || "gpt-4o-mini",
-        temperature: 0.1,
-        response_format: {
-          type: "json_object",
+      messages: [
+        {
+          role: "system",
+          content:
+            "VocÃª transforma textos de questÃµes de concursos em JSON estruturado vÃ¡lido. Preserve o statement completo antes do primeiro marcador real de alternativa.",
         },
-        messages: [
-          {
-            role: "system",
-            content:
-              "VocÃª transforma textos de questÃµes de concursos em JSON estruturado vÃ¡lido. Preserve o statement completo antes do primeiro marcador real de alternativa.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      }),
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
     });
 
-    const result = await response.json();
+    const result = response.json;
     const content = result?.choices?.[0]?.message?.content || "";
     const parsed = JSON.parse(extractJson(content));
     const supabase = createSupabaseAdminClient();

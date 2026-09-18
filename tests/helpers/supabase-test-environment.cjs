@@ -9,7 +9,15 @@ const ENV_NAMES = [
   "TEST_SUPABASE_URL", "TEST_SUPABASE_ANON_KEY", "TEST_SUPABASE_SERVICE_ROLE_KEY",
   "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
 ];
-const FILE_ENV_NAMES = [...ENV_NAMES, "TEST_ADMIN_EMAIL", "TEST_ADMIN_PASSWORD"];
+// Fase 6B.4: TEST_AI_MODE não identifica o projeto Supabase — é lido em tempo de execução
+// por lib/server/ai/aiProvider.ts (código de produção) para decidir se ativa o fake de IA,
+// mas só depois que esse mesmo processo já foi aprovado pelo guard acima (ver
+// tests/helpers/next-test-env.cjs). Precisa alcançar o processo do servidor Next (por isso
+// entra no allowlist de createNextTestEnvironment) e pode ser definida via .env.test.local
+// (por isso entra em FILE_ENV_NAMES), mas nunca participa da checagem de identidade do
+// projeto Supabase feita por assertSafeSupabaseTestEnvironment.
+const AI_ENV_NAMES = ["TEST_AI_MODE"];
+const FILE_ENV_NAMES = [...ENV_NAMES, "TEST_ADMIN_EMAIL", "TEST_ADMIN_PASSWORD", ...AI_ENV_NAMES];
 
 /** @returns {never} */
 function refuse() { throw new Error(MESSAGE); }
@@ -85,7 +93,7 @@ function createNextTestEnvironment(env = process.env) {
   const systemNames = /^(path|systemroot|windir|comspec|pathext|temp|tmp|tmpdir|home|userprofile|appdata|localappdata|number_of_processors|processor_architecture|systemdrive)$/i;
   for (const [name, value] of Object.entries(env)) {
     // Playwright merges webServer.env with process.env: explicitly clear everything else.
-    child[name] = value !== undefined && (systemNames.test(name) || ENV_NAMES.includes(name)) ? value : "";
+    child[name] = value !== undefined && (systemNames.test(name) || ENV_NAMES.includes(name) || AI_ENV_NAMES.includes(name)) ? value : "";
   }
   child.NODE_ENV = "development";
   child.NEXT_TELEMETRY_DISABLED = "1";

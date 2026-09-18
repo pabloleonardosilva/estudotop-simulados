@@ -1,8 +1,17 @@
 import OpenAI from "openai";
 import { richTextToPlainText } from "./rich-text";
 import { predictDifficulty } from "./question-difficulty";
+import { isAiFakeModeActive, fakeDifficultyLevel, fakeDifficultyLevels } from "@/lib/server/ai/aiProvider";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy: só instancia o cliente real da OpenAI quando um caminho real de IA é de fato
+// alcançado. Evita `new OpenAI()` disparar (ela lança se OPENAI_API_KEY estiver vazia)
+// só por importar este módulo — necessário para TEST_AI_MODE=fake nunca precisar de
+// OPENAI_API_KEY real (Fase 6B.4).
+let cachedClient: OpenAI | null = null;
+function getOpenAIClient(): OpenAI {
+  if (!cachedClient) cachedClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return cachedClient;
+}
 
 type QuestionInput = {
   statement: string;
@@ -38,8 +47,10 @@ export async function predictDifficultyAI(question: QuestionInput): Promise<numb
   }
 
   // Short statements have little signal for the heuristic — use AI
+  if (isAiFakeModeActive()) return fakeDifficultyLevel();
+
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.1,
       max_tokens: 5,
@@ -63,13 +74,14 @@ export async function predictDifficultyAIBatch(
   questions: QuestionInput[],
 ): Promise<number[]> {
   if (questions.length === 0) return [];
+  if (isAiFakeModeActive()) return fakeDifficultyLevels(questions.length);
 
   try {
     const questionsText = questions
       .map((q, i) => `[${i + 1}]\n${buildQuestionText(q)}`)
       .join("\n\n---\n\n");
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.1,
       messages: [

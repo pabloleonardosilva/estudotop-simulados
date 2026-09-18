@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
+import { isAiFakeModeActive, requestChatCompletion } from "@/lib/server/ai/aiProvider";
 
 function extractJson(text: string) {
   const cleaned = text.trim();
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
 
-    if (!apiKey) {
+    if (!apiKey && !isAiFakeModeActive()) {
       return NextResponse.json(
         {
           ok: false,
@@ -120,31 +121,24 @@ Formato obrigatório:
 Texto bruto:
 ${rawText}`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_IMPORT_MODEL || "gpt-4o-mini",
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "Você transforma textos de questões de concursos em JSON estruturado válido.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      }),
+    const response = await requestChatCompletion({
+      model: process.env.OPENAI_IMPORT_MODEL || "gpt-4o-mini",
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Você transforma textos de questões de concursos em JSON estruturado válido.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
     });
 
-    const result = await response.json();
+    const result = response.json;
 
     if (!response.ok) {
       return NextResponse.json(

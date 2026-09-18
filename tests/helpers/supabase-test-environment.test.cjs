@@ -84,6 +84,32 @@ test("Next child explicitly clears inherited operational secrets and NODE_OPTION
   assert.equal(child.NODE_OPTIONS.includes("unwanted"), false); assert.equal(child.NODE_OPTIONS.includes("next-test-env.cjs"), true);
   assert.equal(child.SUPABASE_SERVICE_ROLE_KEY, authorized().TEST_SUPABASE_SERVICE_ROLE_KEY);
 });
+test("TEST_AI_MODE passes through to the Next child untouched", () => {
+  const child = createNextTestEnvironment({ ...authorized(), TEST_AI_MODE: "fake" });
+  assert.equal(child.TEST_AI_MODE, "fake");
+});
+test("TEST_AI_MODE is accepted from the test env file", () => withFile(dotenv({ ...authorized(), TEST_AI_MODE: "fake" }), () => {
+  const env = {}; const validated = load(env); assert.deepEqual(validated, { url: env.TEST_SUPABASE_URL, anonKey: env.TEST_SUPABASE_ANON_KEY, serviceRoleKey: env.TEST_SUPABASE_SERVICE_ROLE_KEY }); assert.equal(env.TEST_AI_MODE, "fake");
+}));
+test("Fase 6B.4: preload approves the process and blocks only real OpenAI network calls", () => {
+  const code = `const assert = require('node:assert/strict');
+    require('./tests/helpers/next-test-env.cjs');
+    assert.equal(globalThis.__ET_TEST_SUPABASE_ENV_APPROVED__, true);
+    assert.throws(() => fetch('https://api.openai.com/v1/chat/completions'), /Refusing real network call to OpenAI/);
+    fetch('http://127.0.0.1:1/never').catch(() => {});
+  `;
+  const result = spawnSync(process.execPath, ["-e", code], { cwd: path.resolve(__dirname, "../.."), env: createNextTestEnvironment({ ...authorized(), TEST_AI_MODE: "fake" }), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+test("Fase 6B.4: without TEST_AI_MODE, the preload never touches global fetch", () => {
+  const code = `const assert = require('node:assert/strict');
+    const before = globalThis.fetch;
+    require('./tests/helpers/next-test-env.cjs');
+    assert.equal(globalThis.fetch, before);
+  `;
+  const result = spawnSync(process.execPath, ["-e", code], { cwd: path.resolve(__dirname, "../.."), env: createNextTestEnvironment(authorized()), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
 test("Next preload prevents all dotenv reads, including forced reloads", () => {
   const code = `const fs = require('node:fs');
     const read = fs.readFileSync;
