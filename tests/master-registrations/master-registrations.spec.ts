@@ -320,12 +320,18 @@ test("bancas bloqueiam vazios e duplicidades logicas", async ({ request }) => {
   }
 
   const questionResult = await postJson(request, "/api/admin/questions", {
-    question_type: "multiple_choice",
+    // true_false porque a fixture só fornece 2 alternativas: multiple_choice exige
+    // no mínimo 4 (regra vigente, inalterada). O objetivo do teste é apenas ter uma
+    // questão válida vinculada à banca para verificar a regra de exclusão/migração;
+    // o tipo da questão é irrelevante para essa regra.
+    question_type: "true_false",
     subject_id: deleteSubjectId,
     subject_ids: [deleteSubjectId],
     exam_board_id: deleteBoardId,
     statement: `${prefix} enunciado controlado para testar exclusao de banca com migracao segura.`,
     status: "pending_review",
+    year: 2025,
+    evaluated_topics: ["Assunto controlado"],
     alternatives: [
       { label: "A", text: "Alternativa correta controlada", is_correct: true },
       { label: "B", text: "Alternativa incorreta controlada", is_correct: false },

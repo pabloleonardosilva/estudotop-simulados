@@ -32,6 +32,13 @@ const baseAlternatives: AlternativeInput[] = [
   { label: "E", text: "A bicondicional representa equivalência lógica.", is_correct: false },
 ];
 
+// evaluated_topics é obrigatório em /api/admin/questions (POST e PATCH) desde o
+// baseline do projeto — validado ANTES do enunciado, das alternativas e de
+// qualquer outro campo. Um valor fixo e válido aqui garante que cada cenário
+// deste arquivo teste exclusivamente o que se propõe a testar, sem ser
+// mascarado por essa validação anterior na cadeia.
+const baseEvaluatedTopics = ["Tabela Verdade"];
+
 function scopedStatement(statement: string) {
   return `${prefix} - ${statement}`;
 }
@@ -97,6 +104,7 @@ async function createQuestion(
     year?: number | null;
     difficulty?: number | null;
     status?: string;
+    evaluatedTopics?: string[];
   },
 ) {
   return postJson(request, "/api/admin/questions", {
@@ -109,6 +117,7 @@ async function createQuestion(
     difficulty_level: body.difficulty === undefined ? 3 : body.difficulty,
     status: body.status === undefined ? "pending_review" : body.status,
     alternatives: body.alternatives ?? baseAlternatives,
+    evaluated_topics: body.evaluatedTopics ?? baseEvaluatedTopics,
   });
 }
 
@@ -403,6 +412,7 @@ test("alternativa correta e edicao persistem apos reload logico", async ({ reque
       exam_board_id: boardId,
       statement: scopedStatement("Tentativa sem correta marcada."),
       alternatives: baseAlternatives.map((alternative) => ({ ...alternative, is_correct: false })),
+      evaluated_topics: baseEvaluatedTopics,
     },
   });
 
@@ -431,6 +441,7 @@ test("alternativa correta e edicao persistem apos reload logico", async ({ reque
       year: 2026,
       difficulty_level: 4,
       status: "published",
+      evaluated_topics: baseEvaluatedTopics,
     },
   });
 

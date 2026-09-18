@@ -25,7 +25,13 @@ type ImportedQuestion = {
   explanation_text?: string;
   alternatives: ImportedAlternative[];
   is_duplicate?: boolean;
+  evaluated_topics?: string[];
 };
+
+// evaluated_topics é obrigatório em /api/admin/questions (POST) e
+// /api/admin/questions/import/save (por item) desde o baseline do projeto —
+// validado antes de qualquer outra regra de negócio do fluxo de importação.
+const baseEvaluatedTopics = ["Lógica Proposicional"];
 
 const client = supabaseAdmin();
 const runId = process.env.IMPORT_AI_TEST_RUN_ID || new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
@@ -337,6 +343,7 @@ test("duplicidade na importacao", async ({ request }) => {
     difficulty_level: 3,
     status: "pending_review",
     alternatives: alternatives(),
+    evaluated_topics: baseEvaluatedTopics,
   });
 
   const variants = [
@@ -360,7 +367,12 @@ test("duplicidade na importacao", async ({ request }) => {
   const questions = (result.json.questions || []) as ImportedQuestion[];
   const markedDuplicates = questions.filter((question) => question.is_duplicate).length;
   const preservedText = questions.every((question, index) => normalizeText(question.statement).includes(normalizeText(variants[index]).slice(0, 40)));
-  const saveDuplicate = await saveImport(request, questions);
+  // A análise (fake ou real) sempre retorna evaluated_topics vazio — quem completa
+  // esse campo é o admin antes de enviar para revisão. Aqui simulamos esse passo
+  // para exercitar o envio real; o objetivo do teste (duplicidade) já é decidido
+  // antes disso, na própria análise.
+  const questionsToSave = questions.map((question) => ({ ...question, evaluated_topics: baseEvaluatedTopics }));
+  const saveDuplicate = await saveImport(request, questionsToSave);
 
   const passed =
     seed.ok &&
@@ -393,6 +405,7 @@ test("envio individual, lote e clique duplo para revisao", async ({ request }) =
     difficulty_level: 3,
     explanation_text: "Explicação com Ação, Órgão e Sequência.",
     alternatives: alternatives(["A", "B", "C", "D", "E"], "C"),
+    evaluated_topics: baseEvaluatedTopics,
   };
 
   const individualResult = await saveImport(request, [individual]);
@@ -434,6 +447,7 @@ test("envio individual, lote e clique duplo para revisao", async ({ request }) =
     difficulty_level: 3,
     explanation_text: "",
     alternatives: alternatives(["A", "B", "C", "D", "E"], "C"),
+    evaluated_topics: baseEvaluatedTopics,
   }));
   const selected = [batch[0], batch[2], batch[4]];
   const batchResult = await saveImport(request, selected);
@@ -458,6 +472,7 @@ test("envio individual, lote e clique duplo para revisao", async ({ request }) =
     difficulty_level: 3,
     explanation_text: "",
     alternatives: alternatives(["A", "B", "C", "D", "E"], "C"),
+    evaluated_topics: baseEvaluatedTopics,
   };
 
   const [firstDouble, secondDouble] = await Promise.all([
