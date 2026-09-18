@@ -1,5 +1,12 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Infraestrutura test-only: ambiente de integração seguro concluído (Fase 6B, encerrada em 18/09/2026)
+
+- A infraestrutura de testes de integração construída pelas Fases 6B.1 a 6B.6-F está concluída e validada: guard anti-produção fail-closed (6B.1), admin sintético real (6B.2), fixtures/sessão browser reais (6B.3), isolamento determinístico de IA (6B.4), auditoria e triagem da suíte completa (6B.5), e as correções cirúrgicas de fragilidades/testes desatualizados/fixtures/cleanup do smoke (6B.6-A a 6B.6-E).
+- Rerun integral final (Fase 6B.6-F): suíte Playwright completa, 773/773 PASS (100%), zero resíduos temporários, zero chamadas externas reais (OpenAI/Hotmart/Resend/reCAPTCHA), contra o Supabase de teste descartável. Detalhes completos: docs/status-atual.md, entrada da Fase 6B.6-F.
+- Cada subsistema mantém sua própria entrada detalhada abaixo (6B.4 e 6B.3); as Fases 6B.1/6B.2/6B.5/6B.6-A a 6B.6-E têm suas entradas apenas em docs/status-atual.md.
+- Pendência explícita, fora desta fase: integração da branch técnica `reconcile/main-hotmart` com `main` (merge/push/deploy) é uma fase separada, não iniciada, dependente de autorização explícita.
+
 ## Infraestrutura test-only: isolamento de IA (Fase 6B.4, 17/09/2026)
 
 - Ponto único de decisão, código de produção: lib/server/ai/aiProvider.ts. getAiTestMode()/isAiFakeModeActive() só retornam "fake"/"fake-error" quando TEST_AI_MODE tem um desses dois valores E globalThis.__ET_TEST_SUPABASE_ENV_APPROVED__ === true — flag que só tests/helpers/next-test-env.cjs define, e só depois que assertSafeSupabaseTestEnvironment() aprova o processo do servidor Next. Este arquivo nunca importa nada de tests/; produção (que nunca carrega esse preload) nunca ativa o fake por acidente, mesmo com a variável definida.
