@@ -72,32 +72,53 @@ test("journey enrollment sends and tracks the journey and released-simulado emai
   const studentClient = read("app/admin/alunos/[id]/page-client.tsx");
   const journeyClient = read("app/admin/jornadas/[id]/page-client.tsx");
 
-  expect(assignmentRoute).toContain("simuladoReleasedTemplate");
-  expect(assignmentRoute).toContain("simulado_release_email_sent");
+  // 2026-07-17 (3557a8d, docs/status-atual.md "E-mail consolidado na matrícula em
+  // Jornada"): os avisos separados de "Bem-vindo" e "Novo simulado liberado" foram
+  // deliberadamente consolidados em UM único e-mail enviado no momento da matrícula.
+  // simuladoReleasedTemplate não precisa mais aparecer aqui — ele continua existindo
+  // para liberações POSTERIORES (conclusão de simulado, cron diário, reenvio manual),
+  // já coberto pelo teste "student simulados exclude cancelled journeys..." abaixo,
+  // que verifica seu uso em completeSimuladoAttempt.
+  expect(assignmentRoute).not.toContain("simuladoReleasedTemplate");
+  expect(assignmentRoute).toContain("pendingStudentJornadaConsolidatedTemplate");
+  expect(assignmentRoute).toContain("approvedStudentJornadaConsolidatedTemplate");
   expect(assignmentRoute).toContain("release_email_sent_at");
-  expect(assignmentRoute).toContain("if (releaseEmailError) throw releaseEmailError");
-  expect(assignmentRoute).toContain("JORNADA_EMAIL_INTERVAL_MS = 10_000");
-  expect(assignmentRoute).toContain("setTimeout(resolve, JORNADA_EMAIL_INTERVAL_MS)");
+  expect(assignmentRoute).toContain("if (consolidatedEmailError) throw consolidatedEmailError;");
+  // Envio em segundo plano via Next after() substituiu o antigo espaçamento manual
+  // (setTimeout entre e-mails separados) — não é mais necessário com um único e-mail
+  // consolidado por matrícula, e a resposta HTTP não espera o Resend.
+  expect(assignmentRoute).toContain("after(async () => {");
   expect(studentPage).toContain("welcome_email_sent_at");
   expect(studentPage).toContain("release_email_sent_at");
-  expect(studentClient).toContain("Simulado —");
+  // Card de reenvio do e-mail de simulado liberado (ResendEmailCard) — substituiu a
+  // representação textual antiga "Simulado —" por um componente dedicado.
+  expect(studentClient).toContain('eyebrow="Simulado liberado"');
   expect(journeyClient).toContain("`/admin/alunos/${sj.student_id}`");
 });
 
 test("student simulados exclude cancelled journeys and completion advances journey progress", () => {
   const listRoute = read("app/api/student/simulados/route.ts");
   const submitRoute = read("app/api/student/simulados/[id]/attempts/[attemptId]/submit/route.ts");
+  const completionService = read("lib/server/simuladoAttemptCompletion.ts");
   const releaseJob = read("app/api/admin/jornadas/release-job/route.ts");
   const vercelConfig = JSON.parse(read("vercel.json")) as { crons: Array<{ path: string; schedule: string }> };
 
   expect(listRoute).toContain('.eq("status", "active")');
   expect(listRoute).toContain('.gt("expires_at"');
-  expect(submitRoute).toContain('.update({ status: "completed", completed_at: finishedAt })');
-  expect(submitRoute).toContain('.eq("order_number", completedItem.order_number + 1)');
-  expect(submitRoute).toContain('.lte("scheduled_release_at", today)');
-  expect(submitRoute).toContain('.update({ status: "available", released_at: releaseTimestamp })');
-  expect(submitRoute).toContain("after(async () =>");
-  expect(submitRoute).toContain("simuladoReleasedTemplate(emailParams)");
+  // 5309360 (feat: automatiza encerramento de tentativas expiradas, já em origin/main):
+  // a conclusão (scoring, RPC, avanço de progresso da Jornada, liberação do próximo
+  // simulado, e-mails) foi extraída para completeSimuladoAttempt, reutilizada também
+  // pelo cron de timeout server-side — nunca duplicada entre os dois chamadores. A
+  // rota de submit delega, sem reimplementar a transição de status.
+  expect(submitRoute).toContain('import { completeSimuladoAttempt } from "@/lib/server/simuladoAttemptCompletion";');
+  expect(submitRoute).toContain("await completeSimuladoAttempt(supabase, {");
+  expect(submitRoute).not.toContain('.update({ status: "completed"');
+  expect(completionService).toContain('.update({ status: "completed", completed_at: finishedAt })');
+  expect(completionService).toContain('.eq("order_number", completedItem.order_number + 1)');
+  expect(completionService).toContain('.lte("scheduled_release_at", today)');
+  expect(completionService).toContain('.update({ status: "available", released_at: releaseTimestamp })');
+  expect(completionService).toContain("after(async () =>");
+  expect(completionService).toContain("simuladoReleasedTemplate(emailParams)");
   expect(releaseJob).toContain('.from("simulado_attempts")');
   expect(releaseJob).toContain('.eq("counts_toward_limit", true)');
   expect(releaseJob).not.toContain('.eq("order_number", candidate.order_number + 1)');

@@ -1,5 +1,12 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 18/09/2026 - Fase 6B.6-B: alinhamento dos 2 testes desatualizados (categoria A da 6B.5)
+
+- `journey enrollment sends and tracks...`: alinhado à consolidação de e-mails na matrícula em Jornada (3557a8d, 17/07/2026 — ver "E-mail consolidado na matrícula em Jornada" acima). A rota de matrícula não usa mais `simuladoReleasedTemplate` (verificado `not.toContain`); usa os templates consolidados `pendingStudentJornadaConsolidatedTemplate`/`approvedStudentJornadaConsolidatedTemplate`, envio em segundo plano via `after()` e a variável de erro atual `consolidatedEmailError`. `simuladoReleasedTemplate` continua protegido para liberações posteriores pelo outro teste do mesmo arquivo (via `completeSimuladoAttempt`). O card de reenvio (`ResendEmailCard`, `eyebrow="Simulado liberado"`) substitui a checagem textual antiga "Simulado —".
+- `student simulados exclude cancelled journeys...`: alinhado à extração da conclusão de tentativa para `lib/server/simuladoAttemptCompletion.ts::completeSimuladoAttempt` (5309360, já em `origin/main`), reutilizada pelo cron de timeout. A rota de submit agora é verificada por delegação (import + chamada) e por NÃO duplicar a transição de status; a transição em si, o avanço de `order_number`, a liberação do próximo simulado e o envio de `simuladoReleasedTemplate` são verificados no serviço compartilhado.
+- Nenhuma regra de produção alterada; nenhum código de produção tocado. Categoria D (7 fixtures) da Fase 6B.5 permanece intencionalmente não tratada.
+- Validado: os 2 testes-alvo (PASS); arquivo completo `student-account-integrity.spec.ts` (14/14); guard 48/48; auth 21/21; fixtures/browser 10/10; AI fake 12/12; `tsc --noEmit` limpo; `npm run build` limpo; eslint limpo; busca por segredos sem ocorrências.
+
 ## 18/09/2026 - Fase 6B.6-A: correção das 5 fragilidades da suíte (categoria B da 6B.5)
 
 - Corrigidas exclusivamente as 5 falhas classificadas como fragilidade de teste (categoria B) na Fase 6B.5: `active-attempt-metric.spec.ts` (rótulo "Realizando"), `event-operations.spec.ts` (status-job), `event-ranking-pdf.spec.ts` (capa do ranking) e `professor-exam-pdf.spec.ts` (response shape) por CRLF/LF; `student-account-integrity.spec.ts` (metadata do reenvio de código) por sintaxe de objeto desatualizada.
