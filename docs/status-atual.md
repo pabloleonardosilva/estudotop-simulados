@@ -1,5 +1,13 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 18/09/2026 - Fase 6B.6-A: correção das 5 fragilidades da suíte (categoria B da 6B.5)
+
+- Corrigidas exclusivamente as 5 falhas classificadas como fragilidade de teste (categoria B) na Fase 6B.5: `active-attempt-metric.spec.ts` (rótulo "Realizando"), `event-operations.spec.ts` (status-job), `event-ranking-pdf.spec.ts` (capa do ranking) e `professor-exam-pdf.spec.ts` (response shape) por CRLF/LF; `student-account-integrity.spec.ts` (metadata do reenvio de código) por sintaxe de objeto desatualizada.
+- CRLF: normalizado com `.replace(/\r\n/g, "\n")` no helper `read()` (padrão já usado em `tests/dropdown-standardization.spec.ts`) de `event-operations.spec.ts` e `professor-exam-pdf.spec.ts`; em `event-ranking-pdf.spec.ts`, aplicado no ponto de chamada específico, seguindo o padrão já existente no próprio arquivo (teste vizinho na mesma suíte já normalizava dessa forma). Nenhum arquivo de produção teve seus finais de linha alterados.
+- Asserções estruturais reescritas para validar comportamento atual sem depender de forma sintática antiga: "Realizando" agora verifica label e tooltip dentro da mesma entrada do array de status (`{ label: "Realizando", ..., title: "..." }`), não mais um atributo JSX; o teste de reenvio de código agora verifica separadamente, dentro do mesmo objeto `metadata`, que o spread `...confirmation.metadata` preserva a metadata anterior e que `source: "invalid_code_resend"` é atribuído.
+- Nenhum comportamento de produção foi alterado; nenhum código de produção foi tocado. Categorias A (2) e D (7) da Fase 6B.5 permanecem intencionalmente não tratadas nesta fase.
+- Validado: os 5 testes-alvo (PASS), os 5 arquivos completos onde houve alteração (169 passed; as 2 falhas remanescentes são exatamente as categorias A já conhecidas, intactas), guard 48/48, auth 21/21, fixtures/browser 10/10, AI fake 12/12, `tsc --noEmit` limpo, `npm run build` limpo, eslint limpo nos 5 arquivos, busca por segredos sem ocorrências.
+
 ## 17/09/2026 - Fase 6B.4: isolamento de IA para testes
 
 - Ponto único de decisão: lib/server/ai/aiProvider.ts (codigo de producao). TEST_AI_MODE=fake ou fake-error só tem efeito quando o MESMO processo do servidor Next ja foi aprovado pelo guard Supabase de teste — tests/helpers/next-test-env.cjs marca globalThis.__ET_TEST_SUPABASE_ENV_APPROVED__ = true somente apos assertSafeSupabaseTestEnvironment() aprovar, antes de qualquer rota carregar. O provider nunca importa nada de tests/; le apenas essa flag, entao producao (que nunca carrega o preload) nao pode ativar o fake por acidente mesmo com a variavel definida.

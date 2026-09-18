@@ -319,7 +319,7 @@ test.describe("capa oficial do ranking — mesmo mecanismo/tamanho da capa do Si
   });
 
   test("capa é a primeira Page do documento e não recebe nenhuma linha da tabela sobreposta", () => {
-    const renderer = read(RENDERER);
+    const renderer = read(RENDERER).replace(/\r\n/g, "\n");
     const docIndex = renderer.indexOf("React.createElement(\n    Document,");
     expect(docIndex).toBeGreaterThan(-1);
     const firstPageIndex = renderer.indexOf("Page,", docIndex);

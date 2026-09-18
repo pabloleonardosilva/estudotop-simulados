@@ -218,8 +218,15 @@ test.describe("9. Estrutural — polling (AbortController) preservado, sem reint
 test.describe("10. UI — rótulo preservado, tooltip curto opcional adicionado", () => {
   test("rótulo continua 'Realizando'; tooltip explica 'atividade recente' sem poluir a UI", () => {
     const panel = read(PANEL);
-    expect(panel).toContain('label="Realizando"');
-    expect(panel).toContain('title="Tentativas em andamento com atividade recente"');
+    // O card "Realizando" (seção Participação geral) não usa mais CompactMetric —
+    // é um item do array de status mapeado inline (`{ label: "Realizando", ... }`).
+    // A asserção verifica label e tooltip dentro da MESMA entrada de objeto, não em
+    // qualquer lugar do arquivo, para continuar provando que o tooltip pertence
+    // especificamente ao card "Realizando".
+    const labelIndex = panel.indexOf('label: "Realizando"');
+    expect(labelIndex).toBeGreaterThan(-1);
+    const statusEntry = panel.slice(labelIndex, panel.indexOf("},", labelIndex) + 2);
+    expect(statusEntry).toContain('title: "Tentativas em andamento com atividade recente"');
   });
 
   test("CompactMetric aceita title opcional sem quebrar os demais 7+ usos existentes (prop opcional, retrocompatível)", () => {

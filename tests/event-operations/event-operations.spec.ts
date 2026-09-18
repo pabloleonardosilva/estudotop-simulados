@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = process.cwd();
-const read = (path: string) => readFileSync(resolve(root, path), "utf8");
+const read = (path: string) => readFileSync(resolve(root, path), "utf8").replace(/\r\n/g, "\n");
 
 test("effective status is computed from real timestamps and drives auto start/close everywhere critical", () => {
   const simuladoEvents = read("lib/server/simuladoEvents.ts");

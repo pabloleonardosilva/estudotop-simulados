@@ -55,7 +55,13 @@ test("invalid public signup code is cleared and replaced automatically", () => {
   const page = read("app/cadastro/page.tsx");
   expect(route).toContain("INVALID_CODE_NEW_CODE_SENT");
   expect(route).toContain("INVALID_CODE_RESEND_COOLDOWN");
-  expect(route).toContain('metadata: { source: "invalid_code_resend" }');
+  // A nova confirmação de reenvio preserva a metadata anterior (spread) e marca
+  // corretamente a origem — checados dentro do MESMO objeto `metadata`, não em
+  // qualquer lugar do arquivo, para provar que os dois requisitos coexistem.
+  const metadataIndex = route.indexOf("metadata: { ...confirmation.metadata");
+  expect(metadataIndex).toBeGreaterThan(-1); // metadata anterior é preservada, não sobrescrita
+  const metadataBlock = route.slice(metadataIndex, route.indexOf("}", metadataIndex) + 1);
+  expect(metadataBlock).toContain('source: "invalid_code_resend"'); // origem do reenvio automático marcada
   expect(page).toContain('if (data.clear_code) setCode("")');
   expect(page).toContain("data.resend_message");
 });
