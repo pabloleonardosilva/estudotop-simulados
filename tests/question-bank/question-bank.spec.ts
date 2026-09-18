@@ -9,6 +9,7 @@ import {
   type Finding,
   writeAuditReport,
 } from "../master-registrations/helpers";
+import { prepareTestBrowserState } from "../helpers/test-browser-auth.cjs";
 
 type AlternativeInput = {
   label: string;
@@ -205,7 +206,7 @@ test.afterAll(async () => {
   await cleanupQuestionBankData();
 });
 
-test("cadastro normal, persistencia e preview", async ({ request, page }) => {
+test("cadastro normal, persistencia e preview", async ({ request, browser, baseURL }) => {
   const result = await createQuestion(request, {
     statement: scopedStatement(baseQuestionStatement),
     subjectId,
@@ -247,28 +248,43 @@ test("cadastro normal, persistencia e preview", async ({ request, page }) => {
       detail: `disciplina=${discipline?.name}, assunto=${subject?.name}, banca=${board?.name}, ano=${question.year}, correta=${correct.map((item) => item.label).join(",") || "(nenhuma)"}`,
     });
 
-    await page.goto(`/questoes/${questionId}/preview`);
-    const content = await page.textContent("body");
-    const previewBlockedByAuth = Boolean(content?.includes("Carregando ambiente"));
-
-    if (previewBlockedByAuth) {
-      findings.push({
-        area: "Normalizacao",
-        severity: "info",
-        scenario: "preview modo aluno",
-        detail: "Preview visual não foi validado porque a rota exige sessão autenticada no navegador de teste.",
-      });
-    } else {
+    // Preview exige sessão real de admin (cookies), não apenas o Bearer usado nas
+    // chamadas de API acima — reutiliza a mesma infraestrutura da Fase 6B.3
+    // (prepareTestBrowserState/storageState), sem mecanismo paralelo de auth.
+    const target = new URL(baseURL || "");
+    if (target.protocol !== "http:" || target.hostname !== "127.0.0.1") {
+      throw new Error("Preview requires the local guarded server.");
+    }
+    const origin = target.origin;
+    const storageState = await prepareTestBrowserState();
+    const context = await browser.newContext({ storageState, serviceWorkers: "block" });
+    try {
+      const previewPath = `/questoes/${questionId}/preview`;
+      const page = await context.newPage();
+      const response = await page.goto(origin + previewPath);
+      // A navegação resolve antes do AppShell concluir a checagem de sessão e o
+      // carregamento client-side ("Carregando ambiente..."); aguarda o enunciado
+      // real aparecer antes de ler o corpo da página.
+      await page.getByText(baseQuestionStatement).first().waitFor({ state: "visible", timeout: 30_000 });
+      const content = await page.textContent("body");
+      const previewRenderedNormally = response?.status() === 200 && new URL(page.url()).pathname === previewPath;
       const previewHasStatement = Boolean(content?.includes(baseQuestionStatement));
       const previewHasAlternatives = baseAlternatives.every((alternative) => content?.includes(alternative.text));
-      const previewLeaksCorrect = Boolean(content?.includes("Alternativa correta"));
+      // /questoes/[id]/preview é uma ferramenta de "Conferência interna" do admin
+      // (rótulo real na própria página, desde o baseline) — mostra deliberadamente
+      // a alternativa correta para revisão antes de publicar; não simula visão de
+      // aluno. A asserção correta é confirmar que essa conferência aparece, não que
+      // ela esteja ausente.
+      const previewShowsInternalCheck = Boolean(content?.includes("Conferência interna")) && Boolean(content?.includes("Alternativa correta"));
 
       findings.push({
         area: "Normalizacao",
-        severity: previewHasStatement && previewHasAlternatives && !previewLeaksCorrect ? "pass" : "fail",
-        scenario: "preview modo aluno",
-        detail: `enunciado=${previewHasStatement}, alternativas=${previewHasAlternatives}, mostraCorreta=${previewLeaksCorrect}`,
+        severity: previewRenderedNormally && previewHasStatement && previewHasAlternatives && previewShowsInternalCheck ? "pass" : "fail",
+        scenario: "preview exibe conferência interna do admin",
+        detail: `renderizouSemRedirect=${previewRenderedNormally}, enunciado=${previewHasStatement}, alternativas=${previewHasAlternatives}, conferenciaInterna=${previewShowsInternalCheck}`,
       });
+    } finally {
+      await context.close();
     }
   }
 
@@ -321,13 +337,6 @@ test("validacoes de enunciado e alternativas", async ({ request }) => {
       shouldCreate: false,
     },
     {
-      name: "sem dificuldade",
-      statement: scopedStatement("Questão sem dificuldade obrigatória."),
-      alternatives: baseAlternatives,
-      difficulty: null,
-      shouldCreate: false,
-    },
-    {
       name: "sem status",
       statement: scopedStatement("Questão sem status obrigatório."),
       alternatives: baseAlternatives,
@@ -371,7 +380,9 @@ test("validacoes de enunciado e alternativas", async ({ request }) => {
       boardId,
       alternatives: scenario.alternatives,
       year: "year" in scenario ? scenario.year : 2025,
-      difficulty: "difficulty" in scenario ? scenario.difficulty : 3,
+      // difficulty_level nunca é o campo sob teste neste laço (o cenário
+      // dedicado de classificação automática vive em teste separado abaixo).
+      difficulty: 3,
       status: "status" in scenario ? scenario.status : "pending_review",
     });
     const created = result.ok && Boolean(result.json.questionId);
@@ -391,6 +402,43 @@ test("validacoes de enunciado e alternativas", async ({ request }) => {
   await recordAndWrite("Disciplinas", "audit-report-question-validations");
   const failures = findings.filter((item) => item.area === "Disciplinas" && item.severity === "fail");
   expect(failures, failures.map((item) => `${item.scenario}: ${item.detail}`).join("\n")).toEqual([]);
+});
+
+// Separado semanticamente dos cenários inválidos acima: ausência de difficulty_level
+// NÃO é um erro na regra vigente (app/api/admin/questions/route.ts, desde o baseline)
+// — a rota chama predictDifficultyAI e usa o nível retornado. Este teste valida esse
+// comportamento positivamente, sem depender de OpenAI real: TEST_AI_MODE=fake garante
+// retorno determinístico (fakeDifficultyLevel() = 3, lib/server/ai/aiProvider.ts).
+test("sem difficulty_level usa classificacao automatica (TEST_AI_MODE=fake)", async ({ request }) => {
+  const result = await createQuestion(request, {
+    statement: scopedStatement("Questão sem dificuldade explícita usa classificação automática."),
+    subjectId,
+    boardId,
+    difficulty: null,
+  });
+  const questionId = result.json.questionId as string | undefined;
+  const question = questionId ? await fetchQuestion(questionId) : null;
+
+  const passed =
+    result.ok &&
+    Boolean(questionId) &&
+    typeof question?.difficulty_level === "number" &&
+    question.difficulty_level >= 1 &&
+    question.difficulty_level <= 5 &&
+    question.difficulty_level === 3;
+
+  findings.push({
+    area: "Disciplinas",
+    severity: passed ? "pass" : "fail",
+    scenario: "sem dificuldade usa classificacao automatica",
+    detail: `status=${result.status}, ok=${result.ok}, questionId=${questionId || ""}, difficulty_level=${question?.difficulty_level}`,
+  });
+
+  await recordAndWrite("Disciplinas", "audit-report-question-auto-difficulty");
+  const autoDifficultyFailures = findings.filter(
+    (item) => item.scenario === "sem dificuldade usa classificacao automatica" && item.severity === "fail",
+  );
+  expect(autoDifficultyFailures, autoDifficultyFailures.map((item) => item.detail).join("\n")).toEqual([]);
 });
 
 test("alternativa correta e edicao persistem apos reload logico", async ({ request }) => {
