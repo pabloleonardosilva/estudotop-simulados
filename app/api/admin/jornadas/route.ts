@@ -255,7 +255,7 @@ export async function POST(request: Request) {
       );
     }
 
-    void logAdminAction({ adminUserId: admin.id, action: "admin.jornada.created", entityType: "jornada", entityId: data.id, request, metadata: { status } });
+    void logAdminAction({ adminUserId: admin.id, action: "admin.jornada.created", entityType: "jornada", entityId: data.id, request, metadata: { status: "draft" } });
 
     return NextResponse.json(
       { ok: true, id: data.id, message: "Jornada criada com sucesso." },

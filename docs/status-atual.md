@@ -1,5 +1,13 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 19/09/2026 - Correção cirúrgica: bug de criação de Jornada em produção
+
+- Encontrado durante a homologação read-write controlada em produção (Fase 7F-B2-C): `POST /api/admin/jornadas` persistia a Jornada corretamente no banco, mas retornava HTTP 500 `{"ok":false,"message":"status is not defined"}` ao chamador. Causa: `app/api/admin/jornadas/route.ts` chamava `logAdminAction({ ..., metadata: { status } })` referenciando uma variável `status` que nunca existe no escopo dessa função (a Jornada é criada com `status: "draft"` fixo no `insert`, sem variável local — resquício aparente de cópia da rota de Simulados, que tem `status` como variável). O `ReferenceError` ocorre depois que o `insert` já foi confirmado com sucesso (`data.id` presente), então o admin via erro genérico mesmo com a Jornada já criada.
+- Correção: `metadata: { status: "draft" }`, refletindo o valor real e único gravado nesse fluxo. Nenhuma outra linha alterada.
+- Teste novo `tests/jornada-admin-create.spec.ts` (2 casos, carrega a rota real via `ts.transpileModule`/`vm`, mesmo padrão de `tests/context-attempt-limits.spec.ts`): confirma criação bem-sucedida (201, id retornado) e que o metadata do log de auditoria reflete `status: "draft"` sem lançar exceção. Confirmado manualmente que os dois casos falham (500) reintroduzindo o bug antes de aplicar a correção definitiva.
+- `npx tsc --noEmit` e `npm run build` limpos. Suíte local relevante (`context-attempt-limits.spec.ts` + `jornada-admin-create.spec.ts`, 19 casos) verde. `eslint` nos dois arquivos tocados: 1 diagnóstico pré-existente em `app/api/admin/jornadas/route.ts:37` (`normalizeScope(body: any)`), não relacionado a esta correção, não introduzido por ela — mantido como débito técnico conhecido.
+- Nenhuma migration criada ou alterada. Nenhuma alteração de schema. Nenhuma escrita em produção nesta correção (a reprodução usou apenas a rota carregada em sandbox local com Supabase mockado, nunca o banco real). Commit local único preparado; push pendente de autorização.
+
 ## 18/09/2026 - Fase 6B.6-F: rerun integral final — Fase 6B encerrada
 
 - Suíte Playwright completa reexecutada contra o Supabase de teste descartável, após todas as correções das Fases 6B.6-A a 6B.6-E: **773 total, 773 passed, 0 failed, 0 skipped, 0 flaky/retried** (100% PASS). Total efetivo diferente do baseline de 772 da Fase 6B.5 porque a 6B.6-D separou semanticamente o cenário "sem dificuldade" em um teste dedicado (+1 teste).
