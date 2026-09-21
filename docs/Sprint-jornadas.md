@@ -886,3 +886,17 @@ O usuário autorizou um único commit e push para `origin/main`, com verificaç�
 ## Cross-referência — engine de tentativas blindada transacionalmente (2026-09-10)
 
 `resolveAttemptLimit`/`getContextualSimuladoAttempts` (base do contrato de limite por Jornada consolidado nesta seção) não foram alterados. A camada de baixo nível que consome o limite (`simulado_attempts`/`counts_toward_limit`) passou a operar com lock por tentativa e transações atômicas para salvar resposta, abandonar, registrar violação de foco e finalizar — mais um botão explícito "Abandonar simulado" na tela de execução. Nenhuma mudança na forma como Jornada/Evento armazenam `max_attempts`; nenhuma mudança de contagem por contexto. Detalhes completos: `docs/Sprint-simulados.md`, "Engine de tentativas blindada transacionalmente + fluxo de abandono".
+
+## 21/09/2026 — Homologação funcional de produção da Jornada + Simulado
+
+Fluxo completo validado em produção na Jornada QA `6ccf1499-dd75-4280-833e-9bdfaeab24c5` (matrícula `f04f487e-ff71-4c39-9a36-fd938f32eddd`): matrícula administrativa, cronograma individual, liberação de Simulado, pause/resume, tentativa real, resposta, conclusão, resultado, TopCoins, bloqueios de acesso e preservação histórica. Resultado: 1 questão, 1 acerto, 0 erros, 0 brancos, score 1.00 (100%), TopCoins gerados conforme a regra da Jornada, nenhum e-mail inesperado, nenhum acionamento de Hotmart, nenhuma duplicação, nenhum HTTP 5xx.
+
+Fatos permanentes confirmados nesta homologação:
+
+- Pause/resume não envia e-mail, não recria cronograma, não recria matrícula e preserva os IDs existentes.
+- Pause/resume não cria `attempt`, `result` ou `TopCoins`.
+- Pausar uma matrícula **não estende** `expires_at`; uma eventual extensão de prazo deve usar o mecanismo oficial apropriado (não pause/resume).
+- Estado final conhecido da matrícula QA: `paused`. `paused` aparece em Minhas Jornadas mas bloqueia início/continuação (já documentado na auditoria de acesso de 2026-09-09, acima); `cancelled` não aparece em Minhas Jornadas.
+- Histórico de `student_jornadas` é preservado; hard delete de uma Jornada com `student_jornadas` vinculadas é bloqueado pela API/constraint de FK.
+
+A Jornada QA é histórica/controlada: não tentar hard-delete de `student_jornadas` para "limpeza". Fechamento exclusivamente funcional: nenhuma migration executada, nenhum código alterado, nenhum commit/push/deploy nesta rodada.

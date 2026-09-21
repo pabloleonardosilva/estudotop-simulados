@@ -59,3 +59,27 @@ A decisão humana de lint exige **nenhum diagnóstico novo**. Permanecem os dois
 **As 20 falhas 401 já registradas continuam impeditivas do MERGE FINAL.** Não estão atribuídas à UI Hotmart; exigem auditoria específica de causa e suíte final antes de qualquer integração à main. Não foram corrigidas nem investigadas nesta fase. Fechamento funcional do delta não equivale a aprovação de merge ou deploy.
 
 Referência histórica: o core foi reconciliado em `47c4927`/`c17625d`, com documentação inicial em `8b03a96`; as fases seguintes incorporaram autenticação, datas, catálogos, UCODE, UI, proteção de first access e detector. A leitura de schema relatada na Fase 5A pertence àquela auditoria anterior; esta fase não fez nova consulta nem escrita no banco.
+
+## 21/09/2026 — Fechamento definitivo: produção homologada
+
+**Fechamento posterior à Fase 5B.6 acima:** a integração chegou à main (todo o código de `app/lib/server/hotmart/`, `app/api/webhooks/hotmart/route.ts`, `app/api/admin/hotmart/` e as migrations `20260828110000_create_hotmart_integration.sql`/`20260830120000_complete_hotmart_admin_workflows.sql` está commitado em `main`) e foi homologada em produção.
+
+Configuração de Production confirmada: webhook `https://simulados.estudotop.com.br/api/webhooks/hotmart`; `HOTMART_ENVIRONMENT=production`; `HOTMART_HOTTOK` configurado no ambiente Production (o valor nunca é registrado em documentação, relatório ou log). Autenticação do webhook validada: requisição sem `x-hotmart-hottok`/com segredo incorreto retorna HTTP 401; payload autenticado é processado normalmente.
+
+Mapeamento real validado: `product_ucode` `57912595-ba4b-02e0-8c72-71cb71e13136` ("Marketing Digital do Zero") → `destination_type = jornada` → Jornada de Teste (`jornada_id` `3d618a08-7259-467e-8211-9cbf72b2e250`). Conta QA usada no teste final: `maura@estudotop.com.br`, ativa, sem matrícula prévia nessa Jornada, sem `hotmart_transactions` prévia, sem histórico comercial conflitante.
+
+Transação QA final `PROD-QA-HOTMART-20260920-090141`:
+
+- **Concessão:** webhook HTTP 200, `processing_status = processed`; 1 `hotmart_webhook_event`, 1 `hotmart_transaction`, 1 `student_jornadas` (`access_origin = hotmart`, cronograma individual criado), 3 `student_jornada_simulados`, 1 e-mail de acesso; nenhum attempt, result ou TopCoins criado; nenhuma cobrança real; nenhum cliente real afetado.
+- **Idempotência:** reenvio do mesmo `external_event_id` → HTTP 200, `duplicate = true`, `delivery_count` 1→2, mesma `hotmart_transaction`, mesma matrícula, mesmos 3 `student_jornada_simulados`, nenhum segundo e-mail, nenhum efeito comercial duplicado, attempts/results/TopCoins continuam 0.
+- **Reversão:** evento `PURCHASE_REFUNDED` na mesma transação → HTTP 200, `processing_status = blocked_financial`, `commercial_block_reason`/`commercial_blocked_at` corretos, histórico preservado, nenhuma duplicação, nenhum dado real removido, nenhuma cobrança real, nenhum cliente real afetado, nenhum HTTP 5xx.
+
+**GATE FINAL HOTMART: HOMOLOGADO EM PRODUÇÃO — SIM.**
+
+Schema: as duas migrations Hotmart versionadas já estavam estruturalmente refletidas no banco operacional durante a auditoria desta rodada; não houve necessidade de executá-las novamente e elas não foram executadas neste fechamento — permanecem como histórico versionado, com o schema operacional auditado e compatível.
+
+Comportamento funcional descoberto durante a homologação, registrado aqui por ser factual (não opinião): uma matrícula manual pré-existente, com `access_origin` diferente de `hotmart`, pode ser atualizada pelo fluxo `grantJornada` (`app/lib/server/hotmart/processor.ts`) se a mesma pessoa for usada como compradora em uma transação Hotmart aprovada para a mesma Jornada — o fluxo converte a matrícula para `access_origin = hotmart` em vez de rejeitar. Por isso, toda homologação deve usar uma conta QA sem matrícula conflitante na Jornada de destino. Duplicidade de compra Hotmart (mesmo comprador, mesma Jornada, `access_origin` já `hotmart`) segue sua própria regra (`pending_duplicate_purchase`), não relacionada a este comportamento.
+
+G5 continua quarentenado e não pertence à linha oficial — não reintroduzir. A linha oficial de reconciliação de anulação usa `simulado_questions.pending_reconciliation_at` (confirmado ao vivo no schema operacional, com índice), nunca `simulado_results.pending_reconciliation_at` (confirmado ausente do schema operacional). O backup externo (`D:/Projetos_Software/estudotop-reconciliation-backup-20260916/`) preserva o histórico do protótipo G5 e não foi alterado.
+
+Este fechamento é exclusivamente funcional/documental: nenhuma migration foi executada, nenhum código foi alterado nesta rodada, nenhum commit ou push foi realizado como parte desta entrada.

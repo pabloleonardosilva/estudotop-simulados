@@ -1,11 +1,19 @@
 # ARQUIVO MESTRE — ÍNDICE DE FUNÇÕES E DEPENDÊNCIAS
 
+## Fechamento técnico e homologação de produção (21/09/2026)
+
+- Raiz oficial de trabalho: `D:/Projetos_Software/estudotop-simulados/Sistema/`, única worktree, branch `main`, sincronizada com `origin/main`.
+- Supabase operacional único: `estudotop-simulados` (ref `uphqihoqzwqjzmsimaug`). O projeto de testes descartável `estudotop-simulados-playwright` foi excluído após homologação; infraestrutura genérica de testes automatizados permanece no código.
+- Vercel Production Branch: `main`; domínio oficial `https://simulados.estudotop.com.br`.
+- Jornada + Simulado, Evento de Simulado e integração Hotmart (concessão, idempotência, reversão) homologados em produção. Nova política Git: `main` é branch padrão; branch/worktree separada é exceção de alto risco (`docs/01-POLITICA-GIT.md`, Seção 7.1).
+- Resumo consolidado completo: `docs/status-atual.md`, entrada "Fechamento técnico e homologação de produção — setembro/2026".
+
 ## Infraestrutura test-only: ambiente de integração seguro concluído (Fase 6B, encerrada em 18/09/2026)
 
 - A infraestrutura de testes de integração construída pelas Fases 6B.1 a 6B.6-F está concluída e validada: guard anti-produção fail-closed (6B.1), admin sintético real (6B.2), fixtures/sessão browser reais (6B.3), isolamento determinístico de IA (6B.4), auditoria e triagem da suíte completa (6B.5), e as correções cirúrgicas de fragilidades/testes desatualizados/fixtures/cleanup do smoke (6B.6-A a 6B.6-E).
 - Rerun integral final (Fase 6B.6-F): suíte Playwright completa, 773/773 PASS (100%), zero resíduos temporários, zero chamadas externas reais (OpenAI/Hotmart/Resend/reCAPTCHA), contra o Supabase de teste descartável. Detalhes completos: docs/status-atual.md, entrada da Fase 6B.6-F.
 - Cada subsistema mantém sua própria entrada detalhada abaixo (6B.4 e 6B.3); as Fases 6B.1/6B.2/6B.5/6B.6-A a 6B.6-E têm suas entradas apenas em docs/status-atual.md.
-- Pendência explícita, fora desta fase: integração da branch técnica `reconcile/main-hotmart` com `main` (merge/push/deploy) é uma fase separada, não iniciada, dependente de autorização explícita.
+- Pendência explícita, fora desta fase (registrada em 17-18/09/2026): integração da branch técnica `reconcile/main-hotmart` com `main` (merge/push/deploy) era uma fase separada, não iniciada. **Fechamento posterior (21/09/2026):** a integração já está em `main` e a Hotmart está homologada em produção — ver seção "Fechamento técnico e homologação de produção (21/09/2026)" no topo deste arquivo e `docs/status-atual.md`.
 
 ## Infraestrutura test-only: isolamento de IA (Fase 6B.4, 17/09/2026)
 
@@ -4207,3 +4215,5 @@ Datas comerciais são validadas antes da compra duplicada; UCODE hexadecimal 8-4
 - `app/components/questions/EvaluatedTopicsInput.tsx`: portal de sugestões de Tópicos, separado dos dropdowns Hotmart; preservada a evolução da main. `onAutoPrepareForQueue` e os fluxos recentes do Banco/Revisão também foram preservados.
 
 O fechamento técnico do delta não libera merge: permanecem as 20 falhas 401 pendentes de auditoria e o débito de lint preexistente, sem diagnóstico novo introduzido pelo detector. G5 alternativo permanece em quarentena.
+
+**Fechamento posterior (21/09/2026):** o merge para `main` já ocorreu — todo o código listado na tabela acima está commitado em `main` — e a integração foi homologada em produção (concessão, idempotência e reversão validadas via webhook real). G5 continua fora da linha oficial, confirmado ao vivo no schema operacional. Detalhes completos: `docs/Sprint-integracao-hotmart.md`, entrada "21/09/2026 — Fechamento definitivo: produção homologada", e `docs/status-atual.md`.

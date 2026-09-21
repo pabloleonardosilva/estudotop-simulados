@@ -2,7 +2,7 @@
 ## EstudoTOP Simulados
 
 **Documento:** 06-POLITICA-DEPLOY.md  
-**Versão:** 1.0  
+**Versão:** 1.1<br>
 **Status:** Oficial  
 **Aplicação:** Obrigatória
 
@@ -73,6 +73,15 @@ A arquitetura atualmente prevista para o EstudoTOP Simulados é:
 - **Tarefas agendadas:** mecanismo aprovado para cron, inicialmente compatível com Vercel Cron ou solução equivalente.
 
 Qualquer mudança nessa arquitetura deverá ser documentada antes da adoção.
+
+## 3.1 Estado confirmado de Produção (fechamento técnico, setembro/2026)
+
+- **Vercel Production Branch:** `main`. Não há outra branch de deploy oficial.
+- **Domínio oficial:** `https://simulados.estudotop.com.br`, associado ao ambiente Production.
+- **Supabase operacional (único):** projeto `estudotop-simulados`, ref `uphqihoqzwqjzmsimaug`. Não há projeto Supabase TEST permanente associado à aplicação.
+- **Hotmart:** integração comercial ativa em produção (`HOTMART_ENVIRONMENT=production`, webhook `https://simulados.estudotop.com.br/api/webhooks/hotmart`), homologada de ponta a ponta (concessão, idempotência, reversão). Detalhes: `docs/Sprint-integracao-hotmart.md`.
+
+Esta subseção registra fatos permanentes de arquitetura; não substitui a Política de Migrations, o Checklist de Deploy nem a homologação de cada entrega futura.
 
 ---
 
@@ -422,6 +431,10 @@ Em caso de conflito prevalecerá a Constituição Técnica.
 ---
 
 # 22. Histórico
+
+## Versão 1.1
+
+Registrada a Seção 3.1 com o estado confirmado de Produção após o fechamento técnico de setembro/2026: Vercel Production Branch `main`, domínio `simulados.estudotop.com.br`, Supabase operacional único (`uphqihoqzwqjzmsimaug`) e integração Hotmart ativa e homologada em produção. Nenhuma regra permanente anterior foi removida.
 
 ## Versão 1.0
 

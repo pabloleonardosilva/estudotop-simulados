@@ -3029,3 +3029,13 @@ O usuário autorizou um único commit e push para `origin/main`, com verificaç�
 # 109. Cross-referência — engine de tentativas blindada transacionalmente (2026-09-10)
 
 A tentativa de um aluno num Simulado vinculado a Evento continua armazenada em `simulado_attempts`, resolvida por `resolveAttemptLimit`/`getContextualSimuladoAttempts` contra `simulado_events.max_attempts` (contexto `event`) — nada disso mudou. As operações que gravam o consumo (resposta salva, abandono explícito, violação de foco, finalização) passaram a rodar em transações com lock por tentativa (`supabase/migrations/20260909170000_atomic_attempt_transitions.sql`), e a tela de execução ganhou um botão "Abandonar simulado" que, para tentativas de Evento, retorna para `/meus-eventos/${eventId}` ao confirmar. `consolidateEventRepresentativeAttempt()` (representative_attempt_id) não foi tocada — segue sendo chamada só depois que `complete_student_attempt` confirma a persistência atômica de `completed`. Insights, Ranking e PDF do Evento não foram alterados. Detalhes completos: `docs/Sprint-simulados.md`, "Engine de tentativas blindada transacionalmente + fluxo de abandono".
+
+## 21/09/2026 — Homologação funcional de produção do Evento
+
+Fluxo completo validado em produção no Evento QA `79ab40bc-1f19-40ed-90cc-c3207245becb`: criação do Evento, Simulado dedicado, participante controlado, tentativa, resposta, conclusão e resultado. Resultado da tentativa: 1 acerto, 0 erros, 0 brancos, score 1.00 (100%).
+
+`result_policy = blocked` foi respeitado: o resultado permaneceu oculto ao aluno conforme a configuração, dashboard administrativo coerente com o estado real. Nenhuma duplicação de dados, nenhum e-mail inesperado, nenhum acionamento de Hotmart, nenhum HTTP 5xx.
+
+TopCoins não foram gerados na conclusão da tentativa — comportamento confirmado do código, não regressão: em Evento, TopCoins são sincronizados no fluxo de liberação de resultado (quando o Admin libera o resultado sob `result_policy` bloqueada), não simplesmente na submissão da tentativa.
+
+Estado final do Evento QA após a homologação: `archived`. Histórico da tentativa e do resultado preservado. Fechamento exclusivamente funcional: nenhuma migration executada, nenhum código alterado, nenhum commit/push/deploy nesta rodada.

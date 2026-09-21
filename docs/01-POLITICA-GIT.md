@@ -2,7 +2,7 @@
 ## EstudoTOP Simulados
 
 **Documento:** 01-POLITICA-GIT.md  
-**Versão:** 2.0  
+**Versão:** 2.1<br>
 **Status:** Oficial  
 **Aplicação:** Obrigatória
 
@@ -139,6 +139,30 @@ Sempre que possível uma nova Sprint deverá iniciar com a Worktree limpa.
 Caso existam alterações pendentes deverão ser avaliadas antes do início da nova Sprint.
 
 Não é recomendado misturar alterações de Sprints diferentes.
+
+---
+
+# 7.1 Branch Padrão e Exceção de Risco
+
+## GIT-007A
+
+A partir do fechamento técnico de setembro/2026 (reconciliação main + Hotmart, consolidação de worktrees e homologação de produção), o EstudoTOP Simulados adota oficialmente:
+
+1. `main` é a branch padrão de desenvolvimento. Toda modificação comum é feita diretamente sobre `main`, na worktree oficial (`Sistema/`).
+2. Não deverá ser criada branch ou worktree separada por rotina, por hábito, ou apenas porque a alteração está sendo feita por uma ferramenta de IA.
+3. Branch ou worktree separada é **exceção**, reservada a alterações excepcionalmente arriscadas, por exemplo:
+   - grande refatoração estrutural;
+   - reconciliação complexa de históricos divergentes;
+   - migration destrutiva ou de alto impacto;
+   - alteração extensa em autenticação/autorização;
+   - alteração comercial crítica;
+   - mudança arquitetural com rollback complexo;
+   - experimentação que possa comprometer a linha oficial.
+4. Nesses casos, a ferramenta de IA não deverá criar a branch/worktree automaticamente. Primeiro deverá: explicar o risco; propor a estratégia; discutir com o responsável pelo projeto; obter decisão explícita sobre o uso de branch/worktree separada.
+5. Trabalhar diretamente em `main` não equivale a autorização automática para commit, push, migration, deploy ou alteração de produção. Essas ações continuam sujeitas integralmente a GIT-005, GIT-013, GIT-014 e às demais políticas (Migrations, Deploy).
+6. Alterações continuam devendo ser cirúrgicas, limitadas ao escopo, precedidas de leitura dos consumidores relevantes (Política de Desenvolvimento), validadas antes do fechamento e documentadas quando alterarem comportamento permanente.
+
+Esta regra não enfraquece nenhuma proteção existente nesta política; formaliza como padrão o que já era, na prática, o fluxo diário do projeto.
 
 ---
 
@@ -337,6 +361,10 @@ Antes do commit deverá ser confirmado:
 ---
 
 # 18. Histórico
+
+## Versão 2.1
+
+Incorporado formalmente, após o fechamento técnico de setembro/2026, o padrão de trabalho direto em `main` como fluxo normal do projeto (GIT-007A), com branch/worktree separada tratada como exceção de alto risco sujeita a decisão explícita do responsável. Nenhuma proteção existente (commit, push, migration, deploy) foi enfraquecida.
 
 ## Versão 2.0
 

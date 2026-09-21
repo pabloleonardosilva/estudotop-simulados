@@ -2,7 +2,7 @@
 ## EstudoTOP Simulados
 
 **Documento:** 08-CHECKLIST-DEPLOY.md  
-**Versão:** 1.0  
+**Versão:** 1.1<br>
 **Status:** Oficial  
 **Aplicação:** Obrigatória
 
@@ -168,6 +168,22 @@ Caso não existam:
 
 ---
 
+# 9.1 Hotmart
+
+## DEPLOY-009A
+
+☐ `HOTMART_ENVIRONMENT=production` confirmado no ambiente Production.
+
+☐ `HOTMART_HOTTOK` configurado no ambiente Production (nunca registrar o valor em relatório, log ou documentação).
+
+☐ Webhook `https://simulados.estudotop.com.br/api/webhooks/hotmart` acessível e autenticando corretamente (requisição sem `x-hotmart-hottok` retorna 401).
+
+☐ Mapeamento de produto → Jornada/Evento revisado antes de qualquer novo produto entrar em produção.
+
+☐ Migrations `20260828110000_create_hotmart_integration.sql` e `20260830120000_complete_hotmart_admin_workflows.sql` já refletidas no schema operacional (confirmar por auditoria, não reexecutar).
+
+---
+
 # 10. Assets
 
 ## DEPLOY-010
@@ -315,6 +331,10 @@ Este checklist complementa:
 ---
 
 # Histórico
+
+## Versão 1.1
+
+Adicionada a Seção 9.1 (Hotmart) após a homologação funcional de produção da integração comercial (setembro/2026): ambiente `production`, `HOTMART_HOTTOK` sem exposição, webhook autenticado e migrations já refletidas no schema.
 
 ## Versão 1.0
 
