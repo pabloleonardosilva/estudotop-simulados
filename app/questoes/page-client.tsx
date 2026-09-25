@@ -1916,9 +1916,9 @@ export default function QuestoesClient({
           </div>
 
           {showInspirationBoardFilter && (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2">
               <BoardFilterDropdown
-                label="Inspirada na banca"
+                label="Inspiração"
                 boards={availableInspirationBoards}
                 selectedIds={inspirationBoardIds}
                 onChange={setInspirationBoardIds}
