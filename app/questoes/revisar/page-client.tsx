@@ -35,6 +35,7 @@ import QuestionActionModal, { type QuestionActionModalState } from "../../compon
 import DraftRestoreModal from "../../components/ui/DraftRestoreModal";
 import QuestionEditor from "../../components/questions/QuestionEditor";
 import { hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
+import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 
 const QUESTIONS_PER_PAGE = 40;
@@ -92,6 +93,12 @@ export type Subject = {
 export type Board = {
   id: string;
   name: string;
+};
+
+export type Topic = {
+  id: string;
+  name: string;
+  subject_id: string;
 };
 
 export type Question = {
@@ -195,6 +202,43 @@ function getQuestionSubjectIds(question: Question) {
   return Array.from(ids);
 }
 
+// Tópicos não têm FK em questions: evaluated_topics guarda o NOME do tópico
+// (texto), sincronizado por trigger de banco com a tabela topics por assunto
+// + nome normalizado (ver normalizeTopicComparableName). Este mapa traduz,
+// uma única vez por render, o texto de cada questão para os IDs reais de
+// topics — restrito aos assuntos da própria questão, para não colidir com
+// tópicos homônimos de outro assunto.
+function buildTopicIdsByQuestion(questions: Question[], topics: Topic[]) {
+  const topicsBySubject = new Map<string, Map<string, string>>();
+  topics.forEach((topic) => {
+    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    bucket.set(normalizeTopicComparableName(topic.name), topic.id);
+    topicsBySubject.set(topic.subject_id, bucket);
+  });
+
+  const map = new Map<string, string[]>();
+  questions.forEach((question) => {
+    const evaluated = Array.isArray(question.evaluated_topics) ? question.evaluated_topics : [];
+    if (evaluated.length === 0) {
+      map.set(question.id, []);
+      return;
+    }
+    const qSubjectIds = getQuestionSubjectIds(question);
+    const ids = new Set<string>();
+    qSubjectIds.forEach((subjectId) => {
+      const bucket = topicsBySubject.get(subjectId);
+      if (!bucket) return;
+      evaluated.forEach((name) => {
+        const topicId = bucket.get(normalizeTopicComparableName(name));
+        if (topicId) ids.add(topicId);
+      });
+    });
+    map.set(question.id, Array.from(ids));
+  });
+
+  return map;
+}
+
 function getQuestionSearchText(question: Question) {
   const subjectNames = [
     question.subjects?.name,
@@ -222,6 +266,7 @@ function getQuestionSearchText(question: Question) {
 type RevisarInitialFilters = {
   boardIds: string[];
   subjectIds: string[];
+  topicIds: string[];
   disciplineId: string;
   difficultyLevels: string[];
   orgaos: string[];
@@ -235,12 +280,14 @@ export default function RevisarQuestoesClient({
   initialQuestions,
   disciplines,
   subjects,
+  topics,
   boards,
   initialFilters,
 }: {
   initialQuestions: Question[];
   disciplines: Discipline[];
   subjects: Subject[];
+  topics: Topic[];
   boards: Board[];
   initialFilters?: RevisarInitialFilters;
 }) {
@@ -250,6 +297,7 @@ export default function RevisarQuestoesClient({
   const [savedCount, setSavedCount] = useState(0);
   const [filterBoardIds, setFilterBoardIds] = useState<string[]>(initialFilters?.boardIds ?? []);
   const [filterSubjectIds, setFilterSubjectIds] = useState<string[]>(initialFilters?.subjectIds ?? []);
+  const [filterTopicIds, setFilterTopicIds] = useState<string[]>(initialFilters?.topicIds ?? []);
   const [filterDisciplineId, setFilterDisciplineId] = useState(initialFilters?.disciplineId ?? "");
   const [filterDifficultyLevels, setFilterDifficultyLevels] = useState<string[]>(initialFilters?.difficultyLevels ?? []);
   const [filterOrgaos, setFilterOrgaos] = useState<string[]>(initialFilters?.orgaos ?? []);
@@ -278,6 +326,22 @@ export default function RevisarQuestoesClient({
     () => subjects.filter((s) => filterSubjectIds.includes(s.id)),
     [subjects, filterSubjectIds],
   );
+
+  const topicIdsByQuestion = useMemo(
+    () => buildTopicIdsByQuestion(queue, topics),
+    [queue, topics],
+  );
+
+  useEffect(() => {
+    setFilterTopicIds((current) => {
+      if (current.length === 0) return current;
+      const validIds = new Set(
+        topics.filter((topic) => filterSubjectIds.includes(topic.subject_id)).map((topic) => topic.id),
+      );
+      const filtered = current.filter((id) => validIds.has(id));
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [filterSubjectIds, topics]);
 
   useEffect(() => {
     if (publicationQueueDraftChecked) return;
@@ -383,6 +447,7 @@ export default function RevisarQuestoesClient({
     if (filterDisciplineId) params.set("disciplina", filterDisciplineId);
     if (filterBoardIds.length > 0) filterBoardIds.forEach((id) => params.append("banca", id));
     if (filterSubjectIds.length > 0) filterSubjectIds.forEach((id) => params.append("assunto", id));
+    if (filterTopicIds.length > 0) filterTopicIds.forEach((id) => params.append("topico", id));
     if (filterDifficultyLevels.length > 0) filterDifficultyLevels.forEach((l) => params.append("dificuldade", l));
     if (filterOrgaos.length > 0) filterOrgaos.forEach((orgao) => params.append("orgao", orgao));
     if (filterStatus && filterStatus !== "pending_review") params.set("status", filterStatus);
@@ -391,7 +456,7 @@ export default function RevisarQuestoesClient({
     if (filterMissingTopics) params.set("topicos", "sem");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [filterDisciplineId, filterBoardIds, filterSubjectIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText, filterMissingTopics]);
+  }, [filterDisciplineId, filterBoardIds, filterSubjectIds, filterTopicIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText, filterMissingTopics]);
 
   const stats = useMemo(
     () => ({
@@ -412,6 +477,7 @@ export default function RevisarQuestoesClient({
       const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(question).includes(filterDisciplineId);
       const matchesBoard = filterBoardIds.length === 0 || filterBoardIds.includes(question.exam_boards?.id ?? "");
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(question).includes(id));
+      const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(question.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(question.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((question.orgao || "").trim());
       const matchesStatus = !filterStatus || question.status === filterStatus;
@@ -419,7 +485,7 @@ export default function RevisarQuestoesClient({
       const matchesText = !text || getQuestionSearchText(question).includes(text);
       const matchesMissingTopics = !filterMissingTopics || !hasEvaluatedTopics(question.evaluated_topics);
 
-      return matchesDiscipline && matchesBoard && matchesSubject && matchesDifficulty && matchesOrgao && matchesStatus && matchesYear && matchesText && matchesMissingTopics;
+      return matchesDiscipline && matchesBoard && matchesSubject && matchesTopic && matchesDifficulty && matchesOrgao && matchesStatus && matchesYear && matchesText && matchesMissingTopics;
     }).sort((a, b) => {
       const ya = a.year || 0;
       const yb = b.year || 0;
@@ -428,11 +494,11 @@ export default function RevisarQuestoesClient({
       if (!yb) return -1;
       return sortOrder === "newest" ? yb - ya : ya - yb;
     });
-  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText, filterMissingTopics, subjects, sortOrder]);
+  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText, filterMissingTopics, subjects, sortOrder]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterDisciplineId, filterBoardIds.join(","), filterSubjectIds.join(","), filterDifficultyLevels.join(","), filterOrgaos.join(","), filterStatus, filterYears.join(","), filterText, sortOrder]);
+  }, [filterDisciplineId, filterBoardIds.join(","), filterSubjectIds.join(","), filterTopicIds.join(","), filterDifficultyLevels.join(","), filterOrgaos.join(","), filterStatus, filterYears.join(","), filterText, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredQueue.length / QUESTIONS_PER_PAGE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -462,17 +528,18 @@ export default function RevisarQuestoesClient({
     queue.forEach((q) => {
       const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(q).includes(filterDisciplineId);
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
+      const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
       const matchesStatus = !filterStatus || q.status === filterStatus;
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
-      if (!matchesDiscipline || !matchesSubject || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
+      if (!matchesDiscipline || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
       const boardId = q.exam_boards?.id;
       if (boardId) counts[boardId] = (counts[boardId] || 0) + 1;
     });
     return counts;
-  }, [queue, filterDisciplineId, filterSubjectIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText]);
+  }, [queue, filterDisciplineId, filterSubjectIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText]);
 
   const subjectCounts = useMemo(() => {
     const text = normalizeFilterText(filterText);
@@ -480,16 +547,35 @@ export default function RevisarQuestoesClient({
     queue.forEach((q) => {
       const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(q).includes(filterDisciplineId);
       const matchesBoard = filterBoardIds.length === 0 || filterBoardIds.includes(q.exam_boards?.id ?? "");
+      const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
       const matchesStatus = !filterStatus || q.status === filterStatus;
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
-      if (!matchesDiscipline || !matchesBoard || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
+      if (!matchesDiscipline || !matchesBoard || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
       getQuestionSubjectIds(q).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
     });
     return counts;
-  }, [queue, filterDisciplineId, filterBoardIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText]);
+  }, [queue, filterDisciplineId, filterBoardIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText]);
+
+  const topicCounts = useMemo(() => {
+    const text = normalizeFilterText(filterText);
+    const counts: Record<string, number> = {};
+    queue.forEach((q) => {
+      const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(q).includes(filterDisciplineId);
+      const matchesBoard = filterBoardIds.length === 0 || filterBoardIds.includes(q.exam_boards?.id ?? "");
+      const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
+      const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
+      const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
+      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
+      const matchesText = !text || getQuestionSearchText(q).includes(text);
+      if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
+      (topicIdsByQuestion.get(q.id) || []).forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
+    });
+    return counts;
+  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterYears, filterText, topicIdsByQuestion]);
 
 
   const availableOrgaos = useMemo(() => {
@@ -506,16 +592,17 @@ export default function RevisarQuestoesClient({
       const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(q).includes(filterDisciplineId);
       const matchesBoard = filterBoardIds.length === 0 || filterBoardIds.includes(q.exam_boards?.id ?? "");
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
+      const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesStatus = !filterStatus || q.status === filterStatus;
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
-      if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesDifficulty || !matchesStatus || !matchesYear || !matchesText) return;
+      if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesStatus || !matchesYear || !matchesText) return;
       const orgao = (q.orgao || "").trim();
       if (orgao) counts[orgao] = (counts[orgao] || 0) + 1;
     });
     return counts;
-  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterDifficultyLevels, filterStatus, filterYears, filterText]);
+  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterStatus, filterYears, filterText]);
 
   const yearCounts = useMemo(() => {
     const text = normalizeFilterText(filterText);
@@ -524,18 +611,27 @@ export default function RevisarQuestoesClient({
       const matchesDiscipline = !filterDisciplineId || getQuestionDisciplineIds(q).includes(filterDisciplineId);
       const matchesBoard = filterBoardIds.length === 0 || filterBoardIds.includes(q.exam_boards?.id ?? "");
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
+      const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
       const matchesStatus = !filterStatus || q.status === filterStatus;
       const matchesText = !text || getQuestionSearchText(q).includes(text);
-      if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesText) return;
+      if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesText) return;
       const year = String(q.year || "");
       if (year) counts[year] = (counts[year] || 0) + 1;
     });
     return counts;
-  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterDifficultyLevels, filterOrgaos, filterStatus, filterText]);
+  }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterOrgaos, filterStatus, filterText]);
 
-  const hasActiveFilters = Boolean(filterDisciplineId || filterBoardIds.length > 0 || filterOrgaos.length > 0 || filterSubjectIds.length > 0 || filterDifficultyLevels.length > 0 || filterStatus !== "pending_review" || filterYears.length > 0 || filterText.trim() || filterMissingTopics);
+  const availableTopicsForFilter = useMemo(() => {
+    if (filterSubjectIds.length === 0) return [];
+    return topics.filter((topic) =>
+      filterSubjectIds.includes(topic.subject_id) &&
+      ((topicCounts[topic.id] || 0) > 0 || filterTopicIds.includes(topic.id)),
+    );
+  }, [topics, filterSubjectIds, topicCounts, filterTopicIds]);
+
+  const hasActiveFilters = Boolean(filterDisciplineId || filterBoardIds.length > 0 || filterOrgaos.length > 0 || filterSubjectIds.length > 0 || filterTopicIds.length > 0 || filterDifficultyLevels.length > 0 || filterStatus !== "pending_review" || filterYears.length > 0 || filterText.trim() || filterMissingTopics);
   const publicationQueueCount = publicationQueueIds.length;
   const isReadyToPublishView = filterStatus === "ready_to_publish" && filteredQueue.length > 0;
 
@@ -551,6 +647,7 @@ export default function RevisarQuestoesClient({
     setFilterBoardIds([]);
     setFilterOrgaos([]);
     setFilterSubjectIds([]);
+    setFilterTopicIds([]);
     setFilterDifficultyLevels([]);
     setFilterStatus("pending_review");
     setFilterYears([]);
@@ -1060,10 +1157,13 @@ export default function RevisarQuestoesClient({
           </div>
         </div>
         <div className="relative space-y-5">
-          {/* Linha 1: Busca, Disciplina, Assunto, Banca */}
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {/* Linha 1: Busca */}
+          <div className="grid gap-4 md:grid-cols-2">
             <RevisarSearch value={filterText} onChange={setFilterText} onClear={() => setFilterText("")} />
+          </div>
 
+          {/* Linha 2: Disciplina, Assunto, Tópico, Banca */}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SimpleSelectDropdown
               label="Disciplina"
               value={filterDisciplineId}
@@ -1081,6 +1181,14 @@ export default function RevisarQuestoesClient({
               counts={subjectCounts}
             />
 
+            <TopicFilterDropdown
+              topics={availableTopicsForFilter}
+              selectedIds={filterTopicIds}
+              onChange={setFilterTopicIds}
+              counts={topicCounts}
+              disabled={filterSubjectIds.length === 0}
+            />
+
             <BoardFilterDropdown
               boards={boards}
               selectedIds={filterBoardIds}
@@ -1089,7 +1197,7 @@ export default function RevisarQuestoesClient({
             />
           </div>
 
-          {/* Linha 2: Órgão, Ano, Dificuldade, Status */}
+          {/* Linha 3: Órgão, Ano, Dificuldade, Status */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <OrgaoFilterDropdown
               orgaos={availableOrgaos}
@@ -2006,6 +2114,169 @@ function FilterSubjectDropdown({
                     <span className="min-w-0 flex-1 truncate">{subject.name}</span>
                     <span className={selected ? "rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white" : "rounded-full border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-[10px] font-black text-white/40"}>
                       {counts[subject.id] || 0}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          <div className="mt-3 flex gap-2 border-t border-white/[0.07] pt-3">
+            <button type="button" onClick={() => { setDraftIds([]); onChange([]); setOpen(false); }} className="flex-1 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/50 hover:bg-white/[0.08] hover:text-white/70">
+              Limpar
+            </button>
+            <button type="button" onClick={() => { onChange(draftIds); setOpen(false); }} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-500 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-orange-900/30">
+              Aplicar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopicFilterDropdown({
+  topics,
+  selectedIds,
+  onChange,
+  counts = {},
+  disabled = false,
+}: {
+  topics: { id: string; name: string }[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  counts?: Record<string, number>;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
+  const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `topic-filter-listbox-${useId()}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  function getLabel() {
+    if (disabled) return "Selecione um assunto";
+    if (selectedIds.length === 0) return "Todos os tópicos";
+    if (selectedIds.length === 1) {
+      const t = topics.find((x) => x.id === selectedIds[0]);
+      return t?.name ?? "1 tópico";
+    }
+    return `${selectedIds.length} tópicos selecionados`;
+  }
+
+  function toggleTopic(id: string) {
+    setDraftIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  }
+
+  const visibleTopics = sortByPtBrLabel(search.trim()
+    ? topics.filter((t) => t.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : topics, (item) => item.name);
+
+  function handleSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (visibleTopics.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return visibleTopics.length - 1;
+        if (next >= visibleTopics.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < visibleTopics.length) {
+      e.preventDefault();
+      toggleTopic(visibleTopics[highlightedIndex].id);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    e.stopPropagation();
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Tópico</label>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => { setDraftIds(selectedIds); setSearch(""); setHighlightedIndex(-1); setOpen((o) => !o); }}
+        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/[0.08]"
+      >
+        <span className="truncate">{getLabel()}</span>
+        <span className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              {selectedIds.length}
+            </span>
+          )}
+          <ChevronDown size={15} className={`text-white/30 transition duration-200 group-hover:text-orange-400 ${open ? "rotate-180 text-orange-400" : ""}`} />
+        </span>
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute left-0 top-full z-[9999] mt-2 w-full min-w-0 rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:min-w-72">
+          <div className="mb-2.5">
+            <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Buscar tópico..."
+              className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 text-sm text-white/70 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+              role="combobox"
+              aria-expanded={visibleTopics.length > 0}
+              aria-controls={listboxId}
+            />
+          </div>
+          <div id={listboxId} role="listbox" className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {topics.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum tópico disponível para os assuntos selecionados.
+              </p>
+            ) : visibleTopics.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum resultado para &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleTopics.map((topic, index) => {
+                const selected = draftIds.includes(topic.id);
+                const highlighted = index === highlightedIndex;
+                return (
+                  <button
+                    key={topic.id}
+                    type="button"
+                    onClick={() => toggleTopic(topic.id)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={selected
+                      ? "flex w-full items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-3 text-left text-sm font-semibold text-orange-100"
+                      : highlighted
+                        ? "flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white/85"
+                        : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"}
+                  >
+                    <span className={selected ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-500 text-white" : "h-5 w-5 shrink-0 rounded-md border border-white/[0.15] bg-white/[0.04]"}>
+                      {selected && <Check size={13} strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{topic.name}</span>
+                    <span className={selected ? "rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white" : "rounded-full border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-[10px] font-black text-white/40"}>
+                      {counts[topic.id] || 0}
                     </span>
                   </button>
                 );

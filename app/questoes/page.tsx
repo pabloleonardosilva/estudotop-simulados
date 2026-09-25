@@ -6,6 +6,7 @@ type InitialFilters = {
   search: string;
   disciplineId: string;
   subjectIds: string[];
+  topicIds: string[];
   boardIds: string[];
   inspirationBoardIds: string[];
   orgaos: string[];
@@ -148,6 +149,11 @@ async function getData(initialFilters: InitialFilters) {
     .select("id, name, discipline_id")
     .order("name");
 
+  const { data: topics } = await supabase
+    .from("topics")
+    .select("id, name, subject_id")
+    .order("name");
+
   const { data: boards } = await supabase
     .from("exam_boards")
     .select("id, name")
@@ -179,6 +185,7 @@ async function getData(initialFilters: InitialFilters) {
     questions,
     disciplines: disciplines || [],
     subjects: subjects || [],
+    topics: topics || [],
     boards: boards || [],
     statusCounts,
   };
@@ -208,6 +215,7 @@ export default async function QuestoesPage({
     search: str("q"),
     disciplineId: str("disciplina"),
     subjectIds: arr("assunto"),
+    topicIds: arr("topico"),
     boardIds: arr("banca"),
     inspirationBoardIds: arr("inspirada"),
     orgaos: arr("orgao"),
@@ -224,6 +232,7 @@ export default async function QuestoesPage({
       initialQuestions={data.questions}
       disciplines={data.disciplines}
       subjects={data.subjects}
+      topics={data.topics}
       boards={data.boards}
       initialFilters={initialFilters}
       initialStatusCounts={data.statusCounts}

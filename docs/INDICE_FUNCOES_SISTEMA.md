@@ -341,7 +341,7 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 
 - `QuestionStatCard` — 4 tons: `orange`, `amber`, `green`, `purple`.
 - `PremiumSearch` — input de busca com `bg-white/[0.04]` e bordas translúcidas.
-- `SubjectFilterDropdown` — dropdown de assuntos com fundo `#0D1B2E`, itens dark e **busca por texto** (input de pesquisa dentro do dropdown, adicionado em 2026-05-28). **Bug corrigido (2026-06-11):** o botão (caixa) tinha classes extras `focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10` que não existem em `SimpleSelectDropdown` (Disciplina) nem em `BoardFilterDropdown` (Banca), deixando a caixa "Assuntos" visualmente diferente das demais na mesma linha de filtros. Removidas para que as três caixas usem exatamente a mesma classe (`group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-left text-sm font-semibold text-white/70 shadow-sm outline-none transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14]`).
+- `SubjectFilterDropdown` — dropdown de assuntos com fundo `#0D1B2E`, itens dark e **busca por texto** (input de pesquisa dentro do dropdown, adicionado em 2026-05-28). Logo em seguida, na mesma linha da barra de filtros, `TopicFilterDropdown` (Tópico, adicionado em 2026-09-24 — dependente do(s) assunto(s) selecionado(s), ver seção 5.1.3). **Bug corrigido (2026-06-11):** o botão (caixa) tinha classes extras `focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10` que não existem em `SimpleSelectDropdown` (Disciplina) nem em `BoardFilterDropdown` (Banca), deixando a caixa "Assuntos" visualmente diferente das demais na mesma linha de filtros. Removidas para que as três caixas usem exatamente a mesma classe (`group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-left text-sm font-semibold text-white/70 shadow-sm outline-none transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14]`).
 - **Dropdown "Dificuldade" (linha 2 dos filtros) — Bug corrigido (2026-06-11):** o botão e o painel usavam `bg-[#0D1926]` (sólido), destoando das demais caixas da mesma linha (Órgão, Ano, Status) que usam `bg-white/[0.04]` no botão e `bg-[#0D1B2E]` no painel. Botão padronizado para a mesma classe de `YearFilterDropdown`/`SimpleSelectDropdown` (acima); painel padronizado para `absolute left-0 top-full z-[9999] mt-2 w-full min-w-0 rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:min-w-72`.
 - ~~`SortControl`~~ — **removido em 2026-06-04**; substituído pela barra premium de ordenação (toggle buttons) posicionada abaixo do card de filtros.
 - `FeedbackBox` — feedback de sucesso/aviso/erro com cores translúcidas (10% opacidade).
@@ -426,16 +426,17 @@ border-t border-white/[0.06] bg-black/10 backdrop-blur-sm
 
 Layout do card de filtros idêntico ao de Questões (mesma ordem, mesma grid, mesmos componentes):
 
-- **Row 1:** `RevisarSearch` (busca) · `SimpleSelectDropdown` (Disciplina) · `FilterSubjectDropdown` (Assunto) · `BoardFilterDropdown` (Banca)
-- **Row 2:** `OrgaoFilterDropdown` (Órgão) · `YearFilterDropdown` (Ano) · Dificuldade (dropdown inline) · `SimpleSelectDropdown` (Status)
+- **Row 1 (2026-09-25 — busca isolada, mais larga):** `RevisarSearch` (busca), sozinha em `grid md:grid-cols-2` — ocupa metade do painel em telas médias/largas em vez de dividir a linha com os filtros categóricos.
+- **Row 2:** `SimpleSelectDropdown` (Disciplina) · `FilterSubjectDropdown` (Assunto) · `TopicFilterDropdown` (Tópico, 2026-09-24 — ver seção 5.1.3) · `BoardFilterDropdown` (Banca)
+- **Row 3:** `OrgaoFilterDropdown` (Órgão) · `YearFilterDropdown` (Ano) · Dificuldade (dropdown inline) · `SimpleSelectDropdown` (Status)
 - **Chips bar:** assuntos selecionados exibidos como chips removíveis, com botão X em cada chip (`onClick → setFilterSubjectIds(current.filter(id => id !== s.id))`)
 - **Botão Limpar** (direita, standalone): `hasActiveFilters` controla o disabled. A faixa violeta "Os filtros encontraram X questões" foi removida em 2026-06-04 — a contagem agora fica no 1º card do dashboard.
 
-Componentes locais definidos no arquivo, na ordem: `RevisarSearch` → `SimpleSelectDropdown` → `BoardFilterDropdown` → `YearFilterDropdown` → `FilterSubjectDropdown` → `OrgaoFilterDropdown`.
+Componentes locais definidos no arquivo, na ordem: `RevisarSearch` → `SimpleSelectDropdown` → `BoardFilterDropdown` → `YearFilterDropdown` → `FilterSubjectDropdown` → `OrgaoFilterDropdown` → `TopicFilterDropdown`.
 
-Estados correspondentes: `filterText: string`, `filterBoardIds: string[]`, `filterOrgaos: string[]`, `filterSubjectIds: string[]`, `filterDisciplineId: string`, `filterDifficultyLevels: string[]`, `filterYears: string[]`, `filterStatus: string`.
+Estados correspondentes: `filterText: string`, `filterBoardIds: string[]`, `filterOrgaos: string[]`, `filterSubjectIds: string[]`, `filterTopicIds: string[]`, `filterDisciplineId: string`, `filterDifficultyLevels: string[]`, `filterYears: string[]`, `filterStatus: string`.
 
-URL persistida via `params.append()` para arrays: `banca`, `assunto`, `dificuldade`, `ano`.
+URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, `dificuldade`, `ano`.
 
 **Questões de imagem pendente:**
 
@@ -1378,6 +1379,33 @@ Duas opções adicionadas ao dropdown de Status existente (`SimpleSelectDropdown
 **Contadores do dropdown:** Anuladas no Banco e Anuladas em Simulados permanecem visíveis inclusive com `(0)`. As demais opções preservam o padrão existente: aparecem se `statusFacetCounts[value] > 0` (ou já selecionadas). Contagem client-side sobre a lista carregada.
 
 **Cautelas de manutenção:** ao alterar `simulado_questions` no `select()` de `page.tsx`, preservar `status` no embed (é a única coluna que `questionAnnulledInAnySimulado` lê). Ao adicionar um novo valor real a `questions.status`, não reutilizar o literal `"annulled_in_simulados"` — é um sentinel reservado, não um status de banco.
+
+---
+
+### 5.1.3 Filtro de Tópico (dependente de Assunto) — 2026-09-24
+
+Novo filtro `Tópico`, posicionado imediatamente após `Assunto` na barra de filtros. Aplicado em três telas com filtro de Assunto real: Banco de Questões (`/questoes`, inclui a view "Fila de publicação" via `?status=ready_to_publish`, mesma tela), Revisar Questões (`/questoes/revisar`) e o modal de seleção de questões do Simulado (`/simulados/[id]/editar`).
+
+**Relacionamento real (sem FK, sem migration):** `questions` não tem `topic_id`. `evaluated_topics` (text[]) guarda o **nome** do tópico; a tabela `topics` (`id, name, subject_id, normalized_name`) é o catálogo por assunto, sincronizado por trigger de banco a partir de `evaluated_topics` (ver seção "create_subject_topics"/`sync_topics_from_question_review`). O filtro traduz nome → id comparando `normalizeTopicComparableName(evaluatedTopicName) === normalizeTopicComparableName(topic.name)`, restrito aos assuntos da própria questão (evita colisão com tópico homônimo de outro assunto). Helper `buildTopicIdsByQuestion(questions, topics)` (duplicado em cada arquivo, mesma lógica) constrói esse mapa uma única vez por render — nenhuma consulta adicional por questão.
+
+**Origem dos tópicos:** `topics` é carregado uma única vez junto com os demais catálogos:
+- `app/questoes/page.tsx` e `app/questoes/revisar/page.tsx` — `select("id, name, subject_id")` em `getData()`, passado como prop `topics` ao client.
+- `app/simulados/[id]/editar/page-client.tsx` — carregado sob demanda (lazy) junto com `bankQuestions`, via `GET /api/admin/topics` (sem `subject_id`, retorna o catálogo completo), dentro de `loadBankQuestions()`. Falha ao carregar tópicos não bloqueia a abertura do modal (degrada para lista vazia).
+
+**Dependência de Assunto:**
+- Sem nenhum assunto selecionado, o dropdown de Tópico fica desabilitado (`disabled`) e não lista nenhuma opção — nunca mostra o catálogo inteiro.
+- Com um ou mais assuntos selecionados (Assunto é multi-select nas três telas), as opções de Tópico são restritas a `topics.filter(t => subjectIds.includes(t.subject_id))`.
+- Um `useEffect` dedicado observa a lista de assuntos selecionados e remove do estado de Tópico qualquer id que não pertença mais a nenhum assunto atualmente selecionado — cobre trocar de assunto, remover um assunto e limpar todos os assuntos, sem código duplicado por caso.
+
+**Participação real no filtro:** `topicIds`/`topicIdsByQuestion` foram adicionados a `questionMatchesFilters` (Banco de Questões), ao predicado inline de `filteredQueue` (Revisar) e a `questionMatchesBankFilters` (modal do Simulado), em `AND` com os demais critérios (busca, disciplina, assunto, banca, órgão, ano, dificuldade, status — incluindo **Anuladas no Banco** e **Anuladas em Simulados**, seção 5.1.2, que continuam funcionando normalmente combinadas com Tópico). Os contadores por faceta (`topicCounts` e os já existentes `subjectCounts`/`boardCounts`/`orgaoCounts`/`yearCounts`/`difficultyCounts`/`statusFacetCounts`) passaram a considerar `topicIds` na mesma posição em que já consideravam `subjectIds`/`boardIds`.
+
+**Componentes:** `TopicFilterDropdown` — novo componente local (não compartilhado, um por arquivo: `app/questoes/page-client.tsx` e `app/questoes/revisar/page-client.tsx`), cópia do padrão já usado por `SubjectFilterDropdown`/`BoardFilterDropdown` (multi-select, busca com `ArrowUp/ArrowDown/Enter/Escape`, chips de contagem, Limpar/Aplicar), com um `disabled` adicional. No modal do Simulado (`app/simulados/[id]/editar/page-client.tsx`) reaproveita `DarkMultiDropdown`, que ganhou um novo prop opcional `disabled` (retrocompatível, default `false`, não muda nenhum consumidor existente).
+
+**Deep-link:** Banco de Questões e Revisar Questões persistem o filtro via `?topico=<id>` (múltiplos valores, mesmo padrão de `?assunto=`), lido em `page.tsx` e devolvido em `initialFilters.topicIds`. O modal do Simulado não usa URL (o filtro de Assunto ali também não usa).
+
+**Performance:** nenhuma consulta nova por questão nem por seleção — `topics` é uma única query por carregamento de página/modal; a tradução nome→id é uma passada única sobre as questões já carregadas.
+
+**Refinamento visual (2026-09-25):** a inclusão de Tópico levava o grid original (`Busca + Disciplina + Assunto + Tópico` em `xl:grid-cols-4`) a sobrar Banca sozinha na linha seguinte. Corrigido separando a busca em sua própria linha (`grid md:grid-cols-2`, mais larga que antes) e movendo os 4 filtros categóricos (Disciplina/Assunto/Tópico/Banca) para a linha seguinte, preenchendo `xl:grid-cols-4` sem sobra — aplicado em `app/questoes/page-client.tsx`, `app/questoes/revisar/page-client.tsx` e no modal do Simulado (`app/simulados/[id]/editar/page-client.tsx`). Nenhuma classe de card/título/label/altura de campo foi alterada, apenas o agrupamento em linhas.
 
 ---
 
@@ -3212,6 +3240,14 @@ Teste automatizado (`tests/dropdown-standardization.spec.ts`) audita isso via `g
 
 ---
 
+### 19.4.3 Padrão global de Campo de Pesquisa — Dark Premium e Clean Premium (2026-09-25)
+
+A especificação completa (estrutura, classes exatas, variante standalone vs. compacta, Dark vs. Clean, regra de reutilização, causa raiz do defeito de "retângulo interno duplicado" e o inventário completo do que foi corrigido/preservado) é canônica em `docs/Sprint-interface-grafica.md`, seção "25/09/2026 - Padrao global de Campo de Pesquisa" — não duplicada aqui.
+
+Resumo operacional: todo campo de pesquisa (standalone ou interno de dropdown) deve ter o `<input>` como a própria caixa visual (borda/radius/fundo/padding), nunca dentro de um `<div>` com fundo próprio divergente; a lupa é posicionada com `absolute` como irmã do `<input>`. Referências corretas a reutilizar: `SearchableSelect` e `SubjectMultiSelect` (compartilhados, Dark+Clean), `PremiumSearch`/`RevisarSearch`/`FilterInput` (standalone dark). Corrigidos nesta data por violarem a regra: `app/components/ui/SearchableSelect.tsx` (dark e claro), `app/admin/eventos/[id]/ProfessorAssignmentPicker.tsx`, e em `app/simulados/[id]/editar/page-client.tsx` o campo "Buscar questão" do modal do Banco de Questões e a busca interna de `DarkMultiDropdown`. Nenhuma lógica de busca/filtro foi alterada, apenas classes visuais.
+
+---
+
 ### 19.5 Importar com IA — melhorias (2026-06-01)
 
 **Arquivo:** `app/questoes/importar/page-client.tsx`
@@ -3379,6 +3415,7 @@ Ao alterar `app/components/ui/SearchableSelect.tsx`:
 - **Rascunho sincronizado do importador (2026-08-14):** `/questoes/importar` preserva o `localStorage` existente e também sincroniza, com debounce, o lote em `admin_drafts` pela API autenticada `/api/admin/import-draft` (`GET`, `PUT`, `DELETE`). O rascunho remoto é vinculado exclusivamente ao ID do administrador derivado do token; outro computador ou perfil do navegador oferece retomada do rascunho mais recente. A conclusão integral, o botão de limpar e o descarte removem as cópias local e remota. O payload é limitado a 5 MB e falhas remotas não interrompem a proteção local.
 - **Gestão e auditoria de uso em `/topicos` (atualizada em 2026-08-14):** a contagem e a proteção de exclusão percorrem todas as páginas da tabela `questions`, sem depender do limite padrão de uma consulta Supabase. Clicar no nome ou na contagem abre um popup amplo com todas as questões vinculadas em sequência, cada uma diretamente no editor dark oficial. Após cada salvamento, `/api/admin/questions/[id]` atualiza localmente vínculos e contagens; se a questão deixar de pertencer ao tópico, seu editor sai imediatamente da lista. Fechar o popup preserva disciplina, assunto e busca selecionados, sem remontar a página. Tópicos sem vínculos exibem exclusão direta com confirmação; a API continua recalculando o uso no momento da exclusão. A edição mantém validação no cliente e no servidor que impede salvar `evaluated_topics` vazio.
 - **Interface dark premium de `/topicos` (2026-08-16):** a tela administrativa usa hero institucional, card lateral de criação e painel principal de gestão com filtros, tabela refinada, chips de tópico, badges de status, mini-card de uso, ações compactas e estado vazio responsivo. Criação, busca, filtros, edição, ativação/inativação, exclusão protegida, popup de questões e contratos da API permanecem inalterados.
+- **Seletor de Assunto pesquisável por teclado (2026-09-24):** o seletor de Assunto de `/topicos` (usado tanto no card "Novo tópico" quanto em "Filtrar por assunto", ambos ligados ao mesmo estado `subjectId`) usava `SimpleSelectDropdown` — um dropdown local sem campo de busca (mesmo padrão de UI da Disciplina/Status desta tela). Sem campo de busca o usuário não conseguia digitar para localizar um assunto; precisava rolar a lista. Corrigido substituindo as duas ocorrências por `SearchableSelect` (`app/components/ui/SearchableSelect.tsx`, variante `dark`) — o mesmo componente compartilhado já usado por `/assuntos` para o seletor de Disciplina (padrão pesquisável oficial do sistema, com `ArrowUp/ArrowDown/Enter/Escape`, foco automático no campo de busca ao abrir e busca case-insensitive). `SimpleSelectDropdown` (local, sem busca) permanece intacto e é usado apenas pela Disciplina desta mesma tela — não foi tocado, pois o pedido era exclusivamente sobre o Assunto. Nenhuma regra de criação/edição de tópico, normalização de nome ou API foi alterada. **Acabamento visual (2026-09-25):** o campo de busca da variante `dark` de `SearchableSelect` tinha um retângulo interno (`bg-white/[0.06]` com borda e `rounded-xl` próprios) que destoava do painel do dropdown. Removido esse wrapper — o ícone de lupa e o `<input>` agora ficam direto na linha superior do painel, separados da lista apenas por um filete inferior (`border-b`), com destaque sutil em laranja no foco. Corrigido apenas no ramo `dark` do componente compartilhado (afeta também `/assuntos`, `/admin/alunos/[id]`, `/admin/raio-x-provas`, `/simulados`, todos já no mesmo padrão dark premium); o ramo claro (Importador, Criador Manual, Gerador com IA, editor de Simulado) não foi tocado.
 - **Padronização dark de Configurações (2026-08-16; Assuntos, Disciplinas e Bancas refinadas em 2026-08-28):** `/bancas/importar` mantém a composição dark já registrada. `/assuntos`, `/disciplinas` e `/bancas` consomem diretamente os tokens globais `et-admin-dark-*`: hero institucional, coluna lateral menor e painel principal maior, filtros e grades responsivas de cards. Foram removidos gradientes, sombras, glows, badges e botões locais concorrentes. Em Bancas, o hero mantém a ação real **Nova banca**, o painel lateral reúne busca/resultado atual e os cards preservam status, quantidade de questões, acesso às questões e exclusão confirmada. APIs e regras funcionais permanecem inalteradas.
 - **Persistência ao enviar para revisão (2026-08-14):** `POST /api/admin/questions/import/save` grava a questão com status `pending_review` e confirma explicitamente seus tópicos na tabela `topics`, por assunto e nome normalizado, antes de contabilizar o item como salvo. O upsert é idempotente, reativa tópicos existentes e complementa o trigger de banco já configurado para qualquer status. Se a sincronização falhar, a questão recém-criada é removida e a importação informa falha sanitizada, evitando sucesso parcial.
 

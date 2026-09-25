@@ -110,7 +110,7 @@ function richHtml(value?: string | null): string {
 
 import type { BankQuestion, Discipline, ExamBoard, Simulado, SimuladoPayload, SimuladoQuestion, Subject } from "../../types";
 import { difficultyLabel, getDefaultOwlHelpLimit, resolveOwlHelpLimit, scoringLabel, stripHtml } from "../../utils";
-import { normalizeBoardComparableName } from "@/lib/utils/text";
+import { normalizeBoardComparableName, normalizeTopicComparableName } from "@/lib/utils/text";
 import { qCard } from "@/lib/ui/question-tokens";
 
 type Feedback = { type: "success" | "error" | "warning"; title: string; message: string } | null;
@@ -185,10 +185,49 @@ function getBankQuestionSubjectSearchText(question: BankQuestion) {
     .toLowerCase();
 }
 
+// Tópicos não têm FK em questions: evaluated_topics guarda o NOME do tópico
+// (texto), sincronizado por trigger de banco com a tabela topics por assunto
+// + nome normalizado (ver normalizeTopicComparableName). Este mapa traduz,
+// uma única vez por render, o texto de cada questão para os IDs reais de
+// topics — restrito aos assuntos da própria questão, para não colidir com
+// tópicos homônimos de outro assunto.
+function buildTopicIdsByQuestion(questions: BankQuestion[], topics: { id: string; name: string; subject_id: string }[]) {
+  const topicsBySubject = new Map<string, Map<string, string>>();
+  topics.forEach((topic) => {
+    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    bucket.set(normalizeTopicComparableName(topic.name), topic.id);
+    topicsBySubject.set(topic.subject_id, bucket);
+  });
+
+  const map = new Map<string, string[]>();
+  questions.forEach((question) => {
+    const evaluated = Array.isArray(question.evaluated_topics) ? question.evaluated_topics : [];
+    if (evaluated.length === 0) {
+      map.set(question.id, []);
+      return;
+    }
+    const qSubjectIds = getBankQuestionSubjectIds(question);
+    const ids = new Set<string>();
+    qSubjectIds.forEach((subjectId) => {
+      const bucket = topicsBySubject.get(subjectId);
+      if (!bucket) return;
+      evaluated.forEach((name) => {
+        const topicId = bucket.get(normalizeTopicComparableName(name));
+        if (topicId) ids.add(topicId);
+      });
+    });
+    map.set(question.id, Array.from(ids));
+  });
+
+  return map;
+}
+
 function questionMatchesBankFilters(question: BankQuestion, opts: {
   term: string;
   disciplineId: string;
   subjectIds: string[];
+  topicIds?: string[];
+  topicIdsByQuestion?: Map<string, string[]>;
   boardIds: string[];
   difficultyLevels: string[];
   yearFilters: string[];
@@ -205,12 +244,14 @@ function questionMatchesBankFilters(question: BankQuestion, opts: {
   const questionBoardId = question.exam_boards?.id || "";
   const type = isTrueFalseBankQuestion(question) ? "true_false" : "multiple_choice";
   const status = question.status || "";
+  const topicIds = opts.topicIds || [];
 
   return (
     ["published", "active"].includes(status) &&
     (!opts.term || text.includes(opts.term) || code.includes(opts.term) || boardName.includes(opts.term) || subjectName.includes(opts.term)) &&
     (!opts.disciplineId || questionDisciplineIds.includes(opts.disciplineId)) &&
     (opts.subjectIds.length === 0 || opts.subjectIds.some((id) => questionSubjectIds.includes(id))) &&
+    (topicIds.length === 0 || (opts.topicIdsByQuestion?.get(question.id) || []).some((id) => topicIds.includes(id))) &&
     (opts.boardIds.length === 0 || opts.boardIds.includes(questionBoardId)) &&
     (opts.difficultyLevels.length === 0 || opts.difficultyLevels.includes(String(question.difficulty_level || ""))) &&
     (opts.yearFilters.length === 0 || opts.yearFilters.includes(String(question.year || ""))) &&
@@ -362,6 +403,7 @@ export default function EditarSimuladoClient({
   const [showBankModal, setShowBankModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
+  const [topics, setTopics] = useState<{ id: string; name: string; subject_id: string }[]>([]);
   const [jornadaQuestionIds, setJornadaQuestionIds] = useState<Record<string, string[]>>({});
   const [bankQuestionsLoaded, setBankQuestionsLoaded] = useState(false);
   const [loadingBankQuestions, setLoadingBankQuestions] = useState(false);
@@ -393,6 +435,7 @@ export default function EditarSimuladoClient({
   const [search, setSearch] = useState("");
   const [disciplineId, setDisciplineId] = useState("");
   const [subjectIds, setSubjectIds] = useState<string[]>([]);
+  const [topicIds, setTopicIds] = useState<string[]>([]);
   const [boardIds, setBoardIds] = useState<string[]>([]);
   const [difficultyLevels, setDifficultyLevels] = useState<string[]>([]);
   const [yearFilters, setYearFilters] = useState<string[]>([]);
@@ -405,7 +448,10 @@ export default function EditarSimuladoClient({
 
     setLoadingBankQuestions(true);
     try {
-      const response = await adminFetch("/api/admin/questions?context=simulado-editor");
+      const [response, topicsResponse] = await Promise.all([
+        adminFetch("/api/admin/questions?context=simulado-editor"),
+        adminFetch("/api/admin/topics"),
+      ]);
       const result = await response.json() as {
         ok?: boolean;
         message?: string;
@@ -416,7 +462,13 @@ export default function EditarSimuladoClient({
         throw new Error(result.message || "Não foi possível carregar o banco de questões.");
       }
 
+      const topicsResult = await topicsResponse.json() as {
+        ok?: boolean;
+        topics?: { id: string; name: string; subject_id: string }[];
+      };
+
       setBankQuestions(result.questions || []);
+      setTopics(topicsResponse.ok && topicsResult.ok !== false ? topicsResult.topics || [] : []);
       setJornadaQuestionIds(result.jornadaQuestionIds || {});
       setBankQuestionsLoaded(true);
       return true;
@@ -450,12 +502,28 @@ export default function EditarSimuladoClient({
     [subjects, disciplineId],
   );
 
+  const topicIdsByQuestion = useMemo(
+    () => buildTopicIdsByQuestion(bankQuestions, topics),
+    [bankQuestions, topics],
+  );
+
+  useEffect(() => {
+    setTopicIds((current) => {
+      if (current.length === 0) return current;
+      const validIds = new Set(topics.filter((topic) => subjectIds.includes(topic.subject_id)).map((topic) => topic.id));
+      const filtered = current.filter((id) => validIds.has(id));
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [subjectIds, topics]);
+
   const filteredQuestions = useMemo(() => {
     const term = search.toLowerCase().trim();
     return bankQuestions.filter((question) => questionMatchesBankFilters(question, {
       term,
       disciplineId,
       subjectIds,
+      topicIds,
+      topicIdsByQuestion,
       boardIds,
       difficultyLevels,
       yearFilters,
@@ -463,7 +531,7 @@ export default function EditarSimuladoClient({
       missingTopics: missingTopicsOnly,
       excludedQuestionIds,
     }));
-  }, [bankQuestions, search, disciplineId, subjectIds, boardIds, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds]);
+  }, [bankQuestions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds]);
 
   const bankQuestionsForCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -471,6 +539,8 @@ export default function EditarSimuladoClient({
       term,
       disciplineId,
       subjectIds: [],
+      topicIds,
+      topicIdsByQuestion,
       boardIds: [],
       difficultyLevels,
       yearFilters,
@@ -478,7 +548,7 @@ export default function EditarSimuladoClient({
       missingTopics: missingTopicsOnly,
       excludedQuestionIds,
     }));
-  }, [bankQuestions, search, disciplineId, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds]);
+  }, [bankQuestions, search, disciplineId, topicIds, topicIdsByQuestion, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds]);
 
   const subjectCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -489,6 +559,35 @@ export default function EditarSimuladoClient({
     });
     return counts;
   }, [bankQuestionsForCounts]);
+
+  const topicCounts = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    const counts = new Map<string, number>();
+    bankQuestions.filter((question) => questionMatchesBankFilters(question, {
+      term,
+      disciplineId,
+      subjectIds,
+      boardIds,
+      difficultyLevels,
+      yearFilters,
+      questionType,
+      missingTopics: missingTopicsOnly,
+      excludedQuestionIds,
+    })).forEach((question) => {
+      (topicIdsByQuestion.get(question.id) || []).forEach((id) => {
+        counts.set(id, (counts.get(id) || 0) + 1);
+      });
+    });
+    return counts;
+  }, [bankQuestions, search, disciplineId, subjectIds, boardIds, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds, topicIdsByQuestion]);
+
+  const availableTopicsForFilter = useMemo(() => {
+    if (subjectIds.length === 0) return [];
+    return topics.filter((topic) =>
+      subjectIds.includes(topic.subject_id) &&
+      ((topicCounts.get(topic.id) || 0) > 0 || topicIds.includes(topic.id)),
+    );
+  }, [topics, subjectIds, topicCounts, topicIds]);
 
   const currentSubjectDistribution = useMemo(() => {
     const counts = new Map<string, number>();
@@ -515,6 +614,8 @@ export default function EditarSimuladoClient({
       term,
       disciplineId,
       subjectIds,
+      topicIds,
+      topicIdsByQuestion,
       boardIds: [],
       difficultyLevels,
       yearFilters,
@@ -525,7 +626,7 @@ export default function EditarSimuladoClient({
       counts.set(id, (counts.get(id) || 0) + 1);
     });
     return counts;
-  }, [bankQuestions, search, disciplineId, subjectIds, difficultyLevels, yearFilters, questionType]);
+  }, [bankQuestions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, difficultyLevels, yearFilters, questionType]);
 
   const availableYears = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -534,6 +635,8 @@ export default function EditarSimuladoClient({
       term,
       disciplineId,
       subjectIds,
+      topicIds,
+      topicIdsByQuestion,
       boardIds,
       difficultyLevels,
       yearFilters: [],
@@ -542,7 +645,7 @@ export default function EditarSimuladoClient({
       if (question.year) years.add(String(question.year));
     });
     return Array.from(years).sort((a, b) => Number(b) - Number(a));
-  }, [bankQuestions, search, disciplineId, subjectIds, boardIds, difficultyLevels, questionType]);
+  }, [bankQuestions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, difficultyLevels, questionType]);
 
   function update<K extends keyof SimuladoPayload>(key: K, value: SimuladoPayload[K]) {
     setForm((current) => {
@@ -951,6 +1054,9 @@ export default function EditarSimuladoClient({
           }}
           subjectIds={subjectIds}
           setSubjectIds={setSubjectIds}
+          topics={availableTopicsForFilter}
+          topicIds={topicIds}
+          setTopicIds={setTopicIds}
           boardIds={boardIds}
           setBoardIds={setBoardIds}
           difficultyLevels={difficultyLevels}
@@ -966,6 +1072,7 @@ export default function EditarSimuladoClient({
           excludeJornadaId={excludeJornadaId}
           setExcludeJornadaId={setExcludeJornadaId}
           subjectCounts={subjectCounts}
+          topicCounts={topicCounts}
           boardCounts={boardCounts}
           onUseAsTemplate={(question) => {
             setTemplateQuestionForManual(question as unknown as TemplateQuestion);
@@ -1933,12 +2040,14 @@ function DarkMultiDropdown({
   onChange,
   options,
   placeholder,
+  disabled = false,
 }: {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
   options: { value: string; label: string; node?: ReactNode; count?: number }[];
   placeholder: string;
+  disabled?: boolean;
 }) {
   options = label === "Ano" || label === "Dificuldade" ? options : sortTextOptions(options);
   const [open, setOpen] = useState(false);
@@ -1979,26 +2088,27 @@ function DarkMultiDropdown({
       <p className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">{label}</p>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15]"
+        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/[0.08]"
       >
         <span className="truncate">{summary}</span>
         <ChevronDown size={16} className={`shrink-0 text-white/30 transition duration-200 group-hover:text-orange-400 ${open ? "rotate-180 text-orange-400" : ""}`} />
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="absolute left-0 right-0 top-full z-[10001] mt-2 rounded-2xl border border-white/[0.09] bg-[#0D1B2E] shadow-2xl shadow-black/50 backdrop-blur-xl">
           <div className="border-b border-white/[0.06] p-2">
-            <div className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-white/70">
-              <Search size={14} className="text-orange-300" />
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-orange-300" />
               <input
                 ref={searchInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Digite para filtrar..."
-                className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/80 outline-none placeholder:text-white/25"
+                className={`h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.04] pl-9 text-sm font-semibold text-white/80 outline-none placeholder:text-white/25 focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08] ${values.length > 0 ? "pr-16" : "pr-3"}`}
               />
               {values.length > 0 && (
-                <button type="button" onClick={() => { onChange([]); searchInputRef.current?.focus(); }} className="text-xs font-bold text-orange-300 hover:text-orange-200">
+                <button type="button" onClick={() => { onChange([]); searchInputRef.current?.focus(); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-orange-300 hover:text-orange-200">
                   Limpar
                 </button>
               )}
@@ -2053,6 +2163,9 @@ function QuestionBankModal(props: {
   setDisciplineId: (value: string) => void;
   subjectIds: string[];
   setSubjectIds: (value: string[]) => void;
+  topics: { id: string; name: string; subject_id: string }[];
+  topicIds: string[];
+  setTopicIds: (value: string[]) => void;
   boardIds: string[];
   setBoardIds: (value: string[]) => void;
   difficultyLevels: string[];
@@ -2068,6 +2181,7 @@ function QuestionBankModal(props: {
   excludeJornadaId: string;
   setExcludeJornadaId: (value: string) => void;
   subjectCounts: Map<string, number>;
+  topicCounts: Map<string, number>;
   boardCounts: Map<string, number>;
   onUseAsTemplate: (question: BankQuestion) => void;
 }) {
@@ -2089,6 +2203,7 @@ function QuestionBankModal(props: {
     props.search.trim() ||
     props.disciplineId ||
     props.subjectIds.length ||
+    props.topicIds.length ||
     props.boardIds.length ||
     props.difficultyLevels.length ||
     props.yearFilters.length ||
@@ -2120,6 +2235,7 @@ function QuestionBankModal(props: {
     props.setSearch("");
     props.setDisciplineId("");
     props.setSubjectIds([]);
+    props.setTopicIds([]);
     props.setBoardIds([]);
     props.setDifficultyLevels([]);
     props.setYearFilters([]);
@@ -2185,19 +2301,22 @@ function QuestionBankModal(props: {
           </div>
         ) : (
         <div className="relative z-[200] mb-6 rounded-[1.75rem] border border-white/[0.07] bg-white/[0.03] p-5 shadow-xl shadow-black/20 backdrop-blur-sm md:p-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
               <p className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Buscar questão</p>
-              <div className="group relative flex h-12 items-center gap-3 rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-white/70 outline-none transition hover:border-white/[0.15] focus-within:border-orange-400/40 focus-within:ring-2 focus-within:ring-orange-400/[0.08]">
-                <Search size={15} className="text-white/30 transition duration-200 group-focus-within:text-orange-400" />
+              <div className="group relative">
+                <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition duration-200 group-focus-within:text-orange-400" />
                 <input
                   value={props.search}
                   onChange={(event) => props.setSearch(event.target.value)}
                   placeholder="Digite o código, nome ou enunciado..."
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/80 outline-none placeholder:text-white/25"
+                  className="h-12 w-full rounded-2xl border border-white/[0.08] bg-[#0D1926] pl-11 pr-4 text-sm font-semibold text-white/80 outline-none transition placeholder:text-white/25 hover:border-white/[0.15] focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]"
                 />
               </div>
             </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <DarkSingleDropdown
               label="Disciplina"
               value={props.disciplineId}
@@ -2210,6 +2329,14 @@ function QuestionBankModal(props: {
               onChange={props.setSubjectIds}
               placeholder="Todos os assuntos"
               options={props.subjects.map((item) => ({ value: item.id, label: normalizeSubjectDisplayName(item.name), count: props.subjectCounts.get(item.id) || 0 }))}
+            />
+            <DarkMultiDropdown
+              label="Tópico"
+              values={props.topicIds}
+              onChange={props.setTopicIds}
+              placeholder={props.subjectIds.length === 0 ? "Selecione um assunto" : "Todos os tópicos"}
+              disabled={props.subjectIds.length === 0}
+              options={props.topics.map((item) => ({ value: item.id, label: item.name, count: props.topicCounts.get(item.id) || 0 }))}
             />
             <DarkMultiDropdown
               label="Banca"

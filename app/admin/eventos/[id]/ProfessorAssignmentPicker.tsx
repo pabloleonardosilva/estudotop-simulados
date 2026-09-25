@@ -68,15 +68,15 @@ export default function ProfessorAssignmentPicker({ professors, selectedIds, onC
         <label htmlFor="professor-assignment-search" className="sr-only">
           Buscar professor por nome ou e-mail
         </label>
-        <div className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 focus-within:border-orange-400/40">
-          <Search size={14} className="shrink-0 text-slate-500" />
+        <div className="relative">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             id="professor-assignment-search"
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar professor por nome ou e-mail"
-            className="min-w-0 flex-1 bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
+            className="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.04] pl-9 pr-3 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:border-orange-400/40 focus:ring-2 focus:ring-orange-400/[0.08]"
             role="combobox"
             aria-expanded={search.trim().length > 0}
             aria-controls="professor-assignment-results"

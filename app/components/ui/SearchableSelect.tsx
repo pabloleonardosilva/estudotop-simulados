@@ -127,25 +127,23 @@ export default function SearchableSelect({
         </button>
 
         {open && (
-          <div className="absolute left-0 top-full z-[9999] mt-2 w-full min-w-[220px] rounded-2xl border border-white/[0.09] bg-[#0D1B2E] shadow-2xl shadow-black/50 backdrop-blur-xl">
-            <div className="border-b border-white/[0.07] px-3 py-2">
-              <div className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.06] px-3 py-1.5">
-                <Search size={13} className="shrink-0 text-white/30" />
-                <input
-                  ref={inputRef}
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="Buscar..."
-                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/80 outline-none placeholder:text-white/25"
-                  role="combobox"
-                  aria-expanded={filtered.length > 0}
-                  aria-controls={listboxId}
-                  aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
-                />
-              </div>
+          <div className="absolute left-0 top-full z-[9999] mt-2 w-full min-w-[220px] rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-2 shadow-2xl shadow-black/50 backdrop-blur-xl">
+            <div className="relative mb-2 px-1">
+              <Search size={13} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+              <input
+                ref={inputRef}
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Buscar..."
+                className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] pl-9 pr-3 text-sm font-semibold text-white/80 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+                role="combobox"
+                aria-expanded={filtered.length > 0}
+                aria-controls={listboxId}
+                aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
+              />
             </div>
-            <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto p-2">
+            <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto">
               {filtered.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-white/30">Nenhum resultado</p>
               ) : (
@@ -212,25 +210,23 @@ export default function SearchableSelect({
       </button>
 
       {open && (
-        <div className="et-clean-popover absolute left-0 top-full z-[9999] mt-1.5 w-full min-w-[200px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
-          <div className="border-b border-slate-100 px-3 py-2">
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
-              <Search size={13} className="shrink-0 text-slate-400" />
-              <input
-                ref={inputRef}
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Buscar..."
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400"
-                role="combobox"
-                aria-expanded={filtered.length > 0}
-                aria-controls={listboxId}
-                aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
-              />
-            </div>
+        <div className="et-clean-popover absolute left-0 top-full z-[9999] mt-1.5 w-full min-w-[200px] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10">
+          <div className="relative mb-2 px-1">
+            <Search size={13} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Buscar..."
+              className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
+              role="combobox"
+              aria-expanded={filtered.length > 0}
+              aria-controls={listboxId}
+              aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
+            />
           </div>
-          <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto p-2">
+          <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-slate-400">Nenhum resultado</p>
             ) : (

@@ -60,6 +60,7 @@ import {
   getQuestionDisciplineIds,
 } from "@/lib/questions/question-subjects";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
+import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 
 // ─── Exportação TXT em lote ─────────────────────────────────────────────────
@@ -189,6 +190,43 @@ function questionAnnulledInAnySimulado(question: { simulado_questions?: Question
   return relations.some((relation) => relation?.status === "annulled");
 }
 
+// Tópicos não têm FK em questions: evaluated_topics guarda o NOME do tópico
+// (texto), sincronizado por trigger de banco com a tabela topics por assunto
+// + nome normalizado (ver normalizeTopicComparableName). Este mapa traduz,
+// uma única vez por render, o texto de cada questão para os IDs reais de
+// topics — restrito aos assuntos da própria questão, para não colidir com
+// tópicos homônimos de outro assunto.
+function buildTopicIdsByQuestion(questions: any[], topics: { id: string; name: string; subject_id: string }[]) {
+  const topicsBySubject = new Map<string, Map<string, string>>();
+  topics.forEach((topic) => {
+    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    bucket.set(normalizeTopicComparableName(topic.name), topic.id);
+    topicsBySubject.set(topic.subject_id, bucket);
+  });
+
+  const map = new Map<string, string[]>();
+  questions.forEach((question) => {
+    const evaluated: string[] = Array.isArray(question.evaluated_topics) ? question.evaluated_topics : [];
+    if (evaluated.length === 0) {
+      map.set(question.id, []);
+      return;
+    }
+    const qSubjectIds = extractQuestionSubjects(question).map((s) => s.id).filter((id): id is string => Boolean(id));
+    const ids = new Set<string>();
+    qSubjectIds.forEach((subjectId: string) => {
+      const bucket = topicsBySubject.get(subjectId);
+      if (!bucket) return;
+      evaluated.forEach((name) => {
+        const topicId = bucket.get(normalizeTopicComparableName(name));
+        if (topicId) ids.add(topicId);
+      });
+    });
+    map.set(question.id, Array.from(ids));
+  });
+
+  return map;
+}
+
 function notifyPublicationQueueUpdated() {
   window.dispatchEvent(new Event("estudotop:publication-queue-updated"));
 }
@@ -207,6 +245,7 @@ type InitialFilters = {
   search: string;
   disciplineId: string;
   subjectIds: string[];
+  topicIds: string[];
   boardIds: string[];
   inspirationBoardIds: string[];
   orgaos: string[];
@@ -220,6 +259,7 @@ type MatchFilterOptions = {
   term?: string;
   disciplineId?: string;
   subjectIds?: string[];
+  topicIds?: string[];
   boardIds?: string[];
   inspirationBoardIds?: string[];
   orgaos?: string[];
@@ -227,6 +267,7 @@ type MatchFilterOptions = {
   status?: string;
   yearFilters?: string[];
   missingTopics?: boolean;
+  topicIdsByQuestion?: Map<string, string[]>;
 };
 
 function stripHtml(html: string) {
@@ -247,6 +288,7 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     term = "",
     disciplineId: fDiscipline = "",
     subjectIds: fSubjects = [],
+    topicIds: fTopics = [],
     boardIds: fBoards = [],
     inspirationBoardIds: fInspirationBoards = [],
     orgaos: fOrgaos = [],
@@ -254,6 +296,7 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     status: fStatus = "",
     yearFilters: fYears = [],
     missingTopics: fMissingTopics = false,
+    topicIdsByQuestion,
   } = opts;
 
   const qDisciplineIds = getQuestionDisciplineIds(question);
@@ -277,6 +320,7 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     (!term || searchable.includes(term)) &&
     (!fDiscipline || qDisciplineIds.includes(fDiscipline)) &&
     (fSubjects.length === 0 || fSubjects.some((id) => qSubjectIds.includes(id))) &&
+    (fTopics.length === 0 || (topicIdsByQuestion?.get(question.id) || []).some((id) => fTopics.includes(id))) &&
     (fBoards.length === 0 || fBoards.includes(qBoardId)) &&
     (fInspirationBoards.length === 0 || fInspirationBoards.includes(qInspirationBoardId)) &&
     (fOrgaos.length === 0 || fOrgaos.includes((question.orgao || "").trim())) &&
@@ -294,6 +338,7 @@ export default function QuestoesClient({
   initialQuestions,
   disciplines,
   subjects,
+  topics,
   boards,
   initialFilters,
   initialStatusCounts,
@@ -301,6 +346,7 @@ export default function QuestoesClient({
   initialQuestions: any[];
   disciplines: any[];
   subjects: any[];
+  topics: any[];
   boards: any[];
   initialFilters?: InitialFilters;
   initialStatusCounts?: Record<string, number>;
@@ -319,6 +365,7 @@ export default function QuestoesClient({
   const [search, setSearch] = useState(initialFilters?.search ?? "");
   const [disciplineId, setDisciplineId] = useState(initialFilters?.disciplineId ?? "");
   const [subjectIds, setSubjectIds] = useState<string[]>(initialFilters?.subjectIds ?? []);
+  const [topicIds, setTopicIds] = useState<string[]>(initialFilters?.topicIds ?? []);
   const [boardIds, setBoardIds] = useState<string[]>(initialFilters?.boardIds ?? []);
   const [inspirationBoardIds, setInspirationBoardIds] = useState<string[]>(initialFilters?.inspirationBoardIds ?? []);
   const [orgaoFilters, setOrgaoFilters] = useState<string[]>(initialFilters?.orgaos ?? []);
@@ -364,6 +411,7 @@ export default function QuestoesClient({
     if (search) params.set("q", search);
     if (disciplineId) params.set("disciplina", disciplineId);
     if (subjectIds.length > 0) subjectIds.forEach((id) => params.append("assunto", id));
+    if (topicIds.length > 0) topicIds.forEach((id) => params.append("topico", id));
     if (boardIds.length > 0) boardIds.forEach((id) => params.append("banca", id));
     if (inspirationBoardIds.length > 0) inspirationBoardIds.forEach((id) => params.append("inspirada", id));
     if (orgaoFilters.length > 0) orgaoFilters.forEach((orgao) => params.append("orgao", orgao));
@@ -373,7 +421,7 @@ export default function QuestoesClient({
     if (missingTopicsFilter) params.set("topicos", "sem");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter]);
+  }, [search, disciplineId, subjectIds, topicIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter]);
 
   useEffect(() => {
     if (!showDifficultyDropdown) return;
@@ -392,6 +440,22 @@ export default function QuestoesClient({
     () => subjects.filter((subject) => subjectIds.includes(subject.id)),
     [subjects, subjectIds],
   );
+
+  const topicIdsByQuestion = useMemo(
+    () => buildTopicIdsByQuestion(questions, topics),
+    [questions, topics],
+  );
+
+  useEffect(() => {
+    setTopicIds((current) => {
+      if (current.length === 0) return current;
+      const validIds = new Set(
+        topics.filter((topic) => subjectIds.includes(topic.subject_id)).map((topic) => topic.id),
+      );
+      const filtered = current.filter((id) => validIds.has(id));
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [subjectIds, topics]);
 
   const estudoTopBoardId = useMemo(
     () => boards.find((board) => /estudo\s*top/i.test(board.name || ""))?.id || "",
@@ -462,6 +526,8 @@ export default function QuestoesClient({
       if (!questionMatchesFilters(question, {
         term,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
@@ -474,7 +540,7 @@ export default function QuestoesClient({
       });
     });
     return counts;
-  }, [questions, search, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
 
   const subjectCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -483,6 +549,8 @@ export default function QuestoesClient({
       if (!questionMatchesFilters(question, {
         term,
         disciplineId,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
@@ -495,7 +563,7 @@ export default function QuestoesClient({
       });
     });
     return counts;
-  }, [questions, search, disciplineId, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
 
   const boardCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -505,6 +573,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
@@ -515,7 +585,7 @@ export default function QuestoesClient({
       if (qBoardId) counts[qBoardId] = (counts[qBoardId] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
 
   const inspirationBoardCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -525,6 +595,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
@@ -535,7 +607,7 @@ export default function QuestoesClient({
       if (id) counts[id] = (counts[id] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
 
   const orgaoCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -545,6 +617,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         difficultyLevels,
@@ -555,7 +629,7 @@ export default function QuestoesClient({
       if (orgao) counts[orgao] = (counts[orgao] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, difficultyLevels, status, yearFilters]);
 
   const yearCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -565,6 +639,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
@@ -575,7 +651,7 @@ export default function QuestoesClient({
       if (year) counts[year] = (counts[year] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status]);
 
   const difficultyCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -585,6 +661,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
@@ -595,7 +673,7 @@ export default function QuestoesClient({
       if (level) counts[level] = (counts[level] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, status, yearFilters]);
 
   const statusFacetCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -605,6 +683,8 @@ export default function QuestoesClient({
         term,
         disciplineId,
         subjectIds,
+        topicIds,
+        topicIdsByQuestion,
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
@@ -622,7 +702,29 @@ export default function QuestoesClient({
       }
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, yearFilters]);
+
+  const topicCounts = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    const counts: Record<string, number> = {};
+    questions.forEach((question) => {
+      if (!questionMatchesFilters(question, {
+        term,
+        disciplineId,
+        subjectIds,
+        boardIds,
+        inspirationBoardIds,
+        orgaos: orgaoFilters,
+        difficultyLevels,
+        status,
+        yearFilters,
+      })) return;
+      (topicIdsByQuestion.get(question.id) || []).forEach((topicId) => {
+        counts[topicId] = (counts[topicId] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, topicIdsByQuestion]);
 
   const availableDisciplines = useMemo(
     () => disciplines.filter((item) => (disciplineCounts[item.id] || 0) > 0 || item.id === disciplineId),
@@ -636,6 +738,14 @@ export default function QuestoesClient({
     ),
     [subjects, disciplineId, subjectCounts, subjectIds],
   );
+
+  const availableTopicsForFilter = useMemo(() => {
+    if (subjectIds.length === 0) return [];
+    return topics.filter((topic) =>
+      subjectIds.includes(topic.subject_id) &&
+      ((topicCounts[topic.id] || 0) > 0 || topicIds.includes(topic.id)),
+    );
+  }, [topics, subjectIds, topicCounts, topicIds]);
 
   const availableBoards = useMemo(
     () => boards.filter((item) => (boardCounts[item.id] || 0) > 0 || boardIds.includes(item.id)),
@@ -672,7 +782,7 @@ export default function QuestoesClient({
   const filteredQuestions = useMemo(() => {
     const term = search.toLowerCase().trim();
     return questions
-      .filter((question) => questionMatchesFilters(question, { term, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaos: orgaoFilters, difficultyLevels, status, yearFilters, missingTopics: missingTopicsFilter }))
+      .filter((question) => questionMatchesFilters(question, { term, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaos: orgaoFilters, difficultyLevels, status, yearFilters, missingTopics: missingTopicsFilter }))
       .sort((a, b) => {
         const ya = a.year || 0;
         const yb = b.year || 0;
@@ -681,7 +791,7 @@ export default function QuestoesClient({
         if (!yb) return -1;
         return sortOrder === "newest" ? yb - ya : ya - yb;
       });
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter, sortOrder]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter, sortOrder]);
 
   useEffect(() => {
     setSingleIndex((current) => {
@@ -692,7 +802,7 @@ export default function QuestoesClient({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, disciplineId, subjectIds.join(","), boardIds.join(","), inspirationBoardIds.join(","), orgaoFilters.join(","), difficultyLevels.join(","), status, yearFilters.join(","), missingTopicsFilter, sortOrder, viewMode]);
+  }, [search, disciplineId, subjectIds.join(","), topicIds.join(","), boardIds.join(","), inspirationBoardIds.join(","), orgaoFilters.join(","), difficultyLevels.join(","), status, yearFilters.join(","), missingTopicsFilter, sortOrder, viewMode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -1762,13 +1872,15 @@ export default function QuestoesClient({
           </div>
         </div>
         <div className="relative space-y-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <PremiumSearch
               value={search}
               onChange={setSearch}
               onClear={() => setSearch("")}
             />
+          </div>
 
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SimpleSelectDropdown
               label="Disciplina"
               value={disciplineId}
@@ -1785,6 +1897,14 @@ export default function QuestoesClient({
               selectedIds={subjectIds}
               onChange={setSubjectIds}
               subjectCounts={subjectCounts}
+            />
+
+            <TopicFilterDropdown
+              topics={availableTopicsForFilter}
+              selectedIds={topicIds}
+              onChange={setTopicIds}
+              counts={topicCounts}
+              disabled={subjectIds.length === 0}
             />
 
             <BoardFilterDropdown
@@ -4248,6 +4368,208 @@ function SubjectFilterDropdown({
                     <span className="min-w-0 flex-1 truncate">{subject.name}</span>
                     <span className={selected ? "rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white" : "rounded-full border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-[10px] font-black text-white/40"}>
                       {subjectCounts[subject.id] || 0}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-3 flex gap-2 border-t border-white/[0.07] pt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setDraftIds([]);
+                onChange([]);
+                setOpen(false);
+              }}
+              className="flex-1 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/50 hover:bg-white/[0.08] hover:text-white/70"
+            >
+              Limpar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onChange(draftIds);
+                setOpen(false);
+              }}
+              className="flex-1 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-500 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-orange-900/30"
+            >
+              Aplicar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopicFilterDropdown({
+  topics,
+  selectedIds,
+  onChange,
+  counts = {},
+  disabled = false,
+}: {
+  topics: { id: string; name: string }[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  counts?: Record<string, number>;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
+  const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const listboxId = `topic-filter-listbox-${useId()}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  function getLabel() {
+    if (disabled) return "Selecione um assunto";
+    if (selectedIds.length === 0) return "Todos os tópicos";
+    if (selectedIds.length === 1) {
+      const t = topics.find((x) => x.id === selectedIds[0]);
+      return t?.name ?? "1 tópico";
+    }
+    return `${selectedIds.length} tópicos selecionados`;
+  }
+
+  function toggleTopic(id: string) {
+    setDraftIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  }
+
+  const visibleTopics = sortByPtBrLabel(search.trim()
+    ? topics.filter((t) => t.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : topics, (item) => item.name);
+
+  function handleSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (visibleTopics.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => {
+        const next = current + direction;
+        if (next < 0) return visibleTopics.length - 1;
+        if (next >= visibleTopics.length) return 0;
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && highlightedIndex >= 0 && highlightedIndex < visibleTopics.length) {
+      e.preventDefault();
+      toggleTopic(visibleTopics[highlightedIndex].id);
+      return;
+    }
+
+    if (e.key === "Escape" && highlightedIndex >= 0) {
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    e.stopPropagation();
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+        Tópico
+      </label>
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          setDraftIds(selectedIds);
+          setSearch("");
+          setHighlightedIndex(-1);
+          setOpen((current) => !current);
+        }}
+        className="group flex h-12 w-full items-center justify-between rounded-2xl border border-white/[0.08] bg-[#0D1926] px-4 text-left text-sm font-semibold text-white/80 outline-none transition hover:border-white/[0.15] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/[0.08]"
+      >
+        <span className="truncate">{getLabel()}</span>
+        <span className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              {selectedIds.length}
+            </span>
+          )}
+          <ChevronDown
+            size={16}
+            className={`text-white/30 transition duration-200 group-hover:text-orange-400 ${
+              open ? "rotate-180 text-orange-400" : ""
+            }`}
+          />
+        </span>
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute left-0 top-full z-[9999] mt-2 w-full min-w-0 rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:min-w-80">
+          <div className="mb-2.5">
+            <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setHighlightedIndex(-1); }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Buscar tópico..."
+              className="h-9 w-full rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 text-sm text-white/70 outline-none placeholder:text-white/25 focus:border-orange-500/30 focus:ring-2 focus:ring-orange-500/[0.07]"
+              role="combobox"
+              aria-expanded={visibleTopics.length > 0}
+              aria-controls={listboxId}
+            />
+          </div>
+          <div id={listboxId} role="listbox" className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {topics.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum tópico disponível para os assuntos selecionados.
+              </p>
+            ) : visibleTopics.length === 0 ? (
+              <p className="rounded-xl border border-white/[0.05] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/40">
+                Nenhum resultado para &ldquo;{search}&rdquo;.
+              </p>
+            ) : (
+              visibleTopics.map((topic, index) => {
+                const selected = draftIds.includes(topic.id);
+                const highlighted = index === highlightedIndex;
+
+                return (
+                  <button
+                    key={topic.id}
+                    type="button"
+                    onClick={() => toggleTopic(topic.id)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    className={
+                      selected
+                        ? "flex w-full items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/[0.12] px-4 py-3 text-left text-sm font-semibold text-orange-100"
+                        : highlighted
+                          ? "flex w-full items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.06] px-4 py-3 text-left text-sm font-semibold text-white/85"
+                          : "flex w-full items-center gap-3 rounded-xl border border-transparent px-4 py-3 text-left text-sm font-semibold text-white/60 hover:border-white/[0.07] hover:bg-white/[0.04] hover:text-white/80"
+                    }
+                  >
+                    <span
+                      className={
+                        selected
+                          ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-orange-500 text-white"
+                          : "h-5 w-5 shrink-0 rounded-md border border-white/[0.15] bg-white/[0.04]"
+                      }
+                    >
+                      {selected && <Check size={13} strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{topic.name}</span>
+                    <span className={selected ? "rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white" : "rounded-full border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-[10px] font-black text-white/40"}>
+                      {counts[topic.id] || 0}
                     </span>
                   </button>
                 );

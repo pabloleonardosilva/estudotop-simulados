@@ -11,6 +11,7 @@ import PremiumButton from "../components/ui/PremiumButton";
 import PremiumInput from "../components/ui/PremiumInput";
 import PremiumLoadingOverlay from "../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../components/ui/PremiumModal";
+import SearchableSelect from "../components/ui/SearchableSelect";
 import {
   PremiumTable,
   PremiumTableBody,
@@ -415,13 +416,13 @@ export default function TopicosClient({
               options={initialDisciplines.map((discipline) => ({ value: discipline.id, label: `${discipline.name}${!discipline.is_active ? " (inativa)" : ""}` }))}
             />
 
-            <SimpleSelectDropdown
+            <SearchableSelect
+              dark
               label="Assunto"
               value={subjectId}
               onChange={setSubjectId}
-              options={subjects.length === 0
-                ? [{ value: "", label: "Nenhum assunto cadastrado" }]
-                : subjects.map((subject) => ({ value: subject.id, label: `${subject.name}${!subject.is_active ? " (inativo)" : ""}` }))}
+              options={subjects.map((subject) => ({ value: subject.id, label: `${subject.name}${!subject.is_active ? " (inativo)" : ""}` }))}
+              placeholder={subjects.length === 0 ? "Nenhum assunto cadastrado" : "Selecione"}
             />
 
             <PremiumInput variant="jornada" label="Nome do tópico" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Barra de tarefas" className="border-white/[0.08] bg-[#020817]/55 focus:border-orange-400/55" />
@@ -459,7 +460,8 @@ export default function TopicosClient({
           </div>
 
           <div className="mb-6 grid gap-4 rounded-[1.25rem] border border-white/[0.06] bg-[#020817]/25 p-4 md:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
-            <SimpleSelectDropdown
+            <SearchableSelect
+              dark
               label="Filtrar por assunto"
               value={subjectId}
               onChange={setSubjectId}

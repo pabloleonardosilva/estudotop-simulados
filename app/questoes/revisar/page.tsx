@@ -5,10 +5,13 @@ import { requireAdminPage } from "@/lib/server/authGuard";
 
 export const dynamic = "force-dynamic";
 
+type Topic = { id: string; name: string; subject_id: string };
+
 type ReviewPageData = {
   questions: Question[];
   disciplines: Discipline[];
   subjects: Subject[];
+  topics: Topic[];
   boards: Board[];
 };
 
@@ -131,6 +134,13 @@ async function getData(): Promise<ReviewPageData> {
 
   if (boardsError) throw new Error(boardsError.message);
 
+  const { data: topics, error: topicsError } = await supabase
+    .from("topics")
+    .select("id, name, subject_id")
+    .order("name", { ascending: true });
+
+  if (topicsError) throw new Error(topicsError.message);
+
   async function fetchAllPages(select: string, withReviewComment: boolean) {
     const PAGE = 1000;
     const all: unknown[] = [];
@@ -175,6 +185,7 @@ async function getData(): Promise<ReviewPageData> {
     questions: (questions as unknown) as Question[],
     disciplines: ((disciplines || []) as unknown) as Discipline[],
     subjects: ((subjects || []) as unknown) as Subject[],
+    topics: ((topics || []) as unknown) as Topic[],
     boards: ((boards || []) as unknown) as Board[],
   };
 }
@@ -202,6 +213,7 @@ export default async function RevisarQuestoesPage({
   const initialFilters = {
     boardIds: arr("banca"),
     subjectIds: arr("assunto"),
+    topicIds: arr("topico"),
     disciplineId: str("disciplina"),
     difficultyLevels: arr("dificuldade"),
     orgaos: arr("orgao"),
@@ -216,6 +228,7 @@ export default async function RevisarQuestoesPage({
       initialQuestions={data.questions}
       disciplines={data.disciplines}
       subjects={data.subjects}
+      topics={data.topics}
       boards={data.boards}
       initialFilters={initialFilters}
     />
