@@ -3103,7 +3103,20 @@ function InlineQuestionEditor({
 
   const [generatingAI, setGeneratingAI] = useState(false);
 
+  // "Salvar todas as alterações"/"Salvar questão" (ghost bar) incrementam
+  // saveAllTrigger no componente pai para disparar o salvamento de TODOS os
+  // editores inline abertos no momento do clique. Sem a guarda de montagem
+  // abaixo, um editor aberto DEPOIS desse clique herdaria o valor já
+  // incrementado via prop e este efeito rodaria na primeira renderização
+  // (todo useEffect roda ao montar), chamando saveImmediate() sem o usuário
+  // ter pedido — inclusive validando (e bloqueando) tópicos de uma questão
+  // que só foi aberta para consulta/edição, nunca para salvar.
+  const hasMountedRef = useRef(false);
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
     if (!saveAllTrigger) return;
     saveImmediate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
