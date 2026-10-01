@@ -121,6 +121,7 @@ type ResultPayload = {
     owl_help_used_count?: number;
   };
   subjects: string[];
+  direct_topics: DirectTopicGroup[];
   gabarito: ResultQuestion[];
   jornada?: {
     student_jornada_id: string;
@@ -128,6 +129,8 @@ type ResultPayload = {
   } | null;
   earned_topcoins?: number | null;
 };
+
+type DirectTopicGroup = { discipline: string; topics: string[] };
 
 type SubjectTopicPerformance = {
   key: string;
@@ -591,7 +594,7 @@ export default function ResultadoClient({
           </div>
 
           {safeStep === 0 && <ResultOverview result={r} behaviorMetrics={payload.behavior_metrics} />}
-          {safeStep === 1 && <ResultExamXRay result={r} subjects={payload.subjects} simuladoTitle={payload.simulado.title} scoringModel={payload.simulado.scoring_model} finishedAt={r?.finished_at || payload.attempt.submitted_at} />}
+          {safeStep === 1 && <ResultExamXRay result={r} subjects={payload.subjects} directTopics={payload.direct_topics} simuladoTitle={payload.simulado.title} scoringModel={payload.simulado.scoring_model} finishedAt={r?.finished_at || payload.attempt.submitted_at} />}
           {safeStep === 2 && <ResultSubjects performance={performanceBySubject} subjects={payload.subjects} answerKeyVisible={payload.simulado.show_answer_key_on_finish} onGoToReview={() => setResultStep(reviewStepIndex)} />}
           {safeStep === 3 && <ResultBehavior result={r} metrics={payload.behavior_metrics} timeSpent={timeSpent} avgTime={avgTime} />}
           {hasCorrectionVideo && safeStep === videoStepIndex && <ResultCorrectionVideo simuladoId={payload.simulado.id} correctionVideoUrl={payload.simulado.correction_video_url!} />}
@@ -765,7 +768,7 @@ function ResultOverview({ result, behaviorMetrics }: { result: ResultPayload["re
 }
 
 
-function ResultExamXRay({ result, subjects, simuladoTitle, scoringModel, finishedAt }: { result: ResultPayload["result"]; subjects: string[]; simuladoTitle: string; scoringModel: "traditional" | "cebraspe"; finishedAt?: string | null }) {
+function ResultExamXRay({ result, subjects, directTopics, simuladoTitle, scoringModel, finishedAt }: { result: ResultPayload["result"]; subjects: string[]; directTopics: DirectTopicGroup[]; simuladoTitle: string; scoringModel: "traditional" | "cebraspe"; finishedAt?: string | null }) {
   if (!result) return <EmptyState text="O raio-x desta tentativa ainda não está disponível." />;
 
   const totalQuestions = Number(result.total_questions || 0);
@@ -776,6 +779,8 @@ function ResultExamXRay({ result, subjects, simuladoTitle, scoringModel, finishe
   const correctPercent = totalQuestions > 0 ? (Number(result.correct_count || 0) / totalQuestions) * 100 : 0;
   const wrongPercent = totalQuestions > 0 ? (Number(result.wrong_count || 0) / totalQuestions) * 100 : 0;
   const uniqueSubjects = subjects.length;
+  const directTopicCount = directTopics.reduce((acc, group) => acc + group.topics.length, 0);
+  const directTopicsSummary = `${directTopicCount} ${directTopicCount === 1 ? "tópico avaliado" : "tópicos avaliados"} diretamente ${directTopics.length === 1 ? "na disciplina" : "nas disciplinas"} ${joinList(directTopics.map((group) => group.discipline), "")}`;
   const finishedDate = finishedAt
     ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(finishedAt))
     : "—";
@@ -838,19 +843,40 @@ function ResultExamXRay({ result, subjects, simuladoTitle, scoringModel, finishe
               <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#FF5A00]">Assuntos do simulado</p>
               <h4 className="mt-2 text-xl font-extrabold tracking-[-0.02em] text-slate-950">Conteúdos cobrados nesta prova</h4>
             </div>
-            <span className="rounded-[12px] border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-extrabold text-[#FF5A00]">{uniqueSubjects || 0} assunto(s)</span>
-          </div>
-          {subjects.length ? (
-            <div className="mt-7 flex flex-wrap gap-2.5">
-              {subjects.map((subject) => (
-                <span key={subject} className="inline-flex min-h-12 items-center gap-2 rounded-full border border-slate-200 bg-[linear-gradient(135deg,#FFFFFF,#F8FAFC)] px-5 text-sm font-extrabold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"><BookOpen size={16} className="text-slate-500" />{subject}</span>
-              ))}
+            <div className="flex flex-col items-end gap-2">
+              <span className="rounded-[12px] border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-extrabold text-[#FF5A00]">{uniqueSubjects || 0} assunto(s)</span>
+              {directTopicCount > 0 && <span className="rounded-[12px] border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-extrabold text-[#FF5A00]">{directTopicCount} tópico(s) da disciplina</span>}
             </div>
+          </div>
+          {subjects.length || directTopics.length ? (
+            <>
+              {subjects.length > 0 && (
+                <div className="mt-7 flex flex-wrap gap-2.5">
+                  {subjects.map((subject) => (
+                    <span key={subject} className="inline-flex min-h-12 items-center gap-2 rounded-full border border-slate-200 bg-[linear-gradient(135deg,#FFFFFF,#F8FAFC)] px-5 text-sm font-extrabold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"><BookOpen size={16} className="text-slate-500" />{subject}</span>
+                  ))}
+                </div>
+              )}
+              {directTopics.map((group, index) => (
+                <div key={`${group.discipline}-${index}`} className={subjects.length > 0 || index > 0 ? "mt-6" : "mt-7"}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Tópicos da disciplina · {group.discipline}</p>
+                  <div className="mt-3 flex flex-wrap gap-2.5">
+                    {group.topics.map((topic) => (
+                      <span key={topic} className="inline-flex min-h-12 items-center gap-2 rounded-full border border-slate-200 bg-[linear-gradient(135deg,#FFFFFF,#F8FAFC)] px-5 text-sm font-extrabold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.035)]"><Target size={16} className="text-slate-500" />{topic}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
           ) : (
             <EmptyState text="Nenhum assunto foi identificado neste simulado." />
           )}
           <div className="mt-4 rounded-[14px] border border-orange-100 bg-[linear-gradient(135deg,#FFF7ED,#FFFFFF)] px-5 py-4 text-sm font-medium leading-6 text-slate-600">
-            <p>A prova abordou {uniqueSubjects || 0} assunto específico.</p>
+            {directTopicCount > 0 ? (
+              <p>A prova abordou {uniqueSubjects > 0 ? `${uniqueSubjects} ${uniqueSubjects === 1 ? "assunto específico" : "assuntos específicos"} e ${directTopicsSummary}` : directTopicsSummary}.</p>
+            ) : (
+              <p>A prova abordou {uniqueSubjects || 0} assunto específico.</p>
+            )}
             <p className="mt-1">Revise os conteúdos para consolidar ainda mais seu aprendizado.</p>
           </div>
         </div>

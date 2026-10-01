@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import * as jsxRuntime from "react/jsx-runtime";
+import { renderToStaticMarkup } from "react-dom/server";
 
 // Disciplina obrigatória, Assunto opcional, Tópicos diretos da Disciplina.
 // Executa o código real (transpilado) com Supabase em memória: nenhum banco é tocado.
@@ -638,4 +640,231 @@ test.describe("editor inline do Banco — abrir não salva nem fecha (E)", () =>
       expect(final).toMatchObject({ patch: 3, saved: 3, cancel: 0 });
     });
   }
+});
+
+// Resultado do aluno com Assunto opcional (RS): o Raio-X recebe os tópicos diretos da
+// Disciplina sem depender do gabarito; a liberação do gabarito continua sendo regra do Simulado.
+test.describe("resultado do aluno — API com tópicos diretos (RS)", () => {
+  const STUDENT = "stu-1";
+  const SIM = "sim-1";
+  const info = { id: INFO, name: "Informática" };
+  const direito = { id: DIREITO, name: "Direito Constitucional" };
+  const windows = { id: WINDOWS, name: "Windows", disciplines: info };
+
+  function sq(id: string, order: number, question: Row, status = "active") {
+    return {
+      id, simulado_id: SIM, order_number: order, status, points: 1, question_id: question.id,
+      questions: {
+        statement: "<p>Enunciado</p>", explanation_text: null, question_type: "multiple_choice", exam_boards: null, subjects: null, discipline: null, evaluated_topics: [],
+        question_alternatives: [{ id: `${question.id}-a`, label: "A", text: "A", is_correct: true }, { id: `${question.id}-b`, label: "B", text: "B", is_correct: false }],
+        ...question,
+      },
+    };
+  }
+
+  function entry(sqId: string, questionId: string, selected: "a" | "b" | null, status = "active") {
+    return {
+      simulado_question_id: sqId, question_id: questionId, points: 1, status,
+      selected_alternative_id: selected ? `${questionId}-${selected}` : null, selected_alternative_label: selected ? selected.toUpperCase() : null,
+      is_correct: status === "annulled" || !selected ? null : selected === "a",
+      correct_alternative_id: `${questionId}-a`, correct_alternative_label: "A", score_delta: 0,
+    };
+  }
+
+  function result(attemptId: string, overrides: Row = {}) {
+    return {
+      id: `res-${attemptId}`, attempt_id: attemptId, simulado_id: SIM, total_questions: 5, answered_questions: 4, correct_count: 1, wrong_count: 2, blank_count: 1, annulled_count: 1,
+      score: 2, display_score: 2, max_score: 5, percentage: 40, display_percentage: 40, scoring_model: "traditional", time_spent_seconds: 300, finished_at: "2026-10-01T20:00:00Z",
+      result_snapshot: { entries: [entry("sq-1", "q-win", "a"), entry("sq-2", "q-dir-1", "b"), entry("sq-3", "q-dir-2", "a", "annulled"), entry("sq-4", "q-info", null), entry("sq-5", "q-legado", "b")] },
+      ...overrides,
+    };
+  }
+
+  function attempt(id: string, overrides: Row = {}) {
+    return {
+      id, simulado_id: SIM, student_id: STUDENT, status: "completed", counts_toward_limit: true, attempt_context: "standalone", event_participant_id: null, student_jornada_simulado_id: null,
+      submitted_at: "2026-10-01T20:00:00Z", time_spent_seconds: 300, tab_switch_count: 0, focus_violation_count: 0, inactivity_event_count: 0, scissors_used_question_ids: [], owl_help_used_count: 0,
+      ...overrides,
+    };
+  }
+
+  // Cenário C (misto): Assunto + tópicos diretos na mesma Disciplina (Informática), outra
+  // Disciplina só com tópicos diretos, tópico homônimo ("Atalhos") em escopos diferentes,
+  // múltiplos tópicos, anulada, em branco e um legado sem Disciplina.
+  function tables(showAnswerKey: boolean): Record<string, Row[]> {
+    return {
+      students: [{ id: STUDENT, name: "Aluno", email: "aluno@example.com", cpf: null }],
+      simulados: [{ id: SIM, title: "Simulado misto", description: null, scoring_model: "traditional", show_answer_key_on_finish: showAnswerKey, show_teacher_comment: true, correction_video_url: null, instant_feedback_enabled: false, feedback_mode: "final_only", owl_help_enabled: false }],
+      simulado_attempts: [
+        attempt("att-nao-conta", { counts_toward_limit: false }),
+        attempt("att-jornada", { attempt_context: "jornada", student_jornada_simulado_id: "sjs-1" }),
+        attempt("att-evento", { attempt_context: "event", event_participant_id: "part-1" }),
+        attempt("att-oficial"),
+        attempt("att-segunda"),
+        attempt("att-outro-aluno", { student_id: "stu-2" }),
+      ],
+      simulado_results: ["att-nao-conta", "att-jornada", "att-evento", "att-oficial", "att-segunda"].map((id) => result(id, id === "att-segunda" ? { correct_count: 3, display_percentage: 60 } : {})),
+      topcoin_earnings: [],
+      simulado_answers: [],
+      simulado_questions: [
+        sq("sq-1", 1, { id: "q-win", subjects: windows, discipline: info, evaluated_topics: ["Atalhos"] }),
+        sq("sq-2", 2, { id: "q-dir-1", discipline: direito, evaluated_topics: ["ADI", "Controle concentrado"] }),
+        sq("sq-3", 3, { id: "q-dir-2", discipline: direito, evaluated_topics: ["adi"] }, "annulled"),
+        sq("sq-4", 4, { id: "q-info", discipline: info, evaluated_topics: ["Atalhos"] }),
+        sq("sq-5", 5, { id: "q-legado", discipline: null, evaluated_topics: ["Tópico legado"] }),
+      ],
+      student_jornadas: [{ id: "sj-1", student_id: STUDENT, jornadas: { title: "Jornada" }, student_jornada_simulados: [{ simulado_id: SIM }] }],
+      student_jornada_simulados: [{ id: "sjs-1", student_jornada_id: "sj-1", simulado_id: SIM, student_jornadas: { student_id: STUDENT, status: "active", expires_at: null } }],
+      simulado_event_participants: [{ id: "part-1", event_id: "ev-1", student_id: STUDENT, representative_attempt_id: "att-evento", result_released_at: "2026-10-01T21:00:00Z", access_status: "active" }],
+    };
+  }
+
+  function route(db: any) {
+    return loadModule("app/api/student/simulados/[id]/resultado/route.ts", {
+      ...modules(db),
+      "@/lib/server/supabaseStudentAuth": { getStudentFromRequest: async () => ({ id: STUDENT, email: "aluno@example.com", user_metadata: {} }) },
+      "@/app/lib/server/auditLogger": { logStudentActivity: async () => {}, logSystemError: async () => {} },
+    }).exports;
+  }
+
+  async function get(t: Record<string, Row[]>, query = "") {
+    const response = await route(database(t)).GET(new Request(`http://localhost/api/student/simulados/${SIM}/resultado${query}`), { params: Promise.resolve({ id: SIM }) });
+    return { status: response.status, body: await response.json() };
+  }
+
+  const build = loadModule("app/meus-simulados/[id]/resultado/page-client.tsx", {}).context.buildSubjectTopicPerformance as (questions: Row[]) => Row[];
+
+  test("T02/T03/T06/T07/T19 — tópicos diretos por Disciplina, homônimos isolados, legado sem grupo", async () => {
+    const { status, body } = await get(tables(true));
+    expect(status).toBe(200);
+    expect(body.subjects).toEqual(["Windows"]);
+    expect(body.direct_topics).toEqual([
+      { discipline: "Direito Constitucional", topics: ["ADI", "Controle concentrado"] },
+      { discipline: "Informática", topics: ["Atalhos"] },
+    ]);
+    expect(JSON.stringify(body.direct_topics)).not.toMatch(/Tópico legado|Sem assunto|null|undefined/);
+  });
+
+  test("T11 — Raio-X recebe os conteúdos mesmo com gabarito bloqueado; T13 — gabarito continua protegido", async () => {
+    const { body } = await get(tables(false));
+    expect(body.simulado.show_answer_key_on_finish).toBe(false);
+    expect(body.gabarito).toEqual([]);
+    expect(JSON.stringify(body)).not.toMatch(/is_correct|correct_alternative/);
+    expect(body.direct_topics.map((group: Row) => group.discipline)).toEqual(["Direito Constitucional", "Informática"]);
+  });
+
+  test("T04/T05/T08/T09/T12 — desempenho misto sem duplicidade, anulada e em branco preservadas", async () => {
+    const { body } = await get(tables(true));
+    const groups = build(body.gabarito);
+    const byKey = Object.fromEntries(groups.map((group) => [group.key, group]));
+    expect(Object.keys(byKey).sort()).toEqual(["discipline:Direito Constitucional", "discipline:Informática", "subject:Windows"]);
+    expect(byKey["subject:Windows"]).toMatchObject({ total: 1, correct: 1, wrong: 0, blank: 0, annulled: 0, percent: 100 });
+    expect(byKey["discipline:Direito Constitucional"]).toMatchObject({ total: 2, correct: 0, wrong: 1, blank: 0, annulled: 1, percent: 0 });
+    expect(byKey["discipline:Informática"]).toMatchObject({ total: 1, correct: 0, wrong: 0, blank: 1, percent: 0 });
+    expect(byKey["discipline:Direito Constitucional"].reviewTopics.map((topic: Row) => [topic.label, topic.total])).toEqual([["ADI", 1], ["Controle concentrado", 1]]);
+    expect(byKey["discipline:Informática"].reviewTopics.map((topic: Row) => topic.label)).toEqual(["Atalhos"]);
+    expect(byKey["subject:Windows"].masteredTopics.map((topic: Row) => topic.label)).toEqual(["Atalhos"]);
+    // Cada questão com Assunto ou Disciplina entra em um único grupo; o legado sem ambos fica só nos totais gerais.
+    expect(groups.reduce((sum, group) => sum + group.total, 0)).toBe(4);
+  });
+
+  test("T01 — cenário A (todas com Assunto): sem tópicos diretos, comportamento anterior", async () => {
+    const t = tables(true);
+    t.simulado_questions = t.simulado_questions.slice(0, 1);
+    const { body } = await get(t);
+    expect(body.subjects).toEqual(["Windows"]);
+    expect(body.direct_topics).toEqual([]);
+    expect(build(body.gabarito).map((group) => group.key)).toEqual(["subject:Windows"]);
+  });
+
+  test("E — questão sem Assunto e sem tópicos não cria grupo vazio no Raio-X; o desempenho usa o rótulo existente", async () => {
+    const t = tables(true);
+    t.simulado_questions = [
+      sq("sq-1", 1, { id: "q-win", subjects: windows, discipline: info, evaluated_topics: ["Atalhos"] }),
+      sq("sq-2", 2, { id: "q-dir-1", discipline: direito, evaluated_topics: [] }),
+    ];
+    const { body } = await get(t);
+    expect(body.subjects).toEqual(["Windows"]);
+    expect(body.direct_topics).toEqual([]);
+    const direct = build(body.gabarito).find((group) => group.key === "discipline:Direito Constitucional");
+    expect(direct).toMatchObject({ total: 1, wrong: 1 });
+    expect(direct?.reviewTopics.map((topic: Row) => topic.label)).toEqual(["Tópico não informado"]);
+  });
+
+  test("T10/T15 — resultado oficial é a tentativa avulsa que conta, com totais persistidos intactos", async () => {
+    const { body } = await get(tables(true));
+    expect(body.attempt.id).toBe("att-oficial");
+    expect(body.result).toMatchObject({ total_questions: 5, answered_questions: 4, correct_count: 1, wrong_count: 2, blank_count: 1, annulled_count: 1, display_score: 2, display_percentage: 40 });
+  });
+
+  test("T14 — resultado imediato usa a tentativa pedida; tentativa de outro aluno é recusada", async () => {
+    const own = await get(tables(true), "?attemptId=att-segunda");
+    expect(own.body.attempt.id).toBe("att-segunda");
+    expect(own.body.result.correct_count).toBe(3);
+    const other = await get(tables(true), "?attemptId=att-outro-aluno");
+    expect(other.status).toBe(404);
+  });
+
+  test("T17 — resultado acessado por Jornada usa a tentativa da Jornada", async () => {
+    const { status, body } = await get(tables(true), "?jornada=sj-1");
+    expect(status).toBe(200);
+    expect(body.attempt.id).toBe("att-jornada");
+    expect(body.jornada).toEqual({ student_jornada_id: "sj-1", title: "Jornada" });
+    expect(body.direct_topics).toHaveLength(2);
+  });
+
+  test("T18 — Evento liberado usa a tentativa representativa; sem liberação continua bloqueado", async () => {
+    const released = await get(tables(false), "?event=ev-1");
+    expect(released.body.attempt.id).toBe("att-evento");
+    expect(released.body.simulado.show_answer_key_on_finish).toBe(true);
+    expect(released.body.gabarito).toHaveLength(5);
+    const t = tables(false);
+    t.simulado_event_participants[0].result_released_at = null;
+    const blocked = await get(t, "?event=ev-1");
+    expect(blocked.status).toBe(403);
+    expect(blocked.body).toEqual({ ok: false, code: "EVENT_RESULT_BLOCKED", message: "Seu resultado foi calculado e aguarda liberação pelo professor." });
+  });
+
+  test("T20 — contrato anterior preservado; direct_topics é aditivo", async () => {
+    const { body } = await get(tables(true));
+    for (const key of ["ok", "message", "student", "simulado", "attempt", "behavior_metrics", "result", "earned_topcoins", "average_display_percentage", "total_results", "subjects", "gabarito", "jornada"]) expect(body).toHaveProperty(key);
+    expect(Object.keys(body.gabarito[1]).sort()).toEqual(["alternatives", "correct_alternative_id", "correct_alternative_label", "discipline", "evaluated_topics", "exam_board", "explanation_text", "is_correct", "order_number", "points", "question_type", "selected_alternative_id", "selected_alternative_label", "simulado_question_id", "statement", "status", "subject"]);
+    expect(body.gabarito[1]).toMatchObject({ subject: null, discipline: "Direito Constitucional" });
+  });
+});
+
+test.describe("resultado do aluno — Raio-X e Desempenho renderizados (RS)", () => {
+  const Icon = () => null;
+  const { context } = loadModule("app/meus-simulados/[id]/resultado/page-client.tsx", {
+    "react/jsx-runtime": jsxRuntime,
+    "lucide-react": new Proxy({}, { get: (_target, key) => (key === "__esModule" ? true : Icon) }),
+  });
+  const result = { id: "r", total_questions: 10, answered_questions: 10, correct_count: 0, wrong_count: 10, blank_count: 0, annulled_count: 0, score: 0, display_score: 0, max_score: 10, percentage: 0, display_percentage: 0, scoring_model: "traditional", time_spent_seconds: 600, finished_at: "2026-10-01T20:55:20Z" };
+  const xray = (subjects: string[], directTopics: Row[]) => renderToStaticMarkup(jsxRuntime.jsx(context.ResultExamXRay, { result, subjects, directTopics, simuladoTitle: "Simulado de Português", scoringModel: "traditional", finishedAt: result.finished_at }));
+  const portugues = { discipline: "Português", topics: ["Crase", "Pontuação no Período Simples", "Voz Passiva"] };
+
+  test("T11 — cenário B (só tópicos diretos): conteúdos identificados, sem mensagem de vazio", () => {
+    const html = xray([], [portugues]);
+    expect(html).toContain("Tópicos da disciplina · Português");
+    for (const topic of portugues.topics) expect(html).toContain(topic);
+    expect(html).toContain("0 assunto(s)");
+    expect(html).toContain("3 tópico(s) da disciplina");
+    expect(html).toContain("A prova abordou 3 tópicos avaliados diretamente na disciplina Português.");
+    expect(html).not.toContain("Nenhum assunto foi identificado");
+  });
+
+  test("T11 — cenário C (misto); cenário A (só Assuntos) e vazio mantêm o texto original", () => {
+    const mixed = xray(["Windows"], [{ discipline: "Informática", topics: ["Atalhos"] }]);
+    expect(mixed).toContain("A prova abordou 1 assunto específico e 1 tópico avaliado diretamente na disciplina Informática.");
+    const subjectsOnly = xray(["Windows"], []);
+    expect(subjectsOnly).toContain("A prova abordou 1 assunto específico.");
+    expect(subjectsOnly).not.toContain("Tópicos da disciplina");
+    expect(subjectsOnly).not.toContain("tópico(s) da disciplina");
+    expect(xray([], [])).toContain("Nenhum assunto foi identificado neste simulado.");
+  });
+
+  test("T13 — Desempenho continua bloqueado quando o gabarito não é liberado", () => {
+    const html = renderToStaticMarkup(jsxRuntime.jsx(context.ResultSubjects, { performance: [], subjects: [], answerKeyVisible: false, onGoToReview: () => {} }));
+    expect(html).toContain("O gabarito e os detalhes por questão não estão disponíveis para este simulado.");
+  });
 });

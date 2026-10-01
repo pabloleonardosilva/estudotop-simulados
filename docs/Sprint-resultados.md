@@ -498,6 +498,8 @@ A aba deve mostrar, de forma visual e premium:
 - modelo de correção;
 - nota obtida em relação à nota máxima.
 
+**Assunto opcional (01/10/2026):** questões sem Assunto não entram na contagem de assuntos. Seus tópicos avaliados aparecem no card "Conteúdos cobrados nesta prova" no bloco "Tópicos da disciplina · <Disciplina>", vindos do campo aditivo `direct_topics` da API (`[{ discipline, topics[] }]`). O contador "Assuntos" continua contando somente Assuntos. Assim como `subjects`, `direct_topics` não depende da liberação do gabarito. A aba **Desempenho por Assunto** continua exigindo gabarito liberado (`show_answer_key_on_finish` do Simulado ou resultado de Evento liberado).
+
 ### Regra editorial
 
 Esta aba não deve substituir a aba **Desempenho por Assunto**.

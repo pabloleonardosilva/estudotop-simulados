@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
 import { logStudentActivity, logSystemError } from "@/app/lib/server/auditLogger";
+import { canonicalizeTopicLabel } from "@/lib/topicDifficulty";
 
 type ResultSnapshotEntry = {
   simulado_question_id: string;
@@ -45,6 +46,31 @@ type QuestionDetail = {
   subjects: { id: string; name: string; disciplines: { id: string; name: string } | null } | null;
   exam_boards: { id: string; name: string } | null;
 };
+
+type DirectTopicGroup = { discipline: string; topics: string[] };
+
+// Questão sem Assunto não entra em `subjects`: seus tópicos são listados no nível da
+// própria Disciplina (agrupada por id, deduplicados com a mesma canonicalização dos cards
+// de desempenho). Questão sem Assunto e sem Disciplina (legado) não gera grupo.
+function buildDirectTopicGroups(questions: Array<QuestionDetail | null>): DirectTopicGroup[] {
+  const groups = new Map<string, { discipline: string; topics: Map<string, string> }>();
+  for (const question of questions) {
+    if (!question || question.subjects?.id || !question.discipline?.id) continue;
+    let group = groups.get(question.discipline.id);
+    if (!group) {
+      group = { discipline: question.discipline.name, topics: new Map() };
+      groups.set(question.discipline.id, group);
+    }
+    for (const topic of Array.isArray(question.evaluated_topics) ? question.evaluated_topics : []) {
+      const canonical = canonicalizeTopicLabel(topic);
+      if (canonical.key && !group.topics.has(canonical.key)) group.topics.set(canonical.key, canonical.label);
+    }
+  }
+  return Array.from(groups.values())
+    .filter((group) => group.topics.size > 0)
+    .map((group) => ({ discipline: group.discipline, topics: Array.from(group.topics.values()).sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.discipline.localeCompare(b.discipline));
+}
 
 export async function GET(
   request: Request,
@@ -476,6 +502,7 @@ export async function GET(
     average_display_percentage: average,
     total_results: percentages.length,
     subjects: Array.from(subjectsMap.values()).sort((a, b) => a.localeCompare(b)),
+    direct_topics: buildDirectTopicGroups(sqRows.map((row) => row.questions)),
     gabarito,
     jornada: jornadaContext,
   });
