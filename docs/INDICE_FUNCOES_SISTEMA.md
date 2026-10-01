@@ -84,6 +84,42 @@ A ausência de Assunto é `subject_id = NULL`. É proibido criar assunto artific
 
 **Fechamento da Sprint (01/10/2026).** Homologação manual realizada pelo usuário no localhost e **aprovada** para os fluxos de edição: o editor inline permanece aberto após clicar em Editar; abrir o editor não provoca salvamento involuntário; salvamentos sucessivos funcionam sem F5; o estado recém-salvo fica imediatamente disponível para nova edição; alterar a classificação e editar novamente funciona sem refresh. **Não confirmados manualmente** (permanecem pendentes de homologação): "Usar como modelo" pelo Criador Manual, alinhamento visual dos campos, Importador/Gerador IA, Raio-X, Configurações → Tópicos, resultado do aluno e PDFs sem Assunto. Migration já executada em 30/09/2026 e versionada neste fechamento sem nova execução (md5 `94a0195310da997505648e46cc25caa6`). Sprint consolidada em um único commit em `main`.
 
+### Migração "Português para Concursos" — EXECUTADA MANUALMENTE E AUDITADA (01/10/2026)
+
+| Etapa | Estado |
+|---|---|
+| Auditoria prévia (somente leitura, `uphqihoqzwqjzmsimaug`) | Concluída e revalidada antes da execução (último pré-flight 22:49 UTC) |
+| Backups | Etapa de preparação (sha256 `d466cdfe…cb8ff`) e pré-execução (sha256 `9ca6d039…02d7`), ambos verificados e idênticos linha a linha |
+| Migration | `supabase/migrations/20261001230000_portugues_para_concursos_classification.sql` (md5 `28693048445d0e103a561ca33a4ae474`; somente dados) |
+| Teste isolado | 33/33 em PostgreSQL isolado (PGlite 0.5.8 / PG 18.3, em memória) |
+| Execução | **Manual, pelo SQL Editor do Supabase, em 01/10/2026 às 22:52:14 UTC** (o `apply_migration` da ferramenta de IA foi recusado pelo controle de permissões) |
+| Auditoria pós-execução | Concluída, sem divergências |
+| Ledger `supabase_migrations.schema_migrations` | **Não registrada** (execução manual) — decisão: apenas documentar, sem `migration repair` |
+| Homologação visual | Pendente |
+
+**Escopo e decisões do usuário:** criar o assunto "Português para Concursos" (id `38b30a5e-78fb-4e25-b9cb-dcc2cfa44e4a`) na disciplina Português (`2e2ef950-faee-4ef6-89c1-d5327aea1800`); mover para ele os 14 tópicos diretos usados (mesmos ids); atribuí-lo às 10 questões ET3916–ET3925 preservando `evaluated_topics`; criar os 10 vínculos em `question_subjects`; excluir o assunto de teste "Teste - Pablo", seu tópico "Bla Bla" e os tópicos diretos sem uso "Azeite de Oliva", "Gaffarinha" e "Teste - Concordância". Somente dados: nenhuma alteração de estrutura, RLS, grants, funções ou triggers; nenhuma mudança em gabaritos, regras de divulgação, Jornadas ou Eventos; nenhuma outra disciplina tocada. Questões sem Assunto continuam tecnicamente permitidas; a correção do resultado do aluno para esse modelo está registrada na seção anterior.
+
+**Fatos comprovados que definem o desenho:** nenhum trigger limpa `evaluated_topics` (a limpeza ao trocar Assunto está só na aplicação: edição em massa e editores — não usar para esse tipo de operação). `trg_questions_sync_topics_on_review` faz upsert de tópicos no escopo da questão ao mudar `subject_id`; por isso a migration move os tópicos **antes** das questões e o rollback devolve os tópicos **antes** de remover o Assunto (ordem invertida comprovadamente cria 14 tópicos duplicados). Nenhuma FK aponta para `topics`. Os registros excluídos só apareciam nas próprias linhas (varredura de todas as colunas texto, JSON e uuid do schema `public`).
+
+**Proteções da migration:** transação única; `set local timezone = 'UTC'`; linhas bloqueadas (`for update`); pré-condições por id e md5 de cada questão/tópico (estado idêntico ao backup), inventário exato, assunto inexistente, ausência de dependências das exclusões e de tentativa `in_progress`; contagem de linhas afetadas em cada passo; pós-condições e md5 antes/depois, na mesma transação, de Simulados, vínculos de Simulado, tentativas, resultados, respostas, alternativas, demais disciplinas e `question_subjects` alheios. Sem `CASCADE` efetivo.
+
+**Auditoria pós-execução (somente leitura, 01/10/2026 ~22:58 UTC):** comparação com o backup de pré-execução por md5 de cada linha e linha a linha via PostgREST, ignorando só `subject_id` e `updated_at` (mudanças previstas):
+- 14 tópicos com mesmos ids, nomes, `normalized_name`, `is_active`, `created_at` e disciplina, todos no novo assunto; 10 questões com conteúdo, código e status idênticos, `evaluated_topics` idêntico (md5 agregado `564b6934ce64c51262fb063a8393c5c5`) e o novo assunto; 10 vínculos, um por questão.
+- 4 tópicos de teste e "Teste - Pablo" excluídos; sem homônimos recriados, sem duplicatas, sem tópicos diretos remanescentes em Português, sem tópicos órfãos.
+- 43 alternativas (gabaritos), vínculos do Simulado, Simulado, Jornada e matrícula idênticos; 2 tentativas, 2 resultados e 20 respostas idênticos ao backup.
+- Totais: 3.922 questões (inalterado), tópicos 967 → 963 (−4), 42 assuntos (+1 −1); última atualização fora de Português anterior ao backup.
+- Execução única e atômica: assunto, questões e tópicos com o mesmo timestamp `2026-10-01 22:52:14.867633 UTC`; `pg_stat_statements` registra cada instrução da migration concluída exatamente uma vez.
+
+**Erro `relation "_ppc_questions" does not exist` visto no SQL Editor:** as tabelas `_ppc_*` são temporárias (`on commit drop`). O erro veio de uma execução separada, após o `commit`, de trecho que referencia `_ppc_questions` (ex.: o bloco `DO` isolado); essa execução falhou na primeira referência e não alterou dados (comprovado pela auditoria acima). Uma segunda execução completa teria duas chamadas registradas.
+
+**Ledger e reaplicação:** a migration não consta no ledger, como as demais execuções manuais do projeto (o ledger já não espelha os arquivos locais). Por decisão do usuário, não foi feito `migration repair` nem escrita direta no ledger. O comentário "Estado: PREPARADA, NÃO EXECUTADA" no cabeçalho do arquivo reflete a preparação e não é editado, para preservar o arquivo executado (md5 acima). **Não executar o arquivo novamente**: se reaplicado por engano (ex.: `supabase db push`), as pré-condições abortam a transação sem alterar dados (o assunto já existe; os tópicos e questões não estão mais no estado do backup).
+
+**Artefatos fora do repositório** (`D:/Projetos_Software/estudotop-simulados/Backups/2026-10-01-portugues-para-concursos/`, sem dados pessoais): `backup.json` e `pre-execucao/backup.json` (disciplina, assunto de teste, 18 tópicos, 10 questões completas, alternativas, vínculos, Simulado, Jornada; tentativas/resultados/respostas só como id + sha256 da linha), `export-backup.cjs` (somente leitura; `verify` confere hash, contagens e hash por linha), `rollback.sql` (sha256 `22ce837b…94cc`; restaura os excluídos com ids e datas originais; aborta se o novo Assunto tiver sido usado; **não executado**), `teste-local/` (schema reproduzido e roteiro dos 33 testes).
+
+**Impacto nos resultados:** notas, respostas e snapshots não mudam (snapshots não guardam Assunto nem tópico). A apresentação dos resultados, que lê a classificação atual, passa a mostrar "Português para Concursos" para essas questões.
+
+**Observações externas registradas:** durante a preparação o Simulado IBGP passou de 1 para 2 tentativas concluídas e `show_answer_key_on_finish` passou a `true`, por ação externa a esta tarefa; a migration não altera configurações de gabarito.
+
 ## Infraestrutura test-only: ambiente de integração seguro concluído (Fase 6B, encerrada em 18/09/2026)
 
 - A infraestrutura de testes de integração construída pelas Fases 6B.1 a 6B.6-F está concluída e validada: guard anti-produção fail-closed (6B.1), admin sintético real (6B.2), fixtures/sessão browser reais (6B.3), isolamento determinístico de IA (6B.4), auditoria e triagem da suíte completa (6B.5), e as correções cirúrgicas de fragilidades/testes desatualizados/fixtures/cleanup do smoke (6B.6-A a 6B.6-E).
