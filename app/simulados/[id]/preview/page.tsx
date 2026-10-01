@@ -26,6 +26,10 @@ async function getData(id: string) {
           year,
           question_type,
           correct_alternative_label,
+          discipline:discipline_id (
+            id,
+            name
+          ),
           exam_boards:exam_board_id (
             id,
             name

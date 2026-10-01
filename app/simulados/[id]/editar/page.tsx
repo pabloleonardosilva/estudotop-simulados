@@ -34,6 +34,11 @@ async function getData(id: string) {
           evaluated_topics,
           year,
           question_type,
+          discipline_id,
+          discipline:discipline_id (
+            id,
+            name
+          ),
           exam_boards:exam_board_id (
             id,
             name

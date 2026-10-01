@@ -72,6 +72,7 @@ type PreviewQuestion = {
   question_type: string | null;
   exam_board: string | null;
   subject: string | null;
+  discipline: string | null;
   alternatives: {
     id: string;
     label: string;
@@ -149,6 +150,7 @@ export default function PreviewSimuladoClient({
         question_type: rel.questions?.question_type || null,
         exam_board: rel.questions?.exam_boards?.name || null,
         subject: rel.questions?.subjects?.name || null,
+        discipline: rel.questions?.discipline?.name || rel.questions?.subjects?.disciplines?.name || null,
         alternatives: [...(rel.questions?.question_alternatives || [])]
           .sort((a: any, b: any) => (a.order_number || 0) - (b.order_number || 0))
           .map((alt: any) => ({
@@ -1098,8 +1100,10 @@ function buildWeakTopicGroups(questions: PreviewQuestion[], answers: Record<stri
     const selected = question.alternatives.find((alt) => alt.id === answer?.alternativeId);
     if (selected?.is_correct) return;
 
-    const subject = question.subject || "Assunto não informado";
-    const topic = question.subject || "Tópico da questão";
+    // Sem Assunto, o agrupamento usa o nível da própria Disciplina.
+    const subject = question.subject || question.discipline;
+    if (!subject) return;
+    const topic = subject;
     if (!groups.has(subject)) groups.set(subject, new Set());
     groups.get(subject)?.add(topic);
   });
@@ -1115,9 +1119,11 @@ function buildSubjectPerformance(questions: PreviewQuestion[], answers: Record<s
   const map = new Map<string, SubjectPerformance>();
 
   questions.forEach((question) => {
-    const subject = question.subject || "Sem assunto";
+    const subject = question.subject || question.discipline;
+    if (!subject) return;
     if (!map.has(subject)) map.set(subject, { subject, correct: 0, wrong: 0, blank: 0, total: 0, percent: 0 });
-    const item = map.get(subject)!;
+    const item = map.get(subject);
+    if (!item) return;
     const answer = answers[question.simulado_question_id];
     const selected = question.alternatives.find((alt) => alt.id === answer?.alternativeId);
 
@@ -1139,7 +1145,7 @@ function buildCriticalQuestions(questions: PreviewQuestion[], answers: Record<st
     const correct = question.alternatives.find((alt) => alt.is_correct);
     return {
       number: index + 1,
-      subject: question.subject || "Sem assunto",
+      subject: question.subject || question.discipline || "",
       status: !selected ? "blank" : selected.is_correct ? "correct" : "wrong",
       selectedLabel: selected?.label || null,
       correctLabel: correct?.label || null,

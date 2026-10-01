@@ -44,6 +44,7 @@ type SourceQuestionRow = {
   year?: number | null;
   explanation_text?: string | null;
   exam_boards?: { id: string; name: string } | null;
+  discipline?: { id: string; name: string } | null;
   subjects?: {
     id: string;
     name: string;
@@ -316,8 +317,8 @@ function buildPrompt({
 Crie ${quantity} variação(ões) INÉDITA(S) a partir da questão-modelo abaixo.
 
 DISCIPLINA: ${disciplineName}
-ASSUNTO(S): ${subjectNames.join(", ") || "Não informado"}
-BANCA INSPIRADORA: ${inspiringBoardName}
+${subjectNames.length ? `ASSUNTO(S): ${subjectNames.join(", ")}
+` : ""}BANCA INSPIRADORA: ${inspiringBoardName}
 TIPO: ${questionType === "true_false" ? "Assertiva / Certo ou Errado" : "Questão com alternativas"}
 
 QUESTÃO-MODELO — use apenas como referência temática, não como texto a reescrever:
@@ -455,6 +456,10 @@ export async function POST(
         difficulty_level,
         year,
         explanation_text,
+        discipline:discipline_id (
+          id,
+          name
+        ),
         exam_boards:exam_board_id (
           id,
           name
@@ -539,14 +544,15 @@ export async function POST(
     const subjectRows = getSubjectRows(typedSource);
     const subjectIds = subjectRows.map((subject) => subject.id).filter(Boolean);
     const primarySubject = subjectRows[0] || typedSource.subjects;
-    const discipline = primarySubject?.disciplines;
+    // Assunto opcional: a variação herda a Disciplina da questão-modelo, com ou sem Assunto.
+    const discipline = typedSource.discipline || primarySubject?.disciplines;
 
-    if (!primarySubject?.id) {
+    if (!discipline?.id) {
       return NextResponse.json(
         {
           ok: false,
           message:
-            "A questão-modelo precisa ter pelo menos um assunto vinculado.",
+            "A questão-modelo precisa ter uma disciplina vinculada.",
         },
         { status: 400 },
       );
@@ -674,13 +680,14 @@ export async function POST(
         inspiring_exam_board_id: typedSource.exam_boards?.id || "",
         source_question_id: typedSource.id,
         source_question_code: typedSource.code || null,
-        discipline_id: discipline?.id || primarySubject.discipline_id || "",
-        discipline_name: discipline?.name || "Não informada",
-        subject_id: primarySubject.id,
-        subject_ids: subjectIds.length ? subjectIds : [primarySubject.id],
+        discipline_id: discipline.id,
+        discipline_name: discipline.name,
+        subject_id: primarySubject?.id || null,
+        subject_ids: subjectIds.length ? subjectIds : primarySubject?.id ? [primarySubject.id] : [],
         subject_name:
           subjectRows.map((subject) => subject.name).join(", ") ||
-          primarySubject.name,
+          primarySubject?.name ||
+          null,
         difficulty_level: difficultyLevel,
         explanation_text: includeExplanations
           ? clean(generated.explanation_text || "")

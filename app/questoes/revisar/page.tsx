@@ -5,7 +5,7 @@ import { requireAdminPage } from "@/lib/server/authGuard";
 
 export const dynamic = "force-dynamic";
 
-type Topic = { id: string; name: string; subject_id: string };
+type Topic = { id: string; name: string; subject_id: string | null; discipline_id: string };
 
 type ReviewPageData = {
   questions: Question[];
@@ -32,6 +32,7 @@ async function getData(): Promise<ReviewPageData> {
     explanation_text,
     created_at,
     review_comment,
+    discipline_id,
     question_subjects (
       subjects (
         id,
@@ -79,6 +80,7 @@ async function getData(): Promise<ReviewPageData> {
     image_url,
     explanation_text,
     created_at,
+    discipline_id,
     question_subjects (
       subjects (
         id,
@@ -136,7 +138,7 @@ async function getData(): Promise<ReviewPageData> {
 
   const { data: topics, error: topicsError } = await supabase
     .from("topics")
-    .select("id, name, subject_id")
+    .select("id, name, subject_id, discipline_id")
     .order("name", { ascending: true });
 
   if (topicsError) throw new Error(topicsError.message);

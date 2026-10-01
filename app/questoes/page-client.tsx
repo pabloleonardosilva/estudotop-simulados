@@ -58,6 +58,7 @@ import ExplanationAuthorCard from "../components/questions/ExplanationAuthorCard
 import {
   extractQuestionSubjects,
   getQuestionDisciplineIds,
+  primarySubjectId,
 } from "@/lib/questions/question-subjects";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
@@ -118,6 +119,13 @@ type PublicationQueueBulkEditFields = {
 };
 
 type Confirm = { title: string; message: string; onConfirm: () => Promise<void> | void } | null;
+type TopicFilterOption = { id: string; name: string; subject_id: string | null; discipline_id: string };
+
+// Com Assunto(s): tópicos desses Assuntos. Só com Disciplina: tópicos diretos dela.
+function topicInFilterScope(topic: TopicFilterOption, disciplineId: string, subjectIds: string[]) {
+  if (subjectIds.length > 0) return Boolean(topic.subject_id) && subjectIds.includes(topic.subject_id as string);
+  return Boolean(disciplineId) && topic.subject_id === null && topic.discipline_id === disciplineId;
+}
 type SimuladoOption = { id: string; title: string; status?: string | null; linked_questions_count?: number | null; question_count?: number | null };
 type QuestionSimuladoRelation = {
   status?: string | null;
@@ -196,12 +204,16 @@ function questionAnnulledInAnySimulado(question: { simulado_questions?: Question
 // uma única vez por render, o texto de cada questão para os IDs reais de
 // topics — restrito aos assuntos da própria questão, para não colidir com
 // tópicos homônimos de outro assunto.
-function buildTopicIdsByQuestion(questions: any[], topics: { id: string; name: string; subject_id: string }[]) {
+// Questão sem Assunto usa o catálogo de tópicos diretos da própria Disciplina.
+function buildTopicIdsByQuestion(questions: any[], topics: TopicFilterOption[]) {
   const topicsBySubject = new Map<string, Map<string, string>>();
+  const directTopicsByDiscipline = new Map<string, Map<string, string>>();
   topics.forEach((topic) => {
-    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    const buckets = topic.subject_id ? topicsBySubject : directTopicsByDiscipline;
+    const key = topic.subject_id || topic.discipline_id;
+    const bucket = buckets.get(key) || new Map<string, string>();
     bucket.set(normalizeTopicComparableName(topic.name), topic.id);
-    topicsBySubject.set(topic.subject_id, bucket);
+    buckets.set(key, bucket);
   });
 
   const map = new Map<string, string[]>();
@@ -213,8 +225,10 @@ function buildTopicIdsByQuestion(questions: any[], topics: { id: string; name: s
     }
     const qSubjectIds = extractQuestionSubjects(question).map((s) => s.id).filter((id): id is string => Boolean(id));
     const ids = new Set<string>();
-    qSubjectIds.forEach((subjectId: string) => {
-      const bucket = topicsBySubject.get(subjectId);
+    const buckets = qSubjectIds.length > 0
+      ? qSubjectIds.map((subjectId) => topicsBySubject.get(subjectId))
+      : [question.discipline_id ? directTopicsByDiscipline.get(question.discipline_id) : undefined];
+    buckets.forEach((bucket) => {
       if (!bucket) return;
       evaluated.forEach((name) => {
         const topicId = bucket.get(normalizeTopicComparableName(name));
@@ -383,12 +397,12 @@ export default function QuestoesClient({
   const [savingDifficultyId, setSavingDifficultyId] = useState<string | null>(null);
   const [detectingTopicsId, setDetectingTopicsId] = useState<string | null>(null);
   const [bulkStatus, setBulkStatus] = useState<"draft" | "pending_review" | "published" | "ready_to_publish">("pending_review");
-  const [bulkEditType, setBulkEditType] = useState<"status" | "subject" | "board">("status");
+  const [bulkEditType, setBulkEditType] = useState<"status" | "discipline" | "subject" | "board">("status");
+  const [bulkDisciplineId, setBulkDisciplineId] = useState("");
   const [bulkSubjectIds, setBulkSubjectIds] = useState<string[]>([]);
   const [bulkBoardId, setBulkBoardId] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
-  const [useAsTemplateQuestion, setUseAsTemplateQuestion] = useState<any | null>(null);
   const [showNewQuestionModal, setShowNewQuestionModal] = useState(false);
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
   const [showPublicationQueueBulkEditModal, setShowPublicationQueueBulkEditModal] = useState(false);
@@ -450,12 +464,12 @@ export default function QuestoesClient({
     setTopicIds((current) => {
       if (current.length === 0) return current;
       const validIds = new Set(
-        topics.filter((topic) => subjectIds.includes(topic.subject_id)).map((topic) => topic.id),
+        topics.filter((topic) => topicInFilterScope(topic, disciplineId, subjectIds)).map((topic) => topic.id),
       );
       const filtered = current.filter((id) => validIds.has(id));
       return filtered.length === current.length ? current : filtered;
     });
-  }, [subjectIds, topics]);
+  }, [disciplineId, subjectIds, topics]);
 
   const estudoTopBoardId = useMemo(
     () => boards.find((board) => /estudo\s*top/i.test(board.name || ""))?.id || "",
@@ -740,12 +754,11 @@ export default function QuestoesClient({
   );
 
   const availableTopicsForFilter = useMemo(() => {
-    if (subjectIds.length === 0) return [];
     return topics.filter((topic) =>
-      subjectIds.includes(topic.subject_id) &&
+      topicInFilterScope(topic, disciplineId, subjectIds) &&
       ((topicCounts[topic.id] || 0) > 0 || topicIds.includes(topic.id)),
     );
-  }, [topics, subjectIds, topicCounts, topicIds]);
+  }, [topics, disciplineId, subjectIds, topicCounts, topicIds]);
 
   const availableBoards = useMemo(
     () => boards.filter((item) => (boardCounts[item.id] || 0) > 0 || boardIds.includes(item.id)),
@@ -1136,7 +1149,7 @@ export default function QuestoesClient({
           if (actualPublished > 0) messageParts.push(`${actualPublished} questão(ões) publicada(s).`);
           if (blockedIds.length > 0) messageParts.push(`${blockedIds.length} questão(ões) sem gabarito único devolvida(s) para revisão: ${blockedCodes.join(", ")}.`);
           if (blockedTopicIds.length > 0) messageParts.push(`${blockedTopicIds.length} questão(ões) sem tópicos avaliados devolvida(s) para revisão: ${blockedTopicCodes.join(", ")}.`);
-          if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) sem assunto real devolvida(s) para revisão: ${blockedSubjectCodes.join(", ")}.`);
+          if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) sem disciplina devolvida(s) para revisão: ${blockedSubjectCodes.join(", ")}.`);
           setActionModal({
             open: true,
             tone: hasPartialBlocks ? "warning" : "success",
@@ -1207,7 +1220,7 @@ export default function QuestoesClient({
           if (actualPublished > 0) messageParts.push(`${actualPublished} questão(ões) publicada(s).`);
           if (blockedIds.length > 0) messageParts.push(`${blockedIds.length} questão(ões) sem gabarito único devolvida(s) para revisão: ${blockedCodes.join(", ")}.`);
           if (blockedTopicIds.length > 0) messageParts.push(`${blockedTopicIds.length} questão(ões) sem tópicos avaliados devolvida(s) para revisão: ${blockedTopicCodes.join(", ")}.`);
-          if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) sem assunto real devolvida(s) para revisão: ${blockedSubjectCodes.join(", ")}.`);
+          if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) sem disciplina devolvida(s) para revisão: ${blockedSubjectCodes.join(", ")}.`);
           setActionModal({
             open: true,
             tone: hasPartialBlocks ? "warning" : "success",
@@ -1352,6 +1365,30 @@ export default function QuestoesClient({
 
     const idsToUpdate = [...selectedIds];
 
+    if (fields.subject_ids && fields.subject_ids.length > 0) {
+      const impact = classificationImpact(idsToUpdate, { subjectIds: fields.subject_ids });
+      setShowPublicationQueueBulkEditModal(false);
+      setActionModal({
+        open: true,
+        tone: "warning",
+        title: "Alterar assunto em massa",
+        message: `${impact.topicsCleared} de ${idsToUpdate.length} questão(ões) mudarão de assunto principal e terão os tópicos avaliados limpos. Será preciso informá-los novamente. Deseja continuar?`,
+        primaryLabel: "Confirmar alteração",
+        secondaryLabel: "Cancelar",
+        onClose: () => setActionModal(null),
+        onSecondary: () => setActionModal(null),
+        onPrimary: async () => {
+          setActionModal(null);
+          await runPublicationQueueBulkEdit(idsToUpdate, fields);
+        },
+      });
+      return;
+    }
+
+    await runPublicationQueueBulkEdit(idsToUpdate, fields);
+  }
+
+  async function runPublicationQueueBulkEdit(idsToUpdate: string[], fields: PublicationQueueBulkEditFields) {
     try {
       const response = await adminFetch("/api/admin/questions/bulk", {
         method: "PATCH",
@@ -1366,6 +1403,7 @@ export default function QuestoesClient({
       }
 
       const changedIds = new Set(idsToUpdate);
+      const topicsClearedIds = new Set<string>(result.topicsClearedIds || []);
       const selectedBoard = fields.exam_board_id ? boards.find((board: any) => board.id === fields.exam_board_id) : null;
       const updatedSubjectObjects = fields.subject_ids?.map((id) => {
         const subject = subjects.find((item: any) => item.id === id);
@@ -1386,9 +1424,11 @@ export default function QuestoesClient({
             ...(fields.exam_board_id !== undefined ? { exam_board_id: fields.exam_board_id, exam_boards: selectedBoard || null } : {}),
             ...(fields.subject_ids !== undefined ? {
               subject_id: fields.subject_ids[0] || null,
+              discipline_id: updatedSubjectObjects?.[0]?.subjects.discipline_id || question.discipline_id,
               subjects: updatedSubjectObjects?.[0]?.subjects || null,
               question_subjects: updatedSubjectObjects || [],
             } : {}),
+            ...(topicsClearedIds.has(question.id) ? { evaluated_topics: [] } : {}),
             ...(fields.year !== undefined ? { year: fields.year } : {}),
             ...(fields.difficulty_level !== undefined ? { difficulty_level: fields.difficulty_level } : {}),
           }
@@ -1468,6 +1508,8 @@ export default function QuestoesClient({
     const metadata: Record<string, unknown> = {};
     if (bulkEditType === "subject" && bulkSubjectIds.length > 0) {
       metadata.subject_ids = bulkSubjectIds;
+    } else if (bulkEditType === "discipline" && bulkDisciplineId) {
+      metadata.discipline_id = bulkDisciplineId;
     } else if (bulkEditType === "board" && bulkBoardId) {
       metadata.exam_board_id = bulkBoardId;
     } else {
@@ -1475,6 +1517,46 @@ export default function QuestoesClient({
       return;
     }
 
+    if (bulkEditType === "subject" || bulkEditType === "discipline") {
+      const impact = classificationImpact(selectedIds, bulkEditType === "subject" ? { subjectIds: bulkSubjectIds } : { disciplineId: bulkDisciplineId });
+      setShowBulkStatusModal(false);
+      setActionModal({
+        open: true,
+        tone: "warning",
+        title: bulkEditType === "subject" ? "Alterar assunto em massa" : "Alterar disciplina em massa",
+        message: bulkEditType === "subject"
+          ? `${impact.topicsCleared} de ${selectedIds.length} questão(ões) mudarão de assunto principal e terão os tópicos avaliados limpos. Será preciso informá-los novamente. Deseja continuar?`
+          : `${impact.changed} de ${selectedIds.length} questão(ões) mudarão de disciplina e terão os assuntos e os tópicos avaliados limpos (${impact.topicsCleared} com tópicos informados). Será preciso classificá-las novamente. Deseja continuar?`,
+        primaryLabel: "Confirmar alteração",
+        secondaryLabel: "Cancelar",
+        onClose: () => setActionModal(null),
+        onSecondary: () => setActionModal(null),
+        onPrimary: async () => {
+          setActionModal(null);
+          await runBulkMetadata(metadata);
+        },
+      });
+      return;
+    }
+
+    await runBulkMetadata(metadata);
+  }
+
+  // Mudança de Assunto principal ou de Disciplina invalida os tópicos avaliados (nunca remapeados por nome).
+  function classificationImpact(ids: string[], next: { subjectIds?: string[]; disciplineId?: string }) {
+    const nextPrimarySubjectId = next.subjectIds?.[0] || null;
+    const changed = questions
+      .filter((question) => ids.includes(question.id))
+      .filter((question) => nextPrimarySubjectId
+        ? (question.subject_id || question.subjects?.id || extractQuestionSubjects(question)[0]?.id || null) !== nextPrimarySubjectId
+        : getQuestionDisciplineIds(question)[0] !== next.disciplineId);
+    return {
+      changed: changed.length,
+      topicsCleared: changed.filter((question) => hasEvaluatedTopics(question.evaluated_topics)).length,
+    };
+  }
+
+  async function runBulkMetadata(metadata: Record<string, unknown>) {
     try {
       const response = await adminFetch("/api/admin/questions/bulk", {
         method: "PATCH",
@@ -1484,6 +1566,19 @@ export default function QuestoesClient({
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || "Erro ao atualizar questões.");
       const changedIds = new Set(selectedIds);
+      const topicsClearedIds = new Set<string>(result.topicsClearedIds || []);
+      if (topicsClearedIds.size > 0) {
+        setQuestions((current) => current.map((question) => topicsClearedIds.has(question.id)
+          ? {
+              ...question,
+              evaluated_topics: [],
+              ...(bulkEditType === "discipline"
+                ? { discipline_id: bulkDisciplineId, subject_id: null, subjects: null, question_subjects: [] }
+                : {}),
+            }
+          : question,
+        ));
+      }
       if (bulkEditType === "subject" && bulkSubjectIds.length > 0) {
         const updatedSubjectObjects = bulkSubjectIds.map((id) => {
           const subject = subjects.find((item: any) => item.id === id);
@@ -1498,10 +1593,12 @@ export default function QuestoesClient({
           };
         }).filter(Boolean);
 
+        const bulkSubjectDisciplineId = subjects.find((item) => item.id === bulkSubjectIds[0])?.discipline_id || null;
         setQuestions((current) => current.map((question) => changedIds.has(question.id)
           ? {
               ...question,
               subject_id: bulkSubjectIds[0],
+              discipline_id: bulkSubjectDisciplineId || question.discipline_id,
               subjects: updatedSubjectObjects[0]?.subjects || question.subjects,
               question_subjects: updatedSubjectObjects,
             }
@@ -1734,12 +1831,15 @@ export default function QuestoesClient({
           selectedCount={selectedIds.length}
           editType={bulkEditType}
           selectedStatus={bulkStatus}
+          selectedDisciplineId={bulkDisciplineId}
           selectedSubjectIds={bulkSubjectIds}
           selectedBoardId={bulkBoardId}
+          disciplines={disciplines}
           subjects={subjects}
           boards={boards}
           onSelectEditType={setBulkEditType}
           onSelectStatus={setBulkStatus}
+          onSelectDiscipline={setBulkDisciplineId}
           onSelectSubjects={setBulkSubjectIds}
           onSelectBoard={setBulkBoardId}
           onCancel={() => setShowBulkStatusModal(false)}
@@ -1884,7 +1984,7 @@ export default function QuestoesClient({
             <SimpleSelectDropdown
               label="Disciplina"
               value={disciplineId}
-              onChange={(v) => { setDisciplineId(v); setSubjectIds([]); }}
+              onChange={(v) => { setDisciplineId(v); setSubjectIds([]); setTopicIds([]); }}
               options={[
                 { value: "", label: "Todas" },
                 ...availableDisciplines.map((d) => ({ value: d.id, label: `${d.name} (${disciplineCounts[d.id] || 0})` })),
@@ -1904,7 +2004,7 @@ export default function QuestoesClient({
               selectedIds={topicIds}
               onChange={setTopicIds}
               counts={topicCounts}
-              disabled={subjectIds.length === 0}
+              disabled={subjectIds.length === 0 && !disciplineId}
             />
 
             <BoardFilterDropdown
@@ -2240,8 +2340,8 @@ export default function QuestoesClient({
                 const linkedSubjects = extractQuestionSubjects(question);
                 const disciplineNames = Array.from(
                   new Set(
-                    linkedSubjects
-                      .map((subject) => subject.disciplines?.name)
+                    getQuestionDisciplineIds(question)
+                      .map((id) => disciplines.find((discipline) => discipline.id === id)?.name)
                       .filter(Boolean),
                   ),
                 );
@@ -2333,15 +2433,11 @@ export default function QuestoesClient({
                             <span className={darkCard.tags.neutral}>Ano {question.year}</span>
                           )}
 
-                          {linkedSubjects.length ? (
-                            linkedSubjects.map((subject) => (
-                              <span key={subject.id || subject.name} className={darkCard.tags.subject}>
-                                {subject.name}
-                              </span>
-                            ))
-                          ) : (
-                            <span className={darkCard.tags.muted}>Sem assunto</span>
-                          )}
+                          {linkedSubjects.map((subject) => (
+                            <span key={subject.id || subject.name} className={darkCard.tags.subject}>
+                              {subject.name}
+                            </span>
+                          ))}
 
                           {renderDifficultyStars(question.difficulty_level, true, question.id)}
                         </div>
@@ -2666,7 +2762,7 @@ export default function QuestoesClient({
                         <PremiumButton
                           variant="dark"
                           icon={<Copy size={16} />}
-                          onClick={() => setUseAsTemplateQuestion(question)}
+                          onClick={() => router.push(`/questoes/nova?modelo_id=${question.id}&retorno=${encodeURIComponent(`/questoes${window.location.search}`)}`)}
                         >
                           Usar como modelo
                         </PremiumButton>
@@ -2817,230 +2913,10 @@ export default function QuestoesClient({
         ]}
       />
       </section>
-
-      {useAsTemplateQuestion && (
-        <UseAsTemplateModal
-          question={useAsTemplateQuestion}
-          subjects={subjects}
-          boards={boards}
-          onClose={() => setUseAsTemplateQuestion(null)}
-          onCreated={(newQ) => {
-            setFeedback({ type: "success", message: newQ.status === "published" ? `Questão ${newQ.code} publicada com sucesso.` : `Questão ${newQ.code} salva como rascunho.` });
-            setUseAsTemplateQuestion(null);
-          }}
-        />
-      )}
     </main>
   );
 }
 
-
-function UseAsTemplateModal({
-  question,
-  subjects,
-  boards,
-  onClose,
-  onCreated,
-}: {
-  question: any;
-  subjects: any[];
-  boards: any[];
-  onClose: () => void;
-  onCreated: (q: { id: string; code: string; status: string }) => void;
-}) {
-  const estudoTopBoard = boards.find((b) => /estudo\s*top/i.test(b.name || ""));
-  const sortedAlts = [...(question.question_alternatives || [])].sort(
-    (a: any, b: any) => (a.order_number || 0) - (b.order_number || 0),
-  );
-  const linkedSubjects = extractQuestionSubjects(question);
-  const currentYear = new Date().getFullYear();
-  const originalBoardId = question.exam_boards?.id || question.exam_board_id || null;
-  const inspirationBoardId = question.inspiration_board?.id ||
-    (/estudo\s*top/i.test(question.exam_boards?.name || "") ? null : originalBoardId);
-  const inspirationBoardName = boards.find((board) => board.id === inspirationBoardId)?.name || null;
-
-  const [statement, setStatement] = useState<string>(question.statement || "");
-  const [alternatives, setAlternatives] = useState(
-    sortedAlts.map((alt: any) => ({
-      label: alt.label || "",
-      text: alt.text || "",
-      is_correct: Boolean(alt.is_correct),
-    })),
-  );
-  const [subjectIds, setSubjectIds] = useState<string[]>(
-    linkedSubjects.map((s: any) => s.id).filter(Boolean),
-  );
-  const [difficulty, setDifficulty] = useState<number>(question.difficulty_level || 3);
-  const [savingAs, setSavingAs] = useState<"draft" | "published" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  function markCorrect(index: number) {
-    setAlternatives((curr) => curr.map((a, i) => ({ ...a, is_correct: i === index })));
-  }
-
-  async function save(status: "draft" | "published") {
-    if (!estudoTopBoard) {
-      setError("Banca 'Estudo TOP' não cadastrada. Adicione-a em Bancas antes de continuar.");
-      return;
-    }
-    if (!subjectIds.length) {
-      setError("Selecione pelo menos um assunto.");
-      return;
-    }
-    if (status === "published" && !alternatives.some((a) => a.is_correct)) {
-      setError("Marque a alternativa correta antes de publicar.");
-      return;
-    }
-    setSavingAs(status);
-    setError(null);
-    try {
-      const res = await adminFetch("/api/admin/questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question_type: question.question_type || "multiple_choice",
-          statement,
-          alternatives,
-          subject_id: subjectIds[0],
-          subject_ids: subjectIds,
-          exam_board_id: estudoTopBoard.id,
-          inspiration_board_id: inspirationBoardId,
-          year: currentYear,
-          difficulty_level: difficulty,
-          status,
-          source_origin: "bank",
-          orgao: question.orgao || null,
-          use_as_template: true,
-        }),
-      });
-      const data = await res.json();
-      if (!data.ok) { setError(data.message || "Erro ao criar questão."); return; }
-      onCreated({ id: data.questionId, code: data.questionCode, status });
-    } catch {
-      setError("Erro inesperado. Tente novamente.");
-    } finally {
-      setSavingAs(null);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/80 backdrop-blur-sm">
-      <div className="flex min-h-full items-start justify-center p-4 sm:p-8">
-        <div className="my-8 w-full max-w-3xl rounded-[2rem] border border-white/[0.08] bg-[#07111F] shadow-2xl shadow-black/60">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/[0.07] px-6 py-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl border border-orange-400/30 bg-orange-400/10 p-2.5 text-orange-300">
-                <Copy size={18} />
-              </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-orange-300">Usar como modelo</p>
-                <p className="mt-0.5 text-sm font-semibold text-white/50">
-                  Baseado em {question.code || "questão"} · Banca Estudo TOP · {currentYear}
-                </p>
-              </div>
-            </div>
-            <button type="button" onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-white/50 transition hover:bg-white/[0.10] hover:text-white">
-              <X size={18} />
-            </button>
-          </div>
-
-          {inspirationBoardName && (
-            <div className="mx-6 mt-5 flex items-center justify-between rounded-2xl border border-violet-400/20 bg-violet-400/[0.08] px-4 py-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-violet-300">Informação interna</p>
-                <p className="mt-1 text-sm font-bold text-white/80">Inspirada na banca {inspirationBoardName}</p>
-              </div>
-              <span className="rounded-full border border-violet-300/20 bg-violet-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-violet-200">Somente admin</span>
-            </div>
-          )}
-
-          {/* Body */}
-          <div className="space-y-6 px-6 py-6">
-            {/* Meta */}
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-orange-500/30 bg-orange-500/[0.12] px-3 py-1 text-xs font-black text-orange-300">
-                {estudoTopBoard?.name ?? "Estudo TOP"}
-              </span>
-              <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/50">{currentYear}</span>
-              <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/50">
-                {question.question_type === "true_false" ? "Certo / Errado" : "Múltipla escolha"}
-              </span>
-              <span className="rounded-full border border-white/[0.09] bg-white/[0.05] px-3 py-1 text-xs font-semibold text-white/40">Nova questão</span>
-            </div>
-
-            {/* Subjects */}
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-white/30">Assunto</p>
-              <SubjectMultiSelect subjects={subjects} selectedIds={subjectIds} onChange={setSubjectIds} dark />
-            </div>
-
-            {/* Difficulty */}
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-white/30">Dificuldade</p>
-              <div className="flex items-center gap-0.5">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button key={star} type="button" onClick={() => setDifficulty(star)}
-                    className={`text-xl leading-none transition hover:scale-110 active:scale-95 ${star <= difficulty ? "text-amber-400" : "text-white/15"} hover:text-amber-300`}>
-                    ★
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Statement */}
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-white/30">Enunciado</p>
-              <RichTextEditor value={statement} onChange={setStatement}
-                placeholder="Enunciado da questão..."
-                minRows={4} dark
-                className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-4 text-sm leading-6 text-slate-200 outline-none focus:ring-2 focus:ring-orange-400/20" />
-            </div>
-
-            {/* Alternatives */}
-            <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-white/30">Alternativas</p>
-              <div className="space-y-2">
-                {alternatives.map((alt, idx) => (
-                  <div key={idx} className={`flex items-start gap-3 rounded-2xl border p-3 transition ${alt.is_correct ? "border-emerald-500/30 bg-emerald-500/[0.07]" : "border-white/[0.06] bg-white/[0.03]"}`}>
-                    <button type="button" onClick={() => markCorrect(idx)}
-                      className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition ${alt.is_correct ? "border-emerald-500 bg-emerald-500/20 text-base" : "border-white/[0.15] bg-white/[0.04] text-xs font-black text-white/50 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-300"}`}>
-                      {alt.is_correct ? "🦉" : (alt.label || String.fromCharCode(65 + idx))}
-                    </button>
-                    <RichTextEditor
-                      value={alt.text}
-                      onChange={(v) => setAlternatives((curr) => curr.map((a, i) => i === idx ? { ...a, text: v } : a))}
-                      placeholder={`Alternativa ${alt.label || String.fromCharCode(65 + idx)}`}
-                      compact minRows={2} dark
-                      className="w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-2 text-sm text-white/70 outline-none" />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {error && (
-              <p className="rounded-2xl border border-red-400/30 bg-red-400/[0.08] px-4 py-3 text-sm font-semibold text-red-300">{error}</p>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex justify-end gap-3 border-t border-white/[0.07] px-6 py-4">
-            <PremiumButton variant="secondary" onClick={onClose} disabled={!!savingAs}>Cancelar</PremiumButton>
-            <PremiumButton variant="secondary" onClick={() => void save("draft")} disabled={!!savingAs}
-              icon={savingAs === "draft" ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
-              {savingAs === "draft" ? "Salvando..." : "Salvar rascunho"}
-            </PremiumButton>
-            <PremiumButton onClick={() => void save("published")} disabled={!!savingAs}
-              icon={savingAs === "published" ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}>
-              {savingAs === "published" ? "Publicando..." : "Publicar questão"}
-            </PremiumButton>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function InlineQuestionEditor({
   question,
@@ -3066,6 +2942,7 @@ function InlineQuestionEditor({
   );
   const linkedSubjects = extractQuestionSubjects(question);
   const initialDisciplineId =
+    question.discipline_id ||
     linkedSubjects[0]?.discipline_id ||
     linkedSubjects[0]?.disciplines?.id ||
     question.subjects?.discipline_id ||
@@ -3111,13 +2988,14 @@ function InlineQuestionEditor({
   // (todo useEffect roda ao montar), chamando saveImmediate() sem o usuário
   // ter pedido — inclusive validando (e bloqueando) tópicos de uma questão
   // que só foi aberta para consulta/edição, nunca para salvar.
-  const hasMountedRef = useRef(false);
+  // A guarda compara com o último valor atendido (começa no valor da montagem)
+  // em vez de "já montou": o React StrictMode executa o efeito de montagem duas
+  // vezes com o mesmo ref, e um booleano deixava a segunda execução salvar e
+  // fechar o editor recém-aberto.
+  const handledSaveAllTriggerRef = useRef(saveAllTrigger);
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
-    if (!saveAllTrigger) return;
+    if (!saveAllTrigger || saveAllTrigger === handledSaveAllTriggerRef.current) return;
+    handledSaveAllTriggerRef.current = saveAllTrigger;
     saveImmediate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveAllTrigger]);
@@ -3184,12 +3062,12 @@ function InlineQuestionEditor({
   async function saveImmediate() {
     if (saving) return;
 
-    if (!subjectIds.length || !boardId || !year || !difficulty) {
+    if (!disciplineId || !boardId || !year || !difficulty) {
       setActionModal({
         open: true,
         tone: "error",
         title: "Dados incompletos",
-        message: `Não foi possível salvar a questão ${question.code || ""}. Informe assunto, banca, ano e dificuldade antes de salvar.`,
+        message: `Não foi possível salvar a questão ${question.code || ""}. Informe disciplina, banca, ano e dificuldade antes de salvar.`,
         onClose: () => setActionModal(null),
       });
       return;
@@ -3224,7 +3102,8 @@ function InlineQuestionEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question_type: questionType,
-          subject_id: subjectIds[0],
+          discipline_id: disciplineId,
+          subject_id: subjectIds[0] || null,
           subject_ids: subjectIds,
           exam_board_id: boardId,
           statement,
@@ -3255,8 +3134,12 @@ function InlineQuestionEditor({
         status,
         explanation_text: explanation,
         evaluated_topics: evaluatedTopics,
+        discipline_id: disciplineId,
+        subject_id: subjectIds[0] || null,
         question_subjects: updatedSubjectObjects,
         question_alternatives: alternatives.map((alt: any, i: number) => ({ ...alt, order_number: i + 1 })),
+        // A versão canônica do servidor prevalece sobre a cópia local (inclui a relação subjects).
+        ...(result.question || {}),
       });
     } catch (error) {
       setActionModal({
@@ -3272,12 +3155,12 @@ function InlineQuestionEditor({
   }
 
   async function save(nextStatus?: string) {
-    if (!subjectIds.length || !boardId || !year || !difficulty) {
+    if (!disciplineId || !boardId || !year || !difficulty) {
       setActionModal({
         open: true,
         tone: "error",
         title: "Dados incompletos",
-        message: "Informe assunto, banca, ano e dificuldade antes de salvar.",
+        message: "Informe disciplina, banca, ano e dificuldade antes de salvar.",
         onClose: () => setActionModal(null),
       });
       return;
@@ -3329,7 +3212,8 @@ function InlineQuestionEditor({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               question_type: questionType,
-              subject_id: subjectIds[0],
+              discipline_id: disciplineId,
+              subject_id: subjectIds[0] || null,
               subject_ids: subjectIds,
               exam_board_id: boardId,
               statement,
@@ -3360,8 +3244,11 @@ function InlineQuestionEditor({
             status: nextStatus || status,
             explanation_text: explanation,
             evaluated_topics: evaluatedTopics,
+            discipline_id: disciplineId,
+            subject_id: subjectIds[0] || null,
             question_subjects: updatedSubjectObjects,
             question_alternatives: alternatives.map((alt: any, i: number) => ({ ...alt, order_number: i + 1 })),
+            ...(result.question || {}),
           };
           setActionModal({
             open: true,
@@ -3442,7 +3329,12 @@ function InlineQuestionEditor({
           <SimpleSelectDropdown
             label="Disciplina"
             value={disciplineId}
-            onChange={(v) => { setDisciplineId(v); setSubjectIds([]); }}
+            onChange={(v) => {
+              if (v === disciplineId) return;
+              setDisciplineId(v);
+              setSubjectIds([]);
+              setEvaluatedTopics([]);
+            }}
             options={[
               { value: "", label: "Selecione" },
               ...disciplines.map((d) => ({ value: d.id, label: d.name })),
@@ -3450,8 +3342,18 @@ function InlineQuestionEditor({
           />
 
           <div className="md:col-span-2">
-            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Assuntos</label>
-            <SubjectMultiSelect subjects={filteredSubjects} selectedIds={subjectIds} onChange={setSubjectIds} emptyLabel="Selecione" disciplineId={disciplineId} />
+            <SubjectMultiSelect
+              label="Assuntos (opcional)"
+              dark
+              subjects={filteredSubjects}
+              selectedIds={subjectIds}
+              onChange={(ids) => {
+                if (primarySubjectId(ids) !== primarySubjectId(subjectIds)) setEvaluatedTopics([]);
+                setSubjectIds(ids);
+              }}
+              emptyLabel="Selecione"
+              disciplineId={disciplineId}
+            />
           </div>
 
           <SimpleSelectDropdown
@@ -3465,12 +3367,12 @@ function InlineQuestionEditor({
           />
 
           <div>
-            <label className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Ano</label>
+            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Ano</label>
             <input
               value={year}
               onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))}
               placeholder="2025"
-              className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-white/75 outline-none transition placeholder:text-white/25 hover:border-white/[0.14] focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10"
+              className="h-12 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-white/75 outline-none transition placeholder:text-white/25 hover:border-white/[0.14] focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/10"
             />
           </div>
         </div>
@@ -3630,6 +3532,7 @@ function InlineQuestionEditor({
               value={evaluatedTopics}
               onChange={setEvaluatedTopics}
               subjectId={subjectIds[0] || null}
+              disciplineId={disciplineId || null}
               required
               disabled={saving}
               variant="dark"
@@ -4450,7 +4353,7 @@ function TopicFilterDropdown({
   }, [open]);
 
   function getLabel() {
-    if (disabled) return "Selecione um assunto";
+    if (disabled) return "Selecione disciplina ou assunto";
     if (selectedIds.length === 0) return "Todos os tópicos";
     if (selectedIds.length === 1) {
       const t = topics.find((x) => x.id === selectedIds[0]);
@@ -4906,26 +4809,32 @@ function BulkEditModal({
   selectedCount,
   editType,
   selectedStatus,
+  selectedDisciplineId,
   selectedSubjectIds,
   selectedBoardId,
+  disciplines,
   subjects,
   boards,
   onSelectEditType,
   onSelectStatus,
+  onSelectDiscipline,
   onSelectSubjects,
   onSelectBoard,
   onCancel,
   onConfirm,
 }: {
   selectedCount: number;
-  editType: "status" | "subject" | "board";
+  editType: "status" | "discipline" | "subject" | "board";
   selectedStatus: "draft" | "pending_review" | "ready_to_publish" | "published";
+  selectedDisciplineId: string;
   selectedSubjectIds: string[];
   selectedBoardId: string;
+  disciplines: { id: string; name: string }[];
   subjects: { id: string; name: string; discipline_id: string }[];
   boards: { id: string; name: string }[];
-  onSelectEditType: (type: "status" | "subject" | "board") => void;
+  onSelectEditType: (type: "status" | "discipline" | "subject" | "board") => void;
   onSelectStatus: (status: "draft" | "pending_review" | "ready_to_publish" | "published") => void;
+  onSelectDiscipline: (id: string) => void;
   onSelectSubjects: (ids: string[]) => void;
   onSelectBoard: (id: string) => void;
   onCancel: () => void;
@@ -4940,11 +4849,13 @@ function BulkEditModal({
 
   const typeOptions = [
     { value: "status" as const, label: "Status" },
+    { value: "discipline" as const, label: "Disciplina" },
     { value: "subject" as const, label: "Assunto" },
     { value: "board" as const, label: "Banca" },
   ];
 
   const confirmDisabled =
+    (editType === "discipline" && !selectedDisciplineId) ||
     (editType === "subject" && selectedSubjectIds.length === 0) ||
     (editType === "board" && !selectedBoardId);
 
@@ -5032,11 +4943,36 @@ function BulkEditModal({
             </div>
           )}
 
+          {/* Disciplina */}
+          {editType === "discipline" && (
+            <div className="relative mt-4 rounded-3xl border border-white/[0.08] bg-white/[0.035] p-4">
+              <div className="mb-3 rounded-2xl border border-orange-400/15 bg-orange-500/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-orange-100/85">
+                As questões que mudarem de disciplina terão <strong>assuntos e tópicos avaliados limpos</strong> e precisarão ser classificadas novamente.
+              </div>
+              <div className="max-h-60 space-y-1.5 overflow-y-auto rounded-2xl border border-white/10 bg-white/[0.03] p-2">
+                {sortByPtBrLabel(disciplines, (item) => item.name).map((discipline) => {
+                  const active = selectedDisciplineId === discipline.id;
+                  return (
+                    <button
+                      key={discipline.id}
+                      type="button"
+                      onClick={() => onSelectDiscipline(discipline.id)}
+                      className={active ? "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold text-orange-200 bg-orange-500/10" : "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/[0.05]"}
+                    >
+                      {discipline.name}
+                      {active && <Check size={13} strokeWidth={3} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Assunto */}
           {editType === "subject" && (
             <div className="relative mt-4 rounded-3xl border border-white/[0.08] bg-white/[0.035] p-4">
               <div className="mb-3 rounded-2xl border border-orange-400/15 bg-orange-500/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-orange-100/85">
-                Você pode selecionar <strong>um ou vários assuntos</strong>. Ao salvar, todos os assuntos selecionados substituirão os assuntos atuais das questões escolhidas.
+                Você pode selecionar <strong>um ou vários assuntos</strong> da mesma disciplina. Ao salvar, todos os assuntos selecionados substituirão os assuntos atuais das questões escolhidas, e as questões cujo assunto principal mudar terão os <strong>tópicos avaliados limpos</strong>.
               </div>
               <SubjectMultiSelect
                 label="Assuntos da edição em massa"

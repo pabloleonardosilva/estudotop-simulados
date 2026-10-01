@@ -290,7 +290,7 @@ export async function downloadSimuladoAdminPdf({ meta, questions }: { meta: Admi
   questions.forEach((question) => {
     pdf.ensure(120);
     pdf.text(`Questão ${question.orderNumber}${question.code ? ` · ${question.code}` : ""}`, MARGIN, pdf.current.y, 13, "#0F172A", true);
-    pdf.text(question.subject || "Sem assunto", PAGE_W - MARGIN - 150, pdf.current.y, 9, "#64748B");
+    if (question.subject) pdf.text(question.subject, PAGE_W - MARGIN - 150, pdf.current.y, 9, "#64748B");
     pdf.current.y -= 16;
     const metadata = [question.board, question.year ? `Ano ${question.year}` : null, question.difficulty ? `Dificuldade ${question.difficulty}` : null].filter(Boolean).join(" · ");
     if (metadata) {

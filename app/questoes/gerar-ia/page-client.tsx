@@ -62,9 +62,9 @@ type GeneratedQuestion = {
   inspiring_exam_board_id?: string;
   discipline_id: string;
   discipline_name: string;
-  subject_id: string;
+  subject_id: string | null;
   subject_ids?: string[];
-  subject_name: string;
+  subject_name: string | null;
   difficulty_level: number | null;
   explanation_text: string;
   evaluated_topics: string[];
@@ -308,8 +308,8 @@ export default function GerarQuestoesIAClient({
   async function handleGenerate() {
     setFeedback(null);
 
-    if (subjectIds.length === 0) {
-      setFeedback({ type: "error", message: "Selecione o assunto das questões." });
+    if (!disciplineId) {
+      setFeedback({ type: "error", message: "Selecione a disciplina das questões." });
       return;
     }
 
@@ -334,7 +334,8 @@ export default function GerarQuestoesIAClient({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          subject_id: subjectIds[0],
+          discipline_id: disciplineId,
+          subject_id: subjectIds[0] || null,
           subject_ids: subjectIds,
           exam_board_id: boardId,
           question_type: questionType,
@@ -435,8 +436,6 @@ export default function GerarQuestoesIAClient({
             source_origin: "generate_ai",
           })),
           discipline_id: disciplineId,
-          subject_id: subjectIds[0],
-          subject_ids: subjectIds,
           year: new Date().getFullYear(),
         }),
       });
@@ -567,6 +566,7 @@ export default function GerarQuestoesIAClient({
                 />
 
                 <SubjectMultiSelect
+                  label="Assuntos (opcional)"
                   subjects={filteredSubjects}
                   selectedIds={subjectIds}
                   onChange={setSubjectIds}
@@ -864,7 +864,7 @@ function GeneratedQuestionCard({
           </span>
 
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-            {question.discipline_name} / {question.subject_name}
+            {[question.discipline_name, question.subject_name].filter(Boolean).join(" / ")}
           </span>
 
           <PremiumDifficultyStars value={question.difficulty_level} compact />
@@ -1002,6 +1002,7 @@ function GeneratedQuestionCard({
               value={question.evaluated_topics}
               onChange={(evaluated_topics) => onChange({ evaluated_topics })}
               subjectId={question.subject_id || null}
+              disciplineId={question.discipline_id || null}
               required
               disabled={disabled}
               variant="light"

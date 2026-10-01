@@ -37,6 +37,8 @@ export type BankQuestion = {
   year?: number | null;
   question_type?: string | null;
   exam_boards?: ExamBoard | null;
+  discipline_id?: string | null;
+  discipline?: Discipline | null;
   subjects?: (Subject & { disciplines?: Discipline | null }) | null;
   question_subjects?: {
     subjects?: (Subject & { disciplines?: Discipline | null }) | null;

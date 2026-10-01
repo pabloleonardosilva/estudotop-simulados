@@ -41,6 +41,7 @@ type QuestionDetail = {
   question_type: string | null;
   evaluated_topics?: string[] | null;
   question_alternatives: { id: string; label: string; text: string; is_correct: boolean }[];
+  discipline: { id: string; name: string } | null;
   subjects: { id: string; name: string; disciplines: { id: string; name: string } | null } | null;
   exam_boards: { id: string; name: string } | null;
 };
@@ -307,6 +308,7 @@ export async function GET(
           explanation_text,
           question_type,
           evaluated_topics,
+          discipline:discipline_id ( id, name ),
           subjects:subject_id (
             id,
             name,
@@ -362,7 +364,7 @@ export async function GET(
           question_type: question?.question_type || null,
           evaluated_topics: Array.isArray(question?.evaluated_topics) ? question.evaluated_topics : [],
           subject: question?.subjects?.name || null,
-          discipline: question?.subjects?.disciplines?.name || null,
+          discipline: question?.discipline?.name || question?.subjects?.disciplines?.name || null,
           exam_board: question?.exam_boards?.name || null,
           alternatives: (question?.question_alternatives || []).map((alt) => ({
             id: alt.id,

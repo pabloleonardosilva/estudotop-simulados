@@ -32,6 +32,7 @@ type SimuladoQuestionRow = {
     question_type: string | null;
     correct_alternative_label: string | null;
     exam_boards: { id: string; name: string } | null;
+    discipline: { id: string; name: string } | null;
     subjects: { id: string; name: string; disciplines: { id: string; name: string } | null } | null;
     question_alternatives: {
       id: string;
@@ -319,6 +320,7 @@ export async function POST(
           question_type,
           correct_alternative_label,
           exam_boards:exam_board_id ( id, name ),
+          discipline:discipline_id ( id, name ),
           subjects:subject_id (
             id,
             name,
@@ -382,7 +384,7 @@ export async function POST(
       question_type: q?.question_type || null,
       exam_board: q?.exam_boards?.name || null,
       subject: q?.subjects?.name || null,
-      discipline: q?.subjects?.disciplines?.name || null,
+      discipline: q?.discipline?.name || q?.subjects?.disciplines?.name || null,
       alternatives: finalAlternatives.map((alt) => ({
         id: alt.id,
         label: alt.label,
@@ -506,6 +508,7 @@ async function buildAttemptResponse(
           explanation_text,
           question_type,
           exam_boards:exam_board_id ( id, name ),
+          discipline:discipline_id ( id, name ),
           subjects:subject_id (
             id,
             name,
@@ -548,7 +551,7 @@ async function buildAttemptResponse(
       question_type: q?.question_type || null,
       exam_board: q?.exam_boards?.name || null,
       subject: q?.subjects?.name || null,
-      discipline: q?.subjects?.disciplines?.name || null,
+      discipline: q?.discipline?.name || q?.subjects?.disciplines?.name || null,
       alternatives,
     };
   });

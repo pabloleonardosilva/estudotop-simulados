@@ -63,6 +63,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           difficulty_level: Math.max(1, Math.min(5, Number(q.difficulty_level ?? 3))),
           year: Number(q.year ?? new Date().getFullYear()),
           exam_board_id: q.exam_board_id || null,
+          discipline_id: q.subject_id ? null : analysis.discipline_id || null,
           subject_id: q.subject_id || null,
           explanation_text: q.explanation_text || null,
           source_origin: "exam_clone",

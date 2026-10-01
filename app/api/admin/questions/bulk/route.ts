@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { EVALUATED_TOPICS_PUBLISH_MESSAGE, hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
+import { resolveQuestionDiscipline } from "@/lib/questions/question-subjects";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
 
 export async function PATCH(request: Request) {
@@ -33,27 +34,79 @@ export async function PATCH(request: Request) {
         updates.difficulty_level = Number.isInteger(d) && d >= 1 && d <= 5 ? d : null;
       }
 
+      // Mudança de Assunto principal ou de Disciplina invalida os tópicos da classificação anterior:
+      // eles são limpos (nunca remapeados por nome) somente nas questões cuja classificação muda.
+      let topicsClearedIds: string[] = [];
+      const subjectIds = Array.isArray(body.metadata.subject_ids) ? (body.metadata.subject_ids as string[]) : null;
+      const disciplineId = typeof body.metadata.discipline_id === "string" ? body.metadata.discipline_id.trim() : "";
+      const classification = (subjectIds && subjectIds.length > 0) || disciplineId
+        ? await resolveQuestionDiscipline({
+            supabase,
+            disciplineId: disciplineId || null,
+            subjectIds: subjectIds && subjectIds.length > 0 ? Array.from(new Set(subjectIds)) : [],
+          })
+        : null;
+      if (classification && !classification.ok) return NextResponse.json({ ok: false, message: classification.message }, { status: 400 });
+
       if (Object.keys(updates).length > 0) {
         const { error } = await supabase.from("questions").update(updates).in("id", ids);
         if (error) return NextResponse.json({ ok: false, message: error.message }, { status: 400 });
       }
 
-      const subjectIds = Array.isArray(body.metadata.subject_ids) ? (body.metadata.subject_ids as string[]) : null;
-      if (subjectIds && subjectIds.length > 0) {
-        const { error: deleteError } = await supabase.from("question_subjects").delete().in("question_id", ids);
-        if (deleteError) return NextResponse.json({ ok: false, message: deleteError.message }, { status: 400 });
+      if (classification?.ok) {
 
-        const inserts = ids.flatMap((id: string) => subjectIds.map((sid: string) => ({ question_id: id, subject_id: sid })));
-        const { error: insertError } = await supabase.from("question_subjects").insert(inserts);
-        if (insertError) return NextResponse.json({ ok: false, message: insertError.message }, { status: 400 });
+        const { data: currentRows, error: currentError } = await supabase
+          .from("questions")
+          .select("id, subject_id, discipline_id")
+          .in("id", ids);
+        if (currentError) return NextResponse.json({ ok: false, message: currentError.message }, { status: 400 });
 
-        const { error: primaryError } = await supabase.from("questions").update({ subject_id: subjectIds[0] }).in("id", ids);
-        if (primaryError) return NextResponse.json({ ok: false, message: primaryError.message }, { status: 400 });
+        const nextPrimarySubjectId = subjectIds && subjectIds.length > 0 ? subjectIds[0] : null;
+        const changedIds = (currentRows || [])
+          .filter((row) => nextPrimarySubjectId
+            ? row.subject_id !== nextPrimarySubjectId
+            : row.discipline_id !== classification.disciplineId)
+          .map((row) => row.id);
+
+        if (nextPrimarySubjectId && subjectIds) {
+          if (changedIds.length > 0) {
+            const { error: changedError } = await supabase
+              .from("questions")
+              .update({ subject_id: nextPrimarySubjectId, discipline_id: classification.disciplineId, evaluated_topics: [] })
+              .in("id", changedIds);
+            if (changedError) return NextResponse.json({ ok: false, message: changedError.message }, { status: 400 });
+          }
+
+          const { error: deleteError } = await supabase.from("question_subjects").delete().in("question_id", ids);
+          if (deleteError) return NextResponse.json({ ok: false, message: deleteError.message }, { status: 400 });
+
+          const inserts = ids.flatMap((id: string) => subjectIds.map((sid: string) => ({ question_id: id, subject_id: sid })));
+          const { error: insertError } = await supabase.from("question_subjects").insert(inserts);
+          if (insertError) return NextResponse.json({ ok: false, message: insertError.message }, { status: 400 });
+          topicsClearedIds = changedIds;
+        } else if (changedIds.length > 0) {
+          const { error: changedError } = await supabase
+            .from("questions")
+            .update({ subject_id: null, discipline_id: classification.disciplineId, evaluated_topics: [] })
+            .in("id", changedIds);
+          if (changedError) return NextResponse.json({ ok: false, message: changedError.message }, { status: 400 });
+
+          const { error: deleteError } = await supabase.from("question_subjects").delete().in("question_id", changedIds);
+          if (deleteError) return NextResponse.json({ ok: false, message: deleteError.message }, { status: 400 });
+          topicsClearedIds = changedIds;
+        }
       }
 
-      void logAdminAction({ adminUserId: admin.id, action: "admin.question.bulk_updated", entityType: "question", request, metadata: { question_ids: ids, fields: Object.keys(body.metadata) } });
+      void logAdminAction({ adminUserId: admin.id, action: "admin.question.bulk_updated", entityType: "question", request, metadata: { question_ids: ids, fields: Object.keys(body.metadata), topics_cleared_ids: topicsClearedIds } });
 
-      return NextResponse.json({ ok: true, message: `${ids.length} questão(ões) atualizada(s) com sucesso.`, updatedIds: ids });
+      return NextResponse.json({
+        ok: true,
+        message: topicsClearedIds.length > 0
+          ? `${ids.length} questão(ões) atualizada(s). Os tópicos avaliados de ${topicsClearedIds.length} questão(ões) foram limpos e precisam ser informados novamente.`
+          : `${ids.length} questão(ões) atualizada(s) com sucesso.`,
+        updatedIds: ids,
+        topicsClearedIds,
+      });
     }
 
     const status = String(body.status || "").trim();
@@ -72,15 +125,16 @@ export async function PATCH(request: Request) {
     if (["ready_to_publish", "published", "active"].includes(status)) {
       const { data: questionSubjects, error: questionSubjectsError } = await supabase
         .from("questions")
-        .select("id, subject_id, evaluated_topics")
+        .select("id, discipline_id, evaluated_topics")
         .in("id", ids);
 
       if (questionSubjectsError) {
         return NextResponse.json({ ok: false, message: questionSubjectsError.message }, { status: 400 });
       }
 
+      // Assunto é opcional; a publicação exige Disciplina e tópicos avaliados.
       for (const question of questionSubjects || []) {
-        if (!question.subject_id || question.subject_id === "__prova_completa__") {
+        if (!question.discipline_id) {
           blockedSubjectIds.push(question.id);
         }
         if (!hasEvaluatedTopics(question.evaluated_topics)) {
@@ -130,7 +184,7 @@ export async function PATCH(request: Request) {
         message: blockedTopicIds.length > 0
           ? EVALUATED_TOPICS_PUBLISH_MESSAGE
           : blockedSubjectIds.length > 0
-          ? "Nenhuma questão válida para atualizar. Questões sem assunto real permaneceram em revisão."
+          ? "Nenhuma questão válida para atualizar. Questões sem disciplina permaneceram em revisão."
           : "Nenhuma questão válida para atualizar. Questões sem gabarito único voltaram para revisão.",
         updatedIds: [],
         updatedCount: 0,

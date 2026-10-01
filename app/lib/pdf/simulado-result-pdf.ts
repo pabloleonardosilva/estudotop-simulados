@@ -392,7 +392,7 @@ function SimuladoQuestionsPdf({ meta, questions, student, showAnswerKey = true }
                 View,
                 { style: s.questionHeader },
                 React.createElement(Text, { style: s.questionNumber }, `Questão ${index + 1}`),
-                React.createElement(Text, { style: s.subjectChip }, question.subject || "Sem assunto"),
+                ...(question.subject ? [React.createElement(Text, { style: s.subjectChip }, question.subject)] : []),
                 ...(isAnnulled ? [React.createElement(Text, { style: s.annulledChip }, "Questão anulada")] : []),
               ),
               React.createElement(Text, { style: s.statement }, stripHtml(question.statement) || "Enunciado não informado."),

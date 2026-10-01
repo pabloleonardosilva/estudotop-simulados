@@ -32,6 +32,7 @@ import RichTextEditor from "../../components/questions/RichTextEditor";
 import { normalizeBoardComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
+import { primarySubjectId } from "@/lib/questions/question-subjects";
 import { hasMeaningfulRichText, richTextToPlainText } from "@/lib/utils/rich-text";
 import QuestionActionModal, { type QuestionActionModalState } from "../../components/questions/QuestionActionModal";
 import QuestionTemplatePicker, {
@@ -94,7 +95,7 @@ type QuestionDraft = {
   explanation: string;
   year: string;
   difficulty: number | null;
-  status: "pending_review" | "published" | "archived";
+  status: "draft" | "pending_review" | "published" | "archived";
   alternatives: Alternative[];
 };
 
@@ -169,33 +170,72 @@ function findEstudoTopBoard(boards: Board[]) {
   }) || null;
 }
 
+export type BankTemplateQuestion = TemplateQuestion & {
+  orgao?: string | null;
+  evaluated_topics?: string[] | null;
+  inspiration_board?: { id: string; name: string } | null;
+};
+
+// "Usar como modelo" do Banco: nova questão Estudo TOP; a inspiração é a inspiração já existente
+// da questão-modelo ou, se ela não for Estudo TOP, a própria banca dela.
+function templateInspirationBoardId(template: BankTemplateQuestion) {
+  const originalBoardId = template.exam_boards?.id || template.exam_board_id || null;
+  return template.inspiration_board?.id || (/estudo\s*top/i.test(template.exam_boards?.name || "") ? null : originalBoardId);
+}
+
+function bankTemplateInitialState(template: BankTemplateQuestion | null | undefined, boards: Board[]) {
+  if (!template) return null;
+  const questionType: "multiple_choice" | "true_false" = template.question_type === "true_false" ? "true_false" : "multiple_choice";
+  const alternatives = getTemplateAlternatives(template);
+  const estudoTopBoard = findEstudoTopBoard(boards);
+  return {
+    questionType,
+    disciplineId: getTemplateDisciplineId(template),
+    subjectIds: getTemplateSubjectIds(template),
+    boardId: estudoTopBoard?.id || "",
+    statement: template.statement || "",
+    evaluatedTopics: normalizeEvaluatedTopics(template.evaluated_topics),
+    imageUrl: template.image_url || "",
+    difficulty: template.difficulty_level || null,
+    alternatives: alternatives.length ? alternatives : questionType === "true_false" ? trueFalseAlternatives : defaultAlternatives,
+    inspirationBoardId: templateInspirationBoardId(template),
+    orgao: template.orgao || null,
+    estudoTopFound: Boolean(estudoTopBoard),
+  };
+}
+
 export default function NovaQuestaoClient({
   disciplines,
   subjects,
   boards,
   modelQuestions,
+  bankTemplate = null,
+  returnTo = null,
 }: {
   disciplines: Discipline[];
   subjects: Subject[];
   boards: Board[];
   modelQuestions: TemplateQuestion[];
+  bankTemplate?: BankTemplateQuestion | null;
+  returnTo?: string | null;
 }) {
   const searchParams = useSearchParams();
-  const [questionType, setQuestionType] = useState<"multiple_choice" | "true_false">("multiple_choice");
-  const [disciplineId, setDisciplineId] = useState(disciplines[0]?.id || "");
-  const [subjectIds, setSubjectIds] = useState<string[]>([]);
-  const [boardId, setBoardId] = useState(findEstudoTopBoard(boards)?.id || "");
+  const [bankTemplateInitial] = useState(() => bankTemplateInitialState(bankTemplate, boards));
+  const [questionType, setQuestionType] = useState<"multiple_choice" | "true_false">(bankTemplateInitial?.questionType || "multiple_choice");
+  const [disciplineId, setDisciplineId] = useState(bankTemplateInitial ? bankTemplateInitial.disciplineId : disciplines[0]?.id || "");
+  const [subjectIds, setSubjectIds] = useState<string[]>(bankTemplateInitial?.subjectIds || []);
+  const [boardId, setBoardId] = useState(bankTemplateInitial ? bankTemplateInitial.boardId : findEstudoTopBoard(boards)?.id || "");
   const [boardOptions, setBoardOptions] = useState<Board[]>(boards || []);
 
-  const [statement, setStatement] = useState("");
-  const [evaluatedTopics, setEvaluatedTopics] = useState<string[]>([]);
-  const [showStatementImage, setShowStatementImage] = useState(false);
-  const [imageUrl, setImageUrl] = useState("");
+  const [statement, setStatement] = useState(bankTemplateInitial?.statement || "");
+  const [evaluatedTopics, setEvaluatedTopics] = useState<string[]>(bankTemplateInitial?.evaluatedTopics || []);
+  const [showStatementImage, setShowStatementImage] = useState(Boolean(bankTemplateInitial?.imageUrl));
+  const [imageUrl, setImageUrl] = useState(bankTemplateInitial?.imageUrl || "");
   const [explanation, setExplanation] = useState("");
   const [year, setYear] = useState(String(CURRENT_YEAR));
-  const [difficulty, setDifficulty] = useState<number | null>(null);
-  const [status, setStatus] = useState<"pending_review" | "published" | "archived">("pending_review");
-  const [alternatives, setAlternatives] = useState<Alternative[]>(defaultAlternatives);
+  const [difficulty, setDifficulty] = useState<number | null>(bankTemplateInitial?.difficulty ?? null);
+  const [status, setStatus] = useState<"draft" | "pending_review" | "published" | "archived">(bankTemplateInitial ? "draft" : "pending_review");
+  const [alternatives, setAlternatives] = useState<Alternative[]>(bankTemplateInitial?.alternatives || defaultAlternatives);
 
   const [saving, setSaving] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
@@ -203,8 +243,9 @@ export default function NovaQuestaoClient({
   const [actionModal, setActionModal] = useState<QuestionActionModalState>(null);
   const [possibleDuplicate, setPossibleDuplicate] = useState<PossibleDuplicate | null>(null);
   const [showTemplatePicker, setShowTemplatePicker] = useState(() => searchParams.get("modelo") === "1");
-  const [templateLoaded, setTemplateLoaded] = useState(false);
-  const [templateAdjusted, setTemplateAdjusted] = useState(false);
+  const [templateLoaded, setTemplateLoaded] = useState(Boolean(bankTemplateInitial));
+  const [templateAdjusted, setTemplateAdjusted] = useState(Boolean(bankTemplateInitial?.estudoTopFound));
+  const [bankTemplateMode, setBankTemplateMode] = useState(Boolean(bankTemplateInitial));
 
   const [showBoardModal, setShowBoardModal] = useState(false);
   const [newBoardName, setNewBoardName] = useState("");
@@ -286,7 +327,7 @@ export default function NovaQuestaoClient({
   }, []);
 
   const { pendingDraft, restoreDraft: continueDraft, discardDraft, clearDraft } = useLocalDraft({
-    storageKey: "estudotop:draft:questoes:nova",
+    storageKey: bankTemplate ? `estudotop:draft:questoes:nova:modelo:${bankTemplate.id}` : "estudotop:draft:questoes:nova",
     draft,
     hasContent: hasDraftContent,
     onRestore: restoreDraft,
@@ -338,6 +379,7 @@ export default function NovaQuestaoClient({
     setAlternatives(nextAlternatives.length ? nextAlternatives : nextType === "true_false" ? trueFalseAlternatives : defaultAlternatives);
     setTemplateLoaded(true);
     setTemplateAdjusted(false);
+    setBankTemplateMode(false);
     setShowTemplatePicker(false);
     setActionModal({
       open: true,
@@ -519,8 +561,8 @@ export default function NovaQuestaoClient({
   async function handleSubmit() {
     setFeedback(null);
 
-    if (subjectIds.length === 0) {
-      setFeedback({ type: "error", message: "Selecione o assunto da questão." });
+    if (!disciplineId) {
+      setFeedback({ type: "error", message: "Selecione a disciplina da questão." });
       return;
     }
 
@@ -581,7 +623,7 @@ export default function NovaQuestaoClient({
         body: JSON.stringify({
           question_type: questionType,
           discipline_id: disciplineId,
-          subject_id: subjectIds[0],
+          subject_id: subjectIds[0] || null,
           subject_ids: subjectIds,
           exam_board_id: boardId,
           statement,
@@ -594,6 +636,13 @@ export default function NovaQuestaoClient({
           alternatives,
           source_origin: "bank",
           is_in_question_bank: true,
+          ...(bankTemplateMode && bankTemplateInitial
+            ? {
+                inspiration_board_id: estudoTopBoard && boardId === estudoTopBoard.id ? bankTemplateInitial.inspirationBoardId : null,
+                orgao: bankTemplateInitial.orgao,
+                use_as_template: true,
+              }
+            : {}),
         }),
       });
 
@@ -620,6 +669,8 @@ export default function NovaQuestaoClient({
       setQuestionType("multiple_choice");
       setAlternatives(defaultAlternatives);
       setPossibleDuplicate(null);
+      setBankTemplateMode(false);
+      setTemplateLoaded(false);
       clearDraft();
     } catch (error) {
       setFeedback({
@@ -739,7 +790,7 @@ export default function NovaQuestaoClient({
             <PremiumButton variant="secondary" icon={<CopyCheck size={18} />} onClick={() => setShowTemplatePicker(true)}>
               Usar como modelo
             </PremiumButton>
-            <Link href="/questoes">
+            <Link href={returnTo || "/questoes"}>
               <PremiumButton variant="secondary" icon={<ArrowLeft size={18} />}>
                 Voltar
               </PremiumButton>
@@ -756,6 +807,21 @@ export default function NovaQuestaoClient({
           {templateAdjusted && (
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
               Banca alterada para Estudo TOP e ano atualizado automaticamente.
+            </span>
+          )}
+          {bankTemplateMode && bankTemplate?.code && (
+            <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600">
+              Baseada em {bankTemplate.code} · a original não será alterada
+            </span>
+          )}
+          {bankTemplateMode && bankTemplateInitial?.inspirationBoardId && (
+            <span className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">
+              Inspirada na banca {boardOptions.find((board) => board.id === bankTemplateInitial.inspirationBoardId)?.name || bankTemplate?.inspiration_board?.name || bankTemplate?.exam_boards?.name}
+            </span>
+          )}
+          {bankTemplateMode && bankTemplateInitial?.orgao && (
+            <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600">
+              Órgão: {bankTemplateInitial.orgao}
             </span>
           )}
         </div>
@@ -797,15 +863,16 @@ export default function NovaQuestaoClient({
           }} options={[{ value: "", label: "Selecione" }, ...boardOptions.map((board) => ({ value: board.id, label: board.name }))]} />
 
 <div className="et-clean-meta-year">
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Ano</label>
+            <label className="et-clean-label mb-2 block text-sm font-medium text-slate-700">Ano</label>
             <input value={year} inputMode="numeric" onChange={(event) => {
               markTemplateEdited();
               setYear(event.target.value.replace(/\D/g, "").slice(0, 4));
             }} placeholder={`Ex.: ${CURRENT_YEAR}`} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100" />
           </div>
 
-<div className="et-clean-meta-subjects"><SubjectMultiSelect subjects={filteredSubjects} selectedIds={subjectIds} onChange={(ids) => {
+<div className="et-clean-meta-subjects"><SubjectMultiSelect label="Assuntos (opcional)" subjects={filteredSubjects} selectedIds={subjectIds} onChange={(ids) => {
             markTemplateEdited();
+            if (primarySubjectId(ids) !== primarySubjectId(subjectIds)) setEvaluatedTopics([]);
             setSubjectIds(ids);
           }} emptyLabel="Adicionar assunto" disciplineId={disciplineId} /></div>
 
@@ -818,14 +885,17 @@ export default function NovaQuestaoClient({
 
         <div className="mb-5 grid gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-[1fr_240px]">
           <SearchableSelect label="Disciplina" value={disciplineId} onChange={(value) => {
+            if (value === disciplineId) return;
             markTemplateEdited();
             setDisciplineId(value);
             setSubjectIds([]);
+            setEvaluatedTopics([]);
           }} options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))} />
           <PremiumSelect label="Status" variant="light" value={status} onChange={(event: ChangeEvent<HTMLSelectElement>) => {
             markTemplateEdited();
-            setStatus(event.target.value as "pending_review" | "published" | "archived");
+            setStatus(event.target.value as "draft" | "pending_review" | "published" | "archived");
           }}>
+            {bankTemplateMode && <option value="draft">Rascunho</option>}
             <option value="pending_review">Pendente revisão</option>
             <option value="published">Publicada</option>
             <option value="archived">Arquivada</option>
@@ -974,6 +1044,7 @@ export default function NovaQuestaoClient({
               setEvaluatedTopics(topics);
             }}
             subjectId={subjectIds[0] || null}
+            disciplineId={disciplineId || null}
             required
             variant="light"
             placeholder="Ex.: Memória RAM, Placa-mãe"
@@ -1059,7 +1130,7 @@ function StarRatingField({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Dificuldade</label>
+      <label className="et-clean-label mb-2 block text-sm font-medium text-slate-700">Dificuldade</label>
       <div className="flex h-12 items-center gap-1 rounded-2xl border border-slate-200 bg-white px-4">
         {[1, 2, 3, 4, 5].map((star) => (
           <button

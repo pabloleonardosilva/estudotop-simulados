@@ -397,17 +397,16 @@ export default function RaioXDetalheClient({ analysis, questions, disciplines, s
     setSaving(true);
     setFeedback(null);
     try {
-      const missingSubject = questionList.find((q) => !(q.subject_ids?.length || q.subject_id));
-      if (missingSubject) throw new Error("Selecione pelo menos um assunto antes de enviar a questão ao banco.");
-
       const response = await adminFetch("/api/admin/questions/import/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subject_ids: questionList[0].subject_ids?.length ? questionList[0].subject_ids : questionList[0].subject_id ? [questionList[0].subject_id] : [],
+          discipline_id: analysis.discipline_id || null,
           year: analysis.exam_year,
           questions: questionList.map((q) => ({
             temp_id: q.id,
+            subject_id: q.subject_ids?.[0] ?? q.subject_id ?? null,
+            subject_ids: q.subject_ids?.length ? q.subject_ids : q.subject_id ? [q.subject_id] : [],
             statement: q.statement,
             question_type: q.question_type,
             board_name: q.board_name || analysis.board_name,
@@ -466,13 +465,12 @@ export default function RaioXDetalheClient({ analysis, questions, disciplines, s
 
     const alreadySent = questionList.find((q) => q.status === "pending_review" || q.status === "published");
     if (alreadySent) return;
-    const missingSubject = questionList.find((q) => !(q.subject_ids?.length || q.subject_id));
-    if (missingSubject) {
+    if (!analysis.discipline_id && questionList.some((q) => !(q.subject_ids?.length || q.subject_id))) {
       setActionModal({
         open: true,
         tone: "warning",
-        title: "Assunto obrigatório",
-        message: "Selecione pelo menos um assunto no bloco de Classificação da IA antes de enviar a questão ao banco.",
+        title: "Disciplina obrigatória",
+        message: "Defina a disciplina da análise ou selecione um assunto no bloco de Classificação da IA antes de enviar a questão ao banco.",
         primaryLabel: "Entendi",
         onClose: () => setActionModal(null),
         onPrimary: () => setActionModal(null),
@@ -511,10 +509,12 @@ export default function RaioXDetalheClient({ analysis, questions, disciplines, s
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              subject_ids: questionList[0].subject_ids?.length ? questionList[0].subject_ids : questionList[0].subject_id ? [questionList[0].subject_id] : [],
+              discipline_id: analysis.discipline_id || null,
               year: analysis.exam_year,
               questions: questionList.map((q) => ({
                 temp_id: q.id,
+                subject_id: q.subject_ids?.[0] ?? q.subject_id ?? null,
+                subject_ids: q.subject_ids?.length ? q.subject_ids : q.subject_id ? [q.subject_id] : [],
                 statement: q.statement,
                 question_type: q.question_type,
                 board_name: q.board_name || analysis.board_name,
@@ -2867,6 +2867,7 @@ function VariationReviewPanel({
             subject_id: v.subject_ids?.[0] ?? v.subject_id ?? null,
             subject_ids: v.subject_ids?.length ? v.subject_ids : v.subject_id ? [v.subject_id] : [],
           })),
+          discipline_id: analysis.discipline_id || null,
         }),
       });
 

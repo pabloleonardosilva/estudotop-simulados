@@ -205,6 +205,33 @@ export async function DELETE(request: Request) {
       );
     }
 
+    // Tópicos diretos e questões sem Assunto também pertencem à Disciplina (FK ON DELETE RESTRICT).
+    const [topicsCount, questionsCount] = await Promise.all([
+      supabase.from("topics").select("id", { count: "exact", head: true }).eq("discipline_id", id),
+      supabase.from("questions").select("id", { count: "exact", head: true }).eq("discipline_id", id),
+    ]);
+
+    if (topicsCount.error || questionsCount.error) {
+      return NextResponse.json(
+        { ok: false, message: "Não foi possível verificar os vínculos da disciplina." },
+        { status: 500 }
+      );
+    }
+
+    if ((topicsCount.count || 0) > 0 || (questionsCount.count || 0) > 0) {
+      const parts = [
+        (questionsCount.count || 0) > 0 ? `${questionsCount.count} ${questionsCount.count === 1 ? "questão" : "questões"}` : null,
+        (topicsCount.count || 0) > 0 ? `${topicsCount.count} ${topicsCount.count === 1 ? "tópico" : "tópicos"}` : null,
+      ].filter(Boolean).join(" e ");
+      return NextResponse.json(
+        {
+          ok: false,
+          message: `Não é possível excluir esta disciplina porque ela possui ${parts} vinculados. Inative a disciplina ou reclassifique esses registros antes.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const { error } = await supabase
       .from("disciplines")
       .delete()
@@ -212,7 +239,12 @@ export async function DELETE(request: Request) {
 
     if (error) {
       return NextResponse.json(
-        { ok: false, message: error.message },
+        {
+          ok: false,
+          message: error.code === "23503"
+            ? "Não é possível excluir esta disciplina porque ela ainda possui registros vinculados. Inative a disciplina em vez de excluí-la."
+            : "Não foi possível excluir a disciplina.",
+        },
         { status: 400 }
       );
     }

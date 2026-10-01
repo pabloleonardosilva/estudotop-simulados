@@ -26,6 +26,10 @@ export default async function PreviewQuestaoPage({ params }: PageProps) {
       image_url,
       explanation_text,
       created_at,
+      discipline:discipline_id (
+        id,
+        name
+      ),
       question_subjects (
         subjects (
           id,

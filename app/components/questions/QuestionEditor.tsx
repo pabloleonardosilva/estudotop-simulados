@@ -31,7 +31,7 @@ import RichTextEditor from "@/app/components/questions/RichTextEditor";
 import ExplanationAuthorCard from "@/app/components/questions/ExplanationAuthorCard";
 import DraftRestoreModal from "@/app/components/ui/DraftRestoreModal";
 import { useLocalDraft } from "@/app/lib/useLocalDraft";
-import { extractQuestionSubjectIds } from "@/lib/questions/question-subjects";
+import { extractQuestionSubjectIds, primarySubjectId } from "@/lib/questions/question-subjects";
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { findCandidateImageOccurrences, isQuestionImagePending, toggleImageOccurrenceRejection, type ImageOccurrence } from "@/lib/questions/image-pending";
 import { adminFetch } from "@/lib/supabase/adminFetch";
@@ -71,6 +71,7 @@ export type Question = {
   explanation_text?: string | null;
   review_comment?: string | null;
   created_at?: string | null;
+  discipline_id?: string | null;
   subjects?: {
     id: string;
     name: string;
@@ -173,6 +174,7 @@ export function toEditableQuestion(q: Question): EditableQuestion {
     explanation_text: q.explanation_text || "",
     review_comment: q.review_comment?.trim() ? q.review_comment : PROFESSOR_PREFIX,
     discipline_id:
+      q.discipline_id ||
       firstLinkedSubject?.discipline_id ||
       firstLinkedSubject?.disciplines?.id ||
       q.subjects?.discipline_id ||
@@ -514,6 +516,8 @@ export type QuestionEditorProps = {
   storageKey?: string;
   // Feedback callbacks
   onSaved?: (message: string) => void;
+  // Versão canônica devolvida pelo servidor após cada save bem-sucedido.
+  onPersisted?: (question: Question) => void;
   onPublished?: (questionId: string) => void;
   onArchived?: (questionId: string) => void;
   onAnnulled?: (questionId: string) => void;
@@ -567,6 +571,7 @@ export default function QuestionEditor({
   boards,
   storageKey,
   onSaved,
+  onPersisted,
   onPublished,
   onArchived,
   onAnnulled,
@@ -725,7 +730,7 @@ export default function QuestionEditor({
   }, []);
 
   const validateBeforePersist = useCallback((draft: EditableQuestion) => {
-    if (draft.subject_ids.length === 0) return "Selecione pelo menos um assunto da questão.";
+    if (!draft.discipline_id) return "Selecione a disciplina da questão.";
     if (!draft.exam_board_id) return "Selecione a banca organizadora.";
     if (draft.year && !/^\d{4}$/.test(draft.year)) return "Informe um ano válido com 4 dígitos.";
     if (!stripHtml(draft.statement).trim() || stripHtml(draft.statement).trim().length < 10) return "Informe um enunciado válido.";
@@ -749,7 +754,8 @@ export default function QuestionEditor({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            subject_id: question.subject_ids[0],
+            discipline_id: question.discipline_id,
+            subject_id: question.subject_ids[0] || null,
             subject_ids: question.subject_ids,
             exam_board_id: question.exam_board_id,
             statement: question.statement,
@@ -778,6 +784,7 @@ export default function QuestionEditor({
         setQuestion((current) => ({ ...current, status: statusToSave || current.status }));
         baselineDraftRef.current = { ...question, status: statusToSave || question.status };
         clearDraft();
+        if (data.question) onPersisted?.({ ...data.question, review_comment: question.review_comment });
         return { ok: true };
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Erro ao salvar questão.";
@@ -787,7 +794,7 @@ export default function QuestionEditor({
         setProcessing(false);
       }
     },
-    [clearDraft, onError, question, validateBeforePersist],
+    [clearDraft, onError, onPersisted, question, validateBeforePersist],
   );
 
   const saveQuestion = useCallback(async () => {
@@ -1035,14 +1042,21 @@ export default function QuestionEditor({
           <SearchableSelect
             label="Disciplina"
             value={question.discipline_id || ""}
-            onChange={(v) => updateQuestion({ discipline_id: v, subject_ids: [] })}
+            onChange={(v) => {
+              if (v !== question.discipline_id) updateQuestion({ discipline_id: v, subject_ids: [], evaluated_topics: [] });
+            }}
             options={[{ value: "", label: "Todas" }, ...disciplines.map((d) => ({ value: d.id, label: d.name }))]}
             dark
           />
           <SubjectMultiSelect
             subjects={filteredSubjects}
             selectedIds={question.subject_ids}
-            onChange={(ids) => updateQuestion({ subject_ids: ids })}
+            onChange={(ids) => updateQuestion(
+              primarySubjectId(ids) === primarySubjectId(question.subject_ids)
+                ? { subject_ids: ids }
+                : { subject_ids: ids, evaluated_topics: [] },
+            )}
+            label="Assuntos (opcional)"
             emptyLabel="Adicionar assunto"
             disciplineId={question.discipline_id}
             dark
@@ -1186,6 +1200,7 @@ export default function QuestionEditor({
                   if (evaluated_topics.length > 0) onAutoPrepareForQueue?.();
                 }}
                 subjectId={question.subject_ids[0] || null}
+                disciplineId={question.discipline_id || null}
                 required
                 disabled={processing}
                 variant="dark"

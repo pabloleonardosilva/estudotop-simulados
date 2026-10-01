@@ -23,6 +23,7 @@ type RelatedSubject = RelatedName & {
 type DetectQuestionRow = {
   statement?: string | null;
   explanation_text?: string | null;
+  discipline?: RelatedName | RelatedName[] | null;
   subjects?: RelatedSubject | RelatedSubject[] | null;
   exam_boards?: RelatedName | RelatedName[] | null;
   question_alternatives?: AlternativeRow[] | null;
@@ -52,6 +53,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         statement,
         explanation_text,
         evaluated_topics,
+        discipline:discipline_id (
+          name
+        ),
         subjects:subject_id (
           name,
           disciplines:discipline_id (
@@ -86,7 +90,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .join("\n");
     const subjectName = Array.isArray(questionRow.subjects) ? questionRow.subjects[0]?.name : questionRow.subjects?.name;
     const disciplineData = Array.isArray(questionRow.subjects) ? questionRow.subjects[0]?.disciplines : questionRow.subjects?.disciplines;
-    const disciplineName = Array.isArray(disciplineData) ? disciplineData[0]?.name : disciplineData?.name;
+    const ownDiscipline = Array.isArray(questionRow.discipline) ? questionRow.discipline[0] : questionRow.discipline;
+    const disciplineName = ownDiscipline?.name || (Array.isArray(disciplineData) ? disciplineData[0]?.name : disciplineData?.name);
     const boardName = Array.isArray(questionRow.exam_boards) ? questionRow.exam_boards[0]?.name : questionRow.exam_boards?.name;
 
     const prompt = `Você é um especialista em questões de concursos públicos de Informática.
@@ -112,8 +117,8 @@ Formato obrigatório:
 }
 
 Disciplina: ${disciplineName || ""}
-Assunto: ${subjectName || ""}
-Banca: ${boardName || ""}
+${subjectName ? `Assunto: ${subjectName}
+` : ""}Banca: ${boardName || ""}
 Enunciado:
 ${statementText}
 

@@ -12,40 +12,17 @@ async function getDisciplines() {
       name,
       description,
       is_active,
-      subjects(count)
+      subjects(count),
+      questions(count)
     `)
     .order("name", { ascending: true });
 
   if (error) throw new Error(error.message);
 
-  const { data: questionRows, error: questionsError } = await supabase
-    .from("questions")
-    .select(`
-      id,
-      subjects:subject_id (
-        discipline_id
-      )
-    `);
-
-  if (questionsError) throw new Error(questionsError.message);
-
-  const questionCountByDiscipline = new Map<string, number>();
-
-  for (const row of questionRows || []) {
-    const subject = Array.isArray(row.subjects) ? row.subjects[0] : row.subjects;
-    const disciplineId = subject?.discipline_id;
-
-    if (!disciplineId) continue;
-
-    questionCountByDiscipline.set(
-      disciplineId,
-      (questionCountByDiscipline.get(disciplineId) || 0) + 1,
-    );
-  }
-
-  return (data || []).map((discipline) => ({
+  // Contagem pela Disciplina própria da questão (inclui questões sem Assunto).
+  return (data || []).map(({ questions, ...discipline }) => ({
     ...discipline,
-    question_count: questionCountByDiscipline.get(discipline.id) || 0,
+    question_count: questions?.[0]?.count || 0,
   }));
 }
 

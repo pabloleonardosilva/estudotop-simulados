@@ -31,6 +31,8 @@ export type TemplateQuestion = {
   image_url?: string | null;
   explanation_text?: string | null;
   subject_id?: string | null;
+  discipline_id?: string | null;
+  evaluated_topics?: string[] | null;
   exam_board_id?: string | null;
   subjects?: {
     id: string;
@@ -199,7 +201,7 @@ export default function QuestionTemplatePicker({
                       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
                         <span className="rounded-full bg-slate-950 px-3 py-1 text-white">{question.code || "Sem codigo"}</span>
                         <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">{question.exam_boards?.name || "Sem banca"}</span>
-                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">{question.subjects?.disciplines?.name || "Sem disciplina"} / {question.subjects?.name || "Sem assunto"}</span>
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">{[disciplines.find((discipline) => discipline.id === getTemplateDisciplineId(question))?.name || question.subjects?.disciplines?.name || "Sem disciplina", question.subjects?.name].filter(Boolean).join(" / ")}</span>
                         <PremiumDifficultyStars value={question.difficulty_level} compact />
                         <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600">{question.year || "Sem ano"}</span>
                       </div>
@@ -240,6 +242,7 @@ export function getTemplateSubjectIds(question: TemplateQuestion) {
 
 export function getTemplateDisciplineId(question: TemplateQuestion) {
   return (
+    question.discipline_id ||
     question.question_subjects?.[0]?.subjects?.discipline_id ||
     question.question_subjects?.[0]?.subjects?.disciplines?.id ||
     question.subjects?.discipline_id ||

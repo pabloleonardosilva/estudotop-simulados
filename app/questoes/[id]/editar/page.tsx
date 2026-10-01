@@ -20,6 +20,11 @@ async function getData(id: string, queueStatusFromUrl?: string, queueDisciplineF
       explanation_text,
       review_comment,
       subject_id,
+      discipline_id,
+      discipline:discipline_id (
+        id,
+        name
+      ),
       exam_board_id,
       orgao,
       created_at,
@@ -73,12 +78,10 @@ async function getData(id: string, queueStatusFromUrl?: string, queueDisciplineF
       code,
       created_at,
       status,
-      subjects:subject_id (
-        discipline_id,
-        disciplines:discipline_id (
-          id,
-          name
-        )
+      discipline_id,
+      discipline:discipline_id (
+        id,
+        name
       )
     `)
     .eq("status", queueStatus)
@@ -87,20 +90,20 @@ async function getData(id: string, queueStatusFromUrl?: string, queueDisciplineF
   if (navError) throw new Error(navError.message);
 
   const questionRow = question as any;
-  const currentQuestionDisciplineId = questionRow.subjects?.discipline_id || "";
+  const currentQuestionDisciplineId = questionRow.discipline_id || "";
   const queueDisciplineId = queueDisciplineFromUrl || currentQuestionDisciplineId;
 
   const fullNavList = sameStatusQuestions || [];
   const navList = fullNavList.filter((item: any) => {
-    return item.subjects?.discipline_id === queueDisciplineId;
+    return item.discipline_id === queueDisciplineId;
   });
 
   const currentIndex = navList.findIndex((item) => item.id === id);
 
-  const currentNavDiscipline = navList.find((item: any) => item.subjects?.discipline_id === queueDisciplineId) as any;
+  const currentNavDiscipline = navList.find((item: any) => item.discipline_id === queueDisciplineId) as any;
   const queueDisciplineName =
-    currentNavDiscipline?.subjects?.disciplines?.name ||
-    questionRow.subjects?.disciplines?.name ||
+    currentNavDiscipline?.discipline?.name ||
+    questionRow.discipline?.name ||
     "Disciplina não identificada";
 
   const previousQuestionId = currentIndex > 0 ? navList[currentIndex - 1]?.id || null : null;

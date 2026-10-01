@@ -33,7 +33,7 @@ import PremiumSelect from "../../components/ui/PremiumSelect";
 import SubjectMultiSelect from "../../components/questions/SubjectMultiSelect";
 import QuestionActionModal, { type QuestionActionModalState } from "../../components/questions/QuestionActionModal";
 import DraftRestoreModal from "../../components/ui/DraftRestoreModal";
-import QuestionEditor from "../../components/questions/QuestionEditor";
+import QuestionEditor, { type Question as EditorQuestion } from "../../components/questions/QuestionEditor";
 import { hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
@@ -98,8 +98,15 @@ export type Board = {
 export type Topic = {
   id: string;
   name: string;
-  subject_id: string;
+  subject_id: string | null;
+  discipline_id: string;
 };
+
+// Com Assunto(s): tópicos desses Assuntos. Só com Disciplina: tópicos diretos dela.
+function topicInFilterScope(topic: Topic, disciplineId: string, subjectIds: string[]) {
+  if (subjectIds.length > 0) return Boolean(topic.subject_id) && subjectIds.includes(topic.subject_id as string);
+  return Boolean(disciplineId) && topic.subject_id === null && topic.discipline_id === disciplineId;
+}
 
 export type Question = {
   id: string;
@@ -115,6 +122,7 @@ export type Question = {
   evaluated_topics?: string[] | null;
   review_comment?: string | null;
   created_at?: string | null;
+  discipline_id?: string | null;
   subjects?: {
     id: string;
     name: string;
@@ -175,6 +183,7 @@ function normalizeFilterText(value?: string | null) {
 
 function getQuestionDisciplineIds(question: Question): string[] {
   const ids = new Set<string>();
+  if (question.discipline_id) ids.add(question.discipline_id);
   if (question.subjects?.discipline_id) ids.add(question.subjects.discipline_id);
   if (Array.isArray(question.question_subjects)) {
     question.question_subjects.forEach((item) => {
@@ -208,12 +217,16 @@ function getQuestionSubjectIds(question: Question) {
 // uma única vez por render, o texto de cada questão para os IDs reais de
 // topics — restrito aos assuntos da própria questão, para não colidir com
 // tópicos homônimos de outro assunto.
+// Questão sem Assunto usa o catálogo de tópicos diretos da própria Disciplina.
 function buildTopicIdsByQuestion(questions: Question[], topics: Topic[]) {
   const topicsBySubject = new Map<string, Map<string, string>>();
+  const directTopicsByDiscipline = new Map<string, Map<string, string>>();
   topics.forEach((topic) => {
-    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    const buckets = topic.subject_id ? topicsBySubject : directTopicsByDiscipline;
+    const key = topic.subject_id || topic.discipline_id;
+    const bucket = buckets.get(key) || new Map<string, string>();
     bucket.set(normalizeTopicComparableName(topic.name), topic.id);
-    topicsBySubject.set(topic.subject_id, bucket);
+    buckets.set(key, bucket);
   });
 
   const map = new Map<string, string[]>();
@@ -225,8 +238,10 @@ function buildTopicIdsByQuestion(questions: Question[], topics: Topic[]) {
     }
     const qSubjectIds = getQuestionSubjectIds(question);
     const ids = new Set<string>();
-    qSubjectIds.forEach((subjectId) => {
-      const bucket = topicsBySubject.get(subjectId);
+    const buckets = qSubjectIds.length > 0
+      ? qSubjectIds.map((subjectId) => topicsBySubject.get(subjectId))
+      : [question.discipline_id ? directTopicsByDiscipline.get(question.discipline_id) : undefined];
+    buckets.forEach((bucket) => {
       if (!bucket) return;
       evaluated.forEach((name) => {
         const topicId = bucket.get(normalizeTopicComparableName(name));
@@ -336,12 +351,12 @@ export default function RevisarQuestoesClient({
     setFilterTopicIds((current) => {
       if (current.length === 0) return current;
       const validIds = new Set(
-        topics.filter((topic) => filterSubjectIds.includes(topic.subject_id)).map((topic) => topic.id),
+        topics.filter((topic) => topicInFilterScope(topic, filterDisciplineId, filterSubjectIds)).map((topic) => topic.id),
       );
       const filtered = current.filter((id) => validIds.has(id));
       return filtered.length === current.length ? current : filtered;
     });
-  }, [filterSubjectIds, topics]);
+  }, [filterDisciplineId, filterSubjectIds, topics]);
 
   useEffect(() => {
     if (publicationQueueDraftChecked) return;
@@ -624,12 +639,11 @@ export default function RevisarQuestoesClient({
   }, [queue, filterDisciplineId, filterBoardIds, filterSubjectIds, filterTopicIds, topicIdsByQuestion, filterDifficultyLevels, filterOrgaos, filterStatus, filterText]);
 
   const availableTopicsForFilter = useMemo(() => {
-    if (filterSubjectIds.length === 0) return [];
     return topics.filter((topic) =>
-      filterSubjectIds.includes(topic.subject_id) &&
+      topicInFilterScope(topic, filterDisciplineId, filterSubjectIds) &&
       ((topicCounts[topic.id] || 0) > 0 || filterTopicIds.includes(topic.id)),
     );
-  }, [topics, filterSubjectIds, topicCounts, filterTopicIds]);
+  }, [topics, filterDisciplineId, filterSubjectIds, topicCounts, filterTopicIds]);
 
   const hasActiveFilters = Boolean(filterDisciplineId || filterBoardIds.length > 0 || filterOrgaos.length > 0 || filterSubjectIds.length > 0 || filterTopicIds.length > 0 || filterDifficultyLevels.length > 0 || filterStatus !== "pending_review" || filterYears.length > 0 || filterText.trim() || filterMissingTopics);
   const publicationQueueCount = publicationQueueIds.length;
@@ -688,9 +702,8 @@ export default function RevisarQuestoesClient({
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
-  const applyBulkEdit = useCallback(
-    async (fields: BulkEditFields) => {
-      const idsToUpdate = [...selectedIds];
+  const runBulkEdit = useCallback(
+    async (idsToUpdate: string[], fields: BulkEditFields) => {
       setBulkEditOpen(false);
       clearSelection();
       setActionFeedback({
@@ -709,6 +722,10 @@ export default function RevisarQuestoesClient({
         });
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.message || "Erro ao aplicar edições.");
+        const topicsClearedIds = new Set<string>(result.topicsClearedIds || []);
+        const nextSubjects = (fields.subject_ids || [])
+          .map((id) => subjects.find((subject) => subject.id === id))
+          .filter((subject): subject is Subject => Boolean(subject));
         setQueue((current) =>
           current.map((q) => {
             if (!idsToUpdate.includes(q.id)) return q;
@@ -719,6 +736,12 @@ export default function RevisarQuestoesClient({
               }),
               ...(fields.year !== undefined && { year: fields.year }),
               ...(fields.difficulty_level !== undefined && { difficulty_level: fields.difficulty_level }),
+              ...(nextSubjects.length > 0 && {
+                discipline_id: nextSubjects[0].discipline_id,
+                subjects: nextSubjects[0],
+                question_subjects: nextSubjects.map((subject) => ({ subjects: subject })),
+              }),
+              ...(topicsClearedIds.has(q.id) && { evaluated_topics: [] }),
             };
           }),
         );
@@ -726,7 +749,7 @@ export default function RevisarQuestoesClient({
           open: true,
           tone: "success",
           title: "Edições aplicadas",
-          message: `${idsToUpdate.length} questão(ões) atualizada(s) com sucesso.`,
+          message: result.message || `${idsToUpdate.length} questão(ões) atualizada(s) com sucesso.`,
           onClose: () => setActionFeedback(null),
         });
       } catch (error) {
@@ -740,7 +763,41 @@ export default function RevisarQuestoesClient({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIds, boards, clearSelection],
+    [boards, subjects, clearSelection],
+  );
+
+  const applyBulkEdit = useCallback(
+    async (fields: BulkEditFields) => {
+      const idsToUpdate = [...selectedIds];
+
+      // Mudança do Assunto principal limpa os tópicos avaliados (nunca remapeados por nome).
+      if (fields.subject_ids && fields.subject_ids.length > 0) {
+        const nextPrimarySubjectId = fields.subject_ids[0];
+        const topicsCleared = queue
+          .filter((q) => idsToUpdate.includes(q.id))
+          .filter((q) => (q.subjects?.id || getQuestionSubjectIds(q)[0] || null) !== nextPrimarySubjectId)
+          .filter((q) => hasEvaluatedTopics(q.evaluated_topics)).length;
+        setBulkEditOpen(false);
+        setActionFeedback({
+          open: true,
+          tone: "warning",
+          title: "Alterar assunto em massa",
+          message: `${topicsCleared} de ${idsToUpdate.length} questão(ões) mudarão de assunto principal e terão os tópicos avaliados limpos. Será preciso informá-los novamente. Deseja continuar?`,
+          primaryLabel: "Confirmar alteração",
+          secondaryLabel: "Cancelar",
+          onClose: () => setActionFeedback(null),
+          onSecondary: () => setActionFeedback(null),
+          onPrimary: async () => {
+            await runBulkEdit(idsToUpdate, fields);
+          },
+        });
+        return;
+      }
+
+      await runBulkEdit(idsToUpdate, fields);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedIds, queue],
   );
 
   const registerQuestionSave = useCallback(
@@ -1005,7 +1062,7 @@ export default function RevisarQuestoesClient({
       if (actualPublished > 0) messageParts.push(`${actualPublished} questão(ões) publicada(s).`);
       if (saveFailures.length > 0) messageParts.push(`${saveFailures.length} questão(ões) ignorada(s) por erro ao salvar.`);
       if (blockedIds.length > 0) messageParts.push(`${blockedIds.length} questão(ões) sem gabarito único devolvida(s) para revisão: ${blockedCodes.join(", ")}.`);
-      if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) ficaram na revisão porque estão sem assunto real/Prova completa: ${blockedSubjectCodes.join(", ")}.`);
+      if (blockedSubjectIds.length > 0) messageParts.push(`${blockedSubjectIds.length} questão(ões) ficaram na revisão porque estão sem disciplina: ${blockedSubjectCodes.join(", ")}.`);
       const hasPartialBlocks = blockedIds.length > 0 || blockedSubjectIds.length > 0 || saveFailures.length > 0;
       setActionFeedback({
         open: true,
@@ -1043,6 +1100,12 @@ export default function RevisarQuestoesClient({
       onClose: () => setActionFeedback(null),
     });
   }, [filteredQueue.length, publishAllReadyQueue]);
+
+  // A versão canônica salva substitui o item da fila: um editor remontado (paginação/filtro)
+  // reinicializa com a classificação realmente gravada.
+  const handlePersisted = useCallback((saved: EditorQuestion) => {
+    setQueue((current) => current.map((question) => (question.id === saved.id ? { ...question, ...saved } : question)));
+  }, []);
 
   const handleSaved = useCallback((message: string) => {
     setSavedCount((current) => current + 1);
@@ -1167,7 +1230,7 @@ export default function RevisarQuestoesClient({
             <SimpleSelectDropdown
               label="Disciplina"
               value={filterDisciplineId}
-              onChange={(v) => { setFilterDisciplineId(v); setFilterSubjectIds([]); }}
+              onChange={(v) => { setFilterDisciplineId(v); setFilterSubjectIds([]); setFilterTopicIds([]); }}
               options={[
                 { value: "", label: "Todas" },
                 ...disciplines.map((d) => ({ value: d.id, label: `${d.name} (${disciplineCounts[d.id] || 0})` })),
@@ -1186,7 +1249,7 @@ export default function RevisarQuestoesClient({
               selectedIds={filterTopicIds}
               onChange={setFilterTopicIds}
               counts={topicCounts}
-              disabled={filterSubjectIds.length === 0}
+              disabled={filterSubjectIds.length === 0 && !filterDisciplineId}
             />
 
             <BoardFilterDropdown
@@ -1418,6 +1481,7 @@ export default function RevisarQuestoesClient({
               draftContentMode="text-only"
               draftPromptGroupKey={REVIEW_DRAFT_PROMPT_GROUP}
               onSaved={handleSaved}
+              onPersisted={handlePersisted}
               onPublished={handlePublished}
               onArchived={handleArchived}
               onAnnulled={handleAnnulled}
@@ -2166,7 +2230,7 @@ function TopicFilterDropdown({
   }, [open]);
 
   function getLabel() {
-    if (disabled) return "Selecione um assunto";
+    if (disabled) return "Selecione disciplina ou assunto";
     if (selectedIds.length === 0) return "Todos os tópicos";
     if (selectedIds.length === 1) {
       const t = topics.find((x) => x.id === selectedIds[0]);

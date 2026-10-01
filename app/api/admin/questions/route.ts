@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
-import { normalizeSubjectIds, primarySubjectId, syncQuestionSubjects } from "@/lib/questions/question-subjects";
+import { normalizeSubjectIds, primarySubjectId, resolveQuestionDiscipline, syncQuestionSubjects } from "@/lib/questions/question-subjects";
 import { EVALUATED_TOPICS_REQUIRED_MESSAGE, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
 import { predictDifficultyAI } from "@/lib/utils/question-difficulty-ai";
@@ -32,6 +32,7 @@ const SIMULADO_EDITOR_QUESTION_SELECT = `
   id, code, statement, explanation_text, status, difficulty_level,
   evaluated_topics, year, question_type,
   exam_boards:exam_board_id (id, name),
+  discipline_id, discipline:discipline_id (id, name),
   subjects:subject_id (id, name, discipline_id, disciplines:discipline_id (id, name)),
   question_subjects (subjects (id, name, discipline_id, disciplines:discipline_id (id, name))),
   question_alternatives (id, label, text, is_correct, order_number),
@@ -529,9 +530,12 @@ export async function POST(request: Request) {
     const mainSubjectId = primarySubjectId(subjectIds);
     const evaluatedTopics = normalizeEvaluatedTopics(body.evaluated_topics);
 
-    if (!mainSubjectId) {
+    const supabase = createSupabaseAdminClient();
+    const classification = await resolveQuestionDiscipline({ supabase, disciplineId: body.discipline_id, subjectIds });
+
+    if (!classification.ok) {
       return NextResponse.json(
-        { ok: false, message: "Selecione o assunto da questão." },
+        { ok: false, message: classification.message },
         { status: 400 }
       );
     }
@@ -611,8 +615,6 @@ export async function POST(request: Request) {
 
     const finalCorrect = validAlternatives.find((alternative) => alternative.is_correct);
 
-    const supabase = createSupabaseAdminClient();
-
     const resolvedDifficulty =
       difficulty ?? await predictDifficultyAI({ statement, alternatives: validAlternatives, question_type: questionType });
 
@@ -639,6 +641,7 @@ export async function POST(request: Request) {
     const { data: question, error: questionError } = await supabase
       .from("questions")
       .insert({
+        discipline_id: classification.disciplineId,
         subject_id: mainSubjectId,
         exam_board_id: examBoardId,
         inspiration_board_id: inspirationBoardId,

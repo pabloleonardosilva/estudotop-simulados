@@ -56,6 +56,7 @@ import { useLocalDraft } from "../../lib/useLocalDraft";
 import { normalizeBoardComparableName, normalizeBoardName as normalizeBoardDisplayName } from "@/lib/utils/text";
 import QuestionActionModal, { type QuestionActionModalState } from "../../components/questions/QuestionActionModal";
 import { normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
+import { primarySubjectId } from "@/lib/questions/question-subjects";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -92,6 +93,7 @@ type ImportedQuestion = {
   difficulty_level: number | null;
   explanation_text: string;
   evaluated_topics: string[];
+  discipline_id?: string | null;
   subject_id?: string | null;
   subject_ids?: string[];
   alternatives: ImportedAlternative[];
@@ -1251,7 +1253,12 @@ export default function ImportarQuestoesClient({
     setQuestions((current) =>
       current.map((q) =>
         q.temp_id === questionId
-          ? { ...q, subject_id: cleanedIds[0] || null, subject_ids: cleanedIds }
+          ? {
+              ...q,
+              subject_id: cleanedIds[0] || null,
+              subject_ids: cleanedIds,
+              ...(primarySubjectId(cleanedIds) !== primarySubjectId(questionOwnSubjectIds(q)) ? { evaluated_topics: [] } : {}),
+            }
           : q,
       ),
     );
@@ -1519,11 +1526,11 @@ export default function ImportarQuestoesClient({
       return;
     }
 
-    if (!disciplineId || subjectIds.length === 0) {
+    if (!disciplineId) {
       setFeedback({
         type: "error",
         message:
-          "Informe disciplina e pelo menos um assunto antes de iniciar a importação.",
+          "Informe a disciplina antes de iniciar a importação. O assunto é opcional.",
       });
       return;
     }
@@ -1719,7 +1726,7 @@ export default function ImportarQuestoesClient({
       const response = await adminFetch("/api/admin/questions/import/save", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "archived", questions: targetQuestions.map((question) => ({
-          ...question, subject_ids: questionOwnSubjectIds(question), source_origin: "import_ai",
+          ...question, discipline_id: disciplineId || null, subject_ids: questionOwnSubjectIds(question), source_origin: "import_ai",
         })) }),
       });
       const result = await response.json();
@@ -1779,10 +1786,8 @@ export default function ImportarQuestoesClient({
     }
 
     const globalSubjectIds = realSubjectIds(subjectIds);
-    const subjectReadyQuestions = allowedQuestions.filter((question) => {
-      const ownIds = questionOwnSubjectIds(question);
-      return ownIds.length > 0 || globalSubjectIds.length > 0;
-    });
+    // Assunto é opcional: basta a Disciplina (sem Assunto, a questão usa os tópicos diretos da Disciplina).
+    const subjectReadyQuestions = disciplineId ? allowedQuestions : [];
     const skippedByProvaCompleta = allowedQuestions.filter(
       (question) => !subjectReadyQuestions.some((ready) => ready.temp_id === question.temp_id),
     );
@@ -1791,8 +1796,8 @@ export default function ImportarQuestoesClient({
       setSendReviewModal({
         open: true,
         tone: "error",
-        title: "Redefina o assunto",
-        message: "Nenhuma questão foi enviada. As questões selecionadas ainda estão como Prova completa ou sem assunto real. Redefina o assunto dessas questões e tente novamente.",
+        title: "Defina a disciplina",
+        message: "Nenhuma questão foi enviada. Selecione a disciplina padrão da importação e tente novamente.",
         loading: false,
         onClose: () => setSendReviewModal(null),
       });
@@ -1831,6 +1836,7 @@ export default function ImportarQuestoesClient({
       const effectiveSubjectIds = ownIds.length > 0 ? ownIds : globalSubjectIds;
       return {
         ...question,
+        discipline_id: disciplineId,
         subject_id: effectiveSubjectIds[0] || null,
         subject_ids: effectiveSubjectIds,
         status_override: annulledTempIds.includes(question.temp_id) ? "annulled" : null,
@@ -1901,6 +1907,7 @@ export default function ImportarQuestoesClient({
             ...question,
             orgao: normalizeAgencyName(question.orgao),
           })),
+          discipline_id: disciplineId,
           subject_id: globalSubjectIds[0] || null,
           subject_ids: globalSubjectIds,
           year: parseValidYear(year),
@@ -2008,7 +2015,7 @@ export default function ImportarQuestoesClient({
       }
 
       const partialSubjectMessage = skippedByProvaCompleta.length > 0
-        ? ` ${skippedByProvaCompleta.length} questão(ões) ficaram na tela porque ainda estão como Prova completa ou sem assunto real.`
+        ? ` ${skippedByProvaCompleta.length} questão(ões) ficaram na tela porque ainda estão sem disciplina.`
         : "";
       const failedCount = Number(result.failed_count) || 0;
       const partialSend = skippedByProvaCompleta.length > 0 || failedCount > 0;
@@ -2151,15 +2158,17 @@ export default function ImportarQuestoesClient({
             label="Disciplina padrão"
             value={disciplineId}
             onChange={(value) => {
+              if (value === disciplineId) return;
               setDisciplineId(value);
               setSubjectIds([]);
+              setQuestions((current) => current.map((q) => ({ ...q, subject_id: null, subject_ids: [], evaluated_topics: [] })));
             }}
             options={disciplines.map((discipline) => ({ value: discipline.id, label: discipline.name }))}
             placeholder="Selecione"
           />
 
           <SubjectMultiSelect
-            label="Assuntos padrão"
+            label="Assuntos padrão (opcional)"
             subjects={filteredSubjects}
             selectedIds={subjectIds}
             onChange={setSubjectIds}
@@ -2587,7 +2596,7 @@ export default function ImportarQuestoesClient({
 
 <div className="et-clean-meta-subjects">
                             <SubjectMultiSelect
-                              label="Assuntos"
+                              label="Assuntos (opcional)"
                               subjects={filteredSubjects.filter((s) => s.id !== PROVA_COMPLETA_SUBJECT_ID)}
                               selectedIds={questionOwnSubjectIds(question)}
                               onChange={(ids) => applySubjectsToQuestion(question.temp_id, ids)}
@@ -2869,6 +2878,7 @@ export default function ImportarQuestoesClient({
                                 }
                               }}
                               subjectId={questionOwnSubjectIds(question)[0] || null}
+                              disciplineId={disciplineId || null}
                               required
                               variant="light"
                               placeholder="Ex.: Memória RAM, Placa-mãe"

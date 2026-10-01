@@ -62,6 +62,10 @@ async function getData(id: string) {
           evaluated_topics,
           year,
           question_type,
+          discipline:discipline_id (
+            id,
+            name
+          ),
           exam_boards:exam_board_id (
             id,
             name
@@ -215,8 +219,9 @@ export default async function SimuladoDetailPage({
   const subjectDistribution = (() => {
     const counts = new Map<string, number>();
     questions.forEach((relation: any) => {
-      const subjectName = normalizeSubjectDisplayName(relation.questions?.subjects?.name) || "Sem assunto";
-      counts.set(subjectName, (counts.get(subjectName) || 0) + 1);
+      // Sem Assunto, a questão é contada no nível da própria Disciplina.
+      const label = normalizeSubjectDisplayName(relation.questions?.subjects?.name) || relation.questions?.discipline?.name;
+      if (label) counts.set(label, (counts.get(label) || 0) + 1);
     });
     return Array.from(counts.entries())
       .map(([name, count]) => ({ name, count }))
@@ -287,7 +292,7 @@ export default async function SimuladoDetailPage({
                           {q?.exam_boards?.name || "Sem banca"}
                         </span>
                         <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">
-                          {q?.subjects?.disciplines?.name || "Sem disciplina"} / {q?.subjects?.name || "Sem assunto"}
+                          {[q?.discipline?.name || q?.subjects?.disciplines?.name || "Sem disciplina", q?.subjects?.name].filter(Boolean).join(" / ")}
                         </span>
                         {q?.year && (
                           <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-slate-300">

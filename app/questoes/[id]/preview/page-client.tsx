@@ -38,6 +38,7 @@ type Question = {
   image_url?: string | null;
   explanation_text?: string | null;
   created_at?: string | null;
+  discipline?: { id: string; name: string } | null;
   subjects?: {
     id: string;
     name: string;
@@ -123,7 +124,7 @@ export default function PreviewQuestaoClient({
   question: Question;
 }) {
   const linkedSubjects = extractQuestionSubjects(question);
-  const disciplineName = Array.from(
+  const disciplineName = question.discipline?.name || Array.from(
     new Set(linkedSubjects.map((subject) => subject?.disciplines?.name).filter(Boolean)),
   ).join(", ") || "Disciplina";
   const subjectName = formatQuestionSubjects(question);
@@ -173,7 +174,7 @@ export default function PreviewQuestaoClient({
 
         <section className="mb-6 grid gap-3 md:grid-cols-4">
           <InfoCard label="Disciplina" value={disciplineName} />
-          <InfoCard label="Assunto" value={subjectName} />
+          {subjectName && <InfoCard label="Assunto" value={subjectName} />}
           <InfoCard label="Banca" value={boardName} />
           <InfoCard label="Status" value={getStatusLabel(question.status)} />
           {isQuestionImagePending(question) && (

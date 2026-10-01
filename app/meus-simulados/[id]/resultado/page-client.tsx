@@ -130,6 +130,8 @@ type ResultPayload = {
 };
 
 type SubjectTopicPerformance = {
+  key: string;
+  level: "subject" | "discipline";
   subject: string;
   correct: number;
   wrong: number;
@@ -165,15 +167,21 @@ function formatPercent(value: number): string {
   return fixed.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",");
 }
 
+// Questão com Assunto entra no grupo do Assunto; sem Assunto, no grupo da própria Disciplina
+// (tópicos diretos). Cada questão entra em um único grupo.
 function buildSubjectTopicPerformance(questions: ResultQuestion[]): SubjectTopicPerformance[] {
   const map = new Map<string, SubjectTopicPerformance & { topicMap: Map<string, TopicRollup> }>();
 
   questions.forEach((question) => {
-    const subject = question.subject || "Sem assunto";
-    if (!map.has(subject)) {
-      map.set(subject, { subject, correct: 0, wrong: 0, blank: 0, annulled: 0, total: 0, percent: 0, masteredTopics: [], reviewTopics: [], topicMap: new Map() });
+    const level: SubjectTopicPerformance["level"] = question.subject ? "subject" : "discipline";
+    const label = question.subject || question.discipline;
+    if (!label) return;
+    const key = `${level}:${label}`;
+    if (!map.has(key)) {
+      map.set(key, { key, level, subject: label, correct: 0, wrong: 0, blank: 0, annulled: 0, total: 0, percent: 0, masteredTopics: [], reviewTopics: [], topicMap: new Map() });
     }
-    const item = map.get(subject)!;
+    const item = map.get(key);
+    if (!item) return;
     item.total += 1;
     const isAnnulled = question.status === "annulled";
     const topics = Array.isArray(question.evaluated_topics) && question.evaluated_topics.length > 0 ? question.evaluated_topics : ["Tópico não informado"];
@@ -195,6 +203,8 @@ function buildSubjectTopicPerformance(questions: ResultQuestion[]): SubjectTopic
       const topics = Array.from(item.topicMap.values()).sort((a, b) => (b.wrong + b.blank) - (a.wrong + a.blank) || a.label.localeCompare(b.label));
       const validTotal = Math.max(0, item.total - item.annulled);
       return {
+        key: item.key,
+        level: item.level,
         subject: item.subject,
         correct: item.correct,
         wrong: item.wrong,
@@ -866,6 +876,7 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
 
   const assessedSubjectsCount = performance.length || subjects.length;
   const totalTopicsToReview = performance.reduce((acc, item) => acc + item.reviewTopics.length, 0);
+  const hasDisciplineGroups = performance.some((item) => item.level === "discipline");
 
   return (
     <div className="space-y-3.5">
@@ -889,7 +900,7 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
           </div>
 
           <div className="relative z-10 max-w-[440px]">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#FF5A00]">Desempenho por Assunto</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#FF5A00]">{hasDisciplineGroups ? "Desempenho por Assunto e Disciplina" : "Desempenho por Assunto"}</p>
             <h3 className="mt-3 text-[26px] font-black leading-[1.10] tracking-[-0.035em] text-slate-950 md:text-[29px]">
               Onde você acertou e onde precisa revisar
             </h3>
@@ -902,7 +913,13 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
           </div>
 
           <div className="relative z-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-            <SubjectExecutiveCard icon={<Target size={24} />} label="Assuntos avaliados" value={String(assessedSubjectsCount)} detail={assessedSubjectsCount === 1 ? "assunto" : "assuntos"} tone="green" />
+            <SubjectExecutiveCard
+              icon={<Target size={24} />}
+              label={hasDisciplineGroups ? "Assuntos e disciplinas avaliados" : "Assuntos avaliados"}
+              value={String(assessedSubjectsCount)}
+              detail={hasDisciplineGroups ? (assessedSubjectsCount === 1 ? "grupo de tópicos" : "grupos de tópicos") : assessedSubjectsCount === 1 ? "assunto" : "assuntos"}
+              tone="green"
+            />
             <SubjectExecutiveCard icon={<CircleAlert size={24} />} label="Tópicos para revisar" value={String(totalTopicsToReview)} detail={totalTopicsToReview === 1 ? "tópico identificado" : "tópicos identificados"} tone="red" />
           </div>
         </div>
@@ -916,7 +933,7 @@ function ResultSubjects({ performance, subjects, answerKeyVisible, onGoToReview 
 
       <section className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {performance.length ? performance.map((item) => (
-          <SubjectPerformanceCard key={item.subject} item={item} />
+          <SubjectPerformanceCard key={item.key} item={item} />
         )) : <div className="lg:col-span-2 2xl:col-span-3"><EmptyState text="Ainda não há dados por assunto para esta tentativa." /></div>}
       </section>
 
@@ -973,6 +990,7 @@ function SubjectPerformanceCard({ item }: { item: SubjectTopicPerformance }) {
         <div className="flex min-w-0 items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${colors.iconBox}`}>{colors.icon}</span>
           <div className="min-w-0 pt-0.5">
+            {item.level === "discipline" && <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Tópicos da disciplina</p>}
             <h4 className="break-words text-[16px] font-black leading-[1.12] tracking-[-0.02em] text-slate-950">{item.subject}</h4>
           </div>
         </div>
@@ -1004,7 +1022,7 @@ function SubjectPerformanceCard({ item }: { item: SubjectTopicPerformance }) {
               <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-600" size={16} />
               <div>
                 <p className="text-[12px] font-black text-emerald-700">Ótimo desempenho!</p>
-                <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-600">Você não errou nenhuma questão válida neste assunto.</p>
+                <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-600">Você não errou nenhuma questão válida {item.level === "discipline" ? "nestes tópicos" : "neste assunto"}.</p>
               </div>
             </div>
           </div>

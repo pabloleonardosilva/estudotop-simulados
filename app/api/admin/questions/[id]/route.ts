@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { normalizeSubjectIds, primarySubjectId, syncQuestionSubjects } from "@/lib/questions/question-subjects";
+import { normalizeSubjectIds, primarySubjectId, resolveQuestionDiscipline, syncQuestionSubjects } from "@/lib/questions/question-subjects";
+import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { EVALUATED_TOPICS_REQUIRED_MESSAGE, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { richTextToPlainText } from "@/lib/utils/rich-text";
@@ -15,6 +16,16 @@ type AlternativeInput = {
   image_url?: string | null;
   is_correct?: boolean | null;
 };
+
+// Campos alterados pelo PATCH, no mesmo formato das listas do Banco e do Revisar.
+const SAVED_QUESTION_SELECT = `
+  id, code, statement, status, question_type, year, difficulty_level, evaluated_topics, orgao,
+  image_url, explanation_text, discipline_id, subject_id, exam_board_id, updated_at,
+  exam_boards:exam_board_id (id, name),
+  subjects:subject_id (id, name, discipline_id, disciplines:discipline_id (id, name)),
+  question_subjects (subjects (id, name, discipline_id, disciplines:discipline_id (id, name))),
+  question_alternatives (id, label, text, image_url, is_correct, order_number)
+`;
 
 function clean(value?: string | null) {
   return (value || "").trim();
@@ -142,6 +153,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       image_url,
       explanation_text,
       subject_id,
+      discipline_id,
       exam_board_id,
       exam_boards:exam_board_id (
         id,
@@ -211,9 +223,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     let status = requestedStatus;
     const evaluatedTopics = normalizeEvaluatedTopics(body.evaluated_topics);
 
-    if (!mainSubjectId) {
+    const supabase = createSupabaseAdminClient();
+    const classification = await resolveQuestionDiscipline({ supabase, disciplineId: body.discipline_id, subjectIds });
+
+    if (!classification.ok) {
       return NextResponse.json(
-        { ok: false, message: "Selecione pelo menos um assunto da questão." },
+        { ok: false, message: classification.message },
         { status: 400 },
       );
     }
@@ -302,13 +317,41 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const finalCorrect = validAlternatives.find((alternative) => alternative.is_correct);
 
-    const supabase = createSupabaseAdminClient();
-
     const { data: previousQuestion } = await supabase
       .from("questions")
-      .select("id, code, correct_alternative_label")
+      .select("id, code, correct_alternative_label, subject_id, discipline_id, evaluated_topics")
       .eq("id", id)
       .single();
+
+    // Mudança de Disciplina/Assunto principal: tópico herdado da classificação anterior que não
+    // existe no catálogo da nova classificação é recusado (nunca remapeado por nome).
+    const classificationChanged = Boolean(previousQuestion)
+      && (previousQuestion?.subject_id !== mainSubjectId || previousQuestion?.discipline_id !== classification.disciplineId);
+    const previousTopicKeys = new Set(normalizeEvaluatedTopics(previousQuestion?.evaluated_topics).map(normalizeTopicComparableName));
+    const carriedTopics = classificationChanged
+      ? evaluatedTopics.filter((topic) => previousTopicKeys.has(normalizeTopicComparableName(topic)))
+      : [];
+
+    if (carriedTopics.length > 0) {
+      let catalogQuery = supabase.from("topics").select("name");
+      catalogQuery = mainSubjectId
+        ? catalogQuery.eq("subject_id", mainSubjectId)
+        : catalogQuery.eq("discipline_id", classification.disciplineId).is("subject_id", null);
+      const { data: catalog, error: catalogError } = await catalogQuery;
+      if (catalogError) throw new Error("Não foi possível validar os tópicos da nova classificação.");
+
+      const catalogKeys = new Set((catalog || []).map((topic: { name: string }) => normalizeTopicComparableName(topic.name)));
+      const staleTopics = carriedTopics.filter((topic) => !catalogKeys.has(normalizeTopicComparableName(topic)));
+      if (staleTopics.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: `A disciplina ou o assunto da questão mudou e estes tópicos pertencem à classificação anterior: ${staleTopics.join(", ")}. Selecione novamente os tópicos avaliados.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     const previousCorrectLabel = previousQuestion?.correct_alternative_label || null;
     const labelChanged = previousCorrectLabel !== (finalCorrect?.label || null);
@@ -321,6 +364,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { error: questionError } = await supabase
       .from("questions")
       .update({
+        discipline_id: classification.disciplineId,
         subject_id: mainSubjectId,
         exam_board_id: body.exam_board_id,
         statement,
@@ -371,8 +415,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     }
 
+    // Versão canônica pós-save: as telas substituem a cópia local por ela, para que o próximo
+    // save parta da classificação realmente gravada (e não de uma cópia anterior).
+    const { data: savedQuestion } = await supabase
+      .from("questions")
+      .select(SAVED_QUESTION_SELECT)
+      .eq("id", id)
+      .maybeSingle();
+
     void logAdminAction({ adminUserId: admin.id, action: "admin.question.updated", entityType: "question", entityId: id, request, metadata: { status: body.status ?? null } });
-    return NextResponse.json({ ok: true, message: "Questão atualizada com sucesso." });
+    return NextResponse.json({ ok: true, message: "Questão atualizada com sucesso.", question: savedQuestion || null });
   } catch (error) {
     void logSystemError({ source: "api.admin.questions.update", error, request });
     return NextResponse.json(

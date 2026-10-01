@@ -30,7 +30,8 @@ type Topic = {
   id: string;
   name: string;
   normalized_name: string;
-  subject_id: string;
+  subject_id: string | null;
+  discipline_id: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -83,14 +84,26 @@ export default function TopicosClient({
   const selectedDiscipline = initialDisciplines.find((item) => item.id === disciplineId);
   const selectedSubject = initialSubjects.find((item) => item.id === subjectId);
   const normalizedName = normalizeTopicName(name);
+  // Assunto vazio = tópicos diretos da Disciplina (subject_id nulo).
+  const inCurrentScope = useCallback(
+    (topic: Topic) => subjectId ? topic.subject_id === subjectId : topic.subject_id === null && topic.discipline_id === disciplineId,
+    [disciplineId, subjectId],
+  );
   const duplicate = normalizedName
-    ? topics.find((topic) => topic.subject_id === subjectId && normalizeTopicComparableName(topic.name) === normalizeTopicComparableName(normalizedName))
+    ? topics.find((topic) => inCurrentScope(topic) && normalizeTopicComparableName(topic.name) === normalizeTopicComparableName(normalizedName))
     : null;
+  const subjectOptions = useMemo(
+    () => [
+      { value: "", label: "Nenhum — tópico direto da disciplina" },
+      ...sortTextOptions(subjects.map((subject) => ({ value: subject.id, label: `${subject.name}${!subject.is_active ? " (inativo)" : ""}` }))),
+    ],
+    [subjects],
+  );
 
   const filteredTopics = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return topics.filter((topic) => topic.subject_id === subjectId && (!term || topic.name.toLowerCase().includes(term)));
-  }, [search, subjectId, topics]);
+    return topics.filter((topic) => inCurrentScope(topic) && (!term || topic.name.toLowerCase().includes(term)));
+  }, [inCurrentScope, search, topics]);
 
   async function requestJson(url: string, options: RequestInit) {
     const response = await adminFetch(url, options);
@@ -100,8 +113,8 @@ export default function TopicosClient({
   }
 
   async function createTopic() {
-    if (!subjectId) {
-      setFeedback({ tone: "error", title: "Assunto obrigatório", message: "Selecione um assunto para cadastrar o tópico." });
+    if (!disciplineId) {
+      setFeedback({ tone: "error", title: "Disciplina obrigatória", message: "Selecione a disciplina do tópico." });
       return;
     }
     if (normalizedName.length < 2) {
@@ -109,7 +122,7 @@ export default function TopicosClient({
       return;
     }
     if (duplicate) {
-      setFeedback({ tone: "warning", title: "Tópico já cadastrado", message: `O tópico "${duplicate.name}" já existe neste assunto.` });
+      setFeedback({ tone: "warning", title: "Tópico já cadastrado", message: `O tópico "${duplicate.name}" já existe ${subjectId ? "neste assunto" : "nesta disciplina"}.` });
       return;
     }
 
@@ -118,7 +131,7 @@ export default function TopicosClient({
       const result = await requestJson("/api/admin/topics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: normalizedName, subject_id: subjectId }),
+        body: JSON.stringify({ name: normalizedName, discipline_id: disciplineId, subject_id: subjectId || null }),
       });
       setTopics((current) => [...current, { ...result.topic, usage_count: 0, questions: [] }]);
       setName("");
@@ -145,7 +158,6 @@ export default function TopicosClient({
         body: JSON.stringify({
           id: topic.id,
           name: normalized,
-          subject_id: topic.subject_id,
           confirm_question_update: confirmQuestionUpdate,
         }),
       });
@@ -250,11 +262,14 @@ export default function TopicosClient({
     const response = await adminFetch(`/api/admin/questions/${questionId}`, { method: "GET" });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.message || "Não foi possível atualizar a questão.");
-    const question = result.question as { id: string; code?: string | null; status?: string | null; subject_id?: string | null; evaluated_topics?: string[] | null };
+    const question = result.question as { id: string; code?: string | null; status?: string | null; subject_id?: string | null; discipline_id?: string | null; evaluated_topics?: string[] | null };
     const evaluatedTopics = Array.isArray(question.evaluated_topics) ? question.evaluated_topics : [];
+    const sameScope = (topic: Topic) => topic.subject_id
+      ? topic.subject_id === question.subject_id
+      : !question.subject_id && topic.discipline_id === question.discipline_id;
 
     setTopics((current) => current.map((topic) => {
-      const belongs = topic.subject_id === question.subject_id
+      const belongs = sameScope(topic)
         && evaluatedTopics.some((name) => normalizeTopicComparableName(name) === normalizeTopicComparableName(topic.name));
       const withoutQuestion = topic.questions.filter((item) => item.id !== questionId);
       const questions = belongs
@@ -266,7 +281,7 @@ export default function TopicosClient({
 
     setSelectedTopic((current) => {
       if (!current) return null;
-      const belongs = current.subject_id === question.subject_id
+      const belongs = sameScope(current)
         && evaluatedTopics.some((name) => normalizeTopicComparableName(name) === normalizeTopicComparableName(current.name));
       const withoutQuestion = current.questions.filter((item) => item.id !== questionId);
       const questions = belongs
@@ -404,7 +419,7 @@ export default function TopicosClient({
             </div>
             <div>
               <h2 className="text-lg font-bold tracking-tight text-white">Novo tópico</h2>
-              <p className="mt-1.5 text-[13px] leading-5 text-slate-400">Os nomes são normalizados e verificados dentro do assunto.</p>
+              <p className="mt-1.5 text-[13px] leading-5 text-slate-400">Os nomes são normalizados e verificados dentro do assunto ou, sem assunto, dentro da disciplina.</p>
             </div>
           </div>
 
@@ -418,18 +433,18 @@ export default function TopicosClient({
 
             <SearchableSelect
               dark
-              label="Assunto"
+              label="Assunto (opcional)"
               value={subjectId}
               onChange={setSubjectId}
-              options={subjects.map((subject) => ({ value: subject.id, label: `${subject.name}${!subject.is_active ? " (inativo)" : ""}` }))}
-              placeholder={subjects.length === 0 ? "Nenhum assunto cadastrado" : "Selecione"}
+              options={subjectOptions}
+              sortOptions={false}
             />
 
             <PremiumInput variant="jornada" label="Nome do tópico" value={name} onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder="Ex.: Barra de tarefas" className="border-white/[0.08] bg-[#020817]/55 focus:border-orange-400/55" />
 
             {duplicate && (
               <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.08] p-4 text-sm font-medium text-amber-100">
-                Já existe neste assunto: {duplicate.name}
+                Já existe {subjectId ? "neste assunto" : "nesta disciplina"}: {duplicate.name}
               </div>
             )}
 
@@ -439,7 +454,7 @@ export default function TopicosClient({
               icon={<span className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/20 bg-white/15 shadow-inner shadow-white/10"><Plus size={15} strokeWidth={2.6} /></span>}
               className="relative h-[52px] overflow-hidden rounded-2xl border-orange-300/30 bg-[linear-gradient(135deg,#f97316_0%,#fb923c_52%,#f59e0b_100%)] text-sm font-extrabold text-white shadow-[0_16px_36px_rgba(249,115,22,0.28),inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/10 transition-all duration-300 after:pointer-events-none after:absolute after:inset-y-0 after:-left-1/3 after:w-1/4 after:-skew-x-12 after:bg-white/20 after:opacity-0 after:blur-sm after:transition-all after:duration-700 hover:-translate-y-0.5 hover:border-orange-200/50 hover:text-white hover:shadow-[0_20px_42px_rgba(249,115,22,0.36),inset_0_1px_0_rgba(255,255,255,0.30)] hover:after:left-[115%] hover:after:opacity-100 active:translate-y-0 active:scale-[0.99] disabled:after:hidden"
               onClick={createTopic}
-              disabled={saving || !subjectId || Boolean(duplicate)}
+              disabled={saving || !disciplineId || Boolean(duplicate)}
             >
               Cadastrar tópico
             </PremiumButton>
@@ -454,7 +469,11 @@ export default function TopicosClient({
             <div className="min-w-0">
               <h2 className="text-lg font-bold tracking-tight text-white">Tópicos cadastrados</h2>
               <p className="mt-1.5 truncate text-[13px] leading-5 text-slate-400">
-                {selectedSubject ? `${selectedDiscipline?.name || "Disciplina"} · ${selectedSubject.name}` : "Selecione uma disciplina e um assunto para visualizar os tópicos."}
+                {selectedSubject
+                  ? `${selectedDiscipline?.name || "Disciplina"} · ${selectedSubject.name}`
+                  : selectedDiscipline
+                    ? `${selectedDiscipline.name} · tópicos diretos da disciplina`
+                    : "Selecione uma disciplina para visualizar os tópicos."}
               </p>
             </div>
           </div>
@@ -465,7 +484,8 @@ export default function TopicosClient({
               label="Filtrar por assunto"
               value={subjectId}
               onChange={setSubjectId}
-              options={subjects.map((subject) => ({ value: subject.id, label: subject.name }))}
+              options={subjectOptions}
+              sortOptions={false}
             />
             <PremiumInput variant="jornada" label="Buscar" icon={<Search size={16} />} value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} placeholder="Pesquisar tópico..." className="border-white/[0.08] bg-[#020817]/55 focus:border-orange-400/55" />
           </div>

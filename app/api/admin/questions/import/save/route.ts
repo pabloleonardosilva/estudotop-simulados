@@ -45,6 +45,7 @@ type ImportedQuestion = {
 
   alternatives?: ImportedAlternative[] | null;
 
+  discipline_id?: string | null;
   subject_id?: string | null;
   subject_ids?: string[] | null;
   evaluated_topics?: string[] | null;
@@ -57,6 +58,7 @@ type ImportSaveBody = {
   questions?: ImportedQuestion[];
   simulado_id?: string | null;
 
+  discipline_id?: string | null;
   subject_id?: string | null;
   subject_ids?: unknown;
 
@@ -260,22 +262,47 @@ export async function POST(
       );
     }
 
-    const hasAtLeastOneQuestionWithSubject = questions.some(
-      (question) => subjectIdsForQuestion(question, subjectIds).length > 0,
+    const supabase =
+      createSupabaseAdminClient();
+
+    // Disciplina obrigatória, Assunto opcional: a Disciplina vem dos Assuntos (quando houver),
+    // da própria questão ou da Disciplina padrão do lote. Uma única consulta de Assuntos por lote.
+    const defaultDisciplineId = clean(body.discipline_id || "") || null;
+    const batchSubjectIds = Array.from(new Set(questions.flatMap((question) => subjectIdsForQuestion(question, subjectIds))));
+    const subjectDisciplineById = new Map<string, string | null>();
+    if (batchSubjectIds.length > 0) {
+      const { data: subjectRows, error: subjectRowsError } = await supabase
+        .from("subjects")
+        .select("id, discipline_id")
+        .in("id", batchSubjectIds);
+      if (subjectRowsError) throw new Error("Não foi possível validar os assuntos das questões.");
+      (subjectRows || []).forEach((row: { id: string; discipline_id: string | null }) => subjectDisciplineById.set(row.id, row.discipline_id));
+    }
+
+    function disciplineForQuestion(question: ImportedQuestion, questionSubjectIds: string[]): { disciplineId: string | null; error?: string } {
+      const requested = clean(question.discipline_id || "") || defaultDisciplineId;
+      if (questionSubjectIds.length === 0) return { disciplineId: requested };
+      const fromSubjects = Array.from(new Set(questionSubjectIds.map((id) => subjectDisciplineById.get(id) || null)));
+      if (fromSubjects.length !== 1 || !fromSubjects[0]) return { disciplineId: null, error: "Os assuntos da questão devem pertencer a uma mesma disciplina." };
+      if (clean(question.discipline_id || "") && question.discipline_id !== fromSubjects[0]) {
+        return { disciplineId: null, error: "Os assuntos selecionados não pertencem à disciplina da questão." };
+      }
+      return { disciplineId: fromSubjects[0] };
+    }
+
+    const hasAtLeastOneQuestionWithDiscipline = questions.some(
+      (question) => Boolean(disciplineForQuestion(question, subjectIdsForQuestion(question, subjectIds)).disciplineId),
     );
 
-    if (!archive && !hasAtLeastOneQuestionWithSubject) {
+    if (!archive && !hasAtLeastOneQuestionWithDiscipline) {
       return NextResponse.json(
         {
           ok: false,
-          message: "Nenhuma questão com assunto real foi enviada. Redefina as questões marcadas como Prova completa.",
+          message: "Nenhuma questão com disciplina foi enviada. Defina a disciplina das questões antes de enviar.",
         },
         { status: 400 }
       );
     }
-
-    const supabase =
-      createSupabaseAdminClient();
 
     if (simuladoId) {
       const { data: simulado, error: simuladoError } = await supabase
@@ -333,8 +360,14 @@ export async function POST(
         const questionSubjectIds = subjectIdsForQuestion(question, subjectIds);
         const questionSubjectId = primarySubjectId(questionSubjectIds);
         const evaluatedTopics = normalizeEvaluatedTopics(question.evaluated_topics);
+        const questionDiscipline = disciplineForQuestion(question, questionSubjectIds);
 
-        if (!questionSubjectId && !archive) {
+        if (questionDiscipline.error && !archive) {
+          failedItems.push({ temp_id: tempId, message: questionDiscipline.error });
+          continue;
+        }
+
+        if (!questionDiscipline.disciplineId && !archive) {
           ignoredCount++;
           if (tempId) ignoredTempIds.push(tempId);
           continue;
@@ -489,6 +522,9 @@ export async function POST(
             .from("questions")
             .insert({
               statement,
+
+              discipline_id:
+                questionDiscipline.disciplineId,
 
               subject_id:
                 questionSubjectId,

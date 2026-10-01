@@ -139,7 +139,7 @@ export default function SimuladoDetailActions({ simulado, questions }: SimuladoD
         orderNumber: index + 1,
         code: relation.questions?.code || `Questão ${index + 1}`,
         statement: relation.questions?.statement || "",
-        subject: relation.questions?.subjects?.name || "Sem assunto",
+        subject: relation.questions?.subjects?.name || null,
         board: relation.questions?.exam_boards?.name || "Sem banca",
         year: relation.questions?.year || null,
         difficulty: relation.questions?.difficulty_level || null,

@@ -62,9 +62,9 @@ type GeneratedQuestion = {
   source_question_code?: string | null;
   discipline_id: string;
   discipline_name: string;
-  subject_id: string;
+  subject_id: string | null;
   subject_ids?: string[];
-  subject_name: string;
+  subject_name: string | null;
   difficulty_level: number | null;
   explanation_text: string;
   alternatives: GeneratedAlternative[];
@@ -172,7 +172,7 @@ export default function GerarVariacoesQuestaoClient({
   const sendReviewSteps = [
     "Preparando variações",
     "Validando gabaritos",
-    "Preservando assunto da questão-modelo",
+    "Preservando a classificação da questão-modelo",
     "Salvando no banco",
     "Enviando para revisão",
   ];
@@ -385,7 +385,7 @@ export default function GerarVariacoesQuestaoClient({
       tone: "review",
       title: "Enviando variações para revisão",
       message:
-        "O sistema está salvando as questões no banco com o mesmo assunto da questão-modelo.",
+        "O sistema está salvando as questões no banco com a mesma disciplina e o mesmo assunto (quando houver) da questão-modelo.",
       loading: true,
       steps: sendReviewSteps,
       currentStep: 0,
@@ -426,7 +426,7 @@ export default function GerarVariacoesQuestaoClient({
             subject_id: sourceSubjectIds[0] || item.subject_id || "",
             subject_ids: sourceSubjectIds.length
               ? sourceSubjectIds
-              : item.subject_ids || [item.subject_id].filter(Boolean),
+              : item.subject_ids || [item.subject_id].filter((subjectId): subjectId is string => Boolean(subjectId)),
             source_origin: "generate_ai",
           })),
           discipline_id: targetQuestions[0]?.discipline_id || "",
@@ -435,7 +435,7 @@ export default function GerarVariacoesQuestaoClient({
           subject_ids: sourceSubjectIds.length
             ? sourceSubjectIds
             : targetQuestions[0]?.subject_ids ||
-              [targetQuestions[0]?.subject_id].filter(Boolean),
+              [targetQuestions[0]?.subject_id].filter((subjectId): subjectId is string => Boolean(subjectId)),
           year: new Date().getFullYear(),
         }),
       });
@@ -1022,7 +1022,7 @@ function GeneratedQuestionCard({
                   : "Questão com alternativas"}
               </span>
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                {question.discipline_name} / {question.subject_name}
+                {[question.discipline_name, question.subject_name].filter(Boolean).join(" / ")}
               </span>
               <PremiumDifficultyStars
                 value={question.difficulty_level}

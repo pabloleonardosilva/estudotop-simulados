@@ -50,6 +50,7 @@ async function getData(initialFilters: InitialFilters) {
       image_url,
       explanation_text,
       created_at,
+      discipline_id,
       question_subjects (
         subjects (
           id,
@@ -151,7 +152,7 @@ async function getData(initialFilters: InitialFilters) {
 
   const { data: topics } = await supabase
     .from("topics")
-    .select("id, name, subject_id")
+    .select("id, name, subject_id, discipline_id")
     .order("name");
 
   const { data: boards } = await supabase

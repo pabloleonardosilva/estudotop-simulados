@@ -10,7 +10,7 @@ export default async function ProfessorEventPreviewPage({ params }: { params: Pr
   const { data: eventRow } = await supabase.from("simulado_events").select("simulado_id").eq("id", id).maybeSingle();
   if (!eventRow?.simulado_id) notFound();
   const event = eventRow;
-  const { data: simulado } = await supabase.from("simulados").select("*,simulado_questions(id,simulado_id,question_id,order_number,points,status,questions:question_id(id,code,statement,explanation_text,difficulty_level,year,question_type,correct_alternative_label,exam_boards:exam_board_id(id,name),subjects:subject_id(id,name,disciplines:discipline_id(id,name)),question_alternatives(id,label,text,image_url,is_correct,order_number)))").eq("id", event.simulado_id).single();
+  const { data: simulado } = await supabase.from("simulados").select("*,simulado_questions(id,simulado_id,question_id,order_number,points,status,questions:question_id(id,code,statement,explanation_text,difficulty_level,year,question_type,correct_alternative_label,discipline:discipline_id(id,name),exam_boards:exam_board_id(id,name),subjects:subject_id(id,name,disciplines:discipline_id(id,name)),question_alternatives(id,label,text,image_url,is_correct,order_number)))").eq("id", event.simulado_id).single();
   if (!simulado) notFound();
   return <PreviewSimuladoClient simulado={simulado} />;
 }

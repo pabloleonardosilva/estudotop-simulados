@@ -241,7 +241,7 @@ export default function SubjectMultiSelect({
 
   const labelClass = dark
     ? "mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40"
-    : "mb-2 block text-sm font-medium text-slate-700";
+    : "et-clean-label mb-2 block text-sm font-medium text-slate-700";
 
   return (
     <div className={dark ? undefined : "et-clean-field-group"}>

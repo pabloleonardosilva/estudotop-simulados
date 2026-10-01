@@ -24,6 +24,7 @@ type GeneratedQuestion = {
 };
 
 type GenerateRequestBody = {
+  discipline_id?: string | null;
   subject_id?: string | null;
   exam_board_id?: string | null;
   question_type?: QuestionType | string | null;
@@ -202,7 +203,7 @@ function buildPrompt({
   additionalInstructions,
 }: {
   quantity: number;
-  subjectName: string;
+  subjectName: string | null;
   disciplineName: string;
   inspiringBoardName: string;
   questionType: QuestionType;
@@ -221,7 +222,7 @@ function buildPrompt({
 
   return `Voce e um professor especialista em concursos publicos brasileiros.
 
-Crie ${quantity} questao(oes) inedita(s) para revisao humana, sobre o assunto "${subjectName}", dentro da disciplina "${disciplineName}".
+Crie ${quantity} questao(oes) inedita(s) para revisao humana, ${subjectName ? `sobre o assunto "${subjectName}", dentro da disciplina "${disciplineName}"` : `sobre conteudos da disciplina "${disciplineName}"`}.
 
 Banca inspiradora: ${inspiringBoardName}.
 Use a banca inspiradora apenas como referencia de estilo de cobranca: linguagem, complexidade, forma de cobrar, pegadinhas tipicas e formato. Nao cite a banca no enunciado e nao copie questoes reais.
@@ -282,6 +283,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as GenerateRequestBody;
     const subjectId = clean(body.subject_id);
+    const requestedDisciplineId = clean(body.discipline_id);
     const inspiringBoardId = clean(body.exam_board_id);
     const questionType = normalizeQuestionType(body.question_type);
     const selectedDifficulty = normalizeDifficulty(body.difficulty_level);
@@ -289,8 +291,8 @@ export async function POST(request: Request) {
     const includeExplanations = Boolean(body.include_explanations);
     const additionalInstructions = clean(body.additional_instructions);
 
-    if (!subjectId) {
-      return NextResponse.json({ ok: false, message: "Selecione o assunto." }, { status: 400 });
+    if (!subjectId && !requestedDisciplineId) {
+      return NextResponse.json({ ok: false, message: "Selecione a disciplina." }, { status: 400 });
     }
 
     if (!inspiringBoardId) {
@@ -309,24 +311,49 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
 
-    const { data: subject, error: subjectError } = await supabase
-      .from("subjects")
-      .select(`
-        id,
-        name,
-        disciplines:discipline_id (
-          id,
-          name
-        )
-      `)
-      .eq("id", subjectId)
-      .single();
+    // Assunto opcional: sem Assunto, a geração usa somente a Disciplina (nenhum Assunto é inventado).
+    let subjectName: string | null = null;
+    let discipline: { id: string; name: string } | null | undefined = null;
 
-    if (subjectError || !subject) {
-      return NextResponse.json(
-        { ok: false, message: subjectError?.message || "Assunto nao encontrado." },
-        { status: 400 }
-      );
+    if (subjectId) {
+      const { data: subject, error: subjectError } = await supabase
+        .from("subjects")
+        .select(`
+          id,
+          name,
+          disciplines:discipline_id (
+            id,
+            name
+          )
+        `)
+        .eq("id", subjectId)
+        .single();
+
+      if (subjectError || !subject) {
+        return NextResponse.json(
+          { ok: false, message: subjectError?.message || "Assunto nao encontrado." },
+          { status: 400 }
+        );
+      }
+
+      const subjectRow = subject as SubjectRow;
+      discipline = Array.isArray(subjectRow.disciplines) ? subjectRow.disciplines[0] : subjectRow.disciplines;
+      subjectName = subject.name;
+
+      if (requestedDisciplineId && discipline?.id !== requestedDisciplineId) {
+        return NextResponse.json({ ok: false, message: "O assunto selecionado nao pertence a disciplina informada." }, { status: 400 });
+      }
+    } else {
+      const { data: disciplineRow, error: disciplineError } = await supabase
+        .from("disciplines")
+        .select("id, name")
+        .eq("id", requestedDisciplineId)
+        .maybeSingle();
+
+      if (disciplineError || !disciplineRow) {
+        return NextResponse.json({ ok: false, message: "Disciplina nao encontrada." }, { status: 400 });
+      }
+      discipline = disciplineRow;
     }
 
     const { data: inspiringBoard, error: inspiringBoardError } = await supabase
@@ -343,13 +370,8 @@ export async function POST(request: Request) {
     }
 
     const finalBoard = await findOrCreateEstudoTopBoard(supabase);
-    const subjectRow = subject as SubjectRow;
-    const discipline = Array.isArray(subjectRow.disciplines)
-      ? subjectRow.disciplines[0]
-      : subjectRow.disciplines;
     const disciplineName = discipline?.name || "Nao informada";
     const disciplineId = discipline?.id || "";
-    const subjectName = subject.name;
     const inspiringBoardName = inspiringBoard.name;
 
     const prompt = buildPrompt({
@@ -457,8 +479,8 @@ export async function POST(request: Request) {
         inspiring_exam_board_id: inspiringBoardId,
         discipline_id: disciplineId,
         discipline_name: disciplineName,
-        subject_id: subjectId,
-        subject_ids: [subjectId],
+        subject_id: subjectId || null,
+        subject_ids: subjectId ? [subjectId] : [],
         subject_name: subjectName,
         difficulty_level: difficultyLevel,
         evaluated_topics: evaluatedTopics,

@@ -18,6 +18,7 @@ type EvaluatedTopicsInputProps = {
   variant?: "light" | "dark";
   placeholder?: string;
   subjectId?: string | null;
+  disciplineId?: string | null;
 };
 
 type TopicSuggestion = { id: string; name: string };
@@ -38,39 +39,53 @@ function mergeTopicCatalog(...catalogs: TopicSuggestion[][]) {
   return Array.from(merged.values());
 }
 
-function addTransientTopic(subjectId: string, name: string) {
+// Com Assunto o catálogo é o do Assunto; sem Assunto, somente os tópicos diretos da Disciplina.
+function topicCatalogKey(subjectId: string | null, disciplineId: string | null) {
+  if (subjectId) return `subject:${subjectId}`;
+  if (disciplineId) return `discipline:${disciplineId}`;
+  return null;
+}
+
+function topicCatalogUrl(catalogKey: string) {
+  const [scope, id] = catalogKey.split(":");
+  return scope === "subject"
+    ? `/api/admin/topics?subject_id=${encodeURIComponent(id)}&active=true`
+    : `/api/admin/topics?discipline_id=${encodeURIComponent(id)}&direct=true&active=true`;
+}
+
+function addTransientTopic(catalogKey: string, name: string) {
   const comparable = normalizeTopicComparableName(name);
   if (!comparable) return;
 
-  const current = transientTopicCatalog.get(subjectId) || [];
+  const current = transientTopicCatalog.get(catalogKey) || [];
   if (current.some((topic) => normalizeTopicComparableName(topic.name) === comparable)) return;
 
-  const topic = { id: `transient:${subjectId}:${comparable}`, name };
-  transientTopicCatalog.set(subjectId, [...current, topic]);
-  topicCatalogCache.set(subjectId, mergeTopicCatalog(topicCatalogCache.get(subjectId) || [], [topic]));
-  window.dispatchEvent(new CustomEvent(TRANSIENT_TOPIC_EVENT, { detail: { subjectId, topic } }));
+  const topic = { id: `transient:${catalogKey}:${comparable}`, name };
+  transientTopicCatalog.set(catalogKey, [...current, topic]);
+  topicCatalogCache.set(catalogKey, mergeTopicCatalog(topicCatalogCache.get(catalogKey) || [], [topic]));
+  window.dispatchEvent(new CustomEvent(TRANSIENT_TOPIC_EVENT, { detail: { catalogKey, topic } }));
 }
 
-function loadTopicCatalog(subjectId: string) {
-  const cached = topicCatalogCache.get(subjectId);
+function loadTopicCatalog(catalogKey: string) {
+  const cached = topicCatalogCache.get(catalogKey);
   if (cached) return Promise.resolve(cached);
 
-  const pending = topicCatalogRequests.get(subjectId);
+  const pending = topicCatalogRequests.get(catalogKey);
   if (pending) return pending;
 
-  const request = adminFetch(`/api/admin/topics?subject_id=${encodeURIComponent(subjectId)}&active=true`)
+  const request = adminFetch(topicCatalogUrl(catalogKey))
     .then(async (response) => {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || "Não foi possível carregar os tópicos.");
 
       const databaseTopics = (result.topics || []).map((topic: TopicSuggestion) => ({ id: topic.id, name: topic.name }));
-      const topics = mergeTopicCatalog(databaseTopics, transientTopicCatalog.get(subjectId) || []);
-      topicCatalogCache.set(subjectId, topics);
+      const topics = mergeTopicCatalog(databaseTopics, transientTopicCatalog.get(catalogKey) || []);
+      topicCatalogCache.set(catalogKey, topics);
       return topics;
     })
-    .finally(() => topicCatalogRequests.delete(subjectId));
+    .finally(() => topicCatalogRequests.delete(catalogKey));
 
-  topicCatalogRequests.set(subjectId, request);
+  topicCatalogRequests.set(catalogKey, request);
   return request;
 }
 
@@ -83,10 +98,12 @@ export default function EvaluatedTopicsInput({
   variant = "light",
   placeholder = "Digite um tópico avaliado",
   subjectId = null,
+  disciplineId = null,
 }: EvaluatedTopicsInputProps) {
+  const catalogKey = topicCatalogKey(subjectId, disciplineId);
   const [draft, setDraft] = useState("");
   const [catalog, setCatalog] = useState<TopicSuggestion[]>([]);
-  const [catalogSubjectId, setCatalogSubjectId] = useState<string | null>(null);
+  const [loadedCatalogKey, setLoadedCatalogKey] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [retryCatalog, setRetryCatalog] = useState(0);
@@ -105,7 +122,7 @@ export default function EvaluatedTopicsInput({
   }, []);
 
   useEffect(() => {
-    if (!subjectId) return;
+    if (!catalogKey) return;
 
     let active = true;
     Promise.resolve()
@@ -113,17 +130,17 @@ export default function EvaluatedTopicsInput({
         if (!active) return;
         setCatalogLoading(true);
         setCatalogError(null);
-        return loadTopicCatalog(subjectId);
+        return loadTopicCatalog(catalogKey);
       })
       .then((topics) => {
         if (!active || !topics) return;
         setCatalog(topics);
-        setCatalogSubjectId(subjectId);
+        setLoadedCatalogKey(catalogKey);
       })
       .catch((error) => {
         if (!active) return;
         setCatalog([]);
-        setCatalogSubjectId(null);
+        setLoadedCatalogKey(null);
         setCatalogError(error instanceof Error ? error.message : "Não foi possível carregar os tópicos.");
       })
       .finally(() => {
@@ -133,30 +150,30 @@ export default function EvaluatedTopicsInput({
     return () => {
       active = false;
     };
-  }, [retryCatalog, subjectId]);
+  }, [retryCatalog, catalogKey]);
 
   useEffect(() => {
     function handleTransientTopic(event: Event) {
-      const detail = (event as CustomEvent<{ subjectId: string; topic: TopicSuggestion }>).detail;
-      if (detail.subjectId !== subjectId) return;
+      const detail = (event as CustomEvent<{ catalogKey: string; topic: TopicSuggestion }>).detail;
+      if (detail.catalogKey !== catalogKey) return;
 
       setCatalog((current) => mergeTopicCatalog(current, [detail.topic]));
-      setCatalogSubjectId(detail.subjectId);
+      setLoadedCatalogKey(detail.catalogKey);
     }
 
     window.addEventListener(TRANSIENT_TOPIC_EVENT, handleTransientTopic);
     return () => window.removeEventListener(TRANSIENT_TOPIC_EVENT, handleTransientTopic);
-  }, [subjectId]);
+  }, [catalogKey]);
 
   const suggestions = useMemo(() => {
     const term = normalizeTopicComparableName(draft);
-    if (catalogSubjectId !== subjectId) return [];
+    if (loadedCatalogKey !== catalogKey) return [];
 
     const selectedKeys = new Set(topics.map(normalizeTopicComparableName));
     return sortByPtBrLabel(catalog, (item) => item.name)
       .filter((topic) => !selectedKeys.has(normalizeTopicComparableName(topic.name)))
       .filter((topic) => !term || normalizeTopicComparableName(topic.name).includes(term));
-  }, [catalog, catalogSubjectId, draft, subjectId, topics]);
+  }, [catalog, loadedCatalogKey, draft, catalogKey, topics]);
 
   useEffect(() => {
     const menuVisible = suggestionsOpen && suggestions.length > 0;
@@ -200,10 +217,10 @@ export default function EvaluatedTopicsInput({
       return catalog.find((topic) => normalizeTopicComparableName(topic.name) === comparable)?.name || typed;
     });
     const next = normalizeEvaluatedTopics([...topics, ...parts]);
-    if (subjectId) {
+    if (catalogKey) {
       const existingKeys = new Set(catalog.map((topic) => normalizeTopicComparableName(topic.name)));
       for (const topic of next) {
-        if (!existingKeys.has(normalizeTopicComparableName(topic))) addTransientTopic(subjectId, topic);
+        if (!existingKeys.has(normalizeTopicComparableName(topic))) addTransientTopic(catalogKey, topic);
       }
     }
     onChange(next);
@@ -299,8 +316,8 @@ export default function EvaluatedTopicsInput({
             <Plus size={14} /> Adicionar
           </button>
         </div>
-        {subjectId && catalogLoading && <p className={dark ? "mt-2 text-xs font-semibold text-slate-400" : "mt-2 text-xs font-semibold text-slate-500"}>Carregando sugestões...</p>}
-        {subjectId && catalogError && (
+        {catalogKey && catalogLoading && <p className={dark ? "mt-2 text-xs font-semibold text-slate-400" : "mt-2 text-xs font-semibold text-slate-500"}>Carregando sugestões...</p>}
+        {catalogKey && catalogError && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <p className={dark ? "text-xs font-semibold text-amber-300" : "text-xs font-semibold text-amber-700"}>{catalogError}</p>
             <button

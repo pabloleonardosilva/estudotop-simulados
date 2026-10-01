@@ -20,6 +20,7 @@ type QuestionLike = {
   question_alternatives?: Alternative[];
   alternatives?: Alternative[];
   exam_boards?: { name?: string | null } | null;
+  discipline?: { name?: string | null } | null;
   subjects?: { name?: string | null; disciplines?: { name?: string | null } | null } | null;
   exam_board?: string | null;
   subject?: string | null;
@@ -84,7 +85,7 @@ export default function QuestionDisplayCard({
   const code = codeOf(question, orderLabel);
   const board = question.exam_boards?.name || question.exam_board;
   const subject = question.subjects?.name || question.subject;
-  const discipline = question.subjects?.disciplines?.name;
+  const discipline = question.discipline?.name || question.subjects?.disciplines?.name;
   const statementFontClass = ["text-sm", "text-[15px]", "text-[17px]", "text-[19px]"][presentationFontScale] || "text-[15px]";
   const alternativeFontClass = ["text-sm", "text-[15px]", "text-[17px]", "text-[19px]"][presentationFontScale] || "text-[15px]";
 

@@ -9,7 +9,8 @@ type TopicRow = {
   id: string;
   name: string;
   normalized_name: string;
-  subject_id: string;
+  subject_id: string | null;
+  discipline_id: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -20,6 +21,7 @@ type QuestionRow = {
   code: string | null;
   status: string | null;
   subject_id: string | null;
+  discipline_id: string | null;
   evaluated_topics: string[] | null;
 };
 
@@ -37,7 +39,7 @@ async function fetchAllQuestions() {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("questions")
-      .select("id, code, status, subject_id, evaluated_topics")
+      .select("id, code, status, subject_id, discipline_id, evaluated_topics")
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
 
@@ -56,7 +58,7 @@ async function getData() {
   const [disciplinesResult, subjectsResult, topicsResult, questions] = await Promise.all([
     supabase.from("disciplines").select("id, name, is_active").order("name", { ascending: true }),
     supabase.from("subjects").select("id, name, discipline_id, is_active").order("name", { ascending: true }),
-    supabase.from("topics").select("id, name, normalized_name, subject_id, is_active, created_at, updated_at").order("name", { ascending: true }),
+    supabase.from("topics").select("id, name, normalized_name, subject_id, discipline_id, is_active, created_at, updated_at").order("name", { ascending: true }),
     fetchAllQuestions(),
   ]);
 
@@ -64,11 +66,13 @@ async function getData() {
   if (subjectsResult.error) throw new Error(subjectsResult.error.message);
   if (topicsResult.error) throw new Error(topicsResult.error.message);
   const questionsByTopic = new Map<string, Map<string, TopicQuestion>>();
+  // Questão com Assunto usa o catálogo do Assunto; sem Assunto, o catálogo direto da Disciplina.
   for (const question of questions) {
-    if (!question.subject_id || !Array.isArray(question.evaluated_topics)) continue;
+    const scopeKey = question.subject_id ? `subject:${question.subject_id}` : question.discipline_id ? `discipline:${question.discipline_id}` : null;
+    if (!scopeKey || !Array.isArray(question.evaluated_topics)) continue;
 
     for (const name of question.evaluated_topics) {
-      const key = `${question.subject_id}:${normalizeTopicComparableName(name)}`;
+      const key = `${scopeKey}:${normalizeTopicComparableName(name)}`;
       const topicQuestions = questionsByTopic.get(key) || new Map<string, TopicQuestion>();
       topicQuestions.set(question.id, {
         id: question.id,
@@ -81,7 +85,7 @@ async function getData() {
 
   const topics = ((topicsResult.data || []) as TopicRow[]).map((topic) => {
     const topicQuestions = Array.from(
-      questionsByTopic.get(`${topic.subject_id}:${normalizeTopicComparableName(topic.name)}`)?.values() || [],
+      questionsByTopic.get(`${topic.subject_id ? `subject:${topic.subject_id}` : `discipline:${topic.discipline_id}`}:${normalizeTopicComparableName(topic.name)}`)?.values() || [],
     ).sort((left, right) => left.code.localeCompare(right.code, "pt-BR", { numeric: true }));
 
     return {

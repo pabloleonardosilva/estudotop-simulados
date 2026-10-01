@@ -214,8 +214,12 @@ function QuestionContent({ relation, index, total, mode }: { relation: any; inde
       <div className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 font-bold ${mode === "slide" ? slideLayout.meta : "mb-4 text-xs print:mb-2.5"}`}>
         <span className="text-slate-950">Questão {index + 1} de {total}</span>
         <span className="text-slate-400">•</span>
-        <span className="text-slate-600">{question.subjects?.name || "Sem assunto"}</span>
-        <span className="text-slate-400">•</span>
+        {question.subjects?.name && (
+          <>
+            <span className="text-slate-600">{question.subjects.name}</span>
+            <span className="text-slate-400">•</span>
+          </>
+        )}
         <span className="text-slate-600">{formatPoints(relation.points)}</span>
         {relation.status === "annulled" ? (
           <>

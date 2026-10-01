@@ -171,10 +171,19 @@ function getBankQuestionSubjectIds(question: BankQuestion) {
 
 function getBankQuestionDisciplineIds(question: BankQuestion) {
   return Array.from(new Set(
-    getBankQuestionSubjects(question)
-      .map((subject) => subject.discipline_id || subject.disciplines?.id || "")
-      .filter(Boolean),
+    [
+      question.discipline_id || "",
+      ...getBankQuestionSubjects(question).map((subject) => subject.discipline_id || subject.disciplines?.id || ""),
+    ].filter(Boolean),
   ));
+}
+
+type BankTopic = { id: string; name: string; subject_id: string | null; discipline_id: string };
+
+// Com Assunto(s): tópicos desses Assuntos. Só com Disciplina: tópicos diretos dela.
+function topicInFilterScope(topic: BankTopic, disciplineId: string, subjectIds: string[]) {
+  if (subjectIds.length > 0) return Boolean(topic.subject_id) && subjectIds.includes(topic.subject_id as string);
+  return Boolean(disciplineId) && topic.subject_id === null && topic.discipline_id === disciplineId;
 }
 
 function getBankQuestionSubjectSearchText(question: BankQuestion) {
@@ -191,12 +200,16 @@ function getBankQuestionSubjectSearchText(question: BankQuestion) {
 // uma única vez por render, o texto de cada questão para os IDs reais de
 // topics — restrito aos assuntos da própria questão, para não colidir com
 // tópicos homônimos de outro assunto.
-function buildTopicIdsByQuestion(questions: BankQuestion[], topics: { id: string; name: string; subject_id: string }[]) {
+// Questão sem Assunto usa o catálogo de tópicos diretos da própria Disciplina.
+function buildTopicIdsByQuestion(questions: BankQuestion[], topics: BankTopic[]) {
   const topicsBySubject = new Map<string, Map<string, string>>();
+  const directTopicsByDiscipline = new Map<string, Map<string, string>>();
   topics.forEach((topic) => {
-    const bucket = topicsBySubject.get(topic.subject_id) || new Map<string, string>();
+    const buckets = topic.subject_id ? topicsBySubject : directTopicsByDiscipline;
+    const key = topic.subject_id || topic.discipline_id;
+    const bucket = buckets.get(key) || new Map<string, string>();
     bucket.set(normalizeTopicComparableName(topic.name), topic.id);
-    topicsBySubject.set(topic.subject_id, bucket);
+    buckets.set(key, bucket);
   });
 
   const map = new Map<string, string[]>();
@@ -208,8 +221,10 @@ function buildTopicIdsByQuestion(questions: BankQuestion[], topics: { id: string
     }
     const qSubjectIds = getBankQuestionSubjectIds(question);
     const ids = new Set<string>();
-    qSubjectIds.forEach((subjectId) => {
-      const bucket = topicsBySubject.get(subjectId);
+    const buckets = qSubjectIds.length > 0
+      ? qSubjectIds.map((subjectId) => topicsBySubject.get(subjectId))
+      : [question.discipline_id ? directTopicsByDiscipline.get(question.discipline_id) : undefined];
+    buckets.forEach((bucket) => {
       if (!bucket) return;
       evaluated.forEach((name) => {
         const topicId = bucket.get(normalizeTopicComparableName(name));
@@ -403,7 +418,7 @@ export default function EditarSimuladoClient({
   const [showBankModal, setShowBankModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [bankQuestions, setBankQuestions] = useState<BankQuestion[]>([]);
-  const [topics, setTopics] = useState<{ id: string; name: string; subject_id: string }[]>([]);
+  const [topics, setTopics] = useState<BankTopic[]>([]);
   const [jornadaQuestionIds, setJornadaQuestionIds] = useState<Record<string, string[]>>({});
   const [bankQuestionsLoaded, setBankQuestionsLoaded] = useState(false);
   const [loadingBankQuestions, setLoadingBankQuestions] = useState(false);
@@ -464,7 +479,7 @@ export default function EditarSimuladoClient({
 
       const topicsResult = await topicsResponse.json() as {
         ok?: boolean;
-        topics?: { id: string; name: string; subject_id: string }[];
+        topics?: BankTopic[];
       };
 
       setBankQuestions(result.questions || []);
@@ -510,11 +525,11 @@ export default function EditarSimuladoClient({
   useEffect(() => {
     setTopicIds((current) => {
       if (current.length === 0) return current;
-      const validIds = new Set(topics.filter((topic) => subjectIds.includes(topic.subject_id)).map((topic) => topic.id));
+      const validIds = new Set(topics.filter((topic) => topicInFilterScope(topic, disciplineId, subjectIds)).map((topic) => topic.id));
       const filtered = current.filter((id) => validIds.has(id));
       return filtered.length === current.length ? current : filtered;
     });
-  }, [subjectIds, topics]);
+  }, [disciplineId, subjectIds, topics]);
 
   const filteredQuestions = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -582,12 +597,11 @@ export default function EditarSimuladoClient({
   }, [bankQuestions, search, disciplineId, subjectIds, boardIds, difficultyLevels, yearFilters, questionType, missingTopicsOnly, excludedQuestionIds, topicIdsByQuestion]);
 
   const availableTopicsForFilter = useMemo(() => {
-    if (subjectIds.length === 0) return [];
     return topics.filter((topic) =>
-      subjectIds.includes(topic.subject_id) &&
+      topicInFilterScope(topic, disciplineId, subjectIds) &&
       ((topicCounts.get(topic.id) || 0) > 0 || topicIds.includes(topic.id)),
     );
-  }, [topics, subjectIds, topicCounts, topicIds]);
+  }, [topics, disciplineId, subjectIds, topicCounts, topicIds]);
 
   const currentSubjectDistribution = useMemo(() => {
     const counts = new Map<string, number>();
@@ -596,10 +610,10 @@ export default function EditarSimuladoClient({
       if (!question) return;
       const subjects = getBankQuestionSubjects(question);
       const displaySubjects = subjects.length ? subjects : ([question.subjects].filter(Boolean) as (Subject & { disciplines?: Discipline | null })[]);
-      displaySubjects.forEach((subjectItem) => {
-        const subject = normalizeSubjectDisplayName(subjectItem?.name) || "Sem assunto";
-        counts.set(subject, (counts.get(subject) || 0) + 1);
-      });
+      // Sem Assunto, a questão é contada no nível da própria Disciplina.
+      const labels = displaySubjects.map((subjectItem) => normalizeSubjectDisplayName(subjectItem?.name)).filter(Boolean);
+      if (labels.length === 0 && question.discipline?.name) labels.push(question.discipline.name);
+      labels.forEach((label) => counts.set(label, (counts.get(label) || 0) + 1));
     });
 
     return Array.from(counts.entries())
@@ -1051,6 +1065,7 @@ export default function EditarSimuladoClient({
           setDisciplineId={(value) => {
             setDisciplineId(value);
             setSubjectIds([]);
+            setTopicIds([]);
           }}
           subjectIds={subjectIds}
           setSubjectIds={setSubjectIds}
@@ -1693,7 +1708,7 @@ function QuestionRelationCard({ relation, index, total, onMove, onRemove, onSend
             )}
             <span className="rounded-full border border-orange-300/25 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-200">{question?.exam_boards?.name || "Sem banca"}</span>
             <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-slate-300">
-              {question?.subjects?.disciplines?.name || "Sem disciplina"} / {question?.subjects?.name || "Sem assunto"}
+              {[question?.discipline?.name || question?.subjects?.disciplines?.name || "Sem disciplina", question?.subjects?.name].filter(Boolean).join(" / ")}
             </span>
             <PremiumDifficultyStars value={question?.difficulty_level} compact />
             <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-bold text-sky-200" title={accuracyStats.fullLabel}>
@@ -2163,7 +2178,7 @@ function QuestionBankModal(props: {
   setDisciplineId: (value: string) => void;
   subjectIds: string[];
   setSubjectIds: (value: string[]) => void;
-  topics: { id: string; name: string; subject_id: string }[];
+  topics: BankTopic[];
   topicIds: string[];
   setTopicIds: (value: string[]) => void;
   boardIds: string[];
@@ -2216,10 +2231,10 @@ function QuestionBankModal(props: {
     selectedTotalQuestions.forEach((question) => {
       const subjects = getBankQuestionSubjects(question);
       const displaySubjects = subjects.length ? subjects : ([question.subjects].filter(Boolean) as (Subject & { disciplines?: Discipline | null })[]);
-      displaySubjects.forEach((subjectItem) => {
-        const subject = normalizeSubjectDisplayName(subjectItem?.name) || "Sem assunto";
-        counts.set(subject, (counts.get(subject) || 0) + 1);
-      });
+      // Sem Assunto, a questão é contada no nível da própria Disciplina.
+      const labels = displaySubjects.map((subjectItem) => normalizeSubjectDisplayName(subjectItem?.name)).filter(Boolean);
+      if (labels.length === 0 && question.discipline?.name) labels.push(question.discipline.name);
+      labels.forEach((label) => counts.set(label, (counts.get(label) || 0) + 1));
     });
 
     return Array.from(counts.entries())
@@ -2334,8 +2349,8 @@ function QuestionBankModal(props: {
               label="Tópico"
               values={props.topicIds}
               onChange={props.setTopicIds}
-              placeholder={props.subjectIds.length === 0 ? "Selecione um assunto" : "Todos os tópicos"}
-              disabled={props.subjectIds.length === 0}
+              placeholder={props.subjectIds.length === 0 && !props.disciplineId ? "Selecione disciplina ou assunto" : "Todos os tópicos"}
+              disabled={props.subjectIds.length === 0 && !props.disciplineId}
               options={props.topics.map((item) => ({ value: item.id, label: item.name, count: props.topicCounts.get(item.id) || 0 }))}
             />
             <DarkMultiDropdown
@@ -2453,10 +2468,10 @@ function QuestionBankModal(props: {
                       ? "border-amber-400/45 bg-amber-500/[0.08] shadow-amber-950/25 ring-1 ring-amber-300/20"
                       : "border-white/[0.07] bg-white/[0.03] shadow-black/30 hover:border-white/[0.12] hover:bg-white/[0.045]";
               const questionSubjects = getBankQuestionSubjects(question);
-              const disciplineName = questionSubjects[0]?.disciplines?.name || question.subjects?.disciplines?.name || "Sem disciplina";
+              const disciplineName = question.discipline?.name || questionSubjects[0]?.disciplines?.name || question.subjects?.disciplines?.name || "Sem disciplina";
               const subjectName = questionSubjects.length
                 ? questionSubjects.map((subject) => normalizeSubjectDisplayName(subject.name)).join(" · ")
-                : normalizeSubjectDisplayName(question.subjects?.name) || "Sem assunto";
+                : normalizeSubjectDisplayName(question.subjects?.name);
 
               return (
                 <div key={question.id} className="relative isolate">
@@ -2469,7 +2484,7 @@ function QuestionBankModal(props: {
                             <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950 shadow-sm">{question.code || "Sem código"}</span>
                             <span className="rounded-full border border-orange-400/25 bg-orange-500/[0.10] px-3 py-1 text-xs font-bold text-orange-200">{question.exam_boards?.name || "Sem banca"}</span>
                             {question.year && <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/60">Ano {question.year}</span>}
-                            <span className="rounded-full border border-violet-500/25 bg-violet-500/[0.10] px-3 py-1 text-xs font-bold text-violet-300" style={{ textTransform: "none" }}>{subjectName}</span>
+                            {subjectName && <span className="rounded-full border border-violet-500/25 bg-violet-500/[0.10] px-3 py-1 text-xs font-bold text-violet-300" style={{ textTransform: "none" }}>{subjectName}</span>}
                             <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{isTrueFalse ? "Assertiva" : "Alternativa"}</span>
                             <PremiumDifficultyStars value={question.difficulty_level} compact />
                             <SimulationGhostBadge titles={simulationTitles} />
@@ -2848,7 +2863,7 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
 
   function validateDraft(draft: ManualQuestionDraft, index: number) {
     const prefix = `Questão ${index + 1}:`;
-    if (!draft.subjectId || !draft.boardId) return `${prefix} selecione assunto e banca.`;
+    if (!draft.disciplineId || !draft.boardId) return `${prefix} selecione disciplina e banca.`;
     if (!draft.statement.trim()) return `${prefix} informe o enunciado.`;
     if (!/^\d{4}$/.test(draft.year)) return `${prefix} informe um ano válido.`;
     if (normalizeEvaluatedTopics(draft.evaluatedTopics).length === 0) return `${prefix} informe pelo menos um tópico avaliado.`;
@@ -2876,8 +2891,9 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             question_type: "multiple_choice",
-            subject_id: draft.subjectId,
-            subject_ids: [draft.subjectId],
+            discipline_id: draft.disciplineId,
+            subject_id: draft.subjectId || null,
+            subject_ids: draft.subjectId ? [draft.subjectId] : [],
             exam_board_id: draft.boardId,
             statement: draft.statement,
             explanation_text: draft.explanation,
@@ -2915,7 +2931,11 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
         difficulty_level: Number(draft.difficulty),
         year: Number(draft.year),
         exam_boards: boards.find((board) => board.id === draft.boardId) || null,
-        subjects: { ...(subjects.find((subject) => subject.id === draft.subjectId) as Subject), disciplines: disciplines.find((discipline) => discipline.id === draft.disciplineId) || null },
+        discipline_id: draft.disciplineId,
+        discipline: disciplines.find((discipline) => discipline.id === draft.disciplineId) || null,
+        subjects: draft.subjectId
+          ? { ...(subjects.find((subject) => subject.id === draft.subjectId) as Subject), disciplines: disciplines.find((discipline) => discipline.id === draft.disciplineId) || null }
+          : null,
         question_alternatives: draft.alternatives.map((alternative, index) => ({ id: `${draft.persisted!.id}-${alternative.label}`, order_number: index + 1, ...alternative })),
       })));
     } catch (caught) {
@@ -2941,11 +2961,11 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
                     <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-orange-600">Questão {draftIndex + 1}</p>{draft.persisted && <p className="mt-1 text-xs font-semibold text-emerald-600">Salva no Banco · {draft.persisted.code}</p>}</div>
                     <div className="flex flex-wrap gap-2"><PremiumButton variant="secondary" icon={<CopyCheck size={16} />} onClick={() => { setActiveDraftId(draft.localId); setShowTemplatePicker(true); }} disabled={saving || Boolean(draft.persisted)}>Usar modelo</PremiumButton>{drafts.length > 1 && !draft.persisted && <PremiumButton variant="danger" icon={<Trash2 size={16} />} onClick={() => removeDraft(draft)} disabled={saving}>Remover questão</PremiumButton>}</div>
                   </div>
-                  <SearchableSelect label="Disciplina" value={draft.disciplineId} onChange={(value) => updateDraft(draft.localId, { disciplineId: value, subjectId: "" })} disabled={saving || Boolean(draft.persisted)} options={disciplines.map((item) => ({ value: item.id, label: item.name }))} />
+                  <SearchableSelect label="Disciplina" value={draft.disciplineId} onChange={(value) => { if (value !== draft.disciplineId) updateDraft(draft.localId, { disciplineId: value, subjectId: "", evaluatedTopics: [] }); }} disabled={saving || Boolean(draft.persisted)} options={disciplines.map((item) => ({ value: item.id, label: item.name }))} />
 <div className="et-clean-metadata et-clean-metadata-fields grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 <div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Banca" value={draft.boardId} onChange={(value) => updateDraft(draft.localId, { boardId: value })} options={boards.map((item) => ({ value: item.id, label: item.name }))} placeholder="Selecione" /></div>
 <div className="et-clean-meta-year"><PremiumInput label="Ano" value={draft.year} onChange={(event: any) => updateDraft(draft.localId, { year: event.target.value.replace(/\D/g, "").slice(0, 4) })} disabled={saving || Boolean(draft.persisted)} /></div>
-<div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto" value={draft.subjectId} onChange={(value) => updateDraft(draft.localId, { subjectId: value })} options={[{ value: "", label: "Selecione" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Selecione" /></div>
+<div className={saving || draft.persisted ? "pointer-events-none opacity-60" : ""}><SearchableSelect label="Assunto (opcional)" value={draft.subjectId} onChange={(value) => { if (value !== draft.subjectId) updateDraft(draft.localId, { subjectId: value, evaluatedTopics: [] }); }} options={[{ value: "", label: "Nenhum" }, ...availableSubjects.map((item) => ({ value: item.id, label: item.name }))]} placeholder="Nenhum" /></div>
 <PremiumSimpleSelect className="et-clean-meta-compact" label="Dificuldade" value={draft.difficulty} onChange={(value) => updateDraft(draft.localId, { difficulty: value })} disabled={saving || Boolean(draft.persisted)} options={[1, 2, 3, 4, 5].map((item) => [String(item), String(item)] as [string, string])} />
 </div>
                   <div className="mt-4 space-y-4">
@@ -2953,7 +2973,7 @@ function ManualQuestionsModal({ simuladoId, disciplines, subjects, boards, model
                     <RichTextEditor label="Enunciado" value={draft.statement} onChange={(statement) => updateDraft(draft.localId, { statement })} placeholder="Digite o enunciado da questão." minRows={7} disabled={saving || Boolean(draft.persisted)} />
                     {draft.alternatives.map((alternative, alternativeIndex) => <div key={`${draft.localId}-${alternative.label}`} className={`et-clean-alternative flex items-start gap-3 rounded-2xl border p-3 ${alternative.is_correct ? "et-clean-alternative-correct border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}>{alternative.is_correct ? <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500 text-lg text-white"><span className="font-normal leading-none [font-family:'Segoe_UI_Emoji','Apple_Color_Emoji','Noto_Color_Emoji',sans-serif]">{OWL_MARK}</span></span> : <button type="button" onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => ({ ...item, is_correct: index === alternativeIndex })) })} disabled={saving || Boolean(draft.persisted)} title="Marcar como correta" className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-black text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700">{alternative.label}</button>}<div className="min-w-0 flex-1"><RichTextEditor value={alternative.text} onChange={(text) => updateDraft(draft.localId, { alternatives: draft.alternatives.map((item, index) => index === alternativeIndex ? { ...item, text } : item) })} placeholder={`Alternativa ${alternative.label}`} compact disabled={saving || Boolean(draft.persisted)} /></div>{draft.alternatives.length > 4 && <PremiumButton variant="danger" icon={<Trash2 size={14} />} onClick={() => updateDraft(draft.localId, { alternatives: draft.alternatives.filter((_, index) => index !== alternativeIndex).map((item, index) => ({ ...item, label: String.fromCharCode(65 + index) })) })} disabled={saving || Boolean(draft.persisted)}>Remover alternativa</PremiumButton>}</div>)}
                     {draft.alternatives.length < 5 && <PremiumButton variant="secondary" icon={<Plus size={16} />} onClick={() => updateDraft(draft.localId, { alternatives: [...draft.alternatives, { label: String.fromCharCode(65 + draft.alternatives.length), text: "", is_correct: false }] })} disabled={saving || Boolean(draft.persisted)}>Adicionar alternativa</PremiumButton>}
-                    <div className="et-clean-topics-panel rounded-2xl border border-blue-200 bg-blue-50/70 p-4"><p className="et-clean-topics-label mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p><EvaluatedTopicsInput value={draft.evaluatedTopics} onChange={(evaluatedTopics) => updateDraft(draft.localId, { evaluatedTopics })} subjectId={draft.subjectId || null} required variant="light" disabled={saving || Boolean(draft.persisted)} /></div>
+                    <div className="et-clean-topics-panel rounded-2xl border border-blue-200 bg-blue-50/70 p-4"><p className="et-clean-topics-label mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Tópicos avaliados</p><EvaluatedTopicsInput value={draft.evaluatedTopics} onChange={(evaluatedTopics) => updateDraft(draft.localId, { evaluatedTopics })} subjectId={draft.subjectId || null} disciplineId={draft.disciplineId || null} required variant="light" disabled={saving || Boolean(draft.persisted)} /></div>
                     <RichTextEditor label="Comentário do professor" value={draft.explanation} onChange={(explanation) => updateDraft(draft.localId, { explanation })} placeholder="Explique a resposta correta." minRows={4} disabled={saving || Boolean(draft.persisted)} />
                   </div>
                 </section>
