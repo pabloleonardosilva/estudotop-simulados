@@ -63,7 +63,8 @@ export async function GET(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sj = candidate.student_jornadas as any;
 
-      if (!sj || sj.status !== "active") {
+      // Matrícula expirada (expires_at <= hoje) não recebe novas liberações nem e-mail.
+      if (!sj || sj.status !== "active" || !sj.expires_at || sj.expires_at <= today) {
         skipped++;
         continue;
       }

@@ -36,6 +36,7 @@ Somente as variáveis públicas podem ser lidas por Client Components. Valores r
 - Autenticação: `Authorization: Bearer <CRON_SECRET>`.
 - Segredo ausente retorna `500` sem revelar valor; segredo inválido retorna `401`.
 - A atualização exige que o item ainda esteja `locked`, evitando dupla liberação concorrente.
+- Matrícula expirada (`expires_at <= hoje`) ou não `active` é ignorada antes de qualquer liberação ou e-mail (01/10/2026).
 - O envio de e-mail é aguardado antes da resposta, e `release_email_sent_at` impede reenvio normal.
 
 ## Cron de status do Evento (2026-09-04)

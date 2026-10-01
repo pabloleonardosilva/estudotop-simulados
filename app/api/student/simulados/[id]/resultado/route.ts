@@ -83,7 +83,9 @@ export async function GET(
     if (!scheduleItem || ownerId !== student.id) {
       return NextResponse.json({ ok: false, message: "Resultado não encontrado nesta Jornada." }, { status: 404 });
     }
-    if (!enrollmentData || enrollmentData.status !== "active" || (enrollmentData.expires_at && enrollmentData.expires_at <= new Date().toISOString().slice(0, 10))) {
+    // Expiração bloqueia a realização, não o histórico: o resultado continua
+    // visível. Só o bloqueio comercial (paused/cancelled) oculta o resultado.
+    if (!enrollmentData || !["active", "expired"].includes(enrollmentData.status)) {
       return NextResponse.json({ ok: false, code: "JORNADA_ACCESS_BLOCKED", message: "Seu acesso a esta Jornada está bloqueado." }, { status: 403 });
     }
     requestedStudentJornadaSimuladoId = scheduleItem.id;

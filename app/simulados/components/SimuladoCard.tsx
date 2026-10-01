@@ -20,7 +20,7 @@ export default function SimuladoCard({
   const isDark = variant === "dark";
 
   return (
-    <section className={`${isDark ? "relative isolate overflow-hidden rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/82 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl ring-1 ring-orange-400/10 md:p-6" : "rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-white md:p-6"} ${className}`}>
+    <section className={`${isDark ? "relative isolate overflow-hidden has-[[role=listbox]]:z-30 has-[[role=listbox]]:overflow-visible rounded-[1.35rem] border border-white/[0.11] bg-[#07111F]/82 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl ring-1 ring-orange-400/10 md:p-6" : "rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-white md:p-6"} ${className}`}>
       {(title || description || icon || action) && (
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">

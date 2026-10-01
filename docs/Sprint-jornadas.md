@@ -203,26 +203,35 @@ released_at = data em que o simulado foi efetivamente liberado
 
 # 10. Regra de liberação progressiva
 
-## 10.1 Jornada sem data de prova
+> **Regra vigente desde 01/10/2026.** Substitui as fórmulas anteriores (`duration_months * 30 / total`, `release_duration_days` manual e "data da prova soberana" sem considerar a expiração). Detalhes técnicos: `docs/INDICE_FUNCOES_SISTEMA.md`, seção 9.2.1.
 
-Quando a Jornada não possui data de prova, o sistema distribui os simulados ao longo da duração total da Jornada.
+## 10.1 Data-limite do aluno
 
-```
-intervalo = (duration_months * 30) / total_simulados
-scheduled_release_at[N] = started_at + (N - 1) * intervalo
-```
-
-## 10.2 Jornada com data de prova
-
-Quando a Jornada possui data de prova, o sistema considera a data efetiva:
+A duração (`duration_days`) define o acesso do aluno: `expires_at = started_at + duration_days`, e o acesso termina quando `expires_at <= hoje`. O período de liberação não é configurado pelo administrador: é calculado para cada aluno.
 
 ```
-data_efetiva = data_da_prova - 7 dias
-intervalo = (data_efetiva - started_at) / total_simulados
-scheduled_release_at[N] = started_at + (N - 1) * intervalo
+limite_base     = menor(expires_at, data_da_prova se houver)
+data_limite     = limite_base - 7 dias          (RELEASE_LEAD_DAYS)
 ```
 
-A partir da data efetiva, todos os simulados devem estar liberados conforme as regras do sistema.
+Se a Jornada acaba antes da prova, manda a expiração. Se a prova vem antes, manda a prova. Sem prova, manda só a expiração.
+
+## 10.2 Distribuição
+
+```
+janela = data_limite - started_at (em dias)
+scheduled_release_at[N] = started_at + floor((N - 1) * janela / (total_planejado - 1)) dias
+```
+
+O 1º simulado sai na entrada e o último planejado cai exatamente na data-limite. Pode haver mais de um simulado no mesmo dia, mas nenhum depois da data-limite. Com 1 simulado planejado, ou sem janela (data-limite já passou ou é o próprio dia da entrada), todos são liberados imediatamente.
+
+## 10.3 Recálculo
+
+Ao inserir ou alterar a data da prova, ou ao alterar a duração, os simulados ainda bloqueados das matrículas ativas são reprogramados. Liberados, iniciados e concluídos nunca mudam. Se a data-limite do aluno já chegou e a matrícula ainda vale, os bloqueados são liberados na hora, e cada liberação efetiva gera o e-mail "Novo simulado liberado" (uma vez por simulado, sem reenvio em retry).
+
+## 10.4 Expiração
+
+Jornada expirada não permite iniciar, retomar nem responder simulados (bloqueio no servidor), inclusive simulados liberados e nunca feitos. O cron diário (`release-job`) não libera simulados nem envia e-mail para matrícula expirada. Resultados e histórico das tentativas realizadas continuam acessíveis.
 
 ---
 

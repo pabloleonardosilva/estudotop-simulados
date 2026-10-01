@@ -1539,8 +1539,10 @@ function PremiumSection({ eyebrow, title, description, icon, action, children }:
   children: ReactNode;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[1.7rem] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.82),rgba(8,13,24,0.96))] p-5 shadow-xl shadow-black/20 ring-1 ring-white/[0.03] md:p-6">
-      <div className="pointer-events-none absolute -right-20 -top-24 h-48 w-48 rounded-full bg-orange-500/10 blur-3xl" />
+    <section className="relative overflow-hidden has-[[role=listbox]]:z-30 has-[[role=listbox]]:overflow-visible rounded-[1.7rem] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.82),rgba(8,13,24,0.96))] p-5 shadow-xl shadow-black/20 ring-1 ring-white/[0.03] md:p-6">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+        <div className="absolute -right-20 -top-24 h-48 w-48 rounded-full bg-orange-500/10 blur-3xl" />
+      </div>
       <div className="relative mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           {icon && (

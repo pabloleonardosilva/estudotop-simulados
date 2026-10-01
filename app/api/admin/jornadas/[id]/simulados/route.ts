@@ -1,49 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
+import { calcReleaseSchedule, isReleaseWindowClosed } from "@/app/admin/jornadas/utils";
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
-}
-
-function isWithinFinalExamWindow(startedAtRaw: string, examDateRaw: string | null): boolean {
-  if (!examDateRaw) return false;
-  const startedAt = new Date(startedAtRaw + "T00:00:00");
-  const effectiveEnd = new Date(examDateRaw + "T00:00:00");
-  effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-  startedAt.setHours(0, 0, 0, 0);
-  effectiveEnd.setHours(0, 0, 0, 0);
-  return startedAt >= effectiveEnd;
-}
-
-function calcScheduledRelease(
-  startedAtRaw: string,
-  orderNumber: number,
-  plannedSimuladosCount: number,
-  durationDays: number,
-  examDateRaw: string | null,
-): string {
-  const startedAt = new Date(startedAtRaw + "T00:00:00");
-
-  if (plannedSimuladosCount <= 0 || orderNumber <= 1 || isWithinFinalExamWindow(startedAtRaw, examDateRaw)) {
-    return startedAtRaw;
-  }
-
-  let intervalDays: number;
-
-  if (examDateRaw) {
-    const effectiveEnd = new Date(examDateRaw + "T00:00:00");
-    effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-    const availableDays = Math.round(
-      (effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    intervalDays = availableDays > 0 ? availableDays / plannedSimuladosCount : 0;
-  } else {
-    intervalDays = durationDays / plannedSimuladosCount;
-  }
-
-  const ms = startedAt.getTime() + Math.floor((orderNumber - 1) * intervalDays) * 24 * 60 * 60 * 1000;
-  return toDateString(new Date(ms));
 }
 
 export async function GET(
@@ -114,7 +75,7 @@ export async function POST(
 
     const { data: jornada, error: jornadaErr } = await supabase
       .from("jornadas")
-      .select("id, duration_days, duration_months, exam_date, planned_simulados_count")
+      .select("id, exam_date, planned_simulados_count")
       .eq("id", id)
       .single();
 
@@ -155,25 +116,23 @@ export async function POST(
 
     const { data: enrollments } = await supabase
       .from("student_jornadas")
-      .select("id, started_at, status")
+      .select("id, started_at, expires_at, status")
       .eq("jornada_id", id)
       .in("status", ["active", "paused"]);
 
+    const examDate = jornada.exam_date ? new Date(jornada.exam_date + "T00:00:00") : null;
     const records = (enrollments || []).map((enrollment) => {
-      const releaseAll = isWithinFinalExamWindow(enrollment.started_at, jornada.exam_date);
+      const startedAt = new Date(String(enrollment.started_at).slice(0, 10) + "T00:00:00");
+      const expiresAt = new Date(String(enrollment.expires_at).slice(0, 10) + "T00:00:00");
+      const releaseAll = isReleaseWindowClosed(startedAt, expiresAt, examDate);
       const shouldReleaseNow = releaseAll || nextOrder === 1;
+      const releaseDates = calcReleaseSchedule(startedAt, nextOrder, expiresAt, examDate, plannedSimuladosCount);
       return {
         student_jornada_id: enrollment.id,
         jornada_simulado_id: data.id,
         simulado_id: simuladoId,
         order_number: nextOrder,
-        scheduled_release_at: calcScheduledRelease(
-          enrollment.started_at,
-          nextOrder,
-          plannedSimuladosCount,
-          Number(jornada.duration_days || jornada.duration_months * 30),
-          jornada.exam_date,
-        ),
+        scheduled_release_at: toDateString(releaseDates[nextOrder - 1]),
         status: shouldReleaseNow ? "available" : "locked",
         released_at: shouldReleaseNow ? new Date().toISOString() : null,
       };

@@ -2506,19 +2506,19 @@ export default function ImportarQuestoesClient({
 
                       <div className="et-clean-metadata mb-5 rounded-[1.5rem] border border-orange-200 bg-gradient-to-r from-orange-50 via-white to-amber-50 p-3 text-slate-700 shadow-sm">
                         <div className="et-clean-metadata-grid flex flex-wrap items-end gap-3">
-<div className="et-clean-meta-compact grid gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Tipo</span>
+<div className="et-clean-meta-compact grid gap-2">
+                            <span className="et-clean-label">Tipo</span>
                             <button type="button"
                               onClick={() => updateQuestion(question.temp_id, "question_type", question.question_type === "true_false" ? "multiple_choice" : "true_false")}
                               title="Clique para alternar o tipo"
-                              className="flex h-10 items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700">
+                              className="flex h-12 items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700">
                               {question.question_type === "true_false" ? "Assertivas" : "Alternativas"}
                               <span className="ml-1 text-slate-400">⇄</span>
                             </button>
                           </div>
 
-<div className="et-clean-meta-board relative grid gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Banca</span>
+<div className="et-clean-meta-board relative grid gap-2">
+                            <span className="et-clean-label">Banca</span>
                             <input
                               value={boardSearches[question.temp_id] || ""}
                               onChange={(event) =>
@@ -2550,15 +2550,15 @@ export default function ImportarQuestoesClient({
                                 onClick={() => createBoardForQuestion(question.temp_id)}
                                 onMouseEnter={() => setBoardHighlightIndex((current) => ({ ...current, [question.temp_id]: boardSuggestionsForQuestion.length }))}
                                 disabled={Boolean(creatingBoardQuestionId)}
-                                className={`mt-1 inline-flex w-fit items-center gap-1 rounded-full border border-orange-200 px-2.5 py-1 text-[10px] font-semibold text-orange-700 transition disabled:opacity-60 ${boardHighlightForQuestion === boardSuggestionsForQuestion.length ? "bg-orange-50" : "bg-white/95 hover:bg-orange-50"}`}>
+                                className={`inline-flex w-fit items-center gap-1 rounded-full border border-orange-200 px-2.5 py-1 text-[10px] font-semibold text-orange-700 transition disabled:opacity-60 ${boardHighlightForQuestion === boardSuggestionsForQuestion.length ? "bg-orange-50" : "bg-white/95 hover:bg-orange-50"}`}>
                                 {isCreatingThisBoard ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
                                 {isCreatingThisBoard ? "Cadastrando" : "Cadastrar"}
                               </button>
                             )}
                           </div>
 
-<label className="et-clean-meta-agency grid gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Órgão</span>
+<label className="et-clean-meta-agency grid gap-2">
+                            <span className="et-clean-label">Órgão</span>
                             <input
                               value={question.orgao || ""}
                               onChange={(event) =>
@@ -2573,8 +2573,8 @@ export default function ImportarQuestoesClient({
                             />
                           </label>
 
-<label className="et-clean-meta-year grid gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Ano</span>
+<label className="et-clean-meta-year grid gap-2">
+                            <span className="et-clean-label">Ano</span>
                             <input
                               type="number"
                               min="1990"
@@ -2605,9 +2605,9 @@ export default function ImportarQuestoesClient({
                             />
                           </div>
 
-<div className="et-clean-meta-compact grid gap-1">
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-orange-700">Dificuldade</span>
-                            <div className="flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3">
+<div className="et-clean-meta-compact grid gap-2">
+                            <span className="et-clean-label">Dificuldade</span>
+                            <div className="flex h-12 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3">
                               {[1, 2, 3, 4, 5].map((star) => (
                                 <button key={star} type="button"
                                   onClick={() => updateQuestion(question.temp_id, "difficulty_level", question.difficulty_level === star ? null : star)}

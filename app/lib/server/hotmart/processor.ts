@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornadas/utils";
+import { calcReleaseSchedule, isReleaseWindowClosed } from "@/app/admin/jornadas/utils";
 import { createStudentAccount } from "@/lib/server/studentAccountService";
 import { generateTemporaryPassword } from "@/lib/utils/password";
 import type { NormalizedHotmartEvent } from "./types";
@@ -105,7 +105,7 @@ async function resolveStudent(supabase: SupabaseClient, event: NormalizedHotmart
 
 async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEvent, transactionId: string, mapping: Mapping, studentId: string) {
   const { data: jornada } = await supabase.from("jornadas")
-    .select("id,title,status,duration_days,duration_months,release_duration_days,planned_simulados_count,exam_date")
+    .select("id,title,status,duration_days,duration_months,planned_simulados_count,exam_date")
     .eq("id", mapping.jornada_id).maybeSingle();
   if (!jornada || jornada.status !== "published") return { status: "pending_destination" as const };
 
@@ -152,7 +152,7 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
   const releaseDates = calcReleaseSchedule(
     approvedAt,
     ordered.length,
-    Number(jornada.release_duration_days || durationDays),
+    expires,
     examDate,
     Number(jornada.planned_simulados_count || ordered.length),
   );
@@ -174,7 +174,7 @@ async function grantJornada(supabase: SupabaseClient, event: NormalizedHotmartEv
   }
 
   if (ordered.length) {
-    const releaseAll = isWithinFinalExamWindow(approvedAt, examDate);
+    const releaseAll = isReleaseWindowClosed(approvedAt, expires, examDate);
     const { data: currentSchedule } = await supabase.from("student_jornada_simulados")
       .select("id,jornada_simulado_id,status,released_at")
       .eq("student_jornada_id", enrollmentId);

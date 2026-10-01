@@ -534,7 +534,7 @@ export default function JornadaAlunoClient({
                   </div>
 
                   <div className={`student-detail-card-action flex items-center justify-start p-5 md:justify-center md:p-5 ${actionPanelClass(simulado.status)}`}>
-                    <CardAction simulado={simulado} />
+                    <CardAction simulado={simulado} jornadaExpired={jornada.status === "expired"} />
                   </div>
                 </div>
               </article>
@@ -861,7 +861,7 @@ function DadosJornadaPanel({ jornada, simulados }: { jornada: Jornada; simulados
                           <BarChart3 size={12} aria-hidden="true" />
                           Ver resultado
                         </Link>
-                        {!simulado.attempts_exhausted && (
+                        {!simulado.attempts_exhausted && jornada.status !== "expired" && (
                           <Link
                             href={simulado.simulado_url}
                             className="student-data-schedule-status student-data-schedule-redo-link"
@@ -939,7 +939,7 @@ function Fact({ icon, label, tone }: { icon: ReactNode; label: string; tone: "or
   );
 }
 
-function CardAction({ simulado }: { simulado: Simulado }) {
+function CardAction({ simulado, jornadaExpired }: { simulado: Simulado; jornadaExpired: boolean }) {
   if (simulado.status === "completed") {
     return (
       <div className="w-full">
@@ -951,7 +951,7 @@ function CardAction({ simulado }: { simulado: Simulado }) {
             <span className="journey-action-left"><BarChart3 size={18} strokeWidth={2.2} /> Ver resultado</span>
             <ChevronRight size={16} className="journey-action-chevron" />
           </Link>
-          {!simulado.attempts_exhausted && (
+          {!simulado.attempts_exhausted && !jornadaExpired && (
             <Link href={simulado.simulado_url} className="journey-action-button journey-action-primary-success">
               <span className="journey-action-left">
                 <span className="journey-action-icon-circle"><RefreshCw size={16} /></span>

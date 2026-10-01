@@ -11,7 +11,7 @@ import {
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/lib/logging/error-log";
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
-import { calcReleaseSchedule, isWithinFinalExamWindow } from "@/app/admin/jornadas/utils";
+import { calcReleaseSchedule, isReleaseWindowClosed } from "@/app/admin/jornadas/utils";
 import { addHours, generateSecureToken, hashEmailActionToken } from "@/lib/security/registrationTokens";
 import { validateStudentAccountIntegrity } from "@/lib/server/studentAccountService";
 
@@ -101,7 +101,7 @@ export async function POST(
 
     const { data: jornada, error: jErr } = await supabase
       .from("jornadas")
-      .select("id, title, status, planned_simulados_count, duration_days, duration_months, release_duration_days, exam_date, effective_end_date")
+      .select("id, title, status, planned_simulados_count, duration_days, duration_months, exam_date, effective_end_date")
       .eq("id", jornadaId)
       .single();
 
@@ -167,11 +167,9 @@ export async function POST(
 
     const orderedSimulados = jornadaSimulados || [];
     const startedAt = new Date(startedAtRaw + "T00:00:00");
-    // duration_days = validade da matrícula (expiração).
+    // duration_days = validade da matrícula (expiração), que também limita o cronograma.
     const durationDays = Number(jornada.duration_days || jornada.duration_months * 30);
     const expiresAt = addDays(startedAt, durationDays);
-    // release_duration_days = janela de liberação dos simulados (independente da duração).
-    const releaseDurationDays = Number(jornada.release_duration_days || durationDays);
     const examDate = jornada.exam_date ? new Date(jornada.exam_date + "T00:00:00") : null;
 
     let releaseDates: Date[] = [];
@@ -179,7 +177,7 @@ export async function POST(
       releaseDates = calcReleaseSchedule(
         startedAt,
         orderedSimulados.length,
-        releaseDurationDays,
+        expiresAt,
         examDate,
         jornada.planned_simulados_count || orderedSimulados.length,
       );
@@ -253,7 +251,7 @@ export async function POST(
       return NextResponse.json({ ok: false, message: "Erro ao preparar matrícula." }, { status: 400 });
     }
 
-    const releaseAll = isWithinFinalExamWindow(startedAt, examDate);
+    const releaseAll = isReleaseWindowClosed(startedAt, expiresAt, examDate);
     const releaseTimestamp = new Date().toISOString();
 
     const sjsRecords = orderedSimulados.map((js, i) => {

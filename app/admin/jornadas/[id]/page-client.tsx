@@ -288,15 +288,17 @@ export default function JornadaDetailClient({
   const averageCompletion = totalProgressSum > 0 ? Math.round((completedSum / totalProgressSum) * 100) : 0;
 
   // Prévia do cronograma usando a MESMA regra oficial da atribuição
-  // (calcReleaseSchedule): janela = release_duration_days ("Todos os simulados
-  // serão liberados em X dias") ou exam_date - 7 dias quando houver data da
-  // prova; intervalo = janela / (total - 1). A âncora é a criação da Jornada
-  // (o cronograma real de cada aluno conta a partir da matrícula dele).
+  // (calcReleaseSchedule): o último simulado sai 7 dias antes do primeiro limite
+  // entre a expiração e a data da prova. A âncora é a criação da Jornada, com
+  // expiração hipotética = âncora + duração (o cronograma real de cada aluno
+  // conta a partir da matrícula dele).
   const releaseAnchor = new Date((jornada.created_at || new Date().toISOString()).slice(0, 10) + "T08:00:00");
+  const previewExpiresAt = new Date(releaseAnchor);
+  previewExpiresAt.setDate(previewExpiresAt.getDate() + durationDays);
   const releasePreviewSchedule = calcReleaseSchedule(
     releaseAnchor,
     linkedCount,
-    Math.max(0, Number(jornada.release_duration_days || 0)),
+    previewExpiresAt,
     jornada.exam_date ? new Date(`${jornada.exam_date}T08:00:00`) : null,
     plannedCount || linkedCount,
   );

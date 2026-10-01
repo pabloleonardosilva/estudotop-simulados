@@ -112,65 +112,59 @@ export function addMonths(date: Date, months: number): Date {
   return result;
 }
 
-export function isWithinFinalExamWindow(startedAt: Date, examDate: Date | null): boolean {
-  if (!examDate) return false;
-  const effectiveEnd = new Date(examDate);
-  effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-  effectiveEnd.setHours(0, 0, 0, 0);
-  const start = new Date(startedAt);
-  start.setHours(0, 0, 0, 0);
-  return start >= effectiveEnd;
+// Antecedência (D-X) entre o último simulado e o primeiro limite do aluno.
+export const RELEASE_LEAD_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Data-limite do último simulado: X dias antes do primeiro limite aplicável ao
+// aluno — a expiração da matrícula (expires_at) ou a data da prova, se houver.
+export function calcReleaseDeadline(expiresAt: Date, examDate: Date | null): Date {
+  const base = examDate && examDate.getTime() < expiresAt.getTime() ? examDate : expiresAt;
+  const deadline = new Date(base);
+  deadline.setDate(deadline.getDate() - RELEASE_LEAD_DAYS);
+  return deadline;
 }
 
-// Cronograma de liberação dos simulados (fonte única — usada na atribuição e no
-// recálculo). A "duração da matrícula" (duration_days) NÃO participa: a janela de
-// liberação vem de release_duration_days (sem data da prova) ou de exam_date - 7
-// (com data da prova, que é soberana). Intervalo = janela / (total - 1): o 1º
-// simulado cai no dia 0 e o último no último dia permitido; com 1 simulado (ou
-// janela nula), tudo é liberado no dia da entrada.
-// Decisão 2026-07-17: "liberados em X dias" significa que o ÚLTIMO simulado sai
-// no dia X de calendário (dia da entrada = dia 1). Por isso a janela efetiva em
-// dias corridos após a entrada é X - 1.
+function releaseWindowDays(referenceDate: Date, expiresAt: Date, examDate: Date | null): number {
+  const start = new Date(referenceDate);
+  start.setHours(0, 0, 0, 0);
+  const deadline = calcReleaseDeadline(expiresAt, examDate);
+  deadline.setHours(0, 0, 0, 0);
+  return Math.round((deadline.getTime() - start.getTime()) / DAY_MS);
+}
+
+// Sem janela útil (data-limite já passou ou é o próprio dia de referência):
+// todos os simulados ainda bloqueados devem ser liberados imediatamente.
+export function isReleaseWindowClosed(referenceDate: Date, expiresAt: Date, examDate: Date | null): boolean {
+  return releaseWindowDays(referenceDate, expiresAt, examDate) <= 0;
+}
+
+// Cronograma individual de liberação (fonte única — matrícula manual, Hotmart,
+// vínculo de novo simulado, recálculo e prévia admin). O 1º simulado cai na
+// entrada e o último planejado na data-limite (calcReleaseDeadline); os demais
+// são distribuídos uniformemente, podendo repetir o mesmo dia, sem jamais
+// ultrapassar a data-limite. Sem janela útil ou com 1 simulado planejado, tudo
+// cai na entrada.
 export function calcReleaseSchedule(
   startedAt: Date,
   linkedSimuladoCount: number,
-  releaseDurationDays: number,
+  expiresAt: Date,
   examDate: Date | null,
   plannedSimuladosCount = linkedSimuladoCount,
 ): Date[] {
   if (linkedSimuladoCount === 0) return [];
 
   const calculationBase = Math.max(1, plannedSimuladosCount || linkedSimuladoCount);
-  const allAtStart = () => Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
+  const windowDays = releaseWindowDays(startedAt, expiresAt, examDate);
 
-  // Data da prova soberana: entrada dentro dos 7 dias finais → libera tudo agora.
-  if (isWithinFinalExamWindow(startedAt, examDate)) {
-    return allAtStart();
+  if (calculationBase <= 1 || windowDays <= 0) {
+    return Array.from({ length: linkedSimuladoCount }, () => new Date(startedAt));
   }
-
-  // Um único simulado planejado → nada a distribuir.
-  if (calculationBase <= 1) {
-    return allAtStart();
-  }
-
-  let windowDays: number;
-
-  if (examDate) {
-    const effectiveEnd = new Date(examDate);
-    effectiveEnd.setDate(effectiveEnd.getDate() - 7);
-    windowDays = Math.round((effectiveEnd.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24));
-  } else {
-    windowDays = Math.max(0, releaseDurationDays - 1);
-  }
-
-  if (windowDays <= 0) {
-    return allAtStart();
-  }
-
-  const intervalDays = windowDays / (calculationBase - 1);
 
   return Array.from({ length: linkedSimuladoCount }, (_, i) => {
-    const ms = startedAt.getTime() + Math.floor(i * intervalDays) * 24 * 60 * 60 * 1000;
-    return new Date(ms);
+    const slot = Math.min(i, calculationBase - 1);
+    const offsetDays = Math.floor((slot * windowDays) / (calculationBase - 1));
+    return new Date(startedAt.getTime() + offsetDays * DAY_MS);
   });
 }

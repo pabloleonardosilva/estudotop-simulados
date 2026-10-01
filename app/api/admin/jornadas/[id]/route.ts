@@ -1,30 +1,57 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
-import { calcReleaseSchedule } from "@/app/admin/jornadas/utils";
+import { calcReleaseSchedule, isReleaseWindowClosed } from "@/app/admin/jornadas/utils";
+import { simuladoReleasedPlainText, simuladoReleasedTemplate } from "@/app/lib/email/jornadaEmailTemplates";
+import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 
 function toDateString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+type RecalcReleasedItem = {
+  id: string;
+  student_jornada_id: string;
+  simulado_id: string;
+  order_number: number;
+  release_email_sent_at: string | null;
+  expires_at: string;
+  student: { name: string | null; email: string | null } | null;
+};
+
+type RecalcScheduleRow = {
+  id: string;
+  order_number: number;
+  scheduled_release_at: string;
+  released_at: string | null;
+  status: string;
+  simulados: { title: string } | null;
+};
+
 // Recalcula scheduled_release_at APENAS dos simulados ainda bloqueados (status
 // "locked") de todas as matrículas ativas. Simulados liberados, iniciados ou
-// concluídos permanecem intocados. Usado quando exam_date ou release_duration_days
-// muda depois de a jornada já ter alunos.
+// concluídos permanecem intocados. Usado quando exam_date ou duration_days muda
+// depois de a jornada já ter alunos. Se a data-limite do aluno já chegou (e a
+// matrícula ainda não expirou), os bloqueados são liberados imediatamente e
+// devolvidos para comunicação ao aluno.
 async function recalcFutureSchedules(
   supabase: SupabaseClient,
   jornadaId: string,
-  releaseDurationDays: number,
   examDate: Date | null,
   plannedSimuladosCount: number,
-): Promise<void> {
+): Promise<RecalcReleasedItem[]> {
   const { data: enrollments } = await supabase
     .from("student_jornadas")
-    .select("id, started_at, status, student_jornada_simulados(id, order_number, status)")
+    .select("id, started_at, expires_at, status, students:student_id(name, email), student_jornada_simulados(id, order_number, status)")
     .eq("jornada_id", jornadaId)
     .eq("status", "active");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const releasedItems: RecalcReleasedItem[] = [];
 
   for (const sj of enrollments || []) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,23 +60,121 @@ async function recalcFutureSchedules(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const startedAt = new Date(String((sj as any).started_at).slice(0, 10) + "T00:00:00");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const expiresAt = new Date(String((sj as any).expires_at).slice(0, 10) + "T00:00:00");
     const releaseDates = calcReleaseSchedule(
       startedAt,
       sjsList.length,
-      releaseDurationDays,
+      expiresAt,
       examDate,
       plannedSimuladosCount || sjsList.length,
     );
+    const releaseNow = expiresAt > today && isReleaseWindowClosed(today, expiresAt, examDate);
+    const releaseTimestamp = new Date().toISOString();
 
     for (const item of sjsList) {
       if (item.status !== "locked") continue;
       const newDate = releaseDates[item.order_number - 1];
       if (!newDate) continue;
+      if (!releaseNow) {
+        await supabase
+          .from("student_jornada_simulados")
+          .update({ scheduled_release_at: toDateString(newDate) })
+          .eq("id", item.id)
+          .eq("status", "locked");
+        continue;
+      }
+      // Transição atômica locked → available: só quem a efetiva comunica o aluno.
+      const { data: releasedRow } = await supabase
+        .from("student_jornada_simulados")
+        .update({ scheduled_release_at: toDateString(newDate), status: "available", released_at: releaseTimestamp })
+        .eq("id", item.id)
+        .eq("status", "locked")
+        .select("id, student_jornada_id, simulado_id, order_number, release_email_sent_at")
+        .maybeSingle();
+      if (releasedRow) {
+        releasedItems.push({
+          ...(releasedRow as Omit<RecalcReleasedItem, "expires_at" | "student">),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expires_at: String((sj as any).expires_at),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          student: ((sj as any).students as RecalcReleasedItem["student"]) || null,
+        });
+      }
+    }
+  }
+
+  return releasedItems;
+}
+
+// Comunica as liberações efetivadas pelo recálculo com o mesmo template, as
+// mesmas flags (release_email_sent_at / release_email_error) e o mesmo
+// tratamento de falha do release-job e da conclusão de simulado. A falha de
+// e-mail não desfaz a liberação.
+async function sendRecalcReleaseEmails(
+  supabase: SupabaseClient,
+  releasedItems: RecalcReleasedItem[],
+  jornadaTitle: string,
+  plannedSimuladosCount: number,
+): Promise<void> {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!resendApiKey) return;
+  const resend = new Resend(resendApiKey);
+  const appUrl = getPublicAppUrl();
+
+  for (const item of releasedItems) {
+    if (item.release_email_sent_at || !item.student?.email) continue;
+    try {
+      const [{ data: releasedSimulado }, { data: scheduleRows }] = await Promise.all([
+        supabase.from("simulados").select("title").eq("id", item.simulado_id).single(),
+        supabase
+          .from("student_jornada_simulados")
+          .select("id, order_number, scheduled_release_at, released_at, status, simulados:simulado_id(title)")
+          .eq("student_jornada_id", item.student_jornada_id)
+          .order("order_number", { ascending: true }),
+      ]);
+      if (!releasedSimulado) continue;
+
+      const schedule = ((scheduleRows || []) as unknown as RecalcScheduleRow[]).map((row) => ({
+        order: row.order_number,
+        title: row.simulados?.title || `Simulado ${row.order_number}`,
+        scheduledReleaseAt: row.scheduled_release_at,
+        releasedAt: row.released_at,
+        status: row.status,
+        highlight: row.id === item.id,
+      }));
+      const emailParams = {
+        studentName: item.student.name || "Aluno",
+        simuladoTitle: releasedSimulado.title,
+        jornadaTitle,
+        position: item.order_number,
+        total: plannedSimuladosCount || schedule.length,
+        expiresAt: item.expires_at,
+        simuladoUrl: `${appUrl}/meus-simulados/${item.simulado_id}`,
+        schedule,
+      };
+      const { error: emailError } = await resend.emails.send({
+        from: "EstudoTOP <estudotop@estudotop.com.br>",
+        replyTo: "estudotop@estudotop.com.br",
+        to: item.student.email,
+        subject: `Novo simulado liberado — ${jornadaTitle}`,
+        html: simuladoReleasedTemplate(emailParams),
+        text: simuladoReleasedPlainText(emailParams),
+      });
+      if (emailError) throw emailError;
+
       await supabase
         .from("student_jornada_simulados")
-        .update({ scheduled_release_at: toDateString(newDate) })
+        .update({ release_email_sent_at: new Date().toISOString(), release_email_error: null })
         .eq("id", item.id)
-        .eq("status", "locked");
+        .is("release_email_sent_at", null);
+    } catch (emailError) {
+      const message = emailError instanceof Error ? emailError.message : "Falha ao enviar e-mail de liberação.";
+      await supabase
+        .from("student_jornada_simulados")
+        .update({ release_email_error: message.slice(0, 500) })
+        .eq("id", item.id);
+      void logSystemError({ source: "api.admin.jornadas.recalc_release_email", error: emailError, metadata: { student_jornada_simulado_id: item.id } });
     }
   }
 }
@@ -206,7 +331,7 @@ export async function PATCH(
 
     const { data: existing, error: fetchError } = await supabase
       .from("jornadas")
-      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, release_duration_days, exam_date, effective_end_date")
+      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, exam_date, effective_end_date")
       .eq("id", id)
       .single();
 
@@ -323,14 +448,6 @@ export async function PATCH(
         updates.duration_months = Math.max(1, Math.ceil(durationDays / 30));
       }
 
-      if (body.release_duration_days !== undefined) {
-        const releaseDurationDays = Number(body.release_duration_days);
-        if (!Number.isInteger(releaseDurationDays) || releaseDurationDays <= 0) {
-          return NextResponse.json({ ok: false, message: "Informe em quantos dias todos os simulados serão liberados." }, { status: 400 });
-        }
-        updates.release_duration_days = releaseDurationDays;
-      }
-
       if (body.planned_simulados_count !== undefined) {
         const planned = Number(body.planned_simulados_count);
         if (!Number.isInteger(planned) || planned <= 0) {
@@ -388,18 +505,7 @@ export async function PATCH(
     }
     const finalDurationDays = (updates.duration_days as number | undefined) ?? existing.duration_days ?? existing.duration_months * 30;
     const finalExamDateStr = body.exam_date !== undefined ? ((updates.exam_date as string | null) ?? null) : (existing.exam_date ?? null);
-    const finalReleaseDuration = Number((updates.release_duration_days as number | undefined) ?? existing.release_duration_days);
     const finalPlannedCount = Number((updates.planned_simulados_count as number | undefined) ?? existing.planned_simulados_count);
-    const scheduleAffecting = updates.release_duration_days !== undefined || updates.duration_days !== undefined || body.exam_date !== undefined;
-
-    // A janela de liberação só é validada contra a duração sem data da prova
-    // (com data da prova, exam_date é soberana e o campo é ignorado).
-    if (scheduleAffecting && !finalExamDateStr && finalReleaseDuration > Number(finalDurationDays) - 7) {
-      return NextResponse.json(
-        { ok: false, message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." },
-        { status: 400 },
-      );
-    }
 
     const { error: updateError } = await supabase.from("jornadas").update(updates).eq("id", id);
 
@@ -407,27 +513,31 @@ export async function PATCH(
       return NextResponse.json({ ok: false, message: updateError.message }, { status: 400 });
     }
 
-    // Recálculo dos cronogramas futuros quando a distribuição muda (exam_date ou
-    // release_duration_days). Preserva concluídos/iniciados/liberados; só mexe nos locked.
-    const examChanged = body.exam_date !== undefined && ((updates.exam_date as string | null) ?? null) !== (existing.exam_date ?? null);
-    const releaseChanged = updates.release_duration_days !== undefined && updates.release_duration_days !== existing.release_duration_days;
-    if (examChanged || releaseChanged) {
-      try {
-        const examDate = finalExamDateStr ? new Date(finalExamDateStr + "T00:00:00") : null;
-        await recalcFutureSchedules(supabase, id, finalReleaseDuration, examDate, finalPlannedCount);
-      } catch (err) {
-        void logSystemError({ source: "api.admin.jornadas.recalc_schedules", error: err, request, metadata: { jornadaId: id } });
-      }
-    }
-
     // Alterar a duração recalcula a validade (expires_at) das matrículas ativas:
-    // expires_at = started_at + nova duração.
+    // expires_at = started_at + nova duração. Vem antes do cronograma, que
+    // depende da expiração de cada aluno.
     const durationChanged = updates.duration_days !== undefined && updates.duration_days !== existing.duration_days;
     if (durationChanged) {
       try {
         await recalcEnrollmentExpirations(supabase, id, Number(finalDurationDays));
       } catch (err) {
         void logSystemError({ source: "api.admin.jornadas.recalc_expirations", error: err, request, metadata: { jornadaId: id } });
+      }
+    }
+
+    // Recálculo dos cronogramas futuros quando a data-limite muda (exam_date ou
+    // duration_days). Preserva concluídos/iniciados/liberados; só mexe nos locked.
+    const examChanged = body.exam_date !== undefined && ((updates.exam_date as string | null) ?? null) !== (existing.exam_date ?? null);
+    if (examChanged || durationChanged) {
+      try {
+        const examDate = finalExamDateStr ? new Date(finalExamDateStr + "T00:00:00") : null;
+        const releasedItems = await recalcFutureSchedules(supabase, id, examDate, finalPlannedCount);
+        if (releasedItems.length) {
+          const jornadaTitle = String((updates.title as string | undefined) ?? existing.title ?? "");
+          after(() => sendRecalcReleaseEmails(supabase, releasedItems, jornadaTitle, finalPlannedCount));
+        }
+      } catch (err) {
+        void logSystemError({ source: "api.admin.jornadas.recalc_schedules", error: err, request, metadata: { jornadaId: id } });
       }
     }
 

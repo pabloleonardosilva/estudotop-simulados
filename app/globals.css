@@ -705,6 +705,12 @@ button:disabled,
   background-color: rgba(255, 255, 255, 0.035) !important;
 }
 
+.et-admin-dark-content .et-clean-popover:not(.et-admin-clean-content .et-clean-popover) {
+  background-color: #0D1B2E !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
 .et-admin-dark-content :where(.border-slate-100, .border-slate-200, .border-slate-200\/80) {
   border-color: rgba(255, 255, 255, 0.10) !important;
 }

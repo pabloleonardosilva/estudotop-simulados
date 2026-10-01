@@ -136,6 +136,8 @@ O admin define ao criar ou editar uma Jornada:
 
 ### 3.3 Regra de liberação dos simulados
 
+> **Superado em 01/10/2026.** Os cenários abaixo são históricos. Regra vigente: `docs/Sprint-jornadas.md`, seção 10, e `docs/INDICE_FUNCOES_SISTEMA.md`, seção 9.2.1.
+
 A lógica de liberação é **calculada individualmente por aluno**, a partir da data em que foi atribuído à Jornada.
 
 #### Cenário A — Sem data limite da prova

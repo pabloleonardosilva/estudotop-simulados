@@ -255,6 +255,8 @@ Acessível por:
 
 ## 4. ALGORITMO DE CÁLCULO DAS DATAS DE LIBERAÇÃO
 
+> **Superado em 01/10/2026.** O algoritmo abaixo é histórico. Regra vigente: `docs/Sprint-jornadas.md`, seção 10, e `docs/INDICE_FUNCOES_SISTEMA.md`, seção 9.2.1.
+
 Executado no momento da atribuição do aluno à Jornada.
 
 ```

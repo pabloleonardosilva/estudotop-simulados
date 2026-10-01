@@ -86,7 +86,6 @@ export default function EditarJornadaClient({
     card_image_id: jornada.card_image_id || null,
     max_attempts: jornada.max_attempts,
     duration_days: jornada.duration_days || jornada.duration_months * 30,
-    release_duration_days: jornada.release_duration_days || jornada.duration_days || jornada.duration_months * 30,
     planned_simulados_count: jornada.planned_simulados_count || Math.max(1, initialSimulados.length),
     exam_date: jornada.exam_date || "",
   });
@@ -134,14 +133,6 @@ export default function EditarJornadaClient({
       setFeedback({ tone: "error", title: "Quantidade incompatível", message: `A Jornada já possui ${simulados.length} simulado(s) vinculado(s). A quantidade planejada não pode ser menor que isso.` });
       return;
     }
-    if (!form.release_duration_days || form.release_duration_days <= 0) {
-      setFeedback({ tone: "error", title: "Liberação inválida", message: "Informe em quantos dias todos os simulados serão liberados." });
-      return;
-    }
-    if (!form.exam_date && Number(form.release_duration_days) > Number(form.duration_days) - 7) {
-      setFeedback({ tone: "error", title: "Janela de liberação inválida", message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." });
-      return;
-    }
     setSaving(true);
     try {
       const res = await adminFetch(`/api/admin/jornadas/${jornada.id}`, {
@@ -164,7 +155,6 @@ export default function EditarJornadaClient({
           card_image_id: form.card_image_id,
           max_attempts: Number(form.max_attempts),
           duration_days: Number(form.duration_days),
-          release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
           exam_date: form.exam_date || null,
         }),
@@ -508,24 +498,9 @@ export default function EditarJornadaClient({
                 />
               </div>
 
-              <div className="mt-5 md:max-w-xs">
-                <PremiumInput
-                  variant="jornada"
-                  label="Todos os simulados serão liberados em (dias)"
-                  type="number"
-                  min={1}
-                  step={1}
-                  icon={<Clock3 size={15} />}
-                  value={form.release_duration_days}
-                  disabled={Boolean(form.exam_date)}
-                  onChange={(e: any) => setForm((p) => ({ ...p, release_duration_days: Number(e.target.value) }))}
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  {form.exam_date
-                    ? "A distribuição será calculada automaticamente utilizando a data da prova."
-                    : "O último simulado é liberado no dia informado, contando o dia da entrada do aluno como dia 1. Independente da duração da Jornada; deve terminar ao menos 7 dias antes do fim."}
-                </p>
-              </div>
+              <p className="mt-5 text-xs text-slate-500">
+                A duração é o período total em que o aluno poderá acessar e realizar os simulados desta Jornada. O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro.
+              </p>
 
               {form.exam_date && (
                 <div className="rounded-2xl border border-orange-400/25 bg-orange-500/[0.08] p-4 text-sm text-orange-200">
@@ -537,7 +512,7 @@ export default function EditarJornadaClient({
                         new Date(new Date(form.exam_date + "T00:00:00").getTime() - 7 * 24 * 60 * 60 * 1000),
                       )}
                     </strong>{" "}
-                    (7 dias antes da prova).
+                    (7 dias antes da prova), ou antes, para alunos cujo acesso termina primeiro.
                   </p>
                 </div>
               )}

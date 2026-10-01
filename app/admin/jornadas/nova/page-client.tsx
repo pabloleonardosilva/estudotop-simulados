@@ -41,14 +41,22 @@ const defaultForm = {
   exam_board: "",
   welcome_title: "Bem-vindo(a) à sua Jornada de Simulados",
   welcome_message: "",
-  study_strategy: "",
-  important_guidelines: "",
+  study_strategy: [
+    "• Fique de olho nas datas de liberação dos simulados.",
+    "• Não deixe os simulados para a última hora.",
+    "• Refaça cada simulado quantas vezes forem permitidas para acompanhar sua evolução.",
+    "• Aproveite os recursos disponíveis, como anotações, ajuda da Coruja e demais ferramentas de apoio.",
+  ].join("\n"),
+  important_guidelines: [
+    "• Leia atentamente todas as informações e instruções antes de iniciar cada simulado.",
+    "• Durante o simulado, não alterne para outras telas ou minimize a janela.",
+    "• Mantenha-se focado durante toda a realização da prova.",
+  ].join("\n"),
   journey_highlights: ["cronograma_progressivo", "relatorios_desempenho", "correcao_comentada"] as string[],
   category: "policial" as "saude" | "policial" | "tribunais" | "administrativo",
   card_image_id: null as string | null,
   max_attempts: 3,
   duration_days: 90,
-  release_duration_days: 83,
   planned_simulados_count: 10,
   exam_date: "",
 };
@@ -99,14 +107,6 @@ export default function NovaJornadaClient() {
       setFeedback({ tone: "error", title: "Quantidade inválida", message: "Informe quantos simulados esta Jornada terá." });
       return;
     }
-    if (!form.release_duration_days || form.release_duration_days <= 0) {
-      setFeedback({ tone: "error", title: "Liberação inválida", message: "Informe em quantos dias todos os simulados serão liberados." });
-      return;
-    }
-    if (!form.exam_date && Number(form.release_duration_days) > Number(form.duration_days) - 7) {
-      setFeedback({ tone: "error", title: "Janela de liberação inválida", message: "A duração destinada à liberação dos simulados deve terminar pelo menos sete dias antes do encerramento da Jornada." });
-      return;
-    }
 
     setSaving(true);
     try {
@@ -130,7 +130,6 @@ export default function NovaJornadaClient() {
           card_image_id: form.card_image_id,
           max_attempts: Number(form.max_attempts),
           duration_days: Number(form.duration_days),
-          release_duration_days: Number(form.release_duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
           exam_date: form.exam_date || null,
         }),
@@ -466,7 +465,7 @@ function JornadaFormCard({
 
         <div className="grid gap-5 lg:grid-cols-3">
           <DarkField label="Tentativas permitidas" icon={<Hash size={16} />} helper="Quantidade permitida em cada Simulado desta Jornada."><DarkNumberInput value={form.max_attempts} onChange={(value) => update("max_attempts", value)} /></DarkField>
-          <DarkField label="Duração da Jornada" icon={<Clock3 size={16} />} helper="Período total de acesso do aluno.">
+          <DarkField label="Duração da Jornada" icon={<Clock3 size={16} />} helper="Período total em que o aluno poderá acessar e realizar os simulados desta Jornada.">
             <DarkNumberInput
               value={form.duration_days}
               onChange={(value) => update("duration_days", value)}
@@ -491,22 +490,9 @@ function JornadaFormCard({
           </DarkField>
         </div>
 
-        <div className="mt-5">
-          <DarkField
-            label="Todos os simulados serão liberados em"
-            icon={<Clock3 size={16} />}
-            helper={form.exam_date
-              ? "A distribuição será calculada automaticamente utilizando a data da prova."
-              : "O último simulado é liberado no dia informado, contando o dia da entrada do aluno como dia 1. Independente da duração da Jornada; deve terminar ao menos 7 dias antes do fim."}
-          >
-            <DarkNumberInput
-              value={form.release_duration_days}
-              onChange={(value) => update("release_duration_days", value)}
-              suffix="dias"
-              disabled={Boolean(form.exam_date)}
-            />
-          </DarkField>
-        </div>
+        <p className="mt-5 text-sm leading-relaxed text-slate-400">
+          O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro.
+        </p>
       </div>
     </section>
   );
