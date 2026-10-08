@@ -1,5 +1,9 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 08/10/2026 - Configuracoes da Jornada: navegacao e alinhamento corrigidos localmente (sem commit)
+
+Na criacao/edicao de Jornada, o tooltip de ajuda cobria a Navegacao e capturava o clique; agora abre so pelo gatilho e ignora cliques. Opcoes da navegacao: "Herdar do Simulado", "Navegacao aberta" e "Navegacao fechada" (valores inalterados). Campos da secao alinhados em grade de 3 colunas. Regras de resultados, tentativas, cronograma e TopCoins inalteradas; sem migration. Tambem localmente: Coruja configuravel por Simulado da Jornada com opcoes claras e paineis "Configuracoes dos Simulados" e "Planejamento da Jornada" com contraste refinado. Detalhes e validacao: `docs/Sprint-jornadas.md` (08/10/2026). Pendente: conferencia visual autenticada.
+
 ## 08/10/2026 - Fase B: migrations executadas pelo proprietario e verificadas; publicacao do codigo
 
 **Migrations (executadas manualmente pelo proprietario no SQL Editor do Supabase operacional `uphqihoqzwqjzmsimaug`, sem erros, fora do ledger `supabase_migrations`):** `20261008120000_restrict_close_stale_user_sessions.sql` (sha256 0feddbb5...c6367b2) e `20261002120000_contextual_simulado_settings.sql` (sha256 73ab678a...26a68e3; o comentario "PREPARADA, NAO EXECUTADA" no arquivo e historico). Arquivos nao alterados.

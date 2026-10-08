@@ -1,5 +1,5 @@
 "use client";
-import ContextSettingsFields from "@/app/simulados/components/ContextSettingsFields";
+import ContextSettingsFields, { JornadaSettingsPanel, jornadaPanelGrid } from "@/app/simulados/components/ContextSettingsFields";
 
 import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
@@ -11,6 +11,7 @@ import { Reorder } from "framer-motion";
 import {
   ArrowLeft,
   CalendarDays,
+  CalendarRange,
   FileText,
   Globe2,
   CheckCircle2,
@@ -174,6 +175,11 @@ export default function EditarJornadaClient({
       setSaving(false);
     }
   }
+
+  // A herança usa o padrão já salvo da Jornada, que é o que o servidor aplica ao aluno.
+  const jornadaOwlLabel = jornada.owl_help_enabled && jornada.owl_help_limit
+    ? `${jornada.owl_help_limit} ${jornada.owl_help_limit === 1 ? "ajuda" : "ajudas"}`
+    : "desabilitada";
 
   async function saveOwlOverride(js: JornadaSimulado, enabled: boolean | null, limit: number | null) {
     setSaving(true);
@@ -480,9 +486,14 @@ export default function EditarJornadaClient({
                 <p className="mt-2 text-xs text-slate-500">Sem seleção, permanece o fallback visual da categoria.</p>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-3">
-                <div className="md:col-span-2"><ContextSettingsFields jornada value={form} onChange={(patch) => setForm((previous) => ({ ...previous, ...patch }))} /></div>
-                <div><PremiumInput label="Tentativas permitidas" type="number" min={1} step={1} required value={form.max_attempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, max_attempts: Number(event.target.value) }))} /><p className="mt-2 text-xs text-slate-500">Quantidade permitida em cada Simulado desta Jornada.</p></div>
+              <div className="space-y-5">
+                <ContextSettingsFields jornada value={form} onChange={(patch) => setForm((previous) => ({ ...previous, ...patch }))} attemptsControl={<PremiumInput variant="jornada" type="number" min={1} step={1} required value={form.max_attempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, max_attempts: Number(event.target.value) }))} />} />
+                <JornadaSettingsPanel
+                  icon={<CalendarRange size={17} />}
+                  title="Planejamento da Jornada"
+                  footer="A duração é o período total em que o aluno poderá acessar e realizar os simulados desta Jornada. O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro."
+                >
+                <div className={jornadaPanelGrid}>
                 <PremiumInput
                   variant="jornada"
                   label="Duração (dias)"
@@ -513,14 +524,10 @@ export default function EditarJornadaClient({
                   value={form.exam_date}
                   onChange={(e: any) => setForm((p) => ({ ...p, exam_date: e.target.value }))}
                 />
-              </div>
-
-              <p className="mt-5 text-xs text-slate-500">
-                A duração é o período total em que o aluno poderá acessar e realizar os simulados desta Jornada. O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro.
-              </p>
+                </div>
 
               {form.exam_date && (
-                <div className="rounded-2xl border border-orange-400/25 bg-orange-500/[0.08] p-4 text-sm text-orange-200">
+                <div className="mt-5 rounded-2xl border border-orange-400/25 bg-orange-500/[0.08] p-4 text-sm text-orange-200">
                   <p className="font-semibold">Data efetiva de liberação</p>
                   <p className="mt-1">
                     Simulados liberados até{" "}
@@ -533,6 +540,8 @@ export default function EditarJornadaClient({
                   </p>
                 </div>
               )}
+                </JornadaSettingsPanel>
+              </div>
             </div>
           </PremiumCard>
 
@@ -554,7 +563,7 @@ export default function EditarJornadaClient({
 
       {/* Tab: Simulados */}
       {tab === "simulados" && (
-        <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_400px]">
           {/* Left: Simulados na Jornada */}
           <PremiumCard
             variant="jornada"
@@ -582,7 +591,7 @@ export default function EditarJornadaClient({
               >
                 {simulados.map((js, i) => (
                   <Reorder.Item key={js.id} value={js} className="cursor-grab active:cursor-grabbing">
-                    <div className="flex items-center gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.035] px-4 py-3 shadow-lg shadow-black/20 hover:border-orange-400/35 hover:bg-white/[0.055]">
+                    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.035] px-4 py-3 shadow-lg shadow-black/20 hover:border-orange-400/35 hover:bg-white/[0.055]">
                       <GripVertical size={16} className="shrink-0 text-slate-500" />
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white">
                         {i + 1}
@@ -595,9 +604,14 @@ export default function EditarJornadaClient({
                           {(js.simulados as any)?.question_count ?? 0} questões
                         </p>
                       </div>
-                      <div className="max-w-xs" onPointerDown={(event) => event.stopPropagation()}>
-                        <PremiumSimpleSelect dark label="Coruja efetiva neste Simulado" disabled={saving} value={js.owl_help_enabled_override === null ? "inherit" : js.owl_help_enabled_override ? "enabled" : "disabled"} options={[["inherit", "Padrão da Jornada: " + (form.owl_help_enabled ? form.owl_help_limit + " ajuda(s)" : "desabilitada")], ["disabled", "Exceção: desabilitada"], ["enabled", "Exceção: habilitada"]]} onChange={(mode) => { void saveOwlOverride(js, mode === "inherit" ? null : mode === "enabled", mode === "enabled" ? js.owl_help_limit_override ?? 1 : null); }} />
-                        {js.owl_help_enabled_override === true && <PremiumInput variant="jornada" label="Ajudas por tentativa neste vínculo" type="number" min={1} step={1} disabled={saving} defaultValue={js.owl_help_limit_override ?? 1} key={js.id + ":" + js.owl_help_limit_override} onBlur={(event: React.FocusEvent<HTMLInputElement>) => { const limit = Number(event.target.value); if (limit !== js.owl_help_limit_override) void saveOwlOverride(js, true, limit); }} />}
+                      <div className="order-last w-full sm:order-none sm:w-[22rem] sm:shrink-0 [&_button[aria-haspopup=listbox]]:h-auto [&_button[aria-haspopup=listbox]]:min-h-12 [&_button[aria-haspopup=listbox]]:py-2.5 [&_button[aria-haspopup=listbox]>span]:whitespace-normal [&_button[aria-haspopup=listbox]>span]:text-left" onPointerDown={(event) => event.stopPropagation()}>
+                        <PremiumSimpleSelect dark label="Ajuda da Coruja neste Simulado" disabled={saving} value={js.owl_help_enabled_override === null ? "inherit" : js.owl_help_enabled_override ? "enabled" : "disabled"} options={[["inherit", `Usar configuração da Jornada (${jornadaOwlLabel})`], ["enabled", "Personalizar neste Simulado"], ["disabled", "Desabilitar neste Simulado"]]} onChange={(mode) => { void saveOwlOverride(js, mode === "inherit" ? null : mode === "enabled", mode === "enabled" ? js.owl_help_limit_override ?? (jornada.owl_help_enabled ? jornada.owl_help_limit : null) ?? 1 : null); }} />
+                        {js.owl_help_enabled_override === true && (
+                          <div className="mt-3">
+                            <label htmlFor={`owl-limit-${js.id}`} className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Quantidade de ajudas por tentativa</label>
+                            <PremiumInput id={`owl-limit-${js.id}`} variant="jornada" type="number" min={1} step={1} disabled={saving} defaultValue={js.owl_help_limit_override ?? 1} key={js.id + ":" + js.owl_help_limit_override} onBlur={(event: React.FocusEvent<HTMLInputElement>) => { const limit = Number(event.target.value); if (limit !== js.owl_help_limit_override) void saveOwlOverride(js, true, limit); }} />
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"

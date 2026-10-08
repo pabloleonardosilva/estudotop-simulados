@@ -1,5 +1,5 @@
 "use client";
-import ContextSettingsFields, { defaultContextSettings, type ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
+import ContextSettingsFields, { JornadaSettingsPanel, defaultContextSettings, jornadaPanelGrid, type ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
 
 
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from "react";
@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  CalendarRange,
   Check,
   Clock3,
   FileText,
@@ -467,9 +468,14 @@ function JornadaFormCard({
           </DarkField>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-3">
-          <div className="md:col-span-2"><ContextSettingsFields jornada value={form} onChange={(patch) => { for (const key of Object.keys(patch) as (keyof ContextSettingsForm)[]) update(key, patch[key] as never); }} /></div>
-          <DarkField label="Tentativas permitidas" icon={<Hash size={16} />} helper="Quantidade permitida em cada Simulado desta Jornada."><DarkNumberInput value={form.max_attempts} onChange={(value) => update("max_attempts", value)} /></DarkField>
+        <div className="space-y-5">
+          <ContextSettingsFields jornada value={form} onChange={(patch) => { for (const key of Object.keys(patch) as (keyof ContextSettingsForm)[]) update(key, patch[key] as never); }} attemptsControl={<DarkNumberInput value={form.max_attempts} onChange={(value) => update("max_attempts", value)} />} />
+          <JornadaSettingsPanel
+            icon={<CalendarRange size={17} />}
+            title="Planejamento da Jornada"
+            footer="O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro."
+          >
+          <div className={jornadaPanelGrid}>
           <DarkField label="Duração da Jornada" icon={<Clock3 size={16} />} helper="Período total em que o aluno poderá acessar e realizar os simulados desta Jornada.">
             <DarkNumberInput
               value={form.duration_days}
@@ -478,7 +484,7 @@ function JornadaFormCard({
             />
           </DarkField>
 
-          <DarkField label="Quantidade planejada de simulados" icon={<Hash size={16} />} helper="Total de simulados que serão vinculados.">
+          <DarkField label="Quantidade de simulados" icon={<Hash size={16} />} helper="Total de simulados que serão vinculados.">
             <DarkNumberInput
               value={form.planned_simulados_count}
               onChange={(value) => update("planned_simulados_count", value)}
@@ -493,11 +499,9 @@ function JornadaFormCard({
               rightIcon={<CalendarDays size={18} />}
             />
           </DarkField>
+          </div>
+          </JornadaSettingsPanel>
         </div>
-
-        <p className="mt-5 text-sm leading-relaxed text-slate-400">
-          O cronograma de cada aluno é calculado automaticamente a partir da entrada dele: o último simulado é liberado 7 dias antes do fim do acesso ou da data da prova, o que vier primeiro.
-        </p>
       </div>
     </section>
   );
