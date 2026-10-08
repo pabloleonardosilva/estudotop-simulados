@@ -11,7 +11,11 @@
 
 **Codigo publicado neste ciclo:** configuracoes contextuais da Fase B (feedback, navegacao, Coruja e politica de resultados por Jornada/Evento), reset de participante do Evento preservando a liberacao, preservacao da tentativa oficial em ajustes de consumo (Jornada e Evento), reconciliacao pos-commit da corrida C1 e documentacao. Detalhes: `docs/Sprint-simulados.md` (Fase B e 08/10/2026), `docs/Sprint-evento-de-simulado.md` (secao 110), `docs/Sprint-jornadas.md` (08/10/2026), `docs/SEGURANCA_RLS_SUPABASE.md` (08/10/2026).
 
-**Publicacao:** commit e deploy registrados no fechamento abaixo, somente apos confirmacao.
+**Publicacao (confirmada):** commit `668f09e` (62 arquivos) enviado a `origin/main` sem force em 08/10/2026. Deployment de Production da Vercel para esse commit: status GitHub `success` ("Deployment has completed") as 14:23:42 UTC, URL `estudotop-simulados-hxhjkql6p-pabloleonardosilva-2803s-projects.vercel.app`; o dominio `https://simulados.estudotop.com.br` serve o mesmo conjunto de chunks desse deployment.
+
+**Verificacoes pos-deploy (sem alterar dados):** `/login` 200; APIs administrativas e de aluno da Fase B sem autenticacao retornam 401 (nenhum 500); logs do Supabase de 12:00 a 14:40 UTC sem erros, objetos inexistentes (42703) ou deadlocks; 0 tentativas de Jornada concluidas pendentes de liberacao sob politica `released`; 0 Jornadas `blocked`; 248 tentativas e 217 resultados preservados; ACL de `close_stale_user_sessions` restrito. Antes do commit: TypeScript, build, `git diff --check`, varredura de segredos e 194/194 testes direcionados aprovados.
+
+**Pendentes:** homologacao autenticada de administrador e aluno (sem credenciais de QA nesta execucao) e testes com escrita (conclusao, liberacao, reset) somente com dados de QA autorizados; monitoramento de 24-48 h e consulta de pendencias de liberacao.
 
 **Recuperacao apos a Fase B:** nao voltar ao codigo anterior (1e0bb6d) se existir Jornada `blocked`, tentativa de Jornada concluida sem liberacao ou tentativa em andamento com snapshot contextual; preferir correcao em frente ou Instant Rollback da Vercel para um deployment da propria Fase B. Nao reverter as migrations (aditivas; remover colunas apagaria marcas de liberacao). Procedimento completo na entrada seguinte.
 
