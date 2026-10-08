@@ -1,8 +1,10 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
-## 08/10/2026 - Configuracoes da Jornada: navegacao e alinhamento corrigidos localmente (sem commit)
+## 08/10/2026 - Configuracoes da Jornada: navegacao, alinhamento, Coruja por Simulado e paineis premium (publicado)
 
-Na criacao/edicao de Jornada, o tooltip de ajuda cobria a Navegacao e capturava o clique; agora abre so pelo gatilho e ignora cliques. Opcoes da navegacao: "Herdar do Simulado", "Navegacao aberta" e "Navegacao fechada" (valores inalterados). Campos da secao alinhados em grade de 3 colunas. Regras de resultados, tentativas, cronograma e TopCoins inalteradas; sem migration. Tambem localmente: Coruja configuravel por Simulado da Jornada com opcoes claras e paineis "Configuracoes dos Simulados" e "Planejamento da Jornada" com contraste refinado. Detalhes e validacao: `docs/Sprint-jornadas.md` (08/10/2026). Pendente: conferencia visual autenticada.
+Na criacao/edicao de Jornada, o tooltip de ajuda cobria a Navegacao e capturava o clique; agora abre so pelo gatilho e ignora cliques. Opcoes da navegacao: "Herdar do Simulado", "Navegacao aberta" e "Navegacao fechada" (valores inalterados). Campos da secao alinhados em grade de 3 colunas. Regras de resultados, tentativas, cronograma e TopCoins inalteradas; sem migration. Tambem localmente: Coruja configuravel por Simulado da Jornada com opcoes claras e paineis "Configuracoes dos Simulados" e "Planejamento da Jornada" com contraste refinado. Tambem corrigido o transbordamento horizontal da aba Simulados no celular. Detalhes e validacao: `docs/Sprint-jornadas.md` (08/10/2026).
+
+**Publicacao (confirmada):** commit `e940ac7` enviado a `origin/main` sem force; deployment de Production da Vercel `3wc2eye8x` com status `success` as 19:51:57 UTC. O dominio `https://simulados.estudotop.com.br` serve o CSS desse deployment (`0ebqrk-b0wnz~.css`, com as classes dos novos paineis), diferente do deployment anterior. Verificacoes sem alterar dados: `/login` 200, `/admin/jornadas` redireciona sem sessao (307), API administrativa 401 sem autenticacao; registros do Supabase apos o deploy sem erros. Sem migration ou SQL de escrita (estrutura publicada na Fase B). Antes do commit: TypeScript, build, `git diff --check`, varredura de segredos e 306/306 testes direcionados. Pendente: conferencia visual autenticada (administrador) nas telas de criacao/edicao e na aba Simulados.
 
 ## 08/10/2026 - Fase B: migrations executadas pelo proprietario e verificadas; publicacao do codigo
 
