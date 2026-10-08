@@ -1,10 +1,11 @@
+import type { ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
 export type JornadaStatus = "draft" | "published" | "archived";
 export type JornadaScopeType = "general" | "contest";
 export type JornadaCategory = "saude" | "policial" | "tribunais" | "administrativo";
 export type StudentJornadaStatus = "active" | "expired" | "cancelled" | "paused";
 export type SJSStatus = "locked" | "available" | "in_progress" | "completed";
 
-export type Jornada = {
+export type Jornada = ContextSettingsForm & {
   max_attempts: number;
   id: string;
   title: string;
@@ -38,6 +39,8 @@ export type Jornada = {
 };
 
 export type JornadaSimulado = {
+  owl_help_enabled_override: boolean | null;
+  owl_help_limit_override: number | null;
   id: string;
   jornada_id: string;
   simulado_id: string;

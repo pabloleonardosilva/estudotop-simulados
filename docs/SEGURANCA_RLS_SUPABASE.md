@@ -60,3 +60,17 @@ Esta análise usa as migrations versionadas no repositório. Ela não substitui 
 - Falsa sensação de segurança: service role ignora RLS e continua dependendo dos guards da aplicação.
 
 Nenhuma migration de RLS foi criada na Sprint Segurança C porque o estado remoto não foi inspecionado e há consumidores browser-side que precisam ser migrados antes.
+
+## 02/10/2026 - Autorizacao contextual de resultados (preparada localmente)
+
+Novo RPC consume_student_owl_help usa SECURITY INVOKER, search_path vazio, lock e validacao de propriedade/contexto; execute revogado de PUBLIC, anon e authenticated, concedido somente ao service_role. Leitura de notas, revisao, comentarios e disponibilizacao de TopCoins deve passar pelo servidor e pela autorizacao de liberacao. Nenhuma policy existente alterada. Migration nao executada; validar grants e concorrencia em ambiente isolado autorizado antes da aplicacao. Detalhes: docs/Sprint-simulados.md, Fase B de 02/10/2026.
+
+## 08/10/2026 - close_stale_user_sessions exposta a anon (migration preparada, nao executada)
+
+Achado (catalogo de producao, somente leitura): `public.close_stale_user_sessions(integer)` e `SECURITY DEFINER`, sem GRANT explicito em `20260702150000_logs_auditoria_unificacao.sql`; herdou EXECUTE de PUBLIC e dos privilegios padrao (`anon`, `authenticated`). Qualquer chamada nao autenticada a `/rest/v1/rpc/close_stale_user_sessions` podia encerrar sessoes ativas de `user_sessions` (integridade da telemetria e de "Online agora"; sem leitura de dados). Nao explorado em producao. Sem chamadores: nenhum codigo, cron da Vercel, pg_cron (extensao ausente), funcao ou view.
+
+Correcao: `supabase/migrations/20261008120000_restrict_close_stale_user_sessions.sql` revoga EXECUTE de PUBLIC, anon e authenticated e mantem service_role (o dono `postgres` conserva acesso). Nao altera dados, RLS, policies, triggers, grants de tabelas nem outras funcoes. Validada em PostgreSQL 17.6 local com a funcao identica a de producao (hash do codigo) e o mesmo ACL: antes, anon/authenticated/PUBLIC executavam; depois, 42501 para os tres; service_role preserva o comportamento; reaplicacao idempotente; compativel com a Fase B. Chamada HTTP via PostgREST local nao executada (limitacao do ambiente); a permissao e a mesma verificada por `SET LOCAL ROLE`, mecanismo usado pelo PostgREST.
+
+Permanecem fora do escopo: GRANTs amplos padrao do Supabase (incluindo TRUNCATE) para anon/authenticated em 31 tabelas, todas com RLS ativo; leitura anon pela API publica retornou 0 linhas em `jornadas`, `jornada_simulados` e `topcoin_earnings`. Revogacao geral planejada para Sprint propria.
+
+Atualizacao 08/10/2026: a migration `20261008120000_restrict_close_stale_user_sessions.sql` foi executada manualmente pelo proprietario no Supabase operacional (fora do ledger). Verificacao somente leitura: ACL `{postgres=X/postgres,service_role=X/postgres}`, `has_function_privilege` falso para anon e authenticated e verdadeiro para service_role, codigo da funcao inalterado. A migration da Fase B tambem foi executada: `consume_student_owl_help` restrita a service_role; funcoes de trigger mantem o EXECUTE padrao, sem efeito (nao podem ser chamadas diretamente).

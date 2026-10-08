@@ -1,3 +1,4 @@
+import { releasedAttemptIds } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -5,6 +6,7 @@ import { logSystemError } from "@/app/lib/server/auditLogger";
 
 type EarningRow = {
   id: string;
+  attempt_id: string;
   simulado_id: string;
   jornada_id: string | null;
   attempt_number: number;
@@ -31,7 +33,7 @@ export async function GET(request: Request) {
     .from("topcoin_earnings")
     .select(
       `
-        id,
+        id, attempt_id,
         simulado_id,
         jornada_id,
         attempt_number,
@@ -49,7 +51,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: "Não foi possível carregar seus TopCoins." }, { status: 500 });
   }
 
-  const rows = (data || []) as unknown as EarningRow[];
+  const allRows = (data || []) as unknown as EarningRow[];
+  let releasedIds: Set<string>;
+  try { releasedIds = await releasedAttemptIds(supabase, student.id, allRows.map((row) => row.attempt_id)); }
+  catch (error) { void logSystemError({ source: "api.student.topcoins.release", error, request }); return NextResponse.json({ ok: false, message: "Falha ao consultar disponibilidade de TopCoins." }, { status: 500 }); }
+  const rows = allRows.filter((row) => releasedIds.has(row.attempt_id));
 
   const entries = rows.map((row) => ({
     id: row.id,

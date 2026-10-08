@@ -1,3 +1,4 @@
+import { parseContextualSettings } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdmin } from "@/lib/server/authGuard";
@@ -133,6 +134,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    let contextualSettings;
+    try { contextualSettings = parseContextualSettings(body); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Configuracao invalida." }, { status: 400 }); }
+    if (body.result_policy !== undefined && body.result_policy !== "released" && body.result_policy !== "blocked") return NextResponse.json({ ok: false, message: "Politica de resultado invalida." }, { status: 400 });
     const maxAttempts = body.max_attempts === undefined ? 3 : body.max_attempts;
     if (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 2147483647) return NextResponse.json({ ok: false, message: "Tentativas permitidas deve ser um inteiro maior ou igual a 1." }, { status: 400 });
     const title = String(body.title || "").trim();
@@ -205,6 +209,8 @@ export async function POST(request: Request) {
       .insert({
         title,
         max_attempts: maxAttempts,
+        ...contextualSettings,
+        result_policy: body.result_policy ?? "released",
         description,
         status: "draft",
         scope_type: scope.scope_type,

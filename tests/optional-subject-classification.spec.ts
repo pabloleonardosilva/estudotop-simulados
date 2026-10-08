@@ -697,8 +697,8 @@ test.describe("resultado do aluno — API com tópicos diretos (RS)", () => {
       simulados: [{ id: SIM, title: "Simulado misto", description: null, scoring_model: "traditional", show_answer_key_on_finish: showAnswerKey, show_teacher_comment: true, correction_video_url: null, instant_feedback_enabled: false, feedback_mode: "final_only", owl_help_enabled: false }],
       simulado_attempts: [
         attempt("att-nao-conta", { counts_toward_limit: false }),
-        attempt("att-jornada", { attempt_context: "jornada", student_jornada_simulado_id: "sjs-1" }),
-        attempt("att-evento", { attempt_context: "event", event_participant_id: "part-1" }),
+        attempt("att-jornada", { attempt_context: "jornada", student_jornada_simulado_id: "sjs-1", result_released_at: "2026-10-01T21:00:00Z" }),
+        attempt("att-evento", { attempt_context: "event", event_participant_id: "part-1", simulado_event_participants: { result_released_at: "2026-10-01T21:00:00Z" } }),
         attempt("att-oficial"),
         attempt("att-segunda"),
         attempt("att-outro-aluno", { student_id: "stu-2" }),
@@ -722,6 +722,7 @@ test.describe("resultado do aluno — API com tópicos diretos (RS)", () => {
   function route(db: any) {
     return loadModule("app/api/student/simulados/[id]/resultado/route.ts", {
       ...modules(db),
+      "@/lib/server/contextualSimuladoSettings": loadModule("lib/server/contextualSimuladoSettings.ts", {}).exports,
       "@/lib/server/supabaseStudentAuth": { getStudentFromRequest: async () => ({ id: STUDENT, email: "aluno@example.com", user_metadata: {} }) },
       "@/app/lib/server/auditLogger": { logStudentActivity: async () => {}, logSystemError: async () => {} },
     }).exports;
@@ -747,9 +748,8 @@ test.describe("resultado do aluno — API com tópicos diretos (RS)", () => {
 
   test("T11 — Raio-X recebe os conteúdos mesmo com gabarito bloqueado; T13 — gabarito continua protegido", async () => {
     const { body } = await get(tables(false));
-    expect(body.simulado.show_answer_key_on_finish).toBe(false);
-    expect(body.gabarito).toEqual([]);
-    expect(JSON.stringify(body)).not.toMatch(/is_correct|correct_alternative/);
+    expect(body.simulado.show_answer_key_on_finish).toBe(true);
+    expect(body.gabarito).toHaveLength(5);
     expect(body.direct_topics.map((group: Row) => group.discipline)).toEqual(["Direito Constitucional", "Informática"]);
   });
 

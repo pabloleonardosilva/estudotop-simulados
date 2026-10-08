@@ -1,3 +1,5 @@
+import { parseContextualSettings, reconcileJornadaResultReleases } from "@/lib/server/contextualSimuladoSettings";
+import { resyncTopCoinEarnings } from "@/app/lib/server/topcoinsSync";
 import { NextResponse, after } from "next/server";
 import { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -265,7 +267,7 @@ export async function GET(
         jornada_simulados(
           id,
           simulado_id,
-          order_number,
+          order_number, owl_help_enabled_override,owl_help_limit_override,
           created_at,
           simulados:simulado_id(id, title, status, question_count)
         ),
@@ -331,7 +333,7 @@ export async function PATCH(
 
     const { data: existing, error: fetchError } = await supabase
       .from("jornadas")
-      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, exam_date, effective_end_date")
+      .select("id, title, status, category, planned_simulados_count, duration_days, duration_months, exam_date, effective_end_date, feedback_mode,navigation_override,owl_help_enabled,owl_help_limit,result_policy")
       .eq("id", id)
       .single();
 
@@ -340,6 +342,13 @@ export async function PATCH(
     }
 
     const updates: Record<string, unknown> = {};
+    if (["feedback_mode","navigation_override","owl_help_enabled","owl_help_limit"].some((key) => body[key] !== undefined)) {
+      try { Object.assign(updates, parseContextualSettings(body, existing)); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Configuracao invalida." }, { status: 400 }); }
+    }
+    if (body.result_policy !== undefined) {
+      if (body.result_policy !== "released" && body.result_policy !== "blocked") return NextResponse.json({ ok: false, message: "Politica de resultado invalida." }, { status: 400 });
+      updates.result_policy = body.result_policy;
+    }
 
     if (body.action === "publish") {
       if (existing.status !== "draft") {
@@ -512,6 +521,13 @@ export async function PATCH(
     if (updateError) {
       return NextResponse.json({ ok: false, message: updateError.message }, { status: 400 });
     }
+    if (!updateError && updates.result_policy === "released") {
+      const { data: links, error: linkError } = await supabase.from("student_jornadas").select("student_id,student_jornada_simulados(id,simulado_id)").eq("jornada_id", id);
+      if (linkError) throw linkError;
+      await reconcileJornadaResultReleases(supabase, (links || []).flatMap((enrollment) => (enrollment.student_jornada_simulados || []).map((item) => item.id)));
+      for (const enrollment of links || []) for (const item of enrollment.student_jornada_simulados || []) await resyncTopCoinEarnings(supabase, enrollment.student_id, item.simulado_id);
+    }
+
 
     // Alterar a duração recalcula a validade (expires_at) das matrículas ativas:
     // expires_at = started_at + nova duração. Vem antes do cronograma, que

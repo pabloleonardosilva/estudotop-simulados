@@ -1,3 +1,4 @@
+import { resolveContextualSettings } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -182,7 +183,9 @@ export async function GET(request: Request) {
     attemptsBySimulado.set(row.simulado_id, list);
   }
 
-  const items = visibleSimulados.map(({ simulado, context }) => {
+  try {
+  const items = await Promise.all(visibleSimulados.map(async ({ simulado, context }) => {
+    const settings = context ? await resolveContextualSettings(supabase, student.id, simulado.id, context.type === "event" ? { type: "event", eventId: context.eventId!, eventParticipantId: context.id } : { type: "jornada", studentJornadaSimuladoId: context.id }, (simulado as unknown as { navigation_type?: string }).navigation_type) : {};
     const allAttempts = (attemptsBySimulado.get(simulado.id) || []).filter((attempt) => context?.type === "event"
       ? attempt.attempt_context === "event" && attempt.event_id === context.eventId && attempt.event_participant_id === context.id
       : context?.type === "jornada"
@@ -232,8 +235,10 @@ export async function GET(request: Request) {
       event_id: context?.eventId ?? null,
       event_name: context?.eventName ?? null,
       event_result_released: context?.eventResultReleased ?? null,
+      ...settings,
     };
-  });
+  }));
 
   return NextResponse.json({ ok: true, simulados: items });
+  } catch (error) { void logSystemError({ source: "api.student.simulados_list.settings", error, request }); return NextResponse.json({ ok: false, message: "Configuracao contextual indisponivel." }, { status: 500 }); }
 }

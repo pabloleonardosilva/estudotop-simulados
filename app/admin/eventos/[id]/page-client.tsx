@@ -1,4 +1,6 @@
 "use client";
+import ContextSettingsFields, { type ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
+
 import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 
@@ -16,7 +18,7 @@ import BannerPositionModal from "../BannerPositionModal";
 import ProfessorAssignmentPicker from "./ProfessorAssignmentPicker";
 import ReminderButton, { type ReminderInfo } from "./ReminderButton";
 
-type EventData = { max_attempts: number;
+type EventData = ContextSettingsForm & { max_attempts: number;
   id: string;
   name: string;
   code: string;
@@ -51,7 +53,7 @@ type Participant = {
 };
 type EligibleStudent = { id: string; name: string; email: string; status: string };
 
-type EditForm = { maxAttempts: number;
+type EditForm = ContextSettingsForm & { maxAttempts: number;
   name: string;
   simuladoId: string;
   startsAt: string;
@@ -85,6 +87,7 @@ function formFromEvent(event: EventData): EditForm {
     startsAt: toDateTimeLocal(new Date(event.starts_at)),
     endsAt: toDateTimeLocal(new Date(event.ends_at)),
     maxAttempts: event.max_attempts,
+    feedback_mode: event.feedback_mode, navigation_override: event.navigation_override, owl_help_enabled: event.owl_help_enabled, owl_help_limit: event.owl_help_limit,
     durationMinutes: event.duration_minutes,
     resultPolicy: event.result_policy,
     professorIds: event.simulado_event_professors.map((item) => item.professor_id),
@@ -345,6 +348,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
       simulado_id: form.simuladoId || null,
       starts_at: startDate.toISOString(),
       ends_at: endDate.toISOString(),
+      feedback_mode: form.feedback_mode, navigation_override: form.navigation_override, owl_help_enabled: form.owl_help_enabled, owl_help_limit: form.owl_help_limit,
       max_attempts: form.maxAttempts, duration_minutes: form.durationMinutes,
       result_policy: form.resultPolicy,
       professor_ids: form.professorIds,
@@ -510,6 +514,7 @@ export default function EventoAdminDetailClient({ id }: { id: string }) {
               <SearchableSelect dark label="Simulado" value={form.simuladoId} onChange={(value) => updateForm("simuladoId", value)} options={simulados.map((item) => ({ value: item.id, label: item.title }))} placeholder="Selecione um simulado" />
               <PremiumInput variant="jornada" label="Início — horário de Brasília" type="datetime-local" value={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleStartChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={form.endsAt} min={form.startsAt} onChange={(change: ChangeEvent<HTMLInputElement>) => handleEndChange(change.target.value)} onClick={openDateTimePicker} className="[color-scheme:dark] cursor-pointer" required />
+              <div className="md:col-span-2"><ContextSettingsFields value={form} onChange={(patch) => setForm({ ...form, ...patch })} /></div>
               <PremiumInput variant="jornada" label="Tentativas permitidas" type="number" min={1} step={1} required value={form.maxAttempts} onChange={(e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, maxAttempts: Number(e.target.value) })} />
               <PremiumInput variant="jornada" label={`Duração em minutos (${formatDurationHours(form.durationMinutes)})`} type="number" min={1} step={1} value={form.durationMinutes} onChange={(change: ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(change.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSimpleSelect dark label="Resultados" value={form.resultPolicy} onChange={(value) => updateForm("resultPolicy", value as EditForm["resultPolicy"])} options={[["blocked", "Bloqueados até a liberação"], ["released", "Liberados após a conclusão"]]} />

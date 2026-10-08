@@ -1,3 +1,4 @@
+import { isAttemptResultReleased } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -239,6 +240,7 @@ export async function GET(
     }
   }
 
+  if (!await isAttemptResultReleased(supabase, attempt.id, student.id)) return NextResponse.json({ ok: false, code: "JORNADA_RESULT_BLOCKED", message: "Seu resultado aguarda liberacao." }, { status: 403 });
   const resultSimuladoId = attempt.simulado_id;
 
   const { data: simulado, error: simuladoError } = await supabase
@@ -311,10 +313,13 @@ export async function GET(
   // Média geral
   const { data: averageData } = await supabase
     .from("simulado_results")
-    .select("display_percentage")
+    .select("display_percentage,attempt:attempt_id(status,event_participant_id,student_jornada_simulado_id,result_released_at,participant:event_participant_id(result_released_at))")
     .eq("simulado_id", resultSimuladoId);
 
-  const percentages = (averageData || []).map((row) => Number(row.display_percentage || 0));
+  const percentages = (averageData || []).filter((row) => {
+    const attempt = row.attempt as unknown as { status: string; event_participant_id: string | null; student_jornada_simulado_id: string | null; result_released_at: string | null; participant: { result_released_at: string | null } | null };
+    return attempt?.status === "completed" && (attempt.event_participant_id ? Boolean(attempt.participant?.result_released_at) : !attempt.student_jornada_simulado_id || Boolean(attempt.result_released_at));
+  }).map((row) => Number(row.display_percentage || 0));
   const average =
     percentages.length > 0
       ? percentages.reduce((acc, value) => acc + value, 0) / percentages.length
@@ -376,7 +381,7 @@ export async function GET(
     snapshotBySQ.set(entry.simulado_question_id, entry);
   }
 
-  const showAnswerKey = Boolean(simulado.show_answer_key_on_finish) || Boolean(attempt.event_participant_id && eventResultReleased);
+  const showAnswerKey = true;
 
   const gabarito = showAnswerKey
     ? sqRows.map((row) => {

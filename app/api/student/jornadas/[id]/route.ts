@@ -1,3 +1,4 @@
+import { releasedAttemptIds } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -83,7 +84,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         status,
         duration_months,
         duration_days,
-        max_attempts,
+        max_attempts, owl_help_enabled, owl_help_limit,
         planned_simulados_count,
         exam_name,
         exam_position,
@@ -104,6 +105,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         released_at,
         completed_at,
         simulado_id,
+        jornada_simulados:jornada_simulado_id(owl_help_enabled_override,owl_help_limit_override),
         simulados:simulado_id(
           id,
           title,
@@ -177,9 +179,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ ok: false, message: "Não foi possível carregar os resultados da Jornada." }, { status: 500 });
   }
 
+  const releasedIds = await releasedAttemptIds(supabase, student.id, completedAttemptIds);
   const resultsByAttempt = new Map<string, ResultRow>();
   for (const result of ((results || []) as ResultRow[])) {
-    resultsByAttempt.set(result.attempt_id, result);
+    if (releasedIds.has(result.attempt_id)) resultsByAttempt.set(result.attempt_id, result);
   }
 
   const attemptsByScheduleItem = new Map<string, AttemptRow[]>();
@@ -236,8 +239,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       time_label: formatTime(sim.time_limit_minutes),
       time_limit_minutes: sim.time_limit_minutes ?? null,
       attempt_limit: attemptLimit,
-      owl_help_enabled: Boolean(sim.owl_help_enabled),
-      owl_help_limit: sim.owl_help_limit ?? null,
+      owl_help_enabled: row.jornada_simulados?.owl_help_enabled_override ?? (data.jornadas as unknown as { owl_help_enabled: boolean })?.owl_help_enabled ?? false,
+      owl_help_limit: row.jornada_simulados?.owl_help_enabled_override != null ? row.jornada_simulados.owl_help_limit_override : (data.jornadas as unknown as { owl_help_limit: number | null })?.owl_help_limit ?? null,
       attempts_used: limitAttempts.length,
       attempts_completed: completedAttempts.length,
       attempts_incomplete: incompleteAttempts.length,

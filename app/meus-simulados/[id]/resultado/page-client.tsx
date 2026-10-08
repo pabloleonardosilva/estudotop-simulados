@@ -469,7 +469,7 @@ export default function ResultadoClient({
       // Evento tem prioridade máxima: se bloqueado, encerra imediatamente o
       // countdown de preparação do feedback — ele não deve continuar
       // rodando/sugerindo que o resultado está prestes a aparecer.
-      if (json.code === "EVENT_RESULT_BLOCKED") setFeedbackCountdown(0);
+      if ((json.code === "EVENT_RESULT_BLOCKED" || json.code === "JORNADA_RESULT_BLOCKED")) setFeedbackCountdown(0);
       setLoading(false);
       return;
     }
@@ -496,7 +496,7 @@ export default function ResultadoClient({
   // Evento com resultado bloqueado: a API já recusou entregar nota, gabarito,
   // desempenho por assunto e revisão das questões (nenhum dado sensível chega
   // até aqui). Tela própria, neutra — não é um erro, é um estado de espera.
-  if (errorCode === "EVENT_RESULT_BLOCKED") {
+  if ((errorCode === "EVENT_RESULT_BLOCKED" || errorCode === "JORNADA_RESULT_BLOCKED")) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-4">
         {preparingOverlay}
@@ -504,8 +504,8 @@ export default function ResultadoClient({
           <Clock3 className="mx-auto text-amber-500" size={32} />
           <h1 className="mt-4 text-base font-semibold text-slate-900">Resultado aguardando liberação</h1>
           <p className="mt-2 text-sm text-slate-500">{error || "Seu resultado foi calculado e aguarda liberação pelo professor."}</p>
-          <Link href={eventId ? `/meus-eventos/${eventId}` : "/meus-eventos"} className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <ArrowLeft size={15} /> Voltar para Meus Eventos
+          <Link href={eventId ? `/meus-eventos/${eventId}` : studentJornadaId ? `/minhas-jornadas/${studentJornadaId}` : "/meus-resultados"} className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <ArrowLeft size={15} /> {eventId ? "Voltar para Meus Eventos" : "Voltar para a Jornada"}
           </Link>
         </div>
       </main>

@@ -57,7 +57,16 @@ async function getData(id: string) {
     .single();
 
   if (error || !simulado) return null;
-  return simulado;
+  const [{ data: links, error: linksError }, { data: events, error: eventsError }] = await Promise.all([
+    supabase.from("jornada_simulados").select("id,owl_help_enabled_override,owl_help_limit_override,jornadas:jornada_id(id,title,feedback_mode,navigation_override,owl_help_enabled,owl_help_limit,result_policy)").eq("simulado_id", id),
+    supabase.from("simulado_events").select("id,name,feedback_mode,navigation_override,owl_help_enabled,owl_help_limit,result_policy").eq("simulado_id", id),
+  ]);
+  if (linksError || eventsError) throw new Error("Falha ao carregar contextos do preview.");
+  const preview_contexts = [
+    ...(links || []).map((link) => { const jornada = link.jornadas as unknown as { title: string; feedback_mode: string; navigation_override: string | null; owl_help_enabled: boolean; owl_help_limit: number | null; result_policy: string }; return { ...jornada, id: "jornada:" + link.id, name: "Jornada: " + jornada.title, owl_help_enabled: link.owl_help_enabled_override ?? jornada.owl_help_enabled, owl_help_limit: link.owl_help_enabled_override !== null ? link.owl_help_limit_override : jornada.owl_help_limit }; }),
+    ...(events || []).map((event) => ({ ...event, id: "event:" + event.id, name: "Evento: " + event.name })),
+  ];
+  return { ...simulado, preview_contexts };
 }
 
 export default async function PreviewSimuladoPage({

@@ -65,6 +65,18 @@ async function hasAnyAttempt(
   return Number(count || 0) > 0;
 }
 
+type SubmissionOrder = { submitted_at: string | null; created_at: string };
+
+// Mesma ordem usada pela rota de resultado para escolher o resultado oficial.
+function compareSubmission(a: SubmissionOrder, b: SubmissionOrder) {
+  if (a.submitted_at !== b.submitted_at) {
+    if (!a.submitted_at) return 1;
+    if (!b.submitted_at) return -1;
+    return Date.parse(a.submitted_at) - Date.parse(b.submitted_at);
+  }
+  return Date.parse(a.created_at) - Date.parse(b.created_at);
+}
+
 async function setAttemptsCount(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   studentId: string,
@@ -74,7 +86,7 @@ async function setAttemptsCount(
 ) {
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
-    .select("id, attempt_number, counts_toward_limit, created_at")
+    .select("id, attempt_number, counts_toward_limit, created_at, status, submitted_at")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
     .eq("student_jornada_simulado_id", studentJornadaSimuladoId)
@@ -86,7 +98,19 @@ async function setAttemptsCount(
   const existing = attempts || [];
   const existingCount = existing.length;
 
-  if (targetCount > existingCount) {
+  // O ajuste de consumo nunca descontabiliza o resultado oficial (primeira
+  // completed + counts_toward_limit, na ordem da rota de resultado) nem
+  // contabiliza uma conclusão anterior a ele, que o substituiria. Essas
+  // conclusões só ficam fora da contagem.
+  const official = existing
+    .filter((row) => row.status === "completed" && row.counts_toward_limit)
+    .sort(compareSubmission)[0] || null;
+  const precedingCompleted: string[] = official
+    ? existing.filter((row) => row.id !== official.id && row.status === "completed" && compareSubmission(row, official) < 0).map((row) => row.id)
+    : [];
+  const availableCount = existingCount - precedingCompleted.length;
+
+  if (targetCount > availableCount) {
     const { count: questionCount, error: questionCountError } = await supabase
       .from("simulado_questions")
       .select("id", { count: "exact", head: true })
@@ -100,7 +124,7 @@ async function setAttemptsCount(
       return Number.isFinite(value) && value > max ? value : max;
     }, existingCount);
 
-    const placeholders = Array.from({ length: targetCount - existingCount }, (_, index) => ({
+    const placeholders = Array.from({ length: targetCount - availableCount }, (_, index) => ({
       simulado_id: simuladoId,
       student_id: studentId,
       attempt_number: maxAttemptNumber + index + 1,
@@ -138,7 +162,14 @@ async function setAttemptsCount(
   if (freshError) throw new Error(freshError.message);
 
   const fresh = freshAttempts || [];
-  const shouldCount = new Set(fresh.slice(0, targetCount).map((row: any) => row.id));
+  const prioritized = official
+    ? [
+      ...fresh.filter((row) => row.id === official.id),
+      ...fresh.filter((row) => row.id !== official.id && !precedingCompleted.includes(row.id)),
+      ...fresh.filter((row) => precedingCompleted.includes(row.id)),
+    ]
+    : fresh;
+  const shouldCount = new Set(prioritized.slice(0, targetCount).map((row: any) => row.id));
   const idsToTrue = fresh.filter((row: any) => shouldCount.has(row.id)).map((row: any) => row.id);
   const idsToFalse = fresh.filter((row: any) => !shouldCount.has(row.id)).map((row: any) => row.id);
 

@@ -1,3 +1,4 @@
+import { resolveContextualSettings } from "@/lib/server/contextualSimuladoSettings";
 import { resolveAttemptLimit } from "@/lib/server/attemptLimit";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
@@ -135,6 +136,7 @@ export async function POST(
         show_answer_key_on_finish,
         instant_feedback_enabled,
         feedback_mode,
+        navigation_type,
         show_teacher_comment,
         correction_video_url,
         shuffle_questions,
@@ -301,6 +303,9 @@ export async function POST(
     );
   }
 
+  let effectiveSettings;
+  try { effectiveSettings = await resolveContextualSettings(supabase, student.id, simuladoId, attemptContext, simulado.navigation_type); }
+  catch { return NextResponse.json({ ok: false, message: "Configuracao contextual indisponivel." }, { status: 500 }); }
   const attemptNumber = contextualAttempts.length + 1;
 
   // Carrega questões do simulado com alternativas
@@ -380,7 +385,7 @@ export async function POST(
       points: row.points,
       status: row.status,
       statement: q?.statement || null,
-      explanation_text: q?.explanation_text || null,
+      explanation_text: null,
       question_type: q?.question_type || null,
       exam_board: q?.exam_boards?.name || null,
       subject: q?.subjects?.name || null,
@@ -398,26 +403,22 @@ export async function POST(
     ? new Date(startedAt.getTime() + simulado.time_limit_minutes * 60_000)
     : null;
 
-  const feedbackMode = getFeedbackMode(simulado);
   const settingsSnapshot = {
     time_limit_minutes: simulado.time_limit_minutes,
     attempt_limit: attemptLimit,
     attempt_count_threshold_percent: simulado.attempt_count_threshold_percent,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
-    instant_feedback_enabled: feedbackMode === "instant" || Boolean(simulado.instant_feedback_enabled),
-    feedback_mode: feedbackMode,
     show_teacher_comment: simulado.show_teacher_comment,
-    correction_video_url: simulado.correction_video_url,
+    correction_video_url: null,
     shuffle_questions: simulado.shuffle_questions,
     shuffle_alternatives: simulado.shuffle_alternatives,
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
-    owl_help_enabled: Boolean(simulado.owl_help_enabled),
-    owl_help_limit: simulado.owl_help_limit ?? null,
     anti_tab_switch_enabled: simulado.anti_tab_switch_enabled !== false,
     anti_window_blur_enabled: simulado.anti_window_blur_enabled !== false,
     event_result_policy: eventResultPolicy,
+    ...effectiveSettings,
   };
 
   const { data: created, error: createError } = await supabase
@@ -547,7 +548,7 @@ async function buildAttemptResponse(
       points: row?.points || 1,
       status: row?.status || "active",
       statement: q?.statement || null,
-      explanation_text: q?.explanation_text || null,
+      explanation_text: null,
       question_type: q?.question_type || null,
       exam_board: q?.exam_boards?.name || null,
       subject: q?.subjects?.name || null,
@@ -564,11 +565,18 @@ async function buildAttemptResponse(
     )
     .eq("attempt_id", attempt.id as string);
 
+  const snapshot = attempt.settings_snapshot as Record<string, unknown> | null;
+  const effectiveInstant = snapshot?.feedback_mode === "instant" || snapshot?.instant_feedback_enabled === true;
+  if (effectiveInstant) for (const question of orderedPayload) {
+    if ((answers || []).some((answer) => answer.simulado_question_id === question.simulado_question_id && answer.is_locked) && snapshot?.show_teacher_comment !== false) {
+      question.explanation_text = rowsById.get(question.simulado_question_id)?.questions?.explanation_text || null;
+    }
+  }
   return NextResponse.json({
     ok: true,
     attempt: sanitizeAttempt(attempt),
     questions: orderedPayload,
-    answers: answers || [],
+    answers: (answers || []).map((answer) => ({ ...answer, is_correct: effectiveInstant && answer.is_locked ? answer.is_correct : null })),
     simulado: buildSimuladoSnapshot(simulado, attempt.settings_snapshot as Record<string, unknown> | null, attemptLimit),
   });
 }
@@ -595,7 +603,8 @@ function sanitizeAttempt(attempt: Record<string, unknown>) {
 }
 
 function buildSimuladoSnapshot(simulado: Record<string, unknown>, attemptSettingsSnapshot: Record<string, unknown> | null | undefined, attemptLimit: number | null) {
-  const feedbackMode = getFeedbackMode(simulado);
+  const frozen = { ...simulado, ...attemptSettingsSnapshot };
+  const feedbackMode = getFeedbackMode(frozen);
   return {
     id: simulado.id,
     title: simulado.title,
@@ -603,14 +612,15 @@ function buildSimuladoSnapshot(simulado: Record<string, unknown>, attemptSetting
     attempt_limit: attemptLimit,
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
-    instant_feedback_enabled: feedbackMode === "instant" || Boolean(simulado.instant_feedback_enabled),
+    instant_feedback_enabled: feedbackMode === "instant" || Boolean(frozen.instant_feedback_enabled),
     feedback_mode: feedbackMode,
-    show_teacher_comment: simulado.show_teacher_comment,
-    correction_video_url: simulado.correction_video_url,
+    navigation_type: attemptSettingsSnapshot?.navigation_type ?? (feedbackMode === "instant" ? "closed" : "open"),
+    show_teacher_comment: frozen.show_teacher_comment,
+    correction_video_url: null,
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model,
-    owl_help_enabled: Boolean(simulado.owl_help_enabled),
-    owl_help_limit: simulado.owl_help_limit ?? null,
+    owl_help_enabled: Boolean(frozen.owl_help_enabled),
+    owl_help_limit: frozen.owl_help_limit ?? null,
     anti_tab_switch_enabled: booleanFromSnapshotOrSimulado(attemptSettingsSnapshot, simulado, "anti_tab_switch_enabled"),
     anti_window_blur_enabled: booleanFromSnapshotOrSimulado(attemptSettingsSnapshot, simulado, "anti_window_blur_enabled"),
   };

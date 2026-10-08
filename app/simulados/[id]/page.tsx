@@ -27,7 +27,6 @@ import SimuladoDetailActions from "./SimuladoDetailActions";
 import {
   difficultyLabel,
   formatDateTime,
-  resolveOwlHelpLimit,
   scoringLabel,
   statusClass,
   statusLabel,
@@ -428,9 +427,9 @@ export default async function SimuladoDetailPage({
             <div className="space-y-2.5 p-3">
               <Summary label="Questões" value={simulado.question_count ? String(simulado.question_count) : String(questions.length || "Não definido")} icon={<Target size={15} />} />
               <Summary label="Tempo" value={timeLimitLabel(simulado.time_limit_minutes)} icon={<Clock3 size={15} />} />
+              <Summary label="Navegação original" value={simulado.navigation_type === "closed" ? "Fechada" : "Aberta"} icon={<FileQuestion size={15} />} />
               <Summary label="Pontuação" value={scoringLabel(simulado.scoring_model)} icon={<Trophy size={15} />} />
               <Summary label="Status" value={statusLabel(simulado.status)} icon={<FileQuestion size={15} />} />
-              <Summary label="Ajuda da Coruja" value={(simulado as any).owl_help_enabled ? `${resolveOwlHelpLimit((simulado as any).owl_help_limit, simulado.question_count || questions.length)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean((simulado as any).owl_help_enabled)} />
               <Summary label="ALT+TAB / guias" value={(simulado as any).anti_tab_switch_enabled === false ? "Inativo" : "Ativo"} icon={<ShieldCheck size={15} />} accent={(simulado as any).anti_tab_switch_enabled !== false} />
               <Summary label="Janelas lado a lado" value={(simulado as any).anti_window_blur_enabled === false ? "Inativo" : "Ativo"} icon={<ShieldCheck size={15} />} accent={(simulado as any).anti_window_blur_enabled !== false} />
             </div>

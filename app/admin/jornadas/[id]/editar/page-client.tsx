@@ -1,4 +1,6 @@
 "use client";
+import ContextSettingsFields from "@/app/simulados/components/ContextSettingsFields";
+
 import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -30,6 +32,7 @@ import PageBackground from "../../../../components/ui/PageBackground";
 import PageHeader from "../../../../components/ui/PageHeader";
 import PremiumButton from "../../../../components/ui/PremiumButton";
 import PremiumCard from "../../../../components/ui/PremiumCard";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
 import PremiumInput from "../../../../components/ui/PremiumInput";
 import PremiumLoadingOverlay from "../../../../components/ui/PremiumLoadingOverlay";
 import PremiumModal from "../../../../components/ui/PremiumModal";
@@ -85,6 +88,7 @@ export default function EditarJornadaClient({
     category: (jornada.category || "administrativo") as JornadaCategory,
     card_image_id: jornada.card_image_id || null,
     max_attempts: jornada.max_attempts,
+    feedback_mode: jornada.feedback_mode, navigation_override: jornada.navigation_override, owl_help_enabled: jornada.owl_help_enabled, owl_help_limit: jornada.owl_help_limit, result_policy: jornada.result_policy,
     duration_days: jornada.duration_days || jornada.duration_months * 30,
     planned_simulados_count: jornada.planned_simulados_count || Math.max(1, initialSimulados.length),
     exam_date: jornada.exam_date || "",
@@ -154,6 +158,7 @@ export default function EditarJornadaClient({
           category: form.category,
           card_image_id: form.card_image_id,
           max_attempts: Number(form.max_attempts),
+          feedback_mode: form.feedback_mode, navigation_override: form.navigation_override, owl_help_enabled: form.owl_help_enabled, owl_help_limit: form.owl_help_limit, result_policy: form.result_policy,
           duration_days: Number(form.duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
           exam_date: form.exam_date || null,
@@ -168,6 +173,17 @@ export default function EditarJornadaClient({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveOwlOverride(js: JornadaSimulado, enabled: boolean | null, limit: number | null) {
+    setSaving(true);
+    try {
+      const response = await adminFetch(`/api/admin/jornadas/${jornada.id}/simulados`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jornada_simulado_id: js.id, owl_help_enabled_override: enabled, owl_help_limit_override: limit }) });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.message);
+      setSimulados((rows) => rows.map((row) => row.id === js.id ? { ...row, ...json.jornada_simulado } : row));
+    } catch (error) { setFeedback({ tone: "error", title: "Falha ao salvar Coruja", message: error instanceof Error ? error.message : "Falha ao salvar." }); }
+    finally { setSaving(false); }
   }
 
   async function saveOrder() {
@@ -465,6 +481,7 @@ export default function EditarJornadaClient({
               </div>
 
               <div className="grid gap-5 md:grid-cols-3">
+                <div className="md:col-span-2"><ContextSettingsFields jornada value={form} onChange={(patch) => setForm((previous) => ({ ...previous, ...patch }))} /></div>
                 <div><PremiumInput label="Tentativas permitidas" type="number" min={1} step={1} required value={form.max_attempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm((previous) => ({ ...previous, max_attempts: Number(event.target.value) }))} /><p className="mt-2 text-xs text-slate-500">Quantidade permitida em cada Simulado desta Jornada.</p></div>
                 <PremiumInput
                   variant="jornada"
@@ -577,6 +594,10 @@ export default function EditarJornadaClient({
                         <p className="text-xs text-slate-500">
                           {(js.simulados as any)?.question_count ?? 0} questões
                         </p>
+                      </div>
+                      <div className="max-w-xs" onPointerDown={(event) => event.stopPropagation()}>
+                        <PremiumSimpleSelect dark label="Coruja efetiva neste Simulado" disabled={saving} value={js.owl_help_enabled_override === null ? "inherit" : js.owl_help_enabled_override ? "enabled" : "disabled"} options={[["inherit", "Padrão da Jornada: " + (form.owl_help_enabled ? form.owl_help_limit + " ajuda(s)" : "desabilitada")], ["disabled", "Exceção: desabilitada"], ["enabled", "Exceção: habilitada"]]} onChange={(mode) => { void saveOwlOverride(js, mode === "inherit" ? null : mode === "enabled", mode === "enabled" ? js.owl_help_limit_override ?? 1 : null); }} />
+                        {js.owl_help_enabled_override === true && <PremiumInput variant="jornada" label="Ajudas por tentativa neste vínculo" type="number" min={1} step={1} disabled={saving} defaultValue={js.owl_help_limit_override ?? 1} key={js.id + ":" + js.owl_help_limit_override} onBlur={(event: React.FocusEvent<HTMLInputElement>) => { const limit = Number(event.target.value); if (limit !== js.owl_help_limit_override) void saveOwlOverride(js, true, limit); }} />}
                       </div>
                       <button
                         type="button"

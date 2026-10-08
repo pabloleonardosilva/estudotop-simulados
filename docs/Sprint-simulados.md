@@ -1299,3 +1299,134 @@ A auditoria pré-migration desta engine (leitura integral da migration + das 4 r
 ### Documentação — reconciliação concluída
 
 A auditoria também confirmou que a reconciliação documental da Sprint anterior havia corrigido apenas 2 dos 5 locais de `docs/modules/MASTER_SIMULADOS.md` que ainda afirmavam "segunda ocorrência desclassifica". Os 3 locais restantes (seção 3.24 completa, item 6 da tela de regras, checklist da seção 10) foram corrigidos nesta etapa — ver "Documentação reconciliada" acima, atualizado.
+
+## 02/10/2026 - Fase B: configuracoes contextuais (implementacao local, migration pendente)
+
+Inicio: main, HEAD 1e0bb6d59181f44696e501314c71b2a653da4a4a, worktree limpa. Sem commit, push, deploy ou escrita remota nesta fase.
+
+Simulado conserva navegacao original, questoes, correcao, pontuacao, tempo, embaralhamento, comentario editorial e antifraude. Os controles administrativos de feedback, resultado, gabarito e Coruja foram retirados. Colunas legadas permanecem; PATCH do Simulado deixa de grava-las. Duplicacao conserva a navegacao original e os valores legados para compatibilidade.
+
+Jornada: feedback_mode, navigation_override, result_policy, owl_help_enabled e owl_help_limit. Evento: mesmas configuracoes de execucao, reutilizando result_policy e as liberacoes individuais existentes. A navegacao efetiva segue: feedback imediato obriga closed; depois navigation_override do contexto; depois navigation_type do Simulado. Selecionar imediato fecha somente o contexto. Final/open e final/closed sao permitidos. O servidor confirma e trava respostas fechadas na ordem de question_order, ignorando questoes anuladas. Aberta continua editavel.
+
+Coruja: jornada_simulados.owl_help_enabled_override e owl_help_limit_override permitem herdar o padrao (null/null), desabilitar (false/null) ou habilitar com limite positivo. Cada vinculo existente recebe sua regra legada, inclusive o fallback de 10% sobre as questoes reais. Eventos preservam sua regra legada. Novos contextos iniciam sem Coruja; UI sugere 1 ao habilitar. Novas tentativas registram feedback, navegacao e Coruja no settings_snapshot; retomadas usam o snapshot, sem reescrever o historico. consume_student_owl_help reutiliza lock_student_attempt e consome sob lock de linha; repeticao da mesma ajuda devolve o dado sem nova cobranca. Conteudo pedagogico e selecao de duas alternativas erradas preservados.
+
+Jornada: simulado_attempts.result_released_at registra autorizacao por tentativa, separado do released_at do cronograma. Backfill autoriza conclusoes historicas. Trigger preserva autorizacao concedida, registra conclusao sob politica released e libera conclusoes pendentes quando o Admin salva released. Alterar para blocked afeta futuras conclusoes, sem revogar autorizacoes. O backfill do novo marcador passa pelos triggers existentes de updated_at; nenhum snapshot, resposta ou resultado e reescrito. Eventos mantem seus participantes, representatividade e liberacao definitiva.
+
+Resultado liberado inclui revisao e gabarito, inclusive historicos antes ocultos. Bloqueado nao entrega nota, correcao, comentarios ou PDF de revisao. Inicio nunca entrega explanation_text; retomada entrega is_correct e comentarios somente para respostas confirmadas no feedback imediato. O feedback individual imediato e uma excecao aprovada durante a execucao, mesmo se a nota final estiver bloqueada. Video de correcao fica restrito ao resultado. Resumos da Jornada, dashboard, lista, notificacoes e TopCoins respeitam liberacao; metadados administrativos de reprocessamento permanecem armazenados.
+
+TopCoins: formula e counts_toward_limit preservados. Numeracao continua por contexto, incluindo tentativas ainda bloqueadas. Resync utiliza upsert por attempt_id e nao apaga credito simplesmente porque um resultado esta bloqueado. Reset continua removendo creditos de tentativas que deixaram de contar. Liberacao posterior reconcilia os creditos; retries nao duplicam linhas. Leitura remota agregada em 02/10: 214 registros, nenhum credito de Evento com resultado bloqueado; nenhum estorno realizado.
+
+Preview administrativo permite escolher contexto vinculado; Professor inicia com o proprio Evento. Sem tentativa real ou consumo remoto. PDF administrativo explica a propriedade contextual. Campos usam componentes existentes, com explicacao por hover/foco, sem dependencias novas.
+
+Migration preparada: supabase/migrations/20261002120000_contextual_simulado_settings.sql, NAO EXECUTADA. Adiciona 12 colunas em quatro tabelas, constraints, dois triggers e quatro funcoes (uma substitui a gravacao atomica de respostas existente). Novo RPC restrito ao service_role, SECURITY INVOKER, search_path vazio. Nao remove colunas, nao muda scoring ou snapshots e nao altera policies existentes. Aborta se um Simulado vinculado apresentar feedback imediato no preflight, pois isso diverge da auditoria aprovada; nao converte silenciosamente essa divergencia.
+
+Sequencia de implantacao, sujeita a autorizacoes separadas:
+1. Revisar backup/restore, estado remoto, limites legados e tentativas ativas; homologar SQL e concorrencia em ambiente isolado autorizado.
+2. Coordenar janela sem novas execucoes/edicoes entre a migration e o codigo compativel; aplicar SOMENTE a nova migration, nunca migrations historicas pendentes por inferencia.
+3. Implantar o codigo aprovado e homologar autenticado: final/open, final/closed, imediato/closed, resultados bloqueados, liberacao e TopCoins.
+4. Monitorar logs e reconciliacao. Reverter apenas o codigo antigo nao e seguro se houver novos contextos bloqueados: ele desconhece essa autorizacao. Rollback requer janela coordenada e preservacao dos novos marcadores; nao remover colunas ou autorizacoes automaticamente.
+
+Validacoes intermediarias: TypeScript aprovado; build aprovado com acesso de rede para Inter (primeira tentativa falhou por rede); 169/169 focais, dos quais 29 novos; 427/427 de regressao ampliada. A suite focal usa codigo real com banco em memoria. Concorrencia da Coruja valida contrato de RPC e desenho SQL, nao lock real no PostgreSQL. SQL NAO executado, homologacao visual/autenticada e integrada com schema novo pendentes. Validacoes finais registradas no status e no relatorio da entrega.
+
+Documentos reconsultados: Constituicao Tecnica; politicas Git, Migrations, Desenvolvimento e Documentacao; checklists Sprint e Deploy; Indice; status; Sprint Simulados, Jornadas, Resultados e Eventos; seguranca RLS, Logs e Backup/Restore; AGENTS.md; guia local Next 16 route.js.
+
+Inventario de implementacao e testes (documentos relacionados tambem atualizados):
+- `app/admin/eventos/[id]/page-client.tsx`
+- `app/admin/eventos/page-client.tsx`
+- `app/admin/jornadas/[id]/editar/page-client.tsx`
+- `app/admin/jornadas/[id]/editar/page.tsx`
+- `app/admin/jornadas/[id]/page-client.tsx`
+- `app/admin/jornadas/[id]/page.tsx`
+- `app/admin/jornadas/nova/page-client.tsx`
+- `app/admin/jornadas/page.tsx`
+- `app/admin/jornadas/types.ts`
+- `app/api/admin/events/[id]/route.ts`
+- `app/api/admin/events/route.ts`
+- `app/api/admin/jornadas/[id]/route.ts`
+- `app/api/admin/jornadas/[id]/simulados/route.ts`
+- `app/api/admin/jornadas/duplicate/route.ts`
+- `app/api/admin/jornadas/route.ts`
+- `app/api/admin/simulados/[id]/duplicate/route.ts`
+- `app/api/admin/simulados/[id]/route.ts`
+- `app/api/admin/simulados/route.ts`
+- `app/api/student/dashboard/route.ts`
+- `app/api/student/jornadas/[id]/route.ts`
+- `app/api/student/notifications/route.ts`
+- `app/api/student/resultados/route.ts`
+- `app/api/student/simulados/[id]/attempts/[attemptId]/answers/route.ts`
+- `app/api/student/simulados/[id]/attempts/[attemptId]/owl-help/route.ts`
+- `app/api/student/simulados/[id]/attempts/route.ts`
+- `app/api/student/simulados/[id]/resultado/route.ts`
+- `app/api/student/simulados/[id]/route.ts`
+- `app/api/student/simulados/route.ts`
+- `app/api/student/topcoins/route.ts`
+- `app/lib/pdf/simulado-admin-pdf.ts`
+- `app/lib/server/topcoinsSync.ts`
+- `app/meus-simulados/[id]/page-client.tsx`
+- `app/meus-simulados/[id]/page.tsx`
+- `app/meus-simulados/[id]/resultado/page-client.tsx`
+- `app/professor/eventos/[id]/preview/page.tsx`
+- `app/simulados/[id]/editar/page-client.tsx`
+- `app/simulados/[id]/page.tsx`
+- `app/simulados/[id]/preview/page-client.tsx`
+- `app/simulados/[id]/preview/page.tsx`
+- `app/simulados/novo/page-client.tsx`
+- `app/simulados/types.ts`
+- `lib/server/simuladoAttemptCompletion.ts`
+- `tests/context-attempt-limits.spec.ts`
+- `tests/jornada-admin-create.spec.ts`
+- `tests/student-journey-access.spec.ts`
+- `app/simulados/components/ContextSettingsFields.tsx`
+- `lib/server/contextualSimuladoSettings.ts`
+- `supabase/migrations/20261002120000_contextual_simulado_settings.sql`
+- `tests/contextual-simulado-settings.spec.ts`
+
+Inventario documental desta Fase B:
+- `docs/INDICE_FUNCOES_SISTEMA.md`
+- `docs/SEGURANCA_RLS_SUPABASE.md`
+- `docs/Sprint-evento-de-simulado.md`
+- `docs/Sprint-jornadas.md`
+- `docs/Sprint-resultados.md`
+- `docs/Sprint-simulados.md`
+- `docs/status-atual.md`
+- Teste existente adicional atualizado: `tests/optional-subject-classification.spec.ts` (gabarito historico liberado e fixtures de autorizacao).
+
+Pendencia de concorrencia: a conclusao trava tentativa e consulta a Jornada; a edicao da politica trava Jornada e atualiza tentativas. Uma disputa pode exigir retry por deadlock. Homologar essa combinacao no PostgreSQL antes da aplicacao.
+
+Fechamento local (02/10/2026): npx.cmd tsc --noEmit PASS; npm.cmd run build PASS (112 paginas; acesso de rede somente para fonte); Playwright local 817/817 PASS e nova spec repetida 29/29 PASS apos revisao dos delimitadores SQL; ESLint comparado com HEAD em 49 arquivos, 107 -> 104 diagnosticos, nenhum novo; git diff --check PASS. Inventario final: 57 arquivos (49 codigo/testes, 7 documentos, 1 migration nova). Sem migration executada, escrita em producao, commit, push ou deploy.
+
+
+## 02/10/2026 - Fase C: auditoria e homologacao tecnica local da Fase B (migration NAO executada)
+
+Escopo: auditoria somente leitura, homologacao SQL funcional em PostgreSQL local isolado e plano de implantacao. Nenhuma correcao de codigo foi necessaria; nenhuma migration executada; nenhuma escrita em producao; sem commit, push ou deploy.
+
+**Estado inicial e final:** main, HEAD 1e0bb6d = origin/main, nada no index. 57 arquivos pendentes (53 modificados, 4 novos) identicos, nome a nome, ao inventario da Fase B. Migration `supabase/migrations/20261002120000_contextual_simulado_settings.sql`, md5 `0a9af602f1dc2a6d1b97e41f5800a2d0`. Unicas alteracoes da Fase C: esta secao e a entrada correspondente em `docs/status-atual.md`. Indice funcional inalterado (nenhuma funcao criada ou alterada).
+
+**Auditoria do SQL real (confirmada, nao presumida):** 12 colunas em 4 tabelas (jornadas 5, simulado_events 4, jornada_simulados 2, simulado_attempts 1), 3 constraints nomeadas mais checks inline, 4 funcoes (`preserve_jornada_result_release`, `release_jornada_results_on_policy`, `consume_student_owl_help` novas; `save_student_attempt_answer` substituida com assinatura identica, o que preserva seus grants), 2 triggers. Dependencias (`lock_student_attempt`, `complete_student_attempt`, versao anterior de `save_student_attempt_answer`, migration `20260909170000`) presentes em producao.
+
+**Compatibilidade com producao (consulta somente leitura ao catalogo e a agregados, sem dados pessoais, 02/10/2026):** nenhum conflito de colunas, constraints ou funcoes; `simulado_events.result_policy` ja existe (default `blocked`) e e reaproveitada; indice unico `(attempt_id, simulado_question_id)` usado pelo upsert existe; triggers atuais nas tabelas tocadas sao apenas `set_updated_at` e validacao de imagens; RLS habilitada nas quatro tabelas (colunas novas herdam as policies). Pre-condicao de feedback imediato: 0 Simulados vinculados (a migration nao abortaria hoje). Backfill: 16 vinculos de Jornada, 5 Eventos, 4 tentativas de Jornada concluidas. Tentativas em andamento: 0. Simulados com navegacao fechada: 0.
+
+**Homologacao SQL funcional (PGlite 0.5.8 / PostgreSQL 18.3, em memoria, UMA conexao):** schema das tabelas envolvidas reproduzido do catalogo de producao, migration anterior real aplicada como dependencia, dados sinteticos de antes, migration nova real aplicada. Resultado: 34/34. Cobertos: colunas/funcoes/triggers; Coruja preservada por vinculo e por Evento (incluindo fallback `max(1, questoes/10)`, identico ao `getDefaultOwlHelpLimit` atual); liberacao historica so para conclusoes de Jornada; aborto integral da migration quando ha Simulado vinculado com feedback imediato; 8 combinacoes invalidas rejeitadas pelas constraints; liberacao na conclusao (released), ausencia sob blocked, liberacao em lote ao voltar para released, nao revogacao, isolamento de Eventos; navegacao fechada (fora de sequencia recusada, resposta confirmada imutavel, anulada pulada, feedback final sem acerto, imediato com acerto); snapshot legado sem `navigation_type` mantem comportamento aberto; Coruja (servidor escolhe duas erradas, reuso sem nova cobranca, limite, desabilitada, certo/errado, questao atual em navegacao fechada, outro aluno, tempo esgotado, snapshot legado); permissoes (somente `service_role`, SECURITY INVOKER, `search_path` fixo). Artefatos fora do repositorio: `D:/Projetos_Software/estudotop-simulados/Testes/2026-10-02-faseC-homologacao-sql/` (`faseC-base.sql`, `faseC-run.mjs`, `faseC-results.json`). **Nao comprova concorrencia real, locks entre sessoes nem deadlocks.**
+
+**Achados:**
+- Bloqueadores: nenhum identificado.
+- Nao bloqueadores: (1) o backfill renova `updated_at` das 4 tentativas de Jornada concluidas, dos 16 vinculos e dos 5 Eventos (trigger `set_updated_at`); nao afeta a concorrencia otimista, que so vale para tentativas em andamento. (2) O banco aceita feedback imediato com `navigation_override` nulo; a aplicacao grava `closed` e a navegacao efetiva e sempre fechada. (3) As funcoes de trigger mantem EXECUTE padrao; so podem ser acionadas por trigger. (4) `correction-video-progress` registra progresso de tentativa concluida mesmo com resultado bloqueado, sem devolver URL ou dado de resultado (fora do escopo). (5) `show_result_on_finish` nao e aplicado pela API de resultado nem pela tela de execucao (preexistente, fora do escopo).
+- Exigem homologacao adicional: (H1) concorrencia real. A conclusao trava a tentativa e pede `FOR SHARE` na Jornada; a mudanca de `result_policy` trava a Jornada e atualiza tentativas concluidas. Deadlock so ocorre se, ao mesmo tempo, outra transacao atualizar uma tentativa concluida e ainda nao liberada da mesma Jornada (hoje: ajuste administrativo de `counts_toward_limit` no cronograma individual). O PostgreSQL detecta e aborta uma das transacoes (erro 40P01, resposta 500, sem retry automatico na API). O consumo da Coruja e serializado por `FOR UPDATE` na tentativa; correto por desenho, nao comprovado com conexoes independentes. (H2) Homologacao autenticada ponta a ponta: nao realizada. (H3) Backup de producao: existencia e restauracao nao verificadas.
+
+**Compatibilidade de reversao:** migration antes do codigo e segura (codigo atual nao grava `navigation_type` no snapshot, e o trigger registra liberacoes com a politica padrao `released`). Voltar ao codigo atual depois da implantacao NAO e seguro se existir tentativa de Jornada concluida com `result_released_at` nulo (o codigo atual ignora a autorizacao e exibiria o resultado) ou tentativa em andamento com snapshot contextual (a interface antiga mostraria navegacao aberta enquanto o banco exige sequencia). Plano de implantacao, criterios de parada e reversao segura: relatorio da Fase C e `docs/status-atual.md`.
+
+Validacoes executadas na Fase C: `npx tsc --noEmit` PASS; `npm run build` PASS; Playwright local 817/817 PASS; ESLint em 49 arquivos de codigo/teste comparado com HEAD 107 -> 104, nenhum diagnostico novo; `git diff --check` PASS; homologacao SQL funcional 34/34.
+
+## 08/10/2026 - Estabilizacao da Fase B: corrida C1 da liberacao de resultados da Jornada
+
+**Causa (reproduzida em PostgreSQL 17.6 real, duas sessoes):** em READ COMMITTED, a conclusao de tentativa e a troca `blocked -> released` nao enxergam a escrita nao confirmada uma da outra. O trigger `preserve_jornada_result_release` le `blocked` no snapshot (e, pelo filtro `result_policy='released'`, nem trava a Jornada); o UPDATE em massa de `release_jornada_results_on_policy` nao ve a tentativa ainda `in_progress`. Resultado: tentativa concluida com `result_released_at` nulo sob politica `released` (242/300 corridas paralelas sem correcao). Nunca libera indevidamente.
+
+**Correcao (sem alterar schema nem `20261002120000_contextual_simulado_settings.sql`):** `reconcileJornadaResultReleases` em `lib/server/contextualSimuladoSettings.ts`, executada depois do commit em `completeSimuladoAttempt` (item da tentativa) e no PATCH de Jornada ao salvar `released` (todos os itens, antes da sincronizacao de TopCoins). O UPDATE `result_released_at = null` restrito a concluidas sem liberacao apenas aciona o trigger, que marca somente quando a politica confirmada e `released`; sob `blocked` nada muda e liberacoes existentes nunca sao revogadas. A reconciliacao que comeca por ultimo enxerga os dois commits. Descartado: `FOR SHARE` incondicional no trigger (108 deadlocks em 150 corridas) e derivar a autorizacao da politica atual na leitura (exigiria alterar todos os consumidores e revogaria a liberacao se a politica voltasse a `blocked`).
+
+**Evidencias em banco real:** interleavings deterministicos (Admin reconcilia antes do commit da conclusao; conclusao reconcilia antes do commit da troca; `released -> blocked`; liberacao anterior preservada) aprovados; 300 corridas paralelas em cada sentido (`blocked->released`, `released->blocked`, `released->released`) e 150 de ajuste administrativo x troca: 0 perdas, 0 liberacoes antecipadas, 0 deadlocks. Ponta a ponta com codigo real: PATCH de Jornada e `completeSimuladoAttempt` reconciliam pendencias; sob `blocked`, rota de resultado 403, sem TopCoins, cronograma e painel sem nota. Evento inalterado. Testes do repositorio relacionados: 186/186 + teste novo em `tests/contextual-simulado-settings.spec.ts`. As medicoes de deadlock desta data substituem a estimativa do paragrafo de concorrencia acima.
+
+**Residual:** se o processo cair entre o commit e a reconciliacao nos dois fluxos, a tentativa fica pendente ate a proxima conclusao no mesmo item ou o proximo salvamento `released` da Jornada.
+
+## 08/10/2026 - Migrations executadas e verificadas
+
+`20261002120000_contextual_simulado_settings.sql` e `20261008120000_restrict_close_stale_user_sessions.sql` foram executadas manualmente pelo proprietario no Supabase operacional (fora do ledger). Verificacao somente leitura confirmou estrutura, permissoes, hash das funcoes identico ao arquivo, backfill de 4/4 tentativas de Jornada e 0 pendencias de liberacao. Registro completo, publicacao do codigo e riscos residuais: `docs/status-atual.md` (08/10/2026).

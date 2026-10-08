@@ -513,6 +513,10 @@ export default function SimuladoExperience({
         }
       }
       setAnswers(map);
+      if (json.simulado.navigation_type === "closed" || json.simulado.instant_feedback_enabled) {
+        const next = json.questions.findIndex((question) => question.status !== "annulled" && !map[question.simulado_question_id]?.isLocked);
+        setCurrentIndex(next < 0 ? Math.max(0, json.questions.length - 1) : next);
+      }
       setViolationCount(json.attempt.focus_violation_count || 0);
       setOwlHelpUsedCount(Number(json.attempt.owl_help_used_count || 0));
       setOwlHelpData(
@@ -766,7 +770,7 @@ export default function SimuladoExperience({
     setSimulado((prev) => ({ ...prev, ...json.simulado }));
     setQuestions(json.questions);
     setAnswers({});
-    setCurrentIndex(0);
+    setCurrentIndex(Math.max(0, json.questions.findIndex((question: OrderedQuestion) => question.status !== "annulled")));
     const startedAt = new Date(json.attempt.started_at).getTime();
     startedAtRef.current = startedAt;
     questionStartRef.current = Date.now();
@@ -896,6 +900,7 @@ export default function SimuladoExperience({
           progress_percent: json.progress_percent ?? attempt.progress_percent,
         });
       }
+      if (json.explanation_text) setQuestions((rows) => rows.map((row) => row.simulado_question_id === question.simulado_question_id ? { ...row, explanation_text: json.explanation_text } : row));
       return true;
     },
     [answers, attempt, simuladoId],
@@ -903,7 +908,7 @@ export default function SimuladoExperience({
 
   const chooseAnswer = useCallback((question: OrderedQuestion, alt: { id: string; label: string }) => {
     clearEliminatedAlternative(question.simulado_question_id, alt.id);
-    if (simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled) {
+    if (simulado.navigation_type === "closed" || simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled) {
       const existing = answers[question.simulado_question_id];
       if (existing?.isLocked) return;
       setAnswers((prev) => ({
@@ -918,14 +923,14 @@ export default function SimuladoExperience({
       return;
     }
     void sendAnswer(question, alt);
-  }, [answers, sendAnswer, simulado.feedback_mode, simulado.instant_feedback_enabled]);
+  }, [answers, sendAnswer, simulado.navigation_type, simulado.feedback_mode, simulado.instant_feedback_enabled]);
 
   const submitInstantAnswer = useCallback(async (question: OrderedQuestion) => {
     const selected = answers[question.simulado_question_id];
     if (!selected?.alternativeId) return;
     const ok = await sendAnswer(question, { id: selected.alternativeId, label: selected.label });
-    if (ok) setInstantResultQuestionId(question.simulado_question_id);
-  }, [answers, sendAnswer]);
+    if (ok && (simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled)) setInstantResultQuestionId(question.simulado_question_id);
+  }, [answers, sendAnswer, simulado.feedback_mode, simulado.instant_feedback_enabled]);
 
   function toggleEliminatedAlternative(questionId: string, alternativeId: string) {
     setEliminatedAlternatives((current) => {
@@ -1045,7 +1050,7 @@ export default function SimuladoExperience({
       // de TopCoins, não inicia o countdown de preparação do feedback e não
       // navega para a página de Resultado — apenas informa que o Simulado
       // foi concluído e aguarda liberação.
-      if (json.result_access === "blocked_by_event") {
+      if (json.result_access === "blocked_by_event" || json.result_access === "blocked_by_jornada") {
         setPhase("event_result_blocked");
         return;
       }
@@ -1233,6 +1238,8 @@ export default function SimuladoExperience({
   const currentQuestion = questions[currentIndex] || null;
   const isInstantMode = simulado.feedback_mode === "instant" || Boolean(simulado.instant_feedback_enabled);
 
+  const isClosedMode = isInstantMode || simulado.navigation_type === "closed";
+
   const owlHelpEnabled = Boolean(simulado.owl_help_enabled);
   const owlHelpLimit = resolveOwlHelpLimit(simulado.owl_help_limit, questions.length || simulado.question_count);
   const owlHelpRemaining = owlHelpEnabled ? Math.max(owlHelpLimit - owlHelpUsedCount, 0) : 0;
@@ -1346,7 +1353,7 @@ export default function SimuladoExperience({
   };
   const goNext = () => {
     setOwlPromptShownForKey(null);
-    setCurrentIndex((idx) => Math.min(questions.length - 1, idx + 1));
+    setCurrentIndex((idx) => { const next = questions.findIndex((question, index) => index > idx && question.status !== "annulled"); return next < 0 ? idx : next; });
     questionStartRef.current = Date.now();
   };
   const goTo = (index: number) => {
@@ -1442,8 +1449,8 @@ export default function SimuladoExperience({
         icon={<Clock3 size={56} className="text-orange-500" />}
         title="Simulado concluído"
         description="Seu resultado ainda não foi liberado pelo professor. Assim que houver liberação, você poderá consultar seu resultado em Meus Resultados."
-        actionLabel="Voltar para Meus Eventos"
-        onAction={() => router.push(eventId ? `/meus-eventos/${eventId}` : "/meus-eventos")}
+        actionLabel={eventId ? "Voltar para Meus Eventos" : "Voltar para a Jornada"}
+        onAction={() => router.push(resolveExitDestination())}
         variant="warning"
       />
     );
@@ -1547,7 +1554,7 @@ export default function SimuladoExperience({
             </div>
           )}
 
-          {isInstantMode && currentQuestion && answers[currentQuestion.simulado_question_id]?.alternativeId && !answers[currentQuestion.simulado_question_id]?.isLocked && (
+          {isClosedMode && currentQuestion && answers[currentQuestion.simulado_question_id]?.alternativeId && !answers[currentQuestion.simulado_question_id]?.isLocked && (
             <div className="mt-4 flex justify-center">
               <button
                 type="button"
@@ -1590,9 +1597,9 @@ export default function SimuladoExperience({
             onNext={goNext}
             onFinish={() => setConfirmFinish(true)}
             submitting={phase === "submitting"}
-            instantMode={isInstantMode}
+            instantMode={isClosedMode}
             currentAnswered={Boolean(currentQuestion && answers[currentQuestion.simulado_question_id]?.isLocked)}
-            allowNextWithoutAnswer={simulado.navigation_type !== "closed"}
+            allowNextWithoutAnswer={!isClosedMode}
           />
         </div>
 
@@ -1601,7 +1608,7 @@ export default function SimuladoExperience({
             questions={questions}
             answers={answers}
             currentIndex={currentIndex}
-            onGoTo={isInstantMode ? (() => {}) : goTo}
+            onGoTo={isClosedMode ? (() => {}) : goTo}
             answeredCount={answeredRequiredCount}
             totalQuestions={requiredQuestions.length}
             focusMode={focusMode}
@@ -2815,7 +2822,7 @@ function Navigator({
             <Trophy size={17} /> Finalizar
           </button>
         ) : (
-          <button type="button" onClick={onNext} disabled={instantMode || (!allowNextWithoutAnswer && !currentAnswered)}
+          <button type="button" onClick={onNext} disabled={(instantMode && !currentAnswered) || (!allowNextWithoutAnswer && !currentAnswered)}
             className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-600 via-orange-500 to-amber-400 px-5 py-2.5 text-sm font-black text-white shadow-[0_14px_30px_rgba(255,138,0,0.28)] transition hover:-translate-y-1 hover:shadow-[0_18px_38px_rgba(255,138,0,0.36)] disabled:cursor-not-allowed disabled:opacity-45">
             Próxima <ChevronRight size={18} />
           </button>

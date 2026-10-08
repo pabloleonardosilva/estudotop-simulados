@@ -26,7 +26,7 @@ import PremiumSimpleSelect from "../../components/ui/PremiumSimpleSelect";
 import SimuladoCard from "../components/SimuladoCard";
 import SimuladoShell from "../components/SimuladoShell";
 import type { Discipline, SimuladoPayload } from "../types";
-import { getDefaultOwlHelpLimit, resolveOwlHelpLimit } from "../utils";
+import { resolveOwlHelpLimit } from "../utils";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
 
@@ -58,6 +58,7 @@ const defaultForm: SimuladoPayload = {
   status: "draft",
   question_count: 50,
   time_limit_minutes: 60,
+  navigation_type: "open",
   show_result_on_finish: true,
   show_answer_key_on_finish: false,
   instant_feedback_enabled: false,
@@ -101,15 +102,6 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
     });
   }
 
-  function updateOwlHelpEnabled(enabled: boolean) {
-    setForm((current) => ({
-      ...current,
-      owl_help_enabled: enabled,
-      owl_help_limit: enabled
-        ? resolveOwlHelpLimit(current.owl_help_limit, current.question_count)
-        : null,
-    }));
-  }
 
   async function submit() {
     setFeedback(null);
@@ -124,10 +116,6 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
       return;
     }
 
-    if (form.owl_help_enabled && (!Number.isInteger(Number(form.owl_help_limit)) || Number(form.owl_help_limit) < 1)) {
-      setFeedback({ type: "error", title: "Quantidade de ajudas inválida", message: "Informe um número inteiro maior que zero ou desabilite a Ajuda da Coruja." });
-      return;
-    }
 
     setSaving(true);
 
@@ -240,37 +228,9 @@ export default function NovoSimuladoClient({ disciplines }: { disciplines: Disci
               />
 
               <Toggle label="Pode deixar questões em branco?" value={form.allow_blank_answers} onChange={(value) => update("allow_blank_answers", value)} />
-              <Toggle label="Exibir resultado ao finalizar?" value={form.show_result_on_finish} onChange={(value) => update("show_result_on_finish", value)} />
-              <Toggle label="Mostrar gabarito ao finalizar?" value={form.show_answer_key_on_finish} onChange={(value) => update("show_answer_key_on_finish", value)} />
-              <PremiumSimpleSelect
-                label="Modo de feedback"
-                value={form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")}
-                onChange={(value) => update("feedback_mode", value as SimuladoPayload["feedback_mode"])}
-                options={[["instant", "Feedback imediato"], ["final_only", "Navegação aberta / feedback ao final"]]}
-              />
+              <PremiumSimpleSelect label="Navegacao original" value={form.navigation_type ?? "open"} onChange={(value) => update("navigation_type", value as "open" | "closed")} options={[["open", "Aberta"], ["closed", "Fechada: confirmar na sequencia"]]} />
               <Toggle label="Mostrar comentário do professor?" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
-              <Toggle label="Ajuda da Coruja?" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
-                {form.owl_help_enabled && (
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,0.42fr)] sm:items-end">
-                    <p className="text-xs font-semibold leading-5 text-slate-400">
-                      Sugestão automática: {getDefaultOwlHelpLimit(form.question_count)} ajuda(s). O número informado será o limite deste simulado.
-                    </p>
-                  <PremiumInput
-                    label="Quantidade de ajudas"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={form.owl_help_limit ?? ""}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => update("owl_help_limit", event.target.value ? Number(event.target.value) : null)}
-                    premiumStepper
-                    onStep={(value) => update("owl_help_limit", value)}
-                    placeholder={String(getDefaultOwlHelpLimit(form.question_count))}
-                    variant="jornada"
-                    className="!h-10 !rounded-xl !border-orange-300/20 !bg-black/20 text-center !font-black"
-                  />
-                  </div>
-                )}
-              </Toggle>
+
               <Toggle label="Embaralhar questões?" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
               <Toggle label="Embaralhar alternativas?" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
             </div>

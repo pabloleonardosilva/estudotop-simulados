@@ -909,3 +909,15 @@ Fatos permanentes confirmados nesta homologação:
 - Histórico de `student_jornadas` é preservado; hard delete de uma Jornada com `student_jornadas` vinculadas é bloqueado pela API/constraint de FK.
 
 A Jornada QA é histórica/controlada: não tentar hard-delete de `student_jornadas` para "limpeza". Fechamento exclusivamente funcional: nenhuma migration executada, nenhum código alterado, nenhum commit/push/deploy nesta rodada.
+
+## 02/10/2026 - Configuracoes contextuais, Fase B local
+
+Jornada passa a definir feedback, excecao de navegacao, politica de resultados e padrao de Coruja. Vinculos admitem excecao permanente da Coruja e retorno ao padrao. Duplicacao copia padroes e excecoes. Liberacao de resultado por tentativa e definitiva e separada da liberacao da prova. Historico existente permanece autorizado; novos resultados podem aguardar liberacao. Admin salva politica released para liberar pendencias e reconciliar TopCoins. Novas tentativas congelam regras de execucao; consumo e pontuacao historicos preservados. Implementacao depende da migration preparada e NAO EXECUTADA 20261002120000_contextual_simulado_settings.sql. Modelo, inventario, testes e implantacao: docs/Sprint-simulados.md, Fase B de 02/10/2026.
+
+## 08/10/2026 - Ajuste de consumo preserva o resultado oficial
+
+`setAttemptsCount` (`app/api/admin/student-jornadas/[studentJornadaId]/simulados/[studentJornadaSimuladoId]/route.ts`) continua contabilizando as tentativas mais antigas do item da matrícula ao receber `set_attempts > 0`, mas a primeira `completed` + `counts_toward_limit` (ordem `submitted_at`, a mesma da rota de resultado) sempre ocupa uma das vagas. Assim, reduzir o consumo não descontabiliza o resultado oficial e aumentar não recontabiliza uma conclusão anterior que o substituiria; quando preciso, mais placeholders `abandoned` garantem a contagem exata. Cronograma, TopCoins (`resyncTopCoinEarnings`) e resultados seguem a oficial preservada. `set_attempts = 0` mantém a exclusão integral. Política de resultados da Jornada inalterada. Testes: `tests/admin-attempt-adjustments.spec.ts`.
+
+## 08/10/2026 - Configuracoes contextuais em producao (banco)
+
+A migration da Fase B foi executada pelo proprietario e verificada por leitura: 5 Jornadas com `result_policy = released`, `feedback_mode = final_only` e sem excecao de navegacao; 16 vinculos com a Coruja do Simulado de origem; 4/4 conclusoes historicas liberadas. A reconciliacao da corrida C1 e a preservacao da tentativa oficial seguem o codigo publicado neste ciclo. Registro: `docs/status-atual.md` (08/10/2026).

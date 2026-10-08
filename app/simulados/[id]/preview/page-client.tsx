@@ -33,6 +33,8 @@ import {
   Trophy,
   XCircle,
 } from "lucide-react";
+import PremiumSimpleSelect from "@/app/components/ui/PremiumSimpleSelect";
+import PremiumButton from "@/app/components/ui/PremiumButton";
 import { resolveOwlHelpLimit } from "../../utils";
 
 const OWL_MARK = "\u{1F989}\uFE0F";
@@ -48,6 +50,7 @@ type SimuladoMeta = {
   show_result_on_finish: boolean;
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;
+  navigation_type: "open" | "closed";
   feedback_mode?: "instant" | "final_only" | null;
   show_teacher_comment: boolean;
   correction_video_url: string | null;
@@ -86,6 +89,7 @@ type AnswerState = {
   alternativeId: string;
   label: string;
   isCorrect: boolean | null;
+  confirmed?: boolean;
 };
 
 type Phase = "rules" | "in_progress" | "focus_warning" | "done";
@@ -164,24 +168,28 @@ export default function PreviewSimuladoClient({
     [simulado.simulado_questions],
   );
 
+  const [previewContextId, setPreviewContextId] = useState(simulado.preview_contexts?.length === 1 ? String(simulado.preview_contexts[0].id) : "");
+  const context = simulado.preview_contexts?.find((item: { id: string }) => item.id === previewContextId);
+  const effectiveNavigation = context?.feedback_mode === "instant" ? "closed" : context?.navigation_override ?? simulado.navigation_type ?? "open";
   const meta: SimuladoMeta = {
     id: simulado.id,
     title: simulado.title,
     description: simulado.description,
     question_count: questions.length,
     time_limit_minutes: simulado.time_limit_minutes,
-    show_result_on_finish: simulado.show_result_on_finish,
-    show_answer_key_on_finish: simulado.show_answer_key_on_finish,
-    instant_feedback_enabled: simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled,
-    feedback_mode: simulado.feedback_mode || (simulado.instant_feedback_enabled ? "instant" : "final_only"),
+    show_result_on_finish: !context || context.result_policy === "released",
+    show_answer_key_on_finish: true,
+    instant_feedback_enabled: context?.feedback_mode === "instant",
+    feedback_mode: context?.feedback_mode ?? "final_only",
+    navigation_type: effectiveNavigation,
     show_teacher_comment: simulado.show_teacher_comment,
     correction_video_url: simulado.correction_video_url,
     shuffle_questions: simulado.shuffle_questions,
     shuffle_alternatives: simulado.shuffle_alternatives,
     allow_blank_answers: simulado.allow_blank_answers,
     scoring_model: simulado.scoring_model || "traditional",
-    owl_help_enabled: Boolean(simulado.owl_help_enabled),
-    owl_help_limit: simulado.owl_help_limit ?? null,
+    owl_help_enabled: Boolean(context?.owl_help_enabled),
+    owl_help_limit: context?.owl_help_limit ?? null,
     anti_tab_switch_enabled: simulado.anti_tab_switch_enabled !== false,
     anti_window_blur_enabled: simulado.anti_window_blur_enabled !== false,
   };
@@ -266,7 +274,7 @@ export default function PreviewSimuladoClient({
   function selectAnswer(question: PreviewQuestion, alt: { id: string; label: string; is_correct: boolean }) {
     clearManualEliminatedAlternative(question.simulado_question_id, alt.id);
     const existing = answers[question.simulado_question_id];
-    if (meta.instant_feedback_enabled && existing && existing.isCorrect !== null && existing.isCorrect !== undefined) return;
+    if (existing?.confirmed) return;
 
     if (existing?.alternativeId && existing.alternativeId !== alt.id && existing.isCorrect === null) {
       setAnswerChanges((current) => current + 1);
@@ -291,10 +299,12 @@ export default function PreviewSimuladoClient({
       ...prev,
       [question.simulado_question_id]: {
         ...current,
-        isCorrect: selected.is_correct,
+        isCorrect: meta.instant_feedback_enabled ? selected.is_correct : null,
+        confirmed: true,
       },
     }));
-    setInstantResultQuestionId(question.simulado_question_id);
+    if (meta.instant_feedback_enabled) setInstantResultQuestionId(question.simulado_question_id);
+    else goToNextAfterInstant();
   }
 
   function goToNextAfterInstant() {
@@ -403,6 +413,7 @@ export default function PreviewSimuladoClient({
               </p>
             )}
 
+            <div className="mt-6"><PremiumSimpleSelect dark label="Aplicação usada no preview" value={previewContextId} onChange={setPreviewContextId} options={[["", "Sem contexto: navegação original, feedback ao final, sem Coruja"], ...(simulado.preview_contexts || []).map((item: { id: string; name: string }) => [item.id, item.name] as const)]} /></div>
             <div className="mt-8 grid gap-3 md:grid-cols-2">
               <RuleItem
                 icon={<Timer size={20} />}
@@ -469,6 +480,7 @@ export default function PreviewSimuladoClient({
   }
 
   // ── Done screen ──
+  if (phase === "done" && !meta.show_result_on_finish) return <main className="min-h-screen bg-slate-950 p-8 text-white"><p>Resultado calculado. Este contexto exige liberacao administrativa para nota e revisao.</p><PremiumButton onClick={() => setPhase("rules")}>Voltar ao preview</PremiumButton></main>;
   if (phase === "done") {
     const computed = computePreviewResult(questions, answers, meta.scoring_model, timeSpent);
     const subjects = Array.from(new Set(questions.map((q) => q.subject).filter(Boolean))) as string[];
@@ -545,7 +557,7 @@ export default function PreviewSimuladoClient({
             />
           )}
 
-          {meta.instant_feedback_enabled && currentQuestion && answers[currentQuestion.simulado_question_id]?.alternativeId && answers[currentQuestion.simulado_question_id]?.isCorrect === null && (
+          {meta.navigation_type === "closed" && currentQuestion && answers[currentQuestion.simulado_question_id]?.alternativeId && !answers[currentQuestion.simulado_question_id]?.confirmed && (
             <div className="mt-4 flex justify-center">
               <button
                 type="button"
@@ -565,7 +577,7 @@ export default function PreviewSimuladoClient({
             onPrev={goPrev}
             onNext={goNext}
             onFinish={() => setConfirmFinish(true)}
-            instantMode={meta.instant_feedback_enabled}
+            instantMode={meta.navigation_type === "closed"}
             currentAnswered={Boolean(currentQuestion && answers[currentQuestion.simulado_question_id]?.isCorrect !== null && answers[currentQuestion.simulado_question_id]?.isCorrect !== undefined)}
           />
         </div>

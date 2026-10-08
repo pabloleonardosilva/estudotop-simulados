@@ -133,7 +133,8 @@ test.describe("regra: tentativa representativa = primeira tentativa concluída v
 
   test("reset administrativo continua sendo a única escrita fora do helper, e é uma limpeza explícita (null), não uma atribuição de tentativa", () => {
     const source = read(ADMIN_PARTICIPANT_ROUTE);
-    expect(source).toContain('.update({ representative_attempt_id: null, result_released_at: null })');
+    expect(source).toContain(".update({ representative_attempt_id: null })");
+    expect(source).not.toContain("result_released_at: null })");
     expect(source).not.toMatch(/representative_attempt_id:\s*[a-zA-Z_.]+\.id/);
   });
 
@@ -146,6 +147,7 @@ test.describe("regra: tentativa representativa = primeira tentativa concluída v
       .split("\n")
       .filter((line) => line.length > 0)
       .filter((line) => !line.includes("representative_attempt_id: participant.representative_attempt_id")) // leitura/passagem de dados, não escrita
+      .filter((line) => !line.includes("representative_attempt_id: persistedParticipant?.representative_attempt_id")) // resposta do reset com o estado persistido
       .filter((line) => !line.includes("representative_attempt_id: null")); // reset administrativo, já coberto acima
     // Restam apenas linhas de tipos (`representative_attempt_id: string | null`)
     // e a escrita real dentro do helper.

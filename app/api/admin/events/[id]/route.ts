@@ -1,3 +1,4 @@
+import { parseContextualSettings, type ContextualSimuladoSettings } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
@@ -6,7 +7,7 @@ import { eventAcceptsReminder, getReminderStatusInfo, sendEventReminderBatch } f
 import { getPublicAppUrl } from "@/lib/server/publicAppUrl";
 import { logActivity } from "@/lib/logging/activity-log";
 
-type Payload = { max_attempts?: unknown; action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
+type Payload = Partial<ContextualSimuladoSettings> & { max_attempts?: unknown; action?: unknown; name?: unknown; simulado_id?: unknown; starts_at?: unknown; ends_at?: unknown; duration_minutes?: unknown; result_policy?: unknown; professor_ids?: unknown; card_image_id?: unknown; professor_banner_image_id?: unknown; professor_banner_position_x?: unknown; professor_banner_position_y?: unknown };
 
 function bannerPosition(value: unknown) {
   const number = Number(value);
@@ -104,7 +105,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: false, message: "Não foi possível enviar o lembrete agora. Tente novamente." }, { status: 500 });
   }
   if (body.action === "duplicate") {
-    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ max_attempts: current.max_attempts, name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
+    const { data: duplicated, error } = await supabase.from("simulado_events").insert({ feedback_mode: current.feedback_mode, navigation_override: current.navigation_override, owl_help_enabled: current.owl_help_enabled, owl_help_limit: current.owl_help_limit, max_attempts: current.max_attempts, name: `${current.name} — cópia`, simulado_id: null, status: "scheduled", starts_at: current.starts_at, ends_at: current.ends_at, duration_minutes: current.duration_minutes, result_policy: current.result_policy, card_image_id: current.card_image_id, professor_banner_image_id: current.professor_banner_image_id, professor_banner_position_x: current.professor_banner_position_x, professor_banner_position_y: current.professor_banner_position_y, code: `ES-${Math.floor(1000 + Math.random() * 9000)}`, created_by: admin.id }).select("*").single();
     if (error || !duplicated) return NextResponse.json({ ok: false, message: "Não foi possível duplicar o Evento." }, { status: 500 });
     const { data: assignments } = await supabase.from("simulado_event_professors").select("professor_id").eq("event_id", id);
     if (assignments?.length) await supabase.from("simulado_event_professors").insert(assignments.map((item) => ({ event_id: duplicated.id, professor_id: item.professor_id })));
@@ -167,10 +168,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true, message: `${terminatedRows.length} tentativa(s) em andamento encerrada(s) pelo administrador.`, terminated_count: terminatedRows.length });
   }
 
-  const hasEditableFields = ["max_attempts", "name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "card_image_id", "professor_banner_image_id", "professor_banner_position_x", "professor_banner_position_y"]
+  const hasEditableFields = ["feedback_mode", "navigation_override", "owl_help_enabled", "owl_help_limit","max_attempts", "name", "simulado_id", "starts_at", "ends_at", "duration_minutes", "result_policy", "professor_ids", "card_image_id", "professor_banner_image_id", "professor_banner_position_x", "professor_banner_position_y"]
     .some((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (!hasEditableFields) return NextResponse.json({ ok: false, message: "Nenhuma alteração válida foi informada." }, { status: 400 });
 
+  let contextualSettings;
+  try { contextualSettings = parseContextualSettings(body as Record<string, unknown>, current); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Configuracao invalida." }, { status: 400 }); }
   const nextName = body.name === undefined ? current.name : typeof body.name === "string" ? body.name.trim() : "";
   const nextStartsAt = body.starts_at === undefined ? current.starts_at : typeof body.starts_at === "string" ? body.starts_at : "";
   const nextEndsAt = body.ends_at === undefined ? current.ends_at : typeof body.ends_at === "string" ? body.ends_at : "";
@@ -271,7 +274,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const { data: updatedEvent, error } = await supabase
     .from("simulado_events")
-    .update(updates)
+    .update({ ...updates, ...contextualSettings })
     .eq("id", id)
     .select("professor_banner_image_id,professor_banner_position_x,professor_banner_position_y")
     .single();

@@ -7,7 +7,7 @@ import ts from "typescript";
 function load(path: string, modules: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || {}, Request, Response, URL, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || (name === "@/lib/server/contextualSimuladoSettings" ? load("lib/server/contextualSimuladoSettings.ts", {}) : {}), Request, Response, URL, console });
   return exports as any;
 }
 function database(rows: Record<string, any[]>, errors: Record<string, any> = {}) {
@@ -37,7 +37,7 @@ function fixture(status = "active") {
       { id: "schedule-1", simulado_id: "sim-1", order_number: 1, status: "completed", released_at: "2026-01-01", scheduled_release_at: "2026-01-01", simulados: { title: "Sim 1" } },
       { id: "schedule-2", simulado_id: "sim-2", order_number: 2, status: "available", released_at: "2026-01-02", scheduled_release_at: "2026-01-02", simulados: { title: "Sim 2" } },
     ] }],
-    simulado_attempts: [{ id: "attempt-1", student_id: "student-a", student_jornada_simulado_id: "schedule-1", simulado_id: "sim-1", status: "completed", counts_toward_limit: true, submitted_at: "2026-01-01" }],
+    simulado_attempts: [{ id: "attempt-1", result_released_at: "2026-01-01", student_id: "student-a", student_jornada_simulado_id: "schedule-1", simulado_id: "sim-1", status: "completed", counts_toward_limit: true, submitted_at: "2026-01-01" }],
     simulado_results: [{ attempt_id: "attempt-1", percentage: 80 }],
   };
 }

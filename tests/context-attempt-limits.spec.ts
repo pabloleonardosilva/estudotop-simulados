@@ -7,7 +7,7 @@ import ts from "typescript";
 function load(path: string, modules: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || {}, Request, Response, URL, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || (name === "@/lib/server/contextualSimuladoSettings" ? load("lib/server/contextualSimuladoSettings.ts", {}) : {}), Request, Response, URL, console });
   return exports as any;
 }
 function database(rows: Record<string, any[]>) {
@@ -39,7 +39,7 @@ function rows() {
     simulados: [{ id: "sim", status: "published", title: "Example", question_count: 1 }],
     student_jornadas: [{ id: "enrollment", student_id: "student", status: "active", expires_at: "2099-01-01" }],
     student_jornada_simulados: [
-      { id: "ja", student_jornada_id: "enrollment", simulado_id: "sim", status: "available", released_at: "2026-01-01", student_jornadas: { student_id: "student", jornadas: { max_attempts: 3 } } },
+      { id: "ja", jornada_simulados: { owl_help_enabled_override: null, owl_help_limit_override: null }, student_jornada_id: "enrollment", simulado_id: "sim", status: "available", released_at: "2026-01-01", student_jornadas: { student_id: "student", jornadas: { max_attempts: 3, feedback_mode: "final_only", navigation_override: null, owl_help_enabled: false, owl_help_limit: null } } },
       { id: "jb", simulado_id: "sim", student_jornadas: { student_id: "student", jornadas: { max_attempts: 4 } } },
       { id: "ja-other", simulado_id: "other", student_jornadas: { student_id: "student", jornadas: { max_attempts: 3 } } },
     ],

@@ -1,4 +1,6 @@
 "use client";
+import ContextSettingsFields, { defaultContextSettings, type ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
+
 
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -56,6 +58,7 @@ const defaultForm = {
   category: "policial" as "saude" | "policial" | "tribunais" | "administrativo",
   card_image_id: null as string | null,
   max_attempts: 3,
+  ...defaultContextSettings, result_policy: "released" as "released" | "blocked",
   duration_days: 90,
   planned_simulados_count: 10,
   exam_date: "",
@@ -129,6 +132,7 @@ export default function NovaJornadaClient() {
           category: form.category,
           card_image_id: form.card_image_id,
           max_attempts: Number(form.max_attempts),
+          feedback_mode: form.feedback_mode, navigation_override: form.navigation_override, owl_help_enabled: form.owl_help_enabled, owl_help_limit: form.owl_help_limit, result_policy: form.result_policy,
           duration_days: Number(form.duration_days),
           planned_simulados_count: Number(form.planned_simulados_count),
           exam_date: form.exam_date || null,
@@ -464,6 +468,7 @@ function JornadaFormCard({
         </div>
 
         <div className="grid gap-5 lg:grid-cols-3">
+          <div className="md:col-span-2"><ContextSettingsFields jornada value={form} onChange={(patch) => { for (const key of Object.keys(patch) as (keyof ContextSettingsForm)[]) update(key, patch[key] as never); }} /></div>
           <DarkField label="Tentativas permitidas" icon={<Hash size={16} />} helper="Quantidade permitida em cada Simulado desta Jornada."><DarkNumberInput value={form.max_attempts} onChange={(value) => update("max_attempts", value)} /></DarkField>
           <DarkField label="Duração da Jornada" icon={<Clock3 size={16} />} helper="Período total em que o aluno poderá acessar e realizar os simulados desta Jornada.">
             <DarkNumberInput

@@ -4,6 +4,7 @@ import { calculateEarnedTopCoins } from "@/app/lib/gamification/topcoins";
 type AttemptWithResult = {
   id: string;
   created_at: string;
+  result_released_at: string | null;
   attempt_context: string;
   event_participant_id: string | null;
   student_jornada_simulado_id: string | null;
@@ -29,28 +30,24 @@ export async function resyncTopCoinEarnings(
   studentId: string,
   simuladoId: string,
 ): Promise<void> {
-  const { data: attempts } = await supabase
+  const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
-    .select("id, created_at, attempt_context, event_participant_id, student_jornada_simulado_id, simulado_event_participants:event_participant_id(result_released_at), student_jornada_simulados:student_jornada_simulado_id(student_jornadas:student_jornada_id(jornada_id)), simulado_results ( correct_count )")
+    .select("id, created_at, result_released_at, attempt_context, event_participant_id, student_jornada_simulado_id, simulado_event_participants:event_participant_id(result_released_at), student_jornada_simulados:student_jornada_simulado_id(student_jornadas:student_jornada_id(jornada_id)), simulado_results ( correct_count )")
     .eq("student_id", studentId)
     .eq("simulado_id", simuladoId)
     .eq("status", "completed")
     .eq("counts_toward_limit", true)
     .order("created_at", { ascending: true });
 
-  await supabase
-    .from("topcoin_earnings")
-    .delete()
-    .eq("student_id", studentId)
-    .eq("simulado_id", simuladoId);
-
-  const rows = ((attempts || []) as unknown as AttemptWithResult[]).filter((attempt) => {
-    if (!attempt.event_participant_id) return true;
-    const participant = Array.isArray(attempt.simulado_event_participants) ? attempt.simulado_event_participants[0] : attempt.simulado_event_participants;
-    return Boolean(participant?.result_released_at);
-  });
+  if (attemptsError) throw attemptsError;
+  const rows = (attempts || []) as unknown as AttemptWithResult[];
+  const eligibleIds = rows.map((row) => row.id);
+  // Blocking a result must not remove a previously granted credit.
+  const { error: deletionError } = await supabase.from("topcoin_earnings").delete()
+    .eq("student_id", studentId).eq("simulado_id", simuladoId)
+    .not("attempt_id", "in", "(" + (eligibleIds.length ? eligibleIds.join(",") : "00000000-0000-0000-0000-000000000000") + ")");
+  if (deletionError) throw deletionError;
   if (rows.length === 0) return;
-
   const contextAttemptNumbers = new Map<string, number>();
   const inserts = rows.map((row) => {
     const contextKey = row.event_participant_id
@@ -66,6 +63,9 @@ export async function resyncTopCoinEarnings(
     const enrollment = Array.isArray(scheduleItem?.student_jornadas)
       ? scheduleItem.student_jornadas[0] || null
       : scheduleItem?.student_jornadas || null;
+    const participant = Array.isArray(row.simulado_event_participants) ? row.simulado_event_participants[0] : row.simulado_event_participants;
+    const released = row.event_participant_id ? Boolean(participant?.result_released_at) : !row.student_jornada_simulado_id || Boolean(row.result_released_at);
+    if (!released) return null;
     return {
       student_id: studentId,
       simulado_id: simuladoId,
@@ -79,5 +79,8 @@ export async function resyncTopCoinEarnings(
     };
   });
 
-  await supabase.from("topcoin_earnings").insert(inserts);
+  const available = inserts.filter((row) => row !== null);
+  if (!available.length) return;
+  const { error } = await supabase.from("topcoin_earnings").upsert(available, { onConflict: "attempt_id" });
+  if (error) throw error;
 }

@@ -109,7 +109,7 @@ function richHtml(value?: string | null): string {
 }
 
 import type { BankQuestion, Discipline, ExamBoard, Simulado, SimuladoPayload, SimuladoQuestion, Subject } from "../../types";
-import { difficultyLabel, getDefaultOwlHelpLimit, resolveOwlHelpLimit, scoringLabel, stripHtml } from "../../utils";
+import { difficultyLabel, resolveOwlHelpLimit, scoringLabel, stripHtml } from "../../utils";
 import { normalizeBoardComparableName, normalizeTopicComparableName } from "@/lib/utils/text";
 import { qCard } from "@/lib/ui/question-tokens";
 
@@ -284,6 +284,7 @@ function normalizeConfigSnapshot(payload: SimuladoPayload) {
     status: payload.status || "draft",
     question_count: payload.question_count ?? null,
     time_limit_minutes: payload.time_limit_minutes ?? null,
+    navigation_type: payload.navigation_type ?? "open",
     show_result_on_finish: Boolean(payload.show_result_on_finish),
     show_answer_key_on_finish: Boolean(payload.show_answer_key_on_finish),
     instant_feedback_enabled: Boolean(payload.instant_feedback_enabled),
@@ -366,6 +367,7 @@ export default function EditarSimuladoClient({
     status: simulado.status || "draft",
     question_count: simulado.question_count ?? null,
     time_limit_minutes: simulado.time_limit_minutes ?? null,
+    navigation_type: simulado.navigation_type ?? "open",
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: simulado.instant_feedback_enabled,
@@ -391,6 +393,7 @@ export default function EditarSimuladoClient({
     status: simulado.status || "draft",
     question_count: simulado.question_count ?? null,
     time_limit_minutes: simulado.time_limit_minutes ?? null,
+    navigation_type: simulado.navigation_type ?? "open",
     show_result_on_finish: simulado.show_result_on_finish,
     show_answer_key_on_finish: simulado.show_answer_key_on_finish,
     instant_feedback_enabled: simulado.instant_feedback_enabled,
@@ -671,15 +674,6 @@ export default function EditarSimuladoClient({
     });
   }
 
-  function updateOwlHelpEnabled(enabled: boolean) {
-    setForm((current) => ({
-      ...current,
-      owl_help_enabled: enabled,
-      owl_help_limit: enabled
-        ? resolveOwlHelpLimit(current.owl_help_limit, current.question_count)
-        : null,
-    }));
-  }
 
   async function save() {
     setFeedback(null);
@@ -694,10 +688,6 @@ export default function EditarSimuladoClient({
       return;
     }
 
-    if (form.owl_help_enabled && (!Number.isInteger(Number(form.owl_help_limit)) || Number(form.owl_help_limit) < 1)) {
-      setFeedback({ type: "error", title: "Quantidade de ajudas inválida", message: "Informe um número inteiro maior que zero ou desabilite a Ajuda da Coruja." });
-      return;
-    }
 
     if (form.status === "published") {
       const missingTopics = relations.filter(
@@ -1252,44 +1242,16 @@ export default function EditarSimuladoClient({
             <PremiumSection
               eyebrow="Bloco C"
               title="Comportamentos"
-              description="Regras de experiência do aluno, feedback, embaralhamento e apoio da coruja."
+              description="Navegação original, embaralhamento e regras próprias do Simulado. Feedback, resultados e Coruja pertencem ao contexto."
               icon={<CopyCheck size={18} />}
             >
               <div className="grid gap-4 xl:grid-cols-2 dark-form">
                 <Toggle label="Permitir questões em branco" value={form.allow_blank_answers} onChange={(value) => update("allow_blank_answers", value)} />
-                <Toggle label="Exibir resultado ao finalizar" value={form.show_result_on_finish} onChange={(value) => update("show_result_on_finish", value)} />
-                <Toggle label="Mostrar gabarito ao finalizar" value={form.show_answer_key_on_finish} onChange={(value) => update("show_answer_key_on_finish", value)} />
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <PremiumSimpleSelect
-                    label="Modo de feedback"
-                    value={form.feedback_mode || (form.instant_feedback_enabled ? "instant" : "final_only")}
-                    onChange={(value) => update("feedback_mode", value as SimuladoPayload["feedback_mode"])}
-                    options={[["instant", "Feedback imediato"], ["final_only", "Navegação aberta / feedback ao final"]]}
-                  />
+                  <PremiumSimpleSelect label="Navegacao original" value={form.navigation_type ?? "open"} onChange={(value) => update("navigation_type", value as "open" | "closed")} options={[["open", "Aberta"], ["closed", "Fechada: confirmar na sequencia"]]} />
                 </div>
                 <Toggle label="Mostrar comentário do professor" value={form.show_teacher_comment} onChange={(value) => update("show_teacher_comment", value)} />
-                <Toggle label="Ajuda da Coruja" value={Boolean(form.owl_help_enabled)} onChange={updateOwlHelpEnabled}>
-                  {form.owl_help_enabled && (
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,0.42fr)] sm:items-end">
-                      <p className="text-xs font-semibold leading-5 text-slate-400">
-                        Sugestão automática: {getDefaultOwlHelpLimit(form.question_count)} ajuda(s). O número informado será o limite deste simulado.
-                      </p>
-                    <PremiumInput
-                      label="Quantidade de ajudas"
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={form.owl_help_limit ?? ""}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => update("owl_help_limit", event.target.value ? Number(event.target.value) : null)}
-                      premiumStepper
-                      onStep={(value) => update("owl_help_limit", value)}
-                      placeholder={String(getDefaultOwlHelpLimit(form.question_count))}
-                      variant="jornada"
-                      className="!h-10 !rounded-xl !border-orange-300/20 !bg-black/20 text-center !font-black"
-                    />
-                    </div>
-                  )}
-                </Toggle>
+
                 <Toggle label="Embaralhar questões" value={form.shuffle_questions} onChange={(value) => update("shuffle_questions", value)} />
                 <Toggle label="Embaralhar alternativas" value={form.shuffle_alternatives} onChange={(value) => update("shuffle_alternatives", value)} />
               </div>
@@ -1378,7 +1340,6 @@ export default function EditarSimuladoClient({
                 <Summary label="Publicação" value={form.status === "published" ? "Disponível" : "Não publicada"} icon={<CheckCircle2 size={15} />} accent={form.status === "published"} />
                 <Summary label="Tempo" value={form.time_limit_minutes ? `${form.time_limit_minutes} min` : "Sem limite"} icon={<Clock3 size={15} />} />
                 <Summary label="Questões" value={form.question_count ? String(form.question_count) : String(relations.length || "Não definido")} icon={<Target size={15} />} />
-                <Summary label="Ajuda da Coruja" value={form.owl_help_enabled ? `${resolveOwlHelpLimit(form.owl_help_limit, form.question_count)} uso(s)` : "Desabilitada"} icon={<span className="text-sm">{OWL_MARK}</span>} accent={Boolean(form.owl_help_enabled)} />
                 <Summary label="ALT+TAB / guias" value={(form.anti_tab_switch_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_tab_switch_enabled ?? true} />
                 <Summary label="Janelas lado a lado" value={(form.anti_window_blur_enabled ?? true) ? "Ativo" : "Inativo"} icon={<ShieldCheck size={15} />} accent={form.anti_window_blur_enabled ?? true} />
               </div>

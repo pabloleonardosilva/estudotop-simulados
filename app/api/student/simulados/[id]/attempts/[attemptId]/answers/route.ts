@@ -61,8 +61,16 @@ export async function POST(
   }
 
   const result = data as { ok: boolean; http_status?: number; message: string; is_correct?: boolean | null; is_locked?: boolean; answered_count?: number; progress_percent?: number };
+  let explanationText: string | null = null;
+  if (result.ok && result.is_locked && typeof result.is_correct === "boolean") {
+    const { data: attempt } = await supabase.from("simulado_attempts").select("settings_snapshot").eq("id", attemptId).eq("student_id", student.id).maybeSingle();
+    if (attempt?.settings_snapshot?.show_teacher_comment !== false) {
+      const { data: question } = await supabase.from("questions").select("explanation_text").eq("id", body.question_id).maybeSingle();
+      explanationText = question?.explanation_text || null;
+    }
+  }
   return NextResponse.json(
-    { ok: result.ok, message: result.message, is_correct: result.is_correct ?? null, is_locked: Boolean(result.is_locked), answered_count: result.answered_count, progress_percent: result.progress_percent },
+    { ok: result.ok, message: result.message, is_correct: result.is_correct ?? null, is_locked: Boolean(result.is_locked), explanation_text: explanationText, answered_count: result.answered_count, progress_percent: result.progress_percent },
     { status: result.ok ? 200 : (result.http_status || 409) },
   );
 }

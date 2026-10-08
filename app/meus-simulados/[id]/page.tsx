@@ -79,7 +79,7 @@ export default async function MeusSimuladosDetailPage({
         instant_feedback_enabled: simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled,
         feedback_mode: simulado.feedback_mode || (simulado.instant_feedback_enabled ? "instant" : "final_only"),
         show_teacher_comment: simulado.show_teacher_comment,
-        correction_video_url: simulado.correction_video_url,
+        correction_video_url: null,
         shuffle_questions: simulado.shuffle_questions,
         shuffle_alternatives: simulado.shuffle_alternatives,
         allow_blank_answers: simulado.allow_blank_answers,

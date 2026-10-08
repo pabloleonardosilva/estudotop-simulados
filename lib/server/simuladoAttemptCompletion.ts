@@ -1,3 +1,4 @@
+import { isAttemptResultReleased, reconcileJornadaResultReleases } from "./contextualSimuladoSettings";
 import "server-only";
 
 import { after } from "next/server";
@@ -119,7 +120,7 @@ export type CompleteSimuladoAttemptResult =
       resultId: string;
       earnedTopcoins: number | null;
       resultReleased: boolean;
-      resultAccess: "available" | "blocked_by_event";
+      resultAccess: "available" | "blocked_by_event" | "blocked_by_jornada";
       eventId: string | null;
     }
   | { ok: false; httpStatus: number; message: string; resultId: string | null };
@@ -361,7 +362,15 @@ export async function completeSimuladoAttempt(
     }
     eventResultReleased = Boolean(participant?.result_released_at || event?.result_policy === "released");
   }
-  const resultAccess: "available" | "blocked_by_event" = isEventAttempt && !eventResultReleased ? "blocked_by_event" : "available";
+  if (attempt.student_jornada_simulado_id) {
+    try {
+      await reconcileJornadaResultReleases(supabase, [attempt.student_jornada_simulado_id]);
+    } catch (error) {
+      void logSystemError({ source: "lib.server.simuladoAttemptCompletion.jornada_release", error, request, metadata: { attempt_id: attemptId, origin } });
+    }
+  }
+  const journeyResultReleased = !attempt.student_jornada_simulado_id || await isAttemptResultReleased(supabase, attemptId, studentId);
+  const resultAccess: "available" | "blocked_by_event" | "blocked_by_jornada" = isEventAttempt && !eventResultReleased ? "blocked_by_event" : !journeyResultReleased ? "blocked_by_jornada" : "available";
 
   const { data: journeyScheduleItem, error: activeJornadasError } = attempt.student_jornada_simulado_id
     ? await supabase
@@ -512,7 +521,7 @@ export async function completeSimuladoAttempt(
   let persistedTopCoins: number | null = null;
   try {
     if (resultAccess === "available") {
-      if (eventResultReleased) await resyncTopCoinEarnings(supabase, studentId, simuladoId);
+      if (eventResultReleased && journeyResultReleased) await resyncTopCoinEarnings(supabase, studentId, simuladoId);
       const { data: earningRow } = await supabase
         .from("topcoin_earnings")
         .select("amount")
@@ -583,7 +592,7 @@ export async function completeSimuladoAttempt(
     ok: true,
     resultId,
     earnedTopcoins: persistedTopCoins,
-    resultReleased: eventResultReleased,
+    resultReleased: eventResultReleased && journeyResultReleased,
     resultAccess,
     eventId: (attempt.event_id as string | null) || null,
   };

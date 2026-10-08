@@ -278,7 +278,7 @@ export async function downloadSimuladoAdminPdf({ meta, questions }: { meta: Admi
 
   pdf.text("Configurações", MARGIN, pdf.current.y, 15, "#0F172A", true);
   pdf.current.y -= 18;
-  pdf.multiline(`Pontuação: ${meta.scoringModel || "Não informado"}. Ajuda da Coruja: ${meta.owlHelpEnabled ? `${meta.owlHelpLimit || 1} uso(s)` : "desabilitada"}.`, MARGIN, PAGE_W - MARGIN * 2, 10, "#334155");
+  pdf.multiline(`Pontuação: ${meta.scoringModel || "Não informado"}. Feedback, resultados e Coruja seguem a Jornada ou Evento.`, MARGIN, PAGE_W - MARGIN * 2, 10, "#334155");
   pdf.current.y -= 12;
   pdf.line(MARGIN, pdf.current.y, PAGE_W - MARGIN, pdf.current.y, "#E2E8F0");
   pdf.current.y -= 24;

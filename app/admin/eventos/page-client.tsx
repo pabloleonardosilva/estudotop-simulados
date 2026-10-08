@@ -1,4 +1,6 @@
 "use client";
+import ContextSettingsFields, { defaultContextSettings, type ContextSettingsForm } from "@/app/simulados/components/ContextSettingsFields";
+
 import { sortByPtBrLabel } from "@/app/lib/utils/sort";
 
 import { FormEvent, MouseEvent, useCallback, useEffect, useState } from "react";
@@ -68,6 +70,7 @@ export default function EventosAdminClient() {
   const [startsAt, setStartsAt] = useState(schedule.startsAt);
   const [endsAt, setEndsAt] = useState(schedule.endsAt);
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION_MINUTES);
+  const [contextSettings, setContextSettings] = useState<ContextSettingsForm>(defaultContextSettings);
   const [maxAttempts, setMaxAttempts] = useState(3);
   const [resultPolicy, setResultPolicy] = useState("blocked");
   const [professorIds, setProfessorIds] = useState<string[]>([]);
@@ -99,6 +102,7 @@ export default function EventosAdminClient() {
   }, [load]);
 
   function resetForm() {
+    setContextSettings(defaultContextSettings);
     setMaxAttempts(3);
     const nextSchedule = initialSchedule();
     setName("");
@@ -154,7 +158,7 @@ export default function EventosAdminClient() {
         body: JSON.stringify({
           name: name.trim(), simulado_id: simuladoId || null,
           starts_at: startDate.toISOString(), ends_at: endDate.toISOString(),
-          max_attempts: maxAttempts, duration_minutes: durationMinutes, result_policy: resultPolicy,
+          ...contextSettings, max_attempts: maxAttempts, duration_minutes: durationMinutes, result_policy: resultPolicy,
           professor_ids: professorIds, card_image_id: cardImageId, professor_banner_image_id: bannerImageId, professor_banner_position_x: bannerPosition.x, professor_banner_position_y: bannerPosition.y,
         }),
       });
@@ -215,6 +219,7 @@ export default function EventosAdminClient() {
               <SearchableSelect dark label="Simulado" value={simuladoId} onChange={setSimuladoId} options={simulados.map((item) => ({ value: item.id, label: item.title }))} placeholder="Selecione um simulado" />
               <PremiumInput variant="jornada" label="Início — horário de Brasília" type="datetime-local" value={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleStartChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
               <PremiumInput variant="jornada" label="Término — horário de Brasília" type="datetime-local" value={endsAt} min={startsAt} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleEndChange(event.target.value)} onClick={openDateTimePicker} required className="[color-scheme:dark] cursor-pointer" />
+              <div className="md:col-span-2"><ContextSettingsFields value={contextSettings} onChange={(patch) => setContextSettings((previous) => ({ ...previous, ...patch }))} /></div>
               <PremiumInput variant="jornada" label="Tentativas permitidas" type="number" min={1} step={1} required value={maxAttempts} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setMaxAttempts(Number(event.target.value))} />
               <PremiumInput variant="jornada" label="Duração em minutos" type="number" min={1} step={1} value={durationMinutes} onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleDurationChange(Number(event.target.value))} premiumStepper onStep={handleDurationChange} required />
               <PremiumSimpleSelect dark label="Resultados" value={resultPolicy} onChange={setResultPolicy} options={[["blocked", "Bloqueados até a liberação"], ["released", "Liberados após a conclusão"]]} />

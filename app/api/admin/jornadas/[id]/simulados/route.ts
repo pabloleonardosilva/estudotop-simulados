@@ -7,6 +7,22 @@ function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof NextResponse) return admin;
+  const { id } = await params;
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body.jornada_simulado_id !== "string") return NextResponse.json({ ok: false, message: "Vínculo inválido." }, { status: 400 });
+  const enabled = body.owl_help_enabled_override;
+  const limit = body.owl_help_limit_override;
+  if ((enabled !== null && typeof enabled !== "boolean") || (enabled === true && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 2147483647)) || (enabled !== true && limit !== null)) return NextResponse.json({ ok: false, message: "Exceção da Coruja inválida." }, { status: 400 });
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.from("jornada_simulados").update({ owl_help_enabled_override: enabled, owl_help_limit_override: limit }).eq("id", body.jornada_simulado_id).eq("jornada_id", id).select("id,owl_help_enabled_override,owl_help_limit_override").maybeSingle();
+  if (error) return NextResponse.json({ ok: false, message: "Não foi possível salvar a exceção." }, { status: 500 });
+  if (!data) return NextResponse.json({ ok: false, message: "Vínculo não encontrado." }, { status: 404 });
+  return NextResponse.json({ ok: true, message: "Exceção salva. Tentativas em andamento mantêm seu saldo original.", jornada_simulado: data });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -23,7 +39,7 @@ export async function GET(
       .select(`
         id,
         simulado_id,
-        order_number,
+        order_number, owl_help_enabled_override, owl_help_limit_override,
         created_at,
         simulados:simulado_id(id, title, status, question_count)
       `)

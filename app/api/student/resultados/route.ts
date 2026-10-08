@@ -18,6 +18,7 @@ type AttemptRow = {
   created_at: string | null;
   attempt_context: string;
   student_jornada_simulado_id: string | null;
+  result_released_at: string | null;
   simulados: { id: string; title: string | null; published_at: string | null } | { id: string; title: string | null; published_at: string | null }[] | null;
 };
 
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
         submitted_at,
         created_at,
         attempt_context,
-        student_jornada_simulado_id,
+        student_jornada_simulado_id, result_released_at,
         simulados:simulado_id ( id, title, published_at )
       `,
     )
@@ -218,8 +219,8 @@ export async function GET(request: Request) {
       source: meta ? "jornada" : "standalone",
       event_id: null,
       event_name: null,
-      result_status: "available",
-      can_view: true,
+      result_status: row.student_jornada_simulado_id && !row.result_released_at ? "pending_release" : "available",
+      can_view: !row.student_jornada_simulado_id || Boolean(row.result_released_at),
       _jornada_id: meta?.jornada_id || null,
       _jornada_started_at: meta?.jornada_started_at || null,
       _order_number: meta?.order_number ?? null,

@@ -15,7 +15,7 @@ async function getData(id: string) {
         jornada_simulados(
           id,
           simulado_id,
-          order_number,
+          order_number, owl_help_enabled_override, owl_help_limit_override,
           created_at,
           simulados:simulado_id(id, title, status, question_count)
         ),
@@ -55,6 +55,7 @@ async function getData(id: string) {
     planned_simulados_count: j.planned_simulados_count || 0,
     duration_days: j.duration_days ?? null,
     max_attempts: j.max_attempts,
+    feedback_mode: j.feedback_mode, navigation_override: j.navigation_override, owl_help_enabled: j.owl_help_enabled, owl_help_limit: j.owl_help_limit, result_policy: j.result_policy,
     duration_months: j.duration_months,
     exam_date: j.exam_date,
     effective_end_date: j.effective_end_date,

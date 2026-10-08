@@ -1,3 +1,4 @@
+import { releasedAttemptIds } from "@/lib/server/contextualSimuladoSettings";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getStudentFromRequest } from "@/lib/server/supabaseStudentAuth";
@@ -6,6 +7,7 @@ import { logSystemError } from "@/app/lib/server/auditLogger";
 type AttemptRow = {
   id: string;
   simulado_id: string;
+  student_jornada_simulado_id?: string | null;
   status: string;
   answered_count: number | null;
   total_questions: number | null;
@@ -175,7 +177,7 @@ export async function GET(request: Request) {
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
     .select(
-      "id, simulado_id, status, answered_count, total_questions, progress_percent, started_at, submitted_at, last_activity_at, created_at, time_spent_seconds, counts_toward_limit",
+      "id, student_jornada_simulado_id, simulado_id, status, answered_count, total_questions, progress_percent, started_at, submitted_at, last_activity_at, created_at, time_spent_seconds, counts_toward_limit",
     )
     .eq("student_id", student.id)
     .in("simulado_id", accessibleSimuladoIds.length ? accessibleSimuladoIds : ["00000000-0000-0000-0000-000000000000"])
@@ -212,7 +214,8 @@ export async function GET(request: Request) {
     attemptsBySimulado.set(attempt.simulado_id, list);
   }
 
-  const completedResults = ((results || []) as ResultRow[]).filter((result) => result.finished_at || result.attempt_id);
+  const releasedIds = await releasedAttemptIds(supabase, student.id, completedAttemptIds);
+  const completedResults = ((results || []) as ResultRow[]).filter((result) => releasedIds.has(result.attempt_id));
   const resultsBySimulado = new Map<string, ResultRow[]>();
   for (const result of completedResults) {
     const list = resultsBySimulado.get(result.simulado_id) || [];
@@ -230,13 +233,13 @@ export async function GET(request: Request) {
     const total = Number(row.jornadas?.planned_simulados_count || linkedTotal || 0);
     const status = computeStudentJornadaStatus(row.status, row.expires_at);
     const completed = itens.filter((item) => {
-      const itemAttempts = attemptsBySimulado.get(item.simulado_id) || [];
+      const itemAttempts = (attemptsBySimulado.get(item.simulado_id) || []).filter((attempt) => attempt.student_jornada_simulado_id === item.id);
       return itemAttempts.some((attempt) => attempt.status === "completed" && attempt.counts_toward_limit);
     }).length;
     const available = itens.filter((item) => ["available", "in_progress"].includes(item.status)).length;
     const locked = Math.max(0, total - completed - available);
     const scores = itens.flatMap((item) =>
-      (resultsBySimulado.get(item.simulado_id) || [])
+      (resultsBySimulado.get(item.simulado_id) || []).filter((result) => (attemptsBySimulado.get(item.simulado_id) || []).some((attempt) => attempt.id === result.attempt_id && attempt.student_jornada_simulado_id === item.id))
         .map((result) => safePercent(result.display_percentage ?? result.percentage))
         .filter((value): value is number => typeof value === "number"),
     );

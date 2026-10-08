@@ -7,7 +7,7 @@ import ts from "typescript";
 function load(path: string, modules: Record<string, unknown>) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || {}, Request, Response, URL, console });
+  vm.runInNewContext(code, { exports, require: (name: string) => modules[name] || (name === "@/lib/server/contextualSimuladoSettings" ? load("lib/server/contextualSimuladoSettings.ts", {}) : {}), Request, Response, URL, console });
   return exports as any;
 }
 function database() {

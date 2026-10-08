@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         journey_highlights,
         planned_simulados_count,
         duration_days,
-        max_attempts,
+        max_attempts, feedback_mode,navigation_override,owl_help_enabled,owl_help_limit,result_policy,
         duration_months,
         release_duration_days,
         exam_date,
@@ -98,6 +98,7 @@ export async function POST(request: Request) {
         planned_simulados_count: source.planned_simulados_count,
         duration_days: source.duration_days,
         max_attempts: source.max_attempts,
+        feedback_mode: source.feedback_mode, navigation_override: source.navigation_override, owl_help_enabled: source.owl_help_enabled, owl_help_limit: source.owl_help_limit, result_policy: source.result_policy,
         duration_months: source.duration_months,
         release_duration_days: source.release_duration_days,
         exam_date: source.exam_date,
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
 
     const { data: sourceLinks, error: linksError } = await supabase
       .from("jornada_simulados")
-      .select("simulado_id, order_number")
+      .select("simulado_id, order_number, owl_help_enabled_override, owl_help_limit_override")
       .eq("jornada_id", sourceJornadaId)
       .order("order_number", { ascending: true });
 
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
         sourceLinks.map((link) => ({
           jornada_id: created.id,
           simulado_id: link.simulado_id,
-          order_number: link.order_number,
+          order_number: link.order_number, owl_help_enabled_override: link.owl_help_enabled_override, owl_help_limit_override: link.owl_help_limit_override,
         })),
       );
 

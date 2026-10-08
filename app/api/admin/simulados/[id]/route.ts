@@ -3,7 +3,6 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction, logSystemError } from "@/app/lib/server/auditLogger";
-import { getDefaultOwlHelpLimit } from "@/app/simulados/utils";
 
 function clean(value: unknown) {
   return String(value || "").trim();
@@ -38,25 +37,12 @@ function parseQuestionCount(value: unknown) {
   return Number.isInteger(count) && count >= 0 ? count : undefined;
 }
 
-function parseOwlHelpLimit(enabled: boolean, value: unknown, questionCount: number) {
-  if (!enabled) return null;
-  if (value === null || value === undefined || value === "") {
-    return getDefaultOwlHelpLimit(questionCount);
-  }
-  const limit = Number(value);
-  return Number.isInteger(limit) && limit > 0 ? limit : undefined;
-}
 
 function parseScoringModel(value: unknown) {
   const model = clean(value) || "traditional";
   return ["traditional", "cebraspe"].includes(model) ? model : null;
 }
 
-function parseFeedbackMode(value: unknown, instantFeedbackValue: unknown) {
-  const fallback = instantFeedbackValue ? "instant" : "final_only";
-  const mode = clean(value) || fallback;
-  return ["instant", "final_only"].includes(mode) ? mode : null;
-}
 
 // Ausência do campo (frontend antigo, payload incompleto) nunca deve virar
 // "false" — os dois recursos de anti-cheat são ligados por padrão.
@@ -77,13 +63,10 @@ export async function PATCH(
     const title = clean(body.title);
     const status = parseStatus(body.status);
     const questionCount = parseQuestionCount(body.question_count);
-    const owlHelpEnabled = body.owl_help_enabled === true;
-    const owlHelpLimit = questionCount === undefined
-      ? undefined
-      : parseOwlHelpLimit(owlHelpEnabled, body.owl_help_limit, questionCount);
     const timeLimit = parseTimeLimit(body.time_limit_minutes);
     const scoringModel = parseScoringModel(body.scoring_model);
-    const feedbackMode = parseFeedbackMode(body.feedback_mode, body.instant_feedback_enabled);
+    const navigationType = body.navigation_type;
+    if (navigationType !== undefined && navigationType !== "open" && navigationType !== "closed") return NextResponse.json({ ok: false, message: "Navegacao invalida." }, { status: 400 });
     const antiTabSwitchEnabled = parseBooleanDefaultTrue(body.anti_tab_switch_enabled);
     const antiWindowBlurEnabled = parseBooleanDefaultTrue(body.anti_window_blur_enabled);
 
@@ -103,9 +86,6 @@ export async function PATCH(
       return NextResponse.json({ ok: false, message: "Numero de questoes invalido." }, { status: 400 });
     }
 
-    if (owlHelpLimit === undefined) {
-      return NextResponse.json({ ok: false, message: "A quantidade de ajudas da Coruja deve ser um número inteiro maior que zero." }, { status: 400 });
-    }
 
 
 
@@ -113,9 +93,6 @@ export async function PATCH(
       return NextResponse.json({ ok: false, message: "Sistema de pontuação inválido." }, { status: 400 });
     }
 
-    if (!feedbackMode) {
-      return NextResponse.json({ ok: false, message: "Modo de feedback inválido." }, { status: 400 });
-    }
 
     const supabase = createSupabaseAdminClient();
 
@@ -178,18 +155,13 @@ export async function PATCH(
         status,
         question_count: questionCount,
         time_limit_minutes: timeLimit,
-        show_result_on_finish: body.show_result_on_finish ?? true,
-        show_answer_key_on_finish: body.show_answer_key_on_finish ?? false,
-        instant_feedback_enabled: feedbackMode === "instant",
-        feedback_mode: feedbackMode,
+        navigation_type: navigationType,
         show_teacher_comment: body.show_teacher_comment ?? true,
         correction_video_url: nullableString(body.correction_video_url),
         shuffle_questions: body.shuffle_questions ?? false,
         shuffle_alternatives: body.shuffle_alternatives ?? false,
         allow_blank_answers: body.allow_blank_answers ?? false,
         scoring_model: scoringModel,
-        owl_help_enabled: owlHelpEnabled,
-        owl_help_limit: owlHelpLimit,
         anti_tab_switch_enabled: antiTabSwitchEnabled,
         anti_window_blur_enabled: antiWindowBlurEnabled,
         published_at: status === "published" && !current.published_at ? now : current.published_at,

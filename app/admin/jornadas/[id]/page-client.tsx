@@ -922,6 +922,10 @@ function AsidePanel({ jornada, durationDays, studentJornadas }: { jornada: Jorna
         <div className="mt-4 space-y-3">
           <ConfigLine label="Duração" value={`${durationDays} dias`} />
           <ConfigLine label="Data da prova" value={jornada.exam_date ? formatDate(jornada.exam_date) : "Sem data"} />
+          <ConfigLine label="Feedback" value={jornada.feedback_mode === "instant" ? "Imediato" : "Ao final"} />
+          <ConfigLine label="Navegação" value={jornada.feedback_mode === "instant" ? "Fechada" : jornada.navigation_override === "closed" ? "Exceção: fechada" : jornada.navigation_override === "open" ? "Exceção: aberta" : "Original do Simulado"} />
+          <ConfigLine label="Resultados" value={jornada.result_policy === "blocked" ? "Liberação administrativa" : "Após concluir"} />
+          <ConfigLine label="Coruja padrão" value={jornada.owl_help_enabled ? jornada.owl_help_limit + " ajuda(s)" : "Desabilitada"} />
           <ConfigLine label="Progressão" value="Sequencial" />
           <ConfigLine label="Tipo" value={scopeLabel(jornada.scope_type, jornada.contest_name)} />
         </div>

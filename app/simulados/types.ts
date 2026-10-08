@@ -79,6 +79,7 @@ export type Simulado = {
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;
   feedback_mode?: FeedbackMode | null;
+  navigation_type?: "open" | "closed";
   show_teacher_comment: boolean;
   correction_video_url?: string | null;
   shuffle_questions: boolean;
@@ -113,6 +114,7 @@ export type SimuladoPayload = {
   show_answer_key_on_finish: boolean;
   instant_feedback_enabled: boolean;
   feedback_mode?: FeedbackMode | null;
+  navigation_type?: "open" | "closed";
   show_teacher_comment: boolean;
   correction_video_url?: string | null;
   shuffle_questions: boolean;

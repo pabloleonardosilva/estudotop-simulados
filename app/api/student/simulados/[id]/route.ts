@@ -1,3 +1,4 @@
+import { resolveContextualSettings } from "@/lib/server/contextualSimuladoSettings";
 import { resolveAttemptLimit } from "@/lib/server/attemptLimit";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
@@ -189,6 +190,7 @@ export async function GET(
   const used = attempts.filter((row) => row.counts_toward_limit).length;
   const total = attemptLimit ?? 0;
   const remaining = total === null ? null : Math.max(total - used, 0);
+  const contextualSettings = attemptContext.type === "standalone" ? {} : await resolveContextualSettings(supabase, student.id, id, attemptContext, simulado.navigation_type);
   const questionsCount = simulado.question_count ?? (simulado.simulado_questions || []).length;
 
   void logStudentActivity({ studentId: student.id, action: "student.simulado.opened", entityType: "simulado", entityId: id, request });
@@ -207,7 +209,7 @@ export async function GET(
       instant_feedback_enabled: simulado.feedback_mode === "instant" || simulado.instant_feedback_enabled,
       feedback_mode: simulado.feedback_mode || (simulado.instant_feedback_enabled ? "instant" : "final_only"),
       show_teacher_comment: simulado.show_teacher_comment,
-      correction_video_url: simulado.correction_video_url,
+      correction_video_url: null,
       shuffle_questions: simulado.shuffle_questions,
       shuffle_alternatives: simulado.shuffle_alternatives,
       allow_blank_answers: simulado.allow_blank_answers,
@@ -217,6 +219,7 @@ export async function GET(
       owl_help_limit: simulado.owl_help_limit ?? null,
       anti_tab_switch_enabled: simulado.anti_tab_switch_enabled ?? true,
       anti_window_blur_enabled: simulado.anti_window_blur_enabled ?? true,
+      ...contextualSettings,
     },
     attempts: {
       in_progress: inProgress,

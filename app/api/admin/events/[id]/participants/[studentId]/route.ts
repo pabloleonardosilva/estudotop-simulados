@@ -4,7 +4,17 @@ import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { logActivity } from "@/lib/logging/activity-log";
 import { logSystemError } from "@/app/lib/server/auditLogger";
 
-type AttemptRow = { id: string; attempt_number: number | null; counts_toward_limit: boolean | null; created_at: string };
+type AttemptRow = { id: string; attempt_number: number | null; counts_toward_limit: boolean | null; created_at: string; status: string; submitted_at: string | null };
+
+// Mesma ordem usada pela rota de resultado para escolher o resultado oficial.
+function compareSubmission(a: AttemptRow, b: AttemptRow) {
+  if (a.submitted_at !== b.submitted_at) {
+    if (!a.submitted_at) return 1;
+    if (!b.submitted_at) return -1;
+    return Date.parse(a.submitted_at) - Date.parse(b.submitted_at);
+  }
+  return Date.parse(a.created_at) - Date.parse(b.created_at);
+}
 
 // Ajuste administrativo de tentativas do Evento — sempre escopado por
 // event_participant_id (e reforçado por event_id/student_id), nunca apenas
@@ -12,9 +22,9 @@ type AttemptRow = { id: string; attempt_number: number | null; counts_toward_lim
 // Jornada ou avulsas fora deste Evento, que nunca podem ser tocadas aqui.
 async function setEventParticipantAttemptsCount(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  params: { studentId: string; eventId: string; eventParticipantId: string; simuladoId: string; targetCount: number },
+  params: { studentId: string; eventId: string; eventParticipantId: string; simuladoId: string; targetCount: number; representativeAttemptId: string | null },
 ) {
-  const { studentId, eventId, eventParticipantId, simuladoId, targetCount } = params;
+  const { studentId, eventId, eventParticipantId, simuladoId, targetCount, representativeAttemptId } = params;
 
   // Escopo intencionalmente sem simulado_id: se o Admin já trocou o
   // Simulado vinculado ao Evento (ver ação "terminate_active_attempts"),
@@ -23,7 +33,7 @@ async function setEventParticipantAttemptsCount(
   // atual do Evento as tornaria invisíveis aqui, impedindo o ajuste/reset.
   const { data: attempts, error: attemptsError } = await supabase
     .from("simulado_attempts")
-    .select("id, attempt_number, counts_toward_limit, created_at")
+    .select("id, attempt_number, counts_toward_limit, created_at, status, submitted_at")
     .eq("student_id", studentId)
     .eq("event_id", eventId)
     .eq("event_participant_id", eventParticipantId)
@@ -34,7 +44,18 @@ async function setEventParticipantAttemptsCount(
   const existing = (attempts || []) as AttemptRow[];
   const existingCount = existing.length;
 
-  if (targetCount > existingCount) {
+  // O ajuste de consumo nunca descontabiliza o resultado oficial
+  // (representative_attempt_id válido ou, na falta dele, a primeira
+  // completed + counts_toward_limit) nem contabiliza uma conclusão anterior
+  // a ele, que o substituiria. Essas conclusões só ficam fora da contagem.
+  const validOfficial = existing.filter((row) => row.status === "completed" && row.counts_toward_limit).sort(compareSubmission);
+  const official = validOfficial.find((row) => row.id === representativeAttemptId) || validOfficial[0] || null;
+  const precedingCompleted = official
+    ? existing.filter((row) => row.id !== official.id && row.status === "completed" && compareSubmission(row, official) < 0).map((row) => row.id)
+    : [];
+  const availableCount = existingCount - precedingCompleted.length;
+
+  if (targetCount > availableCount) {
     const { count: questionCount, error: questionCountError } = await supabase
       .from("simulado_questions")
       .select("id", { count: "exact", head: true })
@@ -47,7 +68,7 @@ async function setEventParticipantAttemptsCount(
       return Number.isFinite(value) && value > max ? value : max;
     }, existingCount);
 
-    const placeholders = Array.from({ length: targetCount - existingCount }, (_, index) => ({
+    const placeholders = Array.from({ length: targetCount - availableCount }, (_, index) => ({
       simulado_id: simuladoId,
       student_id: studentId,
       event_id: eventId,
@@ -82,7 +103,14 @@ async function setEventParticipantAttemptsCount(
   if (freshError) throw new Error(freshError.message);
 
   const fresh = (freshAttempts || []) as AttemptRow[];
-  const shouldCount = new Set(fresh.slice(0, targetCount).map((row) => row.id));
+  const prioritized = official
+    ? [
+      ...fresh.filter((row) => row.id === official.id),
+      ...fresh.filter((row) => row.id !== official.id && !precedingCompleted.includes(row.id)),
+      ...fresh.filter((row) => precedingCompleted.includes(row.id)),
+    ]
+    : fresh;
+  const shouldCount = new Set(prioritized.slice(0, targetCount).map((row) => row.id));
   const idsToTrue = fresh.filter((row) => shouldCount.has(row.id)).map((row) => row.id);
   const idsToFalse = fresh.filter((row) => !shouldCount.has(row.id)).map((row) => row.id);
 
@@ -259,10 +287,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         .eq("reference_id", participant.id);
       if (notificationError) throw new Error(notificationError.message);
 
-      const { error: clearError } = await supabase
+      // A liberação de resultado é definitiva: o reset apaga as tentativas e a
+      // referência à oficial excluída, mas não revoga result_released_at.
+      const { data: persistedParticipant, error: clearError } = await supabase
         .from("simulado_event_participants")
-        .update({ representative_attempt_id: null, result_released_at: null })
-        .eq("id", participant.id);
+        .update({ representative_attempt_id: null })
+        .eq("id", participant.id)
+        .select("representative_attempt_id,result_released_at")
+        .maybeSingle();
       if (clearError) throw new Error(clearError.message);
 
       await logActivity({
@@ -296,8 +328,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           latest_result_score: null,
           latest_result_finished_at: null,
           latest_result_time_spent_seconds: null,
-          representative_attempt_id: null,
-          result_released_at: null,
+          representative_attempt_id: persistedParticipant?.representative_attempt_id ?? null,
+          result_released_at: persistedParticipant?.result_released_at ?? null,
         },
       });
     }
@@ -308,6 +340,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       eventParticipantId: participant.id,
       simuladoId: event.simulado_id,
       targetCount: attempts,
+      representativeAttemptId: participant.representative_attempt_id,
     });
 
     await logActivity({
