@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import RelatorioClient from "./page-client";
+import RelatorioPdfClient from "./pdf-version-client";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
 
@@ -114,13 +115,27 @@ async function getQuestionsWithSubjects(analysisId: string) {
   return { effectiveModules, totalQuestions: total, withImage, avgDiff, questions: preparedQuestions };
 }
 
-export default async function RelatorioPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RelatorioPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ versao?: string | string[] }> }) {
   await requireAdminPage();
   const { id } = await params;
+  const { versao } = await searchParams;
   const [analysis, questionsData] = await Promise.all([
     getAnalysis(id),
     getQuestionsWithSubjects(id),
   ]);
+  // Versão PDF: mesmos dados e mesma autorização da Versão Tela.
+  if (versao === "pdf") {
+    return (
+      <RelatorioPdfClient
+        analysis={analysis}
+        effectiveModules={questionsData.effectiveModules}
+        totalQuestions={questionsData.totalQuestions}
+        withImage={questionsData.withImage}
+        avgDiff={questionsData.avgDiff}
+        questions={questionsData.questions}
+      />
+    );
+  }
   return (
     <RelatorioClient
       analysis={analysis}

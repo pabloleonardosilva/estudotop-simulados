@@ -91,7 +91,8 @@ Texto bruto da prova
 | `/admin/raio-x-provas` | `app/admin/raio-x-provas/page.tsx` + `page-client.tsx` | Listagem das análises, filtros, métricas, ordenação e exclusão. |
 | `/admin/raio-x-provas/nova` | `app/admin/raio-x-provas/nova/page.tsx` + `page-client.tsx` | Criação de nova análise a partir de texto bruto. |
 | `/admin/raio-x-provas/[id]` | `app/admin/raio-x-provas/[id]/page.tsx` + `page-client.tsx` | Tela principal: revisão das questões, Raio-X final, parecer, variações e clones. |
-| `/admin/raio-x-provas/[id]/relatorio` | `app/admin/raio-x-provas/[id]/relatorio/page.tsx` + `page-client.tsx` | Landing page final do relatório e exportação PDF. |
+| `/admin/raio-x-provas/[id]/relatorio` | `app/admin/raio-x-provas/[id]/relatorio/page.tsx` + `page-client.tsx` | Versão Tela: landing page final do relatório. |
+| `/admin/raio-x-provas/[id]/relatorio?versao=pdf` | `app/admin/raio-x-provas/[id]/relatorio/page.tsx` + `pdf-version-client.tsx` | Versão PDF: pré-visualização do PDF real e botão "Gerar PDF" (ver 13.5). |
 
 ---
 
@@ -108,7 +109,9 @@ Texto bruto da prova
 | `app/admin/raio-x-provas/[id]/page.tsx` | Server component do detalhe. Carrega análise, questões, disciplinas, assuntos, bancas, concursos e simulados clones. |
 | `app/admin/raio-x-provas/[id]/page-client.tsx` | Coração do módulo. Contém revisão, Raio-X final, envio ao banco, variações, clones e parecer. |
 | `app/admin/raio-x-provas/[id]/relatorio/page.tsx` | Server component do relatório final. |
-| `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` | Landing page do relatório, infográficos, dobras e exportação PDF. |
+| `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` | Versão Tela: landing page do relatório, infográficos e dobras. Não exporta PDF. |
+| `app/admin/raio-x-provas/[id]/relatorio/pdf-version-client.tsx` | Versão PDF: gera o PDF no navegador, exibe o próprio arquivo em visualizador embutido e baixa o mesmo Blob. |
+| `app/admin/raio-x-provas/[id]/relatorio/report-model.ts` | Regras puras do relatório compartilhadas pelas duas versões (indicadores, dominância, tags, gabarito, parecer, nome do arquivo). |
 | `app/admin/raio-x-provas/types.ts` | Tipos do módulo. |
 | `app/admin/raio-x-provas/utils.ts` | Labels, status e helpers visuais. |
 
@@ -138,7 +141,10 @@ Texto bruto da prova
 | `app/components/questions/QuestionActionModal.tsx` | Modal de confirmação/progresso usado em ações do fluxo. |
 | `app/lib/utils/question-splitter.ts` | Quebra o texto bruto em blocos de questões. |
 | `app/lib/markdownReport.ts` | Renderização/apoio para conteúdo markdown do relatório. |
-| `app/lib/pdf/raio-x-pdf.ts` | Legado/descontinuado para dashboard; não é o fluxo oficial atual. |
+| `app/lib/pdf/raio-x-report-pdf.ts` | Gerador oficial do PDF do relatório final (React PDF, A4). Ver 13.5. |
+| `public/fonts/Inter-Regular.ttf`, `public/fonts/Inter-Bold.ttf` | Inter estática (mesma build 4.001 da `Inter.ttf` variável; licença em `Inter-OFL.txt`), usada só pelo PDF do Raio-X para ter negrito real. |
+| `app/lib/pdf/raio-x-pdf.ts` | Legado, sem consumidores; não é o fluxo oficial. |
+| `app/lib/pdf/captureReportPdf.ts` | Legado (html2canvas + jsPDF), sem consumidores e incompatível com a landing atual (exige `.report-page`). Não usar. |
 
 ---
 
@@ -637,13 +643,41 @@ O relatório final deve conter:
 - parecer EstudoTOP;
 - conclusão.
 
-### 13.5 Exportação PDF
+### 13.5 Versão Tela e Versão PDF (implementada em 2026-10-09)
 
-A exportação do PDF deve ocorrer na rota `/relatorio`, capturando o conteúdo da landing.
+**Correção histórica:** até 2026-10-08 esta seção e o índice descreviam um `exportPdf()` com `captureAndDownloadPdf()` (e funções de paginação `collectBreakablePoints`/`findBestBreak`) que não existiam no código desde a baseline Git (2026-07-10): a rota `/relatorio` nunca exibiu botão de PDF. A exportação foi implementada nesta data, com outra arquitetura.
+
+No card **Relatório final do Raio-X** de `/admin/raio-x-provas/[id]` há duas opções (ambas em nova aba). Desde 2026-10-09 o botão do topo do dashboard ("Ver relatório final", que abre a Versão Tela) também tem **Versão PDF** ao lado: ele era a entrada mais visível e levava só à Tela, que não tem acesso ao PDF por decisão de preservação.
+
+- **Versão Tela** → `/admin/raio-x-provas/[id]/relatorio`: landing premium, inalterada.
+- **Versão PDF** → `/admin/raio-x-provas/[id]/relatorio?versao=pdf`: mesma rota, mesma autorização (`requireAdminPage`) e mesma consulta de dados; `page.tsx` só escolhe o componente pelo parâmetro `versao`.
+
+**Versão PDF (`pdf-version-client.tsx`):** o botão **"Gerar PDF"** fica no cabeçalho fixo da página, visível desde o primeiro render (desabilitado com indicador enquanto o arquivo é preparado). A página gera o PDF ao abrir (indicador de processamento), exibe o **próprio arquivo** num visualizador embutido (`iframe` com o Blob) e "Gerar PDF" baixa **o mesmo Blob** — a pré-visualização não é uma representação à parte. Em erro, mostra a mensagem e "Tentar novamente"; sem visualizador embutido (alguns celulares), oferece abrir o PDF em nova aba. Nome do arquivo: `safeFileName(analysis.title)` + `.pdf`.
+
+**Gerador (`app/lib/pdf/raio-x-report-pdf.ts`):** `@react-pdf/renderer` (já usado nos demais PDFs), documento editorial próprio em A4, texto vetorial selecionável, sem `window.print` e sem captura de tela.
+
+- `buildRaioXPdfModel(props)`: monta o modelo com as funções de `report-model.ts` — as mesmas que a Versão Tela usa. Mesmos limites de tags da Tela (12 na leitura rápida, 18 por assunto, 8 por questão); nenhum texto é resumido ou truncado.
+- `RaioXReportDocument`: capa; KPIs; 01 Assuntos (barra de distribuição vetorial + cards); 02 Perfil + Leitura rápida; 03 O que foi cobrado; 04 Parecer; 05 Questões; fechamento. Cabeçalho e rodapé fixos com "Página X de Y" nas páginas internas.
+- **Capa oficial (desde 2026-10-09):** `public/images/pdf/capa_raiox.png` (1055×1491, proporção A4), configurada em `RAIO_X_PDF_ASSETS.coverImage` e renderizada por `ImageCover` ocupando a página inteira (`objectFit: "cover"`, corte < 0,1%, sem margens, cabeçalho ou rodapé). Os pixels da arte não são alterados. A imagem é marcada como `fixed` para ficar fora da lógica de quebra: com altura igual à da página, o React PDF a acusava como bloco excedente e a guarda de paginação bloqueava o arquivo.
+- **Selo de identificação (`CoverSeal`):** título oficial do registro (`analysis.title`, sem abreviação) entre filetes laranja e `ID: <analysis.id>` abaixo, em cinza, sobrepostos na geração. Fica na faixa preta abaixo dos ícones do rodapé da arte (y ≥ 1420 px, luminância ~1): acima dos ícones há só ~20 pt livres, colados aos papéis da mesa. Aparece só na capa.
+- **Reserva:** se a capa oficial não carregar, usa a capa composta anterior (`bg-simulados1.png` + `owl-footer.png`); o banner só é carregado nesse caso.
+- **Fontes:** família exclusiva `EstudoTopRaioXInter` com Inter estática Regular/Bold. A `Inter.ttf` variável registrada pelos demais PDFs não produz negrito real no React PDF (o peso 700 sai como 400 — comprovado em 2026-10-09; os outros PDFs não foram alterados).
+- **Imagens:** carregadas no navegador e reduzidas/recodificadas (`loadRaioXPdfAssets`); falha de carregamento não bloqueia o PDF (segue sem a imagem e a tela avisa).
+- **Nenhum registro global alterado** (`Font.registerHyphenationCallback`/`registerEmojiSource` não são chamados); hifenização desligada por `Text` (só palavras com mais de 28 caracteres são divididas).
+
+**Paginação (regra crítica — nunca cortar conteúdo):**
+
+- Blocos curtos e de altura limitada são indivisíveis (KPIs, cards de assunto, perfil, passos, fechamento).
+- Cards variáveis (assunto em "O que foi cobrado", questões) são indivisíveis só se a estimativa de altura couber em 90% da área útil; acima disso viram **topo indivisível + restante quebrável** (`topicBlocks`/`questionBlocks`), desenhados como um único card. Alternativas são indivisíveis individualmente.
+- Títulos de seção sempre vão num grupo indivisível com o topo do primeiro bloco. Texto grande demais para o grupo é dividido em fim de frase por `splitLead` (abertura + restante, sem descartar nada). `minPresenceAhead` do React PDF **não** é usado: mostrou comportamento inconsistente nos testes.
+- **Rede de segurança:** `renderWithOversizeGuard` observa o aviso do React PDF de bloco indivisível maior que a página (único caso em que ele corta). Havendo aviso, refaz o documento em modo seguro (blocos variáveis quebráveis); persistindo, falha com `RAIO_X_PDF_OVERSIZE_ERROR` e nenhum arquivo é gerado.
+- Questões inteiras têm prioridade sobre aproveitamento de página: questões de ~400 pt ficam uma por página quando duas não cabem. Decisão isolada em `QUESTION_UNBREAKABLE_LIMIT` (reduzir faz questões longas quebrarem entre alternativas).
 
 Regra oficial:
 
 > O PDF do Raio-X final pertence à rota `/admin/raio-x-provas/[id]/relatorio`. Não recriar PDF do dashboard operacional em `/admin/raio-x-provas/[id]` sem pedido explícito.
+
+**Validação (2026-10-09):** Raio-X real "PC-MG — Investigador de Polícia — 2024 — FGV" lido do banco **somente leitura** (mesmas consultas de `page.tsx`) e renderizado com o gerador real em Node: 12 páginas A4, ~490 KB, 220/220 textos do modelo presentes no PDF; todos os 183 textos da Versão Tela presentes no PDF, exceto os glifos decorativos ◉ e ◎, substituídos por formas vetoriais; páginas inspecionadas visualmente. Casos extremos (fixtures locais não persistidas): parecer de 17 páginas, enunciado de 7.000 caracteres, 1 questão, 45 questões, 14 assuntos com tags longas, símbolos, seção maior que uma página, sem imagens e modo seguro forçado — 0 texto ausente e 0 página vazia. Versão Tela comprovadamente idêntica (HTML renderizado byte a byte igual ao do HEAD). Suíte `tests/raio-x-report-pdf` 15/15. **Capa oficial (2026-10-09):** PDF real da PCMG regerado com a capa (12 páginas, ~825 KB); capa inspecionada (página inteira, sem distorção, selo legível e sem sobreposição); páginas internas com texto idêntico ao da geração anterior; suíte 18/18; suíte local 857/857. **Pendente:** teste autenticado no navegador (pré-visualização, download, mobile) — sem sessão administrativa no ambiente da implementação.
 
 ### 13.6 Funções auxiliares do relatório
 
@@ -654,7 +688,9 @@ Regra oficial:
 | `clampText` | Limita textos em cards. |
 | `difficultyLabel` | Converte nível numérico em label textual. |
 | `difficultyTone` | Define tom visual da dificuldade. |
-| `safeFileName` | Gera nome seguro para PDF. |
+| `safeFileName` | Gera o nome do arquivo da Versão PDF. |
+
+Desde 2026-10-09 essas funções ficam em `report-model.ts` (movidas sem alteração), junto com `buildReportSummary`, `profileIndicators`, `modulePercent`, `moduleRelatedNumbers`, `questionDisplayNumber`, `questionCorrectLabel`, `alternativeLabel` e `isAlternativeCorrect`, usadas pelas duas versões.
 | `unique` | Remove duplicatas em listas. |
 | `getQuestionTags` | Extrai tags de uma questão. |
 | `moduleTags` | Consolida tags por assunto. |
@@ -1000,8 +1036,10 @@ O clone possui lógica delicada de duas fases. Nunca salvar antes da aprovação
 - [ ] Abrir `/relatorio`.
 - [ ] Conferir hero, dobras, gráficos e cards.
 - [ ] Conferir textos longos sem estouro visual.
-- [ ] Exportar PDF.
-- [ ] Confirmar que o PDF captura a landing, não o dashboard operacional.
+- [ ] Abrir a Versão PDF pelo card "Relatório final do Raio-X" e conferir a pré-visualização.
+- [ ] "Gerar PDF" baixa o mesmo arquivo exibido, com nome padronizado.
+- [ ] Conferir capa, rodapés, quebras de página e ausência de cortes nas páginas intermediárias e finais.
+- [ ] Confirmar que a Versão Tela continua idêntica.
 
 ### 21.6 Variações
 
@@ -1062,6 +1100,11 @@ O clone possui lógica delicada de duas fases. Nunca salvar antes da aprovação
 - Relatório final evoluído para landing page premium.
 - PDF concentrado na rota `/relatorio`.
 - Dashboard operacional deixa de ser o ponto principal de exportação PDF.
+
+### 2026-10-09
+
+- Auditoria: o botão e o `exportPdf()` documentados nunca existiram no código desde a baseline Git; `captureReportPdf.ts` e `raio-x-pdf.ts` sem consumidores.
+- Implementadas Versão Tela e Versão PDF (seção 13.5): gerador `raio-x-report-pdf.ts` (React PDF), regras compartilhadas em `report-model.ts`, Inter estática exclusiva do PDF, capa provisória substituível, paginação com guarda contra corte.
 
 ### 2026-06-07 e 2026-06-08
 

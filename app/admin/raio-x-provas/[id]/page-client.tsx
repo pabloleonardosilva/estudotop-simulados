@@ -1810,6 +1810,9 @@ function RaioXFinalView({ analysis, dashboard, modulesSummary, finalSummary, sum
                   <a href={`/admin/raio-x-provas/${analysis.id}/relatorio`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-sky-400/30 bg-sky-500/15 px-3 py-1.5 text-sm font-semibold text-sky-300 transition hover:bg-sky-500/20">
                     <Eye size={13} /> Ver relatório final
                   </a>
+                  <a href={`/admin/raio-x-provas/${analysis.id}/relatorio?versao=pdf`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-500/15 px-3 py-1.5 text-sm font-semibold text-orange-200 transition hover:bg-orange-500/25">
+                    <FileText size={13} /> Versão PDF
+                  </a>
                 </>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-xl border border-orange-400/25 bg-orange-500/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.10em] text-orange-300">
@@ -2087,9 +2090,14 @@ function RaioXFinalView({ analysis, dashboard, modulesSummary, finalSummary, sum
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             {finalSummary ? (
-              <a href={`/admin/raio-x-provas/${analysis.id}/relatorio`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-sky-400/35 bg-sky-500/20 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/25">
-                <Eye size={14} /> Abrir relatório final
-              </a>
+              <>
+                <a href={`/admin/raio-x-provas/${analysis.id}/relatorio`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-sky-400/35 bg-sky-500/20 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/25">
+                  <Eye size={14} /> Versão Tela
+                </a>
+                <a href={`/admin/raio-x-provas/${analysis.id}/relatorio?versao=pdf`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-orange-400/35 bg-orange-500/15 px-4 py-2 text-sm font-bold text-orange-200 transition hover:bg-orange-500/25">
+                  <FileText size={14} /> Versão PDF
+                </a>
+              </>
             ) : (
               <button type="button" onClick={onGenerateReport} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-400">
                 <FileText size={14} /> Gerar Raio-X inicial

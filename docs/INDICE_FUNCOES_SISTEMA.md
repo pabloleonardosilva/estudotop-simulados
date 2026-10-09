@@ -321,7 +321,7 @@ Correções dos quatro bloqueadores críticos de segurança identificados na aud
 
 **Cobertura de modais e instruções:** todo conteúdo herda Inter diretamente do `body`, incluindo Admin, autenticação, Ajuda, Perfil, Jornadas, Eventos, execução, resultados e overlays. `PremiumModal` usa `font-sans`, ligado ao mesmo token global, sem inspeção de rota e sem exceções.
 
-**PDFs e saídas independentes do DOM:** `public/fonts/Inter.ttf` contém a fonte variável oficial e `public/fonts/Inter-OFL.txt` preserva sua licença SIL OFL. `SimuladoPdfReport`, `simulado-result-pdf` e `student-notes-pdf` registram Inter nos pesos 400/700 no React PDF; os geradores PDF binários legados também declaram Inter nos recursos tipográficos. Impressão, apresentação, página pública por token, relatórios HTML e templates de e-mail também declaram Inter como primeira família. Permanecem apenas fallbacks funcionais de glifos para emoji e fonte monoespaçada em blocos de código, sem constituírem exceções à tipografia da interface.
+**PDFs e saídas independentes do DOM:** `public/fonts/Inter.ttf` contém a fonte variável oficial e `public/fonts/Inter-OFL.txt` preserva sua licença SIL OFL. `SimuladoPdfReport`, `simulado-result-pdf` e `student-notes-pdf` registram Inter nos pesos 400/700 no React PDF (**limitação comprovada em 2026-10-09:** como os dois pesos apontam para a `Inter.ttf` variável e o React PDF não aplica eixos de variação, o peso 700 é renderizado como 400 — não há negrito real nesses PDFs; não corrigido, fora de escopo. O PDF do Raio-X usa `Inter-Regular.ttf`/`Inter-Bold.ttf` estáticas numa família própria, ver §18.5); os geradores PDF binários legados também declaram Inter nos recursos tipográficos. Impressão, apresentação, página pública por token, relatórios HTML e templates de e-mail também declaram Inter como primeira família. Permanecem apenas fallbacks funcionais de glifos para emoji e fonte monoespaçada em blocos de código, sem constituírem exceções à tipografia da interface.
 
 **Arquivos já corrigidos (2026-06-04):**
 - `app/admin/raio-x-provas/nova/page-client.tsx` — H1 `text-3xl font-black md:text-4xl` → `text-2xl font-semibold`
@@ -946,14 +946,18 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, 
 | `/admin/raio-x-provas` | Listagem das análises, filtros, métricas, ordenação e exclusão. | `app/admin/raio-x-provas/page.tsx`, `app/admin/raio-x-provas/page-client.tsx` |
 | `/admin/raio-x-provas/nova` | Nova análise a partir de texto bruto. | `app/admin/raio-x-provas/nova/page.tsx`, `app/admin/raio-x-provas/nova/page-client.tsx` |
 | `/admin/raio-x-provas/[id]` | Revisão de questões, Raio-X final, parecer, variações e clone. | `app/admin/raio-x-provas/[id]/page.tsx`, `app/admin/raio-x-provas/[id]/page-client.tsx` |
-| `/admin/raio-x-provas/[id]/relatorio` | Relatório final em landing page e exportação PDF. | `app/admin/raio-x-provas/[id]/relatorio/page.tsx`, `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` |
+| `/admin/raio-x-provas/[id]/relatorio` | Relatório final — Versão Tela (landing page). | `app/admin/raio-x-provas/[id]/relatorio/page.tsx`, `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` |
+| `/admin/raio-x-provas/[id]/relatorio?versao=pdf` | Relatório final — Versão PDF (pré-visualização do PDF real + "Gerar PDF"). | `app/admin/raio-x-provas/[id]/relatorio/page.tsx`, `app/admin/raio-x-provas/[id]/relatorio/pdf-version-client.tsx`, `app/lib/pdf/raio-x-report-pdf.ts` |
 
 **Arquivos principais do módulo:**
 
 - `app/admin/raio-x-provas/page-client.tsx` — listagem dark premium, filtros (`FilterSelect`), ordenação por coluna, métricas e exclusão.
 - `app/admin/raio-x-provas/nova/page-client.tsx` — formulário de nova análise, normalização, autocomplete/cadastro inline, validação, `StepPct` e overlay de processamento.
 - `app/admin/raio-x-provas/[id]/page-client.tsx` — arquivo central do módulo: revisão, `QuestionCard`, `QuestionNavigator`, publicação direta, variações, Raio-X final, Parecer EstudoTOP, relatório e clone.
-- `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` — landing page final do relatório, backgrounds oficiais, infográficos e PDF.
+- `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` — Versão Tela: landing page final do relatório, backgrounds oficiais e infográficos (não exporta PDF).
+- `app/admin/raio-x-provas/[id]/relatorio/report-model.ts` — regras puras do relatório usadas pela Tela e pelo PDF (`buildReportSummary`, `computeDominance`, `moduleTags`, `getQuestionTags`, `questionCorrectLabel`, `isAlternativeCorrect`, `parecerText`, `safeFileName` etc.).
+- `app/admin/raio-x-provas/[id]/relatorio/pdf-version-client.tsx` — Versão PDF: gera, pré-visualiza (o próprio Blob) e baixa o PDF.
+- `app/lib/pdf/raio-x-report-pdf.ts` — gerador oficial do PDF do Raio-X (React PDF, A4). Ver §18.5.
 - `app/admin/raio-x-provas/types.ts` — tipos do módulo.
 - `app/admin/raio-x-provas/utils.ts` — labels, status e helpers visuais.
 - `app/components/Sidebar.tsx` — item “Raio-X de Provas”.
@@ -1047,7 +1051,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, 
 - Usa backgrounds oficiais em `public/images/raio-x/`.
 - Constantes relevantes: `HERO_BG`, `SECTION_BLUE_BG`, `SECTION_ORANGE_BG`, `COLORS`.
 - Funções auxiliares relevantes: `cleanText`, `cleanBlockText`, `clampText`, `difficultyLabel`, `difficultyTone`, `safeFileName`, `unique`, `getQuestionTags`, `moduleTags`.
-- Exportação PDF deve capturar a landing final, não o dashboard admin.
+- Exportação PDF: Versão PDF (`?versao=pdf`) com os mesmos dados e regras da landing final (`report-model.ts`), nunca do dashboard admin. Arquitetura e paginação em `docs/Sprint-raio-x.md` §13.5 e §18.5 abaixo.
 
 **Pontos de risco:**
 
@@ -1071,7 +1075,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, 
 - [ ] `orgao` é propagado como concurso da análise.
 - [ ] Variações podem ser geradas, editadas, descartadas e publicadas.
 - [ ] Raio-X final prioriza assuntos do banco.
-- [ ] Relatório abre em `/relatorio` e PDF exporta corretamente.
+- [ ] Relatório abre em `/relatorio` (Versão Tela) e a Versão PDF (`?versao=pdf`) pré-visualiza e baixa o PDF sem cortes.
 - [ ] Clone gera sem salvar, permite revisar e só salva no `finalize`.
 - [ ] `docs/Sprint-raio-x.md` e este índice foram atualizados quando houver mudança de comportamento.
 
@@ -2841,7 +2845,7 @@ Testar:
 - [ ] `orgao` propagado como `contest_name` nas questões publicadas.
 - [ ] Variações geradas, editadas, descartadas e publicadas corretamente.
 - [ ] Clone gera sem salvar, permite revisar e só persiste no `finalize`.
-- [ ] Relatório abre em `/relatorio` e PDF exporta corretamente.
+- [ ] Relatório abre em `/relatorio` (Versão Tela) e a Versão PDF (`?versao=pdf`) pré-visualiza e baixa o PDF sem cortes.
 - [ ] `docs/Sprint-raio-x.md` e este índice foram atualizados se houver mudança de comportamento.
 
 ---
@@ -2978,8 +2982,8 @@ Exemplo correto:
 - `editMode`: toggle para editar conteúdo (textarea com HTML/Markdown).
 - `saveContent()`: PATCH `/api/admin/exam-analyses/[id]`.
 - `regenerate()`: chama `/reprocess` com `mode: "report"`.
-- `exportPdf()`: usa `captureAndDownloadPdf("report-document", filename)`; o PDF segue a captura do relatório, mas a prioridade visual atual é a landing page em tela.
-- `id="report-document"` no container principal para captura via html2canvas.
+- ~~`exportPdf()`: usa `captureAndDownloadPdf("report-document", filename)`~~ — **corrigido em 2026-10-09:** essa função nunca existiu no código desde a baseline Git e a tela nunca exibiu botão de PDF. O PDF agora é a Versão PDF (`?versao=pdf`), ver §18.5.
+- `id="report-document"` permanece no container principal da landing; não é usado por nenhum gerador.
 
 ### 18.4 Geração do relatório analítico — API e prompt
 
@@ -3006,24 +3010,31 @@ Exemplo correto:
 - `buildProvaData` prioriza assuntos do banco sobre módulos da IA
 - Nunca usar `mode: "full"` sem confirmação do usuário (descarta questões)
 
-### 18.5 Gerador PDF nativo — html2canvas + jsPDF
+### 18.5 PDF do relatório final — Versão PDF (atualizado 2026-10-09)
 
-**Arquivo:** `app/lib/pdf/captureReportPdf.ts`
+**Correção:** a redação anterior desta seção (gerador `captureAndDownloadPdf` com `collectBreakablePoints()`/`findBestBreak()`, "usado em" `relatorio/page-client.tsx`) não correspondia ao código: essas funções de paginação não existem, `captureAndDownloadPdf` nunca teve consumidor e exige elementos `.report-page` que a landing não possui. `app/lib/pdf/captureReportPdf.ts` e `app/lib/pdf/raio-x-pdf.ts` são legados sem consumidores e não foram alterados nem removidos.
 
-- `captureAndDownloadPdf(elementId, filename, onStart?, onEnd?)`:
-  - Captura o elemento `#elementId` com html2canvas scale 2× — inclui gráficos SVG/recharts, cores, gradientes
-  - Download automático sem janela de impressão
-  - **Quebras de página DOM-based:** `collectBreakablePoints()` coleta as posições Y do fim de cada `p`, `h2`, `h3`, `li`, `tr` usando `getBoundingClientRect()` ANTES do html2canvas
-  - `findBestBreak()` usa esses pontos reais para nunca quebrar no meio de um parágrafo
-  - Janela de busca: 20% da altura da página A4
-  - Cada fatia tem altura exata do conteúdo (não páginas com espaço em branco)
-- **Usado em:**
-  - `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` → `id="report-document"`
-  - O PDF oficial do Raio-X deve permanecer concentrado na rota `/relatorio`; não recriar botão de PDF operacional no dashboard admin sem autorização.
+**Fluxo real:** card "Relatório final do Raio-X" em `[id]/page-client.tsx` → botões **Versão Tela** (`/relatorio`) e **Versão PDF** (`/relatorio?versao=pdf`); o botão do topo do dashboard ("Ver relatório final") também tem **Versão PDF** ao lado (2026-10-09). A Versão Tela não tem entrada para o PDF. Na Versão PDF, **"Gerar PDF"** fica no cabeçalho fixo, visível desde o primeiro render e habilitado quando o arquivo fica pronto → `relatorio/page.tsx` (mesma autorização e mesma consulta; escolhe o componente por `versao`) → `pdf-version-client.tsx` → `generateRaioXReportPdf()` → Blob exibido no visualizador embutido e baixado por `downloadPdfBlob()` em "Gerar PDF".
 
-**Dependências instaladas:** `html2canvas`, `jspdf`
+**Arquivo:** `app/lib/pdf/raio-x-report-pdf.ts` (`@react-pdf/renderer`, carregado por `import()` dinâmico)
 
-**Regra:** sempre adicionar `id` único ao container que será capturado; sem `id` a captura falha.
+| Função/constante | Responsabilidade |
+|---|---|
+| `buildRaioXPdfModel(props)` | Modelo do PDF a partir das funções de `relatorio/report-model.ts` (as mesmas da Tela). |
+| `RaioXReportDocument` | Documento A4: capa, KPIs, seções 01–05, fechamento; cabeçalho/rodapé fixos com "Página X de Y". |
+| `topicBlocks` / `questionBlocks` | Card indivisível quando cabe; senão topo indivisível + restante quebrável. |
+| `splitLead` | Divide texto longo em fim de frase (abertura + restante) sem descartar conteúdo. |
+| `renderWithOversizeGuard` | Rede de segurança contra corte: refaz em modo seguro ou falha com `RAIO_X_PDF_OVERSIZE_ERROR`. |
+| `registerRaioXPdfFonts` | Família exclusiva `EstudoTopRaioXInter` (Inter estática Regular/Bold). |
+| `RAIO_X_PDF_ASSETS` / `loadRaioXPdfAssets` | Capa oficial `coverImage: "/images/pdf/capa_raiox.png"` e mascote, reduzidos no navegador; o banner da capa composta só é carregado se a capa oficial falhar; falha de imagem não bloqueia o PDF. |
+| `ImageCover` / `CoverSeal` | Capa oficial em página inteira (`Image` `fixed`, pixels intocados) + selo dinâmico com `analysis.title` e `ID: analysis.id` na faixa preta abaixo dos ícones do rodapé da arte. Só na capa. |
+| `generateRaioXReportPdf` / `downloadPdfBlob` | Geração completa no navegador e download do Blob. |
+
+**Assets novos:** `public/images/pdf/capa_raiox.png` (capa oficial, fornecida pelo responsável), `public/fonts/Inter-Regular.ttf` e `public/fonts/Inter-Bold.ttf` (Inter 4.001, mesma build da `Inter.ttf` variável, SIL OFL em `Inter-OFL.txt`).
+
+**Regras:** não alterar registros globais do React PDF (`Font.registerHyphenationCallback`/`registerEmojiSource`); não usar `wrap={false}` em bloco de altura variável sem estimativa + guarda; não usar `minPresenceAhead` (comportamento inconsistente comprovado); Versão Tela e PDF devem ler as mesmas regras de `report-model.ts`.
+
+**Testes:** `tests/raio-x-report-pdf/raio-x-report-pdf.spec.ts` (18). Detalhes da validação em `docs/Sprint-raio-x.md` §13.5.
 
 ### 18.6 Markdown renderer do relatório
 
