@@ -396,6 +396,27 @@ Regra de negócio:
 
 ---
 
+### 2.7 Arquivar e Descartar na seleção em massa (09/10/2026)
+
+**Objetivo:** permitir arquivar/descartar várias questões pela barra inferior de seleção (`SelectionGhostBar`), sem novo status, endpoint ou mecanismo de persistência.
+
+**Diagnóstico:** as duas telas só tinham arquivamento individual (botão do card no Banco; "Descartar"/"Arquivar" do `QuestionEditor` na revisão). No Banco a barra não oferecia arquivamento; na revisão a barra só aparecia com 2 ou mais selecionadas e não tinha descarte.
+
+**Arquivar x Descartar:** ambos persistem o mesmo efeito, `PATCH /api/admin/questions/bulk` com `status="archived"`. Nenhum dos dois exclui fisicamente. A diferença é apenas de contexto: Descartar (revisão) confirma e remove a questão da fila; Arquivar (Banco) mantém a questão visível com o selo "Arquivada" e pode ser revertido por "Desarquivar".
+
+| Tela | Ação adicionada | Regra reutilizada |
+|---|---|---|
+| `/questoes` (Banco, inclusive Publicadas) | **Arquivar selecionadas** | Botão "Arquivar" do card (`toggleQuestionArchiveStatus`) |
+| `/questoes/revisar` | **Descartar selecionadas** | "Descartar" do `QuestionEditor` (`archiveQuestion`) + `handleArchived` |
+
+**Decisão:** a revisão não ganhou "Arquivar selecionadas", porque teria o mesmo efeito de "Descartar selecionadas". A fila de publicação do Banco (`ready_to_publish`) também não recebeu o botão; seus comandos ficaram como estavam.
+
+**Regras:** confirmação obrigatória; Cancelar não chama a API. No Banco, questões já arquivadas são ignoradas. Na revisão, só são processadas as questões que estão na fila. A reconciliação usa os `updatedIds` da API: as questões não processadas continuam selecionadas e a mensagem informa o sucesso parcial. Uma falha da API não altera a lista. Vínculos com Simulados não são alterados. Como acontecia antes no arquivamento individual, uma questão arquivada que continue em um Simulado impede salvar a lista de questões daquele Simulado (`PUT /api/admin/simulados/[id]/questions`) até ser desarquivada ou removida.
+
+**Arquivos:** `app/questoes/page-client.tsx`, `app/questoes/revisar/page-client.tsx`, `tests/bulk-archive-discard-selection.spec.ts`, `docs/INDICE_FUNCOES_SISTEMA.md` (3.1 e 3.2), `docs/status-atual.md`. API, `SelectionGhostBar`, RLS e banco inalterados. Nenhuma migration foi criada ou alterada nesta Sprint.
+
+---
+
 ## 3. Importação de Questões por IA
 
 ### 3.1 Visão Geral do Fluxo

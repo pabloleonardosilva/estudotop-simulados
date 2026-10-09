@@ -417,6 +417,7 @@ export default function QuestoesClient({
   const [inlineEditingIds, setInlineEditingIds] = useState<string[]>([]);
   const [saveAllTrigger, setSaveAllTrigger] = useState(0);
   const [actionModal, setActionModal] = useState<QuestionActionModalState>(null);
+  const [archivingSelected, setArchivingSelected] = useState(false);
   const [classifyPhase, setClassifyPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [classifyResult, setClassifyResult] = useState<{ total: number; classified: number; errors: number } | null>(null);
 
@@ -1647,6 +1648,85 @@ export default function QuestoesClient({
     } catch (error) {
       setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erro ao excluir questões." });
       setConfirm(null);
+    }
+  }
+
+  // Mesma regra do botão "Arquivar" do card (status "archived" via PATCH bulk), aplicada
+  // só às selecionadas ainda não arquivadas. Vínculos com Simulados não são alterados.
+  function archiveSelected() {
+    const selectedQuestions = questions.filter((question) => selectedIds.includes(question.id));
+    const idsToArchive = selectedQuestions
+      .filter((question) => question.status !== "archived")
+      .map((question) => question.id);
+
+    if (idsToArchive.length === 0) {
+      setFeedback({
+        type: "warning",
+        message: selectedQuestions.length > 0 ? "As questões selecionadas já estão arquivadas." : "Selecione pelo menos uma questão.",
+      });
+      return;
+    }
+
+    const alreadyArchived = selectedQuestions.length - idsToArchive.length;
+    const linkedToSimulados = selectedQuestions.filter(
+      (question) => idsToArchive.includes(question.id) && (question.simulado_questions || []).length > 0,
+    ).length;
+
+    setActionModal({
+      open: true,
+      tone: "warning",
+      title: "Arquivar selecionadas",
+      message: [
+        `${idsToArchive.length} questão(ões) será(ão) arquivada(s) e deixará(ão) de poder ser adicionada(s) a simulados.`,
+        alreadyArchived > 0 ? `${alreadyArchived} já arquivada(s) será(ão) ignorada(s).` : "",
+        linkedToSimulados > 0 ? `${linkedToSimulados} está(ão) vinculada(s) a simulados; os vínculos e o histórico serão preservados.` : "",
+        "Deseja continuar?",
+      ].filter(Boolean).join(" "),
+      primaryLabel: "Arquivar",
+      secondaryLabel: "Cancelar",
+      onClose: () => setActionModal(null),
+      onSecondary: () => setActionModal(null),
+      onPrimary: async () => {
+        setActionModal(null);
+        await runArchiveSelected(idsToArchive);
+      },
+    });
+  }
+
+  async function runArchiveSelected(idsToArchive: string[]) {
+    setArchivingSelected(true);
+    try {
+      const response = await adminFetch("/api/admin/questions/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: idsToArchive, status: "archived" }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.message || "Erro ao arquivar questões.");
+
+      const archivedIds = new Set<string>(Array.isArray(result.updatedIds) ? result.updatedIds : []);
+      const notArchivedIds = idsToArchive.filter((id) => !archivedIds.has(id));
+
+      setQuestions((current) =>
+        current.map((question) => (archivedIds.has(question.id) ? { ...question, status: "archived" } : question)),
+      );
+      setSelectedIds(notArchivedIds);
+      setFeedback(
+        notArchivedIds.length > 0
+          ? {
+              type: "warning",
+              message: `${archivedIds.size} questão(ões) arquivada(s). ${notArchivedIds.length} não pôde(puderam) ser arquivada(s) e continua(m) selecionada(s).`,
+            }
+          : { type: "success", message: `${archivedIds.size} questão(ões) arquivada(s) com sucesso.` },
+      );
+      if (archivedIds.size > 0) {
+        notifyPublicationQueueUpdated();
+        router.refresh();
+      }
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erro ao arquivar questões." });
+    } finally {
+      setArchivingSelected(false);
     }
   }
 
@@ -2905,6 +2985,7 @@ export default function QuestoesClient({
                     ? [{ label: "Adicionar ao simulado", icon: <ListPlus size={14} />, onClick: openAddToSimuladoModal, variant: "primary" as const }]
                     : []),
                   ...(selectedIds.length > 1 ? [{ label: "Editar em massa", icon: <Send size={14} />, onClick: () => setShowBulkStatusModal(true), variant: "primary" as const }] : []),
+                  { label: "Arquivar selecionadas", icon: <Archive size={14} />, onClick: archiveSelected, variant: "secondary" as const, disabled: archivingSelected },
                   { label: "Enviar para rascunho", icon: <XCircle size={14} />, onClick: () => applyBulkStatus("draft"), variant: "secondary" as const },
                   { label: "Limpar seleção", icon: <XCircle size={14} />, onClick: () => setSelectedIds([]), variant: "secondary" as const },
                   { label: "Excluir", icon: <Trash2 size={14} />, onClick: deleteSelected, variant: "danger" as const },

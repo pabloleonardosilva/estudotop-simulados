@@ -329,6 +329,7 @@ export default function RevisarQuestoesClient({
   const [publicationQueueDraftChecked, setPublicationQueueDraftChecked] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [discardingSelected, setDiscardingSelected] = useState(false);
   // Each entry stores { code, save } so the queue can report failures per-question.
   const saveHandlersRef = useRef<Record<string, { code: string; save: () => Promise<{ ok: boolean; message?: string }> }>>({});
 
@@ -649,12 +650,13 @@ export default function RevisarQuestoesClient({
   const publicationQueueCount = publicationQueueIds.length;
   const isReadyToPublishView = filterStatus === "ready_to_publish" && filteredQueue.length > 0;
 
-  // Ghost bar appears when 2+ questions are selected, when staged for queue, or in ready-to-publish view
+  // Ghost bar appears when 2+ questions are selected, when staged for queue, or in ready-to-publish view;
+  // with a single selection it still appears (only "Descartar selecionadas" applies)
   const ghostCount = selectedIds.length >= 2
     ? selectedIds.length
     : publicationQueueCount > 0
       ? publicationQueueCount
-      : isReadyToPublishView ? filteredQueue.length : 0;
+      : isReadyToPublishView ? filteredQueue.length : selectedIds.length;
 
   const clearFilters = useCallback(() => {
     setFilterDisciplineId("");
@@ -1130,6 +1132,84 @@ export default function RevisarQuestoesClient({
     [removeQuestionFromList],
   );
 
+  // Mesma regra do "Descartar" individual do QuestionEditor (status "archived" via PATCH bulk),
+  // restrita às selecionadas que estão na fila de revisão.
+  const runDiscardSelected = useCallback(
+    async (idsToDiscard: string[]) => {
+      setDiscardingSelected(true);
+      setActionFeedback({
+        open: true,
+        tone: "confirm",
+        title: "Descartando questões",
+        loading: true,
+        steps: ["Arquivando questões selecionadas"],
+        currentStep: 0,
+      });
+      try {
+        const response = await adminFetch("/api/admin/questions/bulk", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: idsToDiscard, status: "archived" }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || "Erro ao descartar questões.");
+
+        const discardedIds = new Set<string>(Array.isArray(result.updatedIds) ? result.updatedIds : []);
+        const notDiscardedCount = idsToDiscard.filter((id) => !discardedIds.has(id)).length;
+
+        if (discardedIds.size > 0) {
+          focusAfterAction(publicationQueueIds.filter((id) => !discardedIds.has(id)));
+          setQueue((current) => current.filter((question) => !discardedIds.has(question.id)));
+          setPublicationQueueIds((current) => current.filter((id) => !discardedIds.has(id)));
+          setArchivedCount((current) => current + discardedIds.size);
+          notifyPublicationQueueUpdated();
+        }
+        setSelectedIds((current) => current.filter((id) => !discardedIds.has(id)));
+
+        setActionFeedback({
+          open: true,
+          tone: notDiscardedCount > 0 ? "warning" : "success",
+          title: notDiscardedCount > 0 ? "Descarte parcial" : "Questões descartadas",
+          message: notDiscardedCount > 0
+            ? `${discardedIds.size} questão(ões) arquivada(s) e removida(s) da fila. ${notDiscardedCount} não pôde(puderam) ser descartada(s) e continua(m) selecionada(s).`
+            : `${discardedIds.size} questão(ões) arquivada(s) e removida(s) da fila de revisão.`,
+          onClose: () => setActionFeedback(null),
+        });
+      } catch (error) {
+        setActionFeedback({
+          open: true,
+          tone: "error",
+          title: "Erro ao descartar questões",
+          message: error instanceof Error ? error.message : "Erro inesperado.",
+          onClose: () => setActionFeedback(null),
+        });
+      } finally {
+        setDiscardingSelected(false);
+      }
+    },
+    [focusAfterAction, publicationQueueIds],
+  );
+
+  const confirmDiscardSelected = useCallback(() => {
+    const queueIds = new Set(queue.map((question) => question.id));
+    const idsToDiscard = selectedIds.filter((id) => queueIds.has(id));
+    if (idsToDiscard.length === 0) return;
+
+    setActionFeedback({
+      open: true,
+      tone: "warning",
+      title: "Descartar selecionadas",
+      message: `${idsToDiscard.length} questão(ões) será(ão) arquivada(s) e removida(s) desta lista. Deseja continuar?`,
+      primaryLabel: "Descartar",
+      secondaryLabel: "Cancelar",
+      onClose: () => setActionFeedback(null),
+      onSecondary: () => setActionFeedback(null),
+      onPrimary: async () => {
+        await runDiscardSelected(idsToDiscard);
+      },
+    });
+  }, [queue, selectedIds, runDiscardSelected]);
+
   const handleAnnulled = useCallback(
     (questionId: string) => {
       removeQuestionFromList(questionId);
@@ -1183,6 +1263,9 @@ export default function RevisarQuestoesClient({
                 { label: "Edições em massa", icon: <Pencil size={14} />, onClick: () => setBulkEditOpen(true), variant: "primary" as const },
                 { label: "Limpar seleção", onClick: clearSelection, variant: "secondary" as const },
               ]
+            : []),
+          ...(selectedIds.length > 0
+            ? [{ label: "Descartar selecionadas", icon: <Archive size={14} />, onClick: confirmDiscardSelected, variant: "danger" as const, disabled: discardingSelected || !queue.some((question) => selectedIds.includes(question.id)) }]
             : []),
           ...(publicationQueueCount > 0
             ? [

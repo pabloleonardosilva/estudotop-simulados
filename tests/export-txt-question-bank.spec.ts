@@ -35,6 +35,34 @@ function gitShow(ref: string, file: string): string | null {
   }
 }
 
+// Identificadores exclusivos do Export TXT em page-client.tsx.
+const TXT_EXPORT_IDENTIFIERS = [
+  "TXT_EXPORT_",
+  "TxtExport",
+  "stripHtmlForTxtExport",
+  "formatQuestionForTxtExport",
+  "buildTxtExportFileName",
+  "exportSelectedQuestionsAsTxt",
+  "Exportar TXT",
+];
+
+// Trechos do Export TXT: constantes/tipos/formatador (nível de módulo),
+// nome do arquivo + handler (dentro do componente) e o botão da barra.
+function txtExportSegments(source: string) {
+  const slice = (startMarker: string, endMarker: string, endFrom: string) => {
+    const start = source.indexOf(startMarker);
+    const end = source.indexOf(endMarker, source.indexOf(endFrom, start));
+    if (start === -1 || end === -1) return null;
+    return source.slice(start, end + endMarker.length);
+  };
+  const buttonStart = source.indexOf('label: "Exportar TXT"');
+  return {
+    formatter: slice("const TXT_EXPORT_QUESTION_SEPARATOR", "\n}\n", "function formatQuestionForTxtExport("),
+    handler: slice("  function buildTxtExportFileName() {", "\n  }\n", "  function exportSelectedQuestionsAsTxt() {"),
+    button: buttonStart === -1 ? null : source.slice(source.lastIndexOf("\n", buttonStart) + 1, source.indexOf("\n", buttonStart)),
+  };
+}
+
 test.describe("1. Implementação — botão, handler, geração do TXT (working tree)", () => {
   test("botão 'Exportar TXT' só aparece na barra de seleção quando há questões selecionadas (selectedIds, nunca publicationQueueIds)", () => {
     const source = read(BANK_PAGE);
@@ -135,15 +163,17 @@ test.describe("2. Auditoria Git — estado do recurso versionado (tolera pré e 
     expect(workingTree).toContain("Exportar TXT");
   });
 
-  test("estado em HEAD é coerente com o diff pendente: sem diff pendente → já commitado; com diff pendente → ainda não commitado (nunca os dois ao mesmo tempo)", () => {
-    const hasPendingDiff = execSync(`git diff --stat -- "${BANK_PAGE}"`, { cwd: root, encoding: "utf8" }).trim().length > 0;
+  test("Export TXT está versionado em HEAD e o working tree não diverge de HEAD nos trechos do recurso", () => {
+    // O recurso foi commitado em 5e2fb34 (consolidação). A partir daí o estado
+    // "pré-commit" (TXT só no working tree) deixou de existir; a garantia que
+    // permanece é: HEAD contém o recurso e nenhuma alteração pendente o modifica.
+    // Alterações pendentes em outras partes da mesma tela são legítimas.
     const head = gitShow("HEAD", BANK_PAGE);
     expect(head).not.toBeNull();
-    const inHead = head!.includes("exportSelectedQuestionsAsTxt");
-    // Nunca comitado com diff pendente ao mesmo tempo (isso indicaria um
-    // segundo hunk divergente não capturado pela auditoria original) nem
-    // ausente de HEAD sem nenhum diff pendente explicando a ausência.
-    expect(inHead).toBe(!hasPendingDiff);
+    const headSegments = txtExportSegments(head!.replace(/\r\n/g, "\n"));
+    const workingTreeSegments = txtExportSegments(read(BANK_PAGE));
+    expect(headSegments.handler).toContain("function exportSelectedQuestionsAsTxt() {");
+    expect(workingTreeSegments).toEqual(headSegments);
   });
 
   test("HEAD e origin/main nunca divergem sem uma causa registrada (push pendente é sempre visível, nunca a causa silenciosa de uma ausência)", () => {
@@ -168,16 +198,19 @@ test.describe("2. Auditoria Git — estado do recurso versionado (tolera pré e 
     expect(head!.includes("Exportação TXT em lote")).toBe(true);
   });
 
-  test("app/questoes/page-client.tsx não foi editado por esta auditoria para introduzir/corrigir o Export TXT — só lido e testado", () => {
-    // Antes do fechamento geral da worktree (commit autorizado explicitamente
-    // pelo usuário), este arquivo ficou protegido/não commitado por 3 tarefas
-    // seguidas com exatamente 87 inserções e 0 remoções — nenhuma alteração
-    // própria desta auditoria. Depois do commit de fechamento, o arquivo
-    // passa a fazer parte do histórico normal (sem diff pendente); o teste
-    // tolera os dois estados, mas nunca aceita um diff pendente diferente de
-    // 87/0 enquanto ele ainda não foi commitado.
-    const diffStat = execSync('git diff --stat -- "app/questoes/page-client.tsx"', { cwd: root, encoding: "utf8" }).trim();
-    if (diffStat) expect(diffStat).toContain("1 file changed, 87 insertions(+)");
+  test("app/questoes/page-client.tsx não tem alteração pendente que introduza/corrija o Export TXT — nenhuma linha do diff toca o recurso", () => {
+    // Antes do fechamento geral da worktree, este arquivo ficou não commitado
+    // por 3 tarefas com exatamente 87 inserções e 0 remoções (o próprio Export
+    // TXT); a auditoria exigia esse diff exato. Após o commit 5e2fb34 a
+    // exigência de 87/0 deixou de ser alcançável e passou a reprovar qualquer
+    // alteração legítima na tela. A garantia preservada é a mesma: nenhuma
+    // linha adicionada ou removida no diff pendente pode tocar o Export TXT.
+    const diff = execSync(`git diff -U0 -- "${BANK_PAGE}"`, { cwd: root, encoding: "utf8" }).replace(/\r\n/g, "\n");
+    const changedLines = diff
+      .split("\n")
+      .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---) /.test(line));
+    const touchingTxt = changedLines.filter((line) => TXT_EXPORT_IDENTIFIERS.some((identifier) => line.includes(identifier)));
+    expect(touchingTxt).toEqual([]);
   });
 });
 
