@@ -1,5 +1,16 @@
 # Sprint Simulados — Documentação Técnica e Funcional
 
+## 10/10/2026 — Status multisseleção (Banco e Revisar) + Selecionar todas na Revisão
+
+- **Filtro de Status** do Banco de Questões (`/questoes`) e de Revisar questões (`/questoes/revisar`) passou a aceitar vários status (OU), com a opção **Todos** = sem restrição. Novo `app/components/questions/StatusFilterDropdown.tsx` (padrão visual do filtro de Ano) e regras puras em `lib/questions/status-filter.ts`. Um status selecionado filtra exatamente como antes; URLs antigas com um `status` continuam válidas (inclusive `ready_to_publish`); vários status geram um `status` por valor na URL. No Banco, a seleção que exige questões não carregadas pelo servidor recarrega a página (antes a lista ficava vazia ao trocar de status após entrar por um link com status). Fila de publicação: ações de publicar a fila só quando ela é o único status selecionado.
+- **Selecionar questões exibidas** em Revisar questões: mesmo checkbox geral do Banco, mesma regra (questões exibidas da página atual), só altera a seleção — nunca "Preparar para fila".
+- Escopo: só listagens de questões; filtros de outras entidades e campos de edição de status inalterados. Exportação TXT não alterada. Detalhes: `docs/INDICE_FUNCOES_SISTEMA.md`. Testes: `tests/status-filter-selection.spec.ts` (19).
+- **Adendo (mesma data):** "Selecionar todas as N questões filtradas" no Banco e no Revisar (todas as páginas; as telas já carregam o conjunto filtrado inteiro, sem consulta nova); mudar filtros desfaz a seleção global; checkbox da página com estado intermediário. Na seleção global, ações em massa que alteram dados ficam desabilitadas (a rota em massa não processa milhares de ids com segurança e não foi alterada); Exportar TXT funciona. TXT ganhou a 1ª linha com os filtros aplicados e a numeração `01)`, `02)`…; texto de cada questão inalterado. Testes: `tests/global-selection-txt.spec.ts` (25).
+
+## 10/10/2026 — Exportar TXT também em Revisar questões (exportador compartilhado)
+
+"Exportar TXT" passou a existir em **Revisar questões** (`/questoes/revisar`), além do Banco de Questões (todos os status, inclusive a fila `ready_to_publish`, onde já existia). O exportador foi extraído sem alteração para `lib/questions/txt-export.ts` e é usado pelas duas telas: mesmo conteúdo, separador, BOM, MIME, nome do arquivo e limpeza do Blob. A exportação é só leitura (nenhuma API, status, fila ou ordem alterados). Telas excluídas e detalhes: `docs/INDICE_FUNCOES_SISTEMA.md` ("Exportação TXT em todas as áreas de questões"). Testes: `tests/export-txt-question-bank.spec.ts` (30), com comparação byte a byte contra o formatador original do commit `52eb355`; as duas auditorias Git que comparavam o trecho do Banco com HEAD foram substituídas por essa prova (reprovariam qualquer extração legítima).
+
 ## 10/09/2026 — Encerramento compulsório por tempo esgotado
 
 Origem: investigação forense do caso real da aluna Luciana Cabral Jacinto (Evento "3º Simulado de Processo Civil", 05/09/2026) — ela deixou a última questão (válida, nunca anulada) sem resposta; o simulado não permitia branco; o tempo da tentativa (60 min) esgotou; ela retomou várias vezes ao longo do dia, mas o servidor recusava a conclusão por existir questão em branco, e a tentativa permaneceu `in_progress` para sempre, sem `simulado_result`.

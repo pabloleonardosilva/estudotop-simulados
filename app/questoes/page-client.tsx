@@ -63,52 +63,9 @@ import {
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
-
-// ─── Exportação TXT em lote ─────────────────────────────────────────────────
-// "Quatro quebras de parágrafo" entre uma questão e outra: 1 \n fecha a
-// última linha da questão anterior + 4 \n produzem 4 linhas em branco antes
-// da próxima questão começar — 5 \n ao todo.
-const TXT_EXPORT_QUESTION_SEPARATOR = "\n\n\n\n\n";
-// BOM UTF-8 (U+FEFF): sem ele, o Bloco de Notas do Windows pode exibir
-// acentuação (ç, ã, é...) incorretamente ao abrir o .txt exportado.
-const TXT_EXPORT_BOM = String.fromCharCode(0xfeff);
-
-type TxtExportAlternative = { label: string; text: string; is_correct?: boolean | null; order_number?: number | null };
-type TxtExportQuestion = { statement?: string | null; status?: string | null; question_alternatives?: TxtExportAlternative[] | null };
-
-function stripHtmlForTxtExport(value?: string | null) {
-  return String(value || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function formatQuestionForTxtExport(question: TxtExportQuestion): string {
-  const alternatives = [...(question.question_alternatives || [])].sort(
-    (a, b) => (a.order_number ?? 0) - (b.order_number ?? 0),
-  );
-  const lines = [stripHtmlForTxtExport(question.statement)];
-  if (question.status === "annulled") lines.push("[QUESTÃO ANULADA]");
-  lines.push("");
-  for (const alt of alternatives) {
-    // Asterisco vem sempre de is_correct (nunca reconstruído por label) —
-    // uma questão anulada sem gabarito definido simplesmente não marca
-    // nenhuma alternativa, nunca inventa uma correta.
-    const prefix = alt.is_correct ? `*${alt.label})` : `${alt.label})`;
-    lines.push(`${prefix} ${stripHtmlForTxtExport(alt.text)}`);
-  }
-  return lines.join("\n");
-}
+import { buildTxtExportFileName, buildTxtExportFilterLine, downloadQuestionsTxt } from "@/lib/questions/txt-export";
+import { bankStatusMatches, bankStatusSelectionCovered, READY_TO_PUBLISH_STATUS, SIMULADO_ANNULLED_FILTER_VALUE } from "@/lib/questions/status-filter";
+import StatusFilterDropdown from "@/app/components/questions/StatusFilterDropdown";
 
 type Feedback = { type: "success" | "error" | "warning"; message: string } | null;
 type PublicationQueueBulkEditFields = {
@@ -185,13 +142,12 @@ function getTrueFalseAnswerLabel(question: any) {
 }
 
 
-const READY_TO_PUBLISH_STATUS = "ready_to_publish";
 // "Anuladas em Simulados" não é um valor de questions.status — é derivado de
 // simulado_questions.status = "annulled" em pelo menos um vínculo (dado já
 // carregado via question.simulado_questions, mesma fonte do selo "Anulada em
 // N simulados" existente). Sentinela client-side só para o filtro; nunca
-// gravado nem comparado a questions.status.
-const SIMULADO_ANNULLED_FILTER_VALUE = "annulled_in_simulados";
+// gravado nem comparado a questions.status. (SIMULADO_ANNULLED_FILTER_VALUE vem
+// de lib/questions/status-filter.ts.)
 
 function questionAnnulledInAnySimulado(question: { simulado_questions?: QuestionSimuladoRelation[] | null }): boolean {
   const relations = Array.isArray(question?.simulado_questions) ? question.simulado_questions : [];
@@ -255,6 +211,29 @@ const difficultyOptions = [
   { value: "5", label: "Muito dificil" },
 ];
 
+// Opções do filtro de Status do Banco (rótulos exibidos no seletor e usados na
+// linha de identificação do TXT).
+const BANK_STATUS_FILTER_OPTIONS = [
+  { value: "draft", label: "Rascunho" },
+  { value: "published", label: "Publicada" },
+  { value: "archived", label: "Arquivada" },
+  // Anuladas no Banco: questions.status = "annulled" — status
+  // real da questão, já existente (edição/badge/toggle
+  // Anular-Reativar). Anuladas em Simulados: não é status da
+  // questão — deriva de simulado_questions.status = "annulled"
+  // em pelo menos um vínculo (ver questionAnnulledInAnySimulado).
+  // Os dois convivem no mesmo seletor por pedido de UX, mas
+  // aplicam predicados internos diferentes.
+  { value: "annulled", label: "Anuladas no Banco" },
+  { value: SIMULADO_ANNULLED_FILTER_VALUE, label: "Anuladas em Simulados" },
+  // Fila de publicação não aparece no seletor (acesso pelo menu,
+  // ?status=ready_to_publish); só é listada quando já está selecionada.
+  { value: READY_TO_PUBLISH_STATUS, label: "Fila de publicação" },
+];
+
+// Ações da barra de seleção do Banco desabilitadas na seleção de todas as filtradas.
+const GLOBAL_SELECTION_BLOCKED_ACTIONS = ["Publicar questão", "Publicar fila", "Edição em massa", "Rascunho", "Adicionar ao simulado", "Editar em massa", "Arquivar selecionadas", "Enviar para rascunho", "Excluir"];
+
 type InitialFilters = {
   search: string;
   disciplineId: string;
@@ -264,7 +243,7 @@ type InitialFilters = {
   inspirationBoardIds: string[];
   orgaos: string[];
   difficultyLevels: string[];
-  status: string;
+  statuses: string[];
   yearFilters: string[];
   missingTopics?: boolean;
 };
@@ -278,7 +257,8 @@ type MatchFilterOptions = {
   inspirationBoardIds?: string[];
   orgaos?: string[];
   difficultyLevels?: string[];
-  status?: string;
+  // Filtro de Status (multisseleção, OU); vazio = Todos.
+  status?: string[];
   yearFilters?: string[];
   missingTopics?: boolean;
   topicIdsByQuestion?: Map<string, string[]>;
@@ -307,7 +287,7 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     inspirationBoardIds: fInspirationBoards = [],
     orgaos: fOrgaos = [],
     difficultyLevels: fDifficulty = [],
-    status: fStatus = "",
+    status: fStatus = [],
     yearFilters: fYears = [],
     missingTopics: fMissingTopics = false,
     topicIdsByQuestion,
@@ -318,7 +298,7 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
   const qBoardId = question.exam_boards?.id || "";
   const qInspirationBoardId = question.inspiration_board?.id || question.inspiration_board_id || "";
   const qStatus = question.status || "draft";
-  if (!fStatus && (qStatus === "pending_review" || qStatus === "ready_to_publish")) return false;
+  if (!bankStatusMatches(qStatus, questionAnnulledInAnySimulado(question), fStatus)) return false;
   const questionCode =
     question.code ||
     question.question_code ||
@@ -339,10 +319,6 @@ function questionMatchesFilters(question: any, opts: MatchFilterOptions): boolea
     (fInspirationBoards.length === 0 || fInspirationBoards.includes(qInspirationBoardId)) &&
     (fOrgaos.length === 0 || fOrgaos.includes((question.orgao || "").trim())) &&
     (fDifficulty.length === 0 || fDifficulty.includes(String(question.difficulty_level || ""))) &&
-    (!fStatus ||
-      qStatus === fStatus ||
-      (fStatus === "published" && ["published", "active"].includes(qStatus)) ||
-      (fStatus === SIMULADO_ANNULLED_FILTER_VALUE && questionAnnulledInAnySimulado(question))) &&
     (fYears.length === 0 || fYears.includes(String(question.year || ""))) &&
     (!fMissingTopics || !hasEvaluatedTopics(question.evaluated_topics))
   );
@@ -372,9 +348,10 @@ export default function QuestoesClient({
     setQuestions(initialQuestions);
   }, [initialQuestions]);
 
+  const loadedStatusKey = (initialFilters?.statuses ?? []).join(",");
   useEffect(() => {
-    setStatus(initialFilters?.status ?? "");
-  }, [initialFilters?.status]);
+    setStatusFilters(loadedStatusKey ? loadedStatusKey.split(",") : []);
+  }, [loadedStatusKey]);
 
   const [search, setSearch] = useState(initialFilters?.search ?? "");
   const [disciplineId, setDisciplineId] = useState(initialFilters?.disciplineId ?? "");
@@ -385,11 +362,20 @@ export default function QuestoesClient({
   const [orgaoFilters, setOrgaoFilters] = useState<string[]>(initialFilters?.orgaos ?? []);
   const [difficultyLevels, setDifficultyLevels] = useState<string[]>(initialFilters?.difficultyLevels ?? []);
   const [showDifficultyDropdown, setShowDifficultyDropdown] = useState(false);
-  const [status, setStatus] = useState(initialFilters?.status ?? "");
+  // Filtro de Status (multisseleção, OU); vazio = Todos.
+  const [statusFilters, setStatusFilters] = useState<string[]>(initialFilters?.statuses ?? []);
+  // Status único selecionado, para as regras já existentes (fila de publicação, link de edição);
+  // vários status ou Todos = "" (mesmo valor que "Todos" tinha antes).
+  const status = statusFilters.length === 1 ? statusFilters[0] : "";
   const [yearFilters, setYearFilters] = useState<string[]>(initialFilters?.yearFilters ?? []);
   const [missingTopicsFilter, setMissingTopicsFilter] = useState(Boolean(initialFilters?.missingTopics));
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Seleção de todas as questões filtradas (todas as páginas). Vale só para o
+  // conjunto filtrado no momento em que foi feita; ações em massa que alteram
+  // dados ficam restritas (ver barra de seleção).
+  const [globalSelection, setGlobalSelection] = useState(false);
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
   const [publicationQueueIds, setPublicationQueueIds] = useState<string[]>([]);
   const [answerEditQuestionId, setAnswerEditQuestionId] = useState<string | null>(null);
   const [answerDraft, setAnswerDraft] = useState<Record<string, string>>({});
@@ -431,12 +417,20 @@ export default function QuestoesClient({
     if (inspirationBoardIds.length > 0) inspirationBoardIds.forEach((id) => params.append("inspirada", id));
     if (orgaoFilters.length > 0) orgaoFilters.forEach((orgao) => params.append("orgao", orgao));
     if (difficultyLevels.length > 0) difficultyLevels.forEach((l) => params.append("dificuldade", l));
-    if (status) params.set("status", status);
+    statusFilters.forEach((value) => params.append("status", value));
     if (yearFilters.length > 0) yearFilters.forEach((y) => params.append("ano", y));
     if (missingTopicsFilter) params.set("topicos", "sem");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, disciplineId, subjectIds, topicIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter]);
+  }, [search, disciplineId, subjectIds, topicIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters, missingTopicsFilter]);
+
+  // O servidor carrega só os status pedidos na URL. Se a nova seleção precisar de
+  // questões que não foram carregadas (ex.: entrou por ?status=archived e marcou
+  // Publicada), recarrega a página com a URL já atualizada acima.
+  useEffect(() => {
+    if (bankStatusSelectionCovered(loadedStatusKey ? loadedStatusKey.split(",") : [], statusFilters)) return;
+    router.replace(`${window.location.pathname}${window.location.search}`, { scroll: false });
+  }, [statusFilters, loadedStatusKey, router]);
 
   useEffect(() => {
     if (!showDifficultyDropdown) return;
@@ -547,7 +541,7 @@ export default function QuestoesClient({
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       getQuestionDisciplineIds(question).forEach((id: string) => {
@@ -555,7 +549,7 @@ export default function QuestoesClient({
       });
     });
     return counts;
-  }, [questions, search, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters]);
 
   const subjectCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -570,7 +564,7 @@ export default function QuestoesClient({
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       extractQuestionSubjects(question).map((s: any) => s.id).filter(Boolean).forEach((id: string) => {
@@ -578,7 +572,7 @@ export default function QuestoesClient({
       });
     });
     return counts;
-  }, [questions, search, disciplineId, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters]);
 
   const boardCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -593,14 +587,14 @@ export default function QuestoesClient({
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       const qBoardId = question.exam_boards?.id || "";
       if (qBoardId) counts[qBoardId] = (counts[qBoardId] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters]);
 
   const inspirationBoardCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -615,14 +609,14 @@ export default function QuestoesClient({
         boardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       const id = question.inspiration_board?.id || question.inspiration_board_id || "";
       if (id) counts[id] = (counts[id] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, orgaoFilters, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters]);
 
   const orgaoCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -637,14 +631,14 @@ export default function QuestoesClient({
         boardIds,
         inspirationBoardIds,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       const orgao = (question.orgao || "").trim();
       if (orgao) counts[orgao] = (counts[orgao] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, difficultyLevels, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, difficultyLevels, statusFilters, yearFilters]);
 
   const yearCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -660,13 +654,13 @@ export default function QuestoesClient({
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
       })) return;
       const year = String(question.year || "");
       if (year) counts[year] = (counts[year] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters]);
 
   const difficultyCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -681,14 +675,14 @@ export default function QuestoesClient({
         boardIds,
         inspirationBoardIds,
         orgaos: orgaoFilters,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       const level = String(question.difficulty_level || "");
       if (level) counts[level] = (counts[level] || 0) + 1;
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, status, yearFilters]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, statusFilters, yearFilters]);
 
   const statusFacetCounts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -731,7 +725,7 @@ export default function QuestoesClient({
         inspirationBoardIds,
         orgaos: orgaoFilters,
         difficultyLevels,
-        status,
+        status: statusFilters,
         yearFilters,
       })) return;
       (topicIdsByQuestion.get(question.id) || []).forEach((topicId) => {
@@ -739,7 +733,7 @@ export default function QuestoesClient({
       });
     });
     return counts;
-  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, topicIdsByQuestion]);
+  }, [questions, search, disciplineId, subjectIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters, topicIdsByQuestion]);
 
   const availableDisciplines = useMemo(
     () => disciplines.filter((item) => (disciplineCounts[item.id] || 0) > 0 || item.id === disciplineId),
@@ -796,7 +790,7 @@ export default function QuestoesClient({
   const filteredQuestions = useMemo(() => {
     const term = search.toLowerCase().trim();
     return questions
-      .filter((question) => questionMatchesFilters(question, { term, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaos: orgaoFilters, difficultyLevels, status, yearFilters, missingTopics: missingTopicsFilter }))
+      .filter((question) => questionMatchesFilters(question, { term, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaos: orgaoFilters, difficultyLevels, status: statusFilters, yearFilters, missingTopics: missingTopicsFilter }))
       .sort((a, b) => {
         const ya = a.year || 0;
         const yb = b.year || 0;
@@ -805,7 +799,7 @@ export default function QuestoesClient({
         if (!yb) return -1;
         return sortOrder === "newest" ? yb - ya : ya - yb;
       });
-  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, status, yearFilters, missingTopicsFilter, sortOrder]);
+  }, [questions, search, disciplineId, subjectIds, topicIds, topicIdsByQuestion, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters, missingTopicsFilter, sortOrder]);
 
   useEffect(() => {
     setSingleIndex((current) => {
@@ -816,7 +810,7 @@ export default function QuestoesClient({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, disciplineId, subjectIds.join(","), topicIds.join(","), boardIds.join(","), inspirationBoardIds.join(","), orgaoFilters.join(","), difficultyLevels.join(","), status, yearFilters.join(","), missingTopicsFilter, sortOrder, viewMode]);
+  }, [search, disciplineId, subjectIds.join(","), topicIds.join(","), boardIds.join(","), inspirationBoardIds.join(","), orgaoFilters.join(","), difficultyLevels.join(","), statusFilters, yearFilters.join(","), missingTopicsFilter, sortOrder, viewMode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -837,6 +831,39 @@ export default function QuestoesClient({
   const allVisibleSelected =
     renderedQuestions.length > 0 &&
     renderedQuestions.every((question) => selectedIds.includes(question.id));
+  const someVisibleSelected = renderedQuestions.some((question) => selectedIds.includes(question.id));
+  const isGlobalSelection = globalSelection && selectedIds.length > 0;
+
+  // Seleção de todas as filtradas: as ações em massa que alteram dados ficam
+  // desabilitadas (a rota /api/admin/questions/bulk recebe todos os ids numa só
+  // requisição, sem lotes — não é segura para milhares de questões). Continuam
+  // ativas: Exportar TXT, Limpar seleção e as ações que não usam a seleção.
+  function blockForGlobalSelection<T extends { label: string; disabled?: boolean }>(actions: T[]): T[] {
+    if (!isGlobalSelection) return actions;
+    return actions.map((action) => (GLOBAL_SELECTION_BLOCKED_ACTIONS.includes(action.label) ? { ...action, disabled: true } : action));
+  }
+
+  function selectAllFilteredQuestions() {
+    setSelectedIds(filteredQuestions.map((question) => question.id));
+    setGlobalSelection(true);
+    setSelectionNotice(null);
+  }
+
+  // Seleção vazia encerra o modo global (ajuste durante a renderização, sem efeito).
+  if (selectedIds.length === 0 && globalSelection) setGlobalSelection(false);
+
+  // Filtros mudaram: a seleção global pertencia ao conjunto anterior e é desfeita
+  // (nunca passa a abranger, em silêncio, questões de outro conjunto).
+  const filterSelectionKey = JSON.stringify([search, disciplineId, subjectIds, topicIds, boardIds, inspirationBoardIds, orgaoFilters, difficultyLevels, statusFilters, yearFilters, missingTopicsFilter]);
+  const [selectionFilterKey, setSelectionFilterKey] = useState(filterSelectionKey);
+  if (selectionFilterKey !== filterSelectionKey) {
+    setSelectionFilterKey(filterSelectionKey);
+    if (globalSelection) {
+      setSelectedIds([]);
+      setGlobalSelection(false);
+      setSelectionNotice("A seleção de todas as questões filtradas foi desfeita porque os filtros mudaram.");
+    }
+  }
 
   function toggleQuestion(id: string) {
     setSelectedIds((current) =>
@@ -863,37 +890,35 @@ export default function QuestoesClient({
   // filteredQuestions (mesma ordem visual da lista filtrada) — nunca uma
   // ordem própria (id/created_at). Gerado 100% no client: os dados já
   // carregados (statement, question_alternatives com is_correct, order_number)
-  // são completos, sem necessidade de nova chamada à API.
-  function buildTxtExportFileName() {
-    const datePart = new Date().toISOString().slice(0, 10);
-    if (subjectIds.length === 1) {
-      const subject = subjects.find((s) => s.id === subjectIds[0]);
-      const slug = (subject?.name || "")
-        .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-      if (slug) return `questoes-${slug}-${datePart}.txt`;
-    }
-    return `questoes-exportadas-${datePart}.txt`;
-  }
-
+  // são completos, sem necessidade de nova chamada à API. Formato, BOM, nome
+  // do arquivo e download: lib/questions/txt-export.ts (compartilhado com Revisar).
   function exportSelectedQuestionsAsTxt() {
     const selectedQuestions = filteredQuestions.filter((question) => selectedIds.includes(question.id));
     if (selectedQuestions.length === 0) return;
-    const content = selectedQuestions.map(formatQuestionForTxtExport).join(TXT_EXPORT_QUESTION_SEPARATOR);
-    // BOM no início para o Bloco de Notas do Windows reconhecer UTF-8 e
-    // exibir acentuação corretamente.
-    const blob = new Blob([TXT_EXPORT_BOM + content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = buildTxtExportFileName();
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const singleSubjectName = subjectIds.length === 1 ? subjects.find((s) => s.id === subjectIds[0])?.name : null;
+    downloadQuestionsTxt(selectedQuestions, buildTxtExportFileName(singleSubjectName), buildTxtFilterLine());
+  }
+
+  // 1ª linha do TXT: filtros aplicados à listagem, com nomes legíveis e na ordem
+  // da tela (Busca, Disciplina, Assuntos, Tópicos, Bancas, Inspiração, Órgão,
+  // Ano, Dificuldade, Status, Sem tópicos). Filtros em "Todos" são omitidos.
+  function buildTxtFilterLine() {
+    const namesInListOrder = (list: { id: string; name: string }[], ids: string[]) =>
+      list.filter((item) => ids.includes(item.id)).map((item) => item.name).join(", ");
+    const term = search.trim();
+    return buildTxtExportFilterLine([
+      term ? `Busca: "${term}"` : "",
+      disciplineId ? disciplines.find((item) => item.id === disciplineId)?.name : "",
+      namesInListOrder(subjects, subjectIds),
+      namesInListOrder(topics, topicIds),
+      namesInListOrder(boards, boardIds),
+      inspirationBoardIds.length > 0 ? `Inspiração: ${namesInListOrder(boards, inspirationBoardIds)}` : "",
+      [...orgaoFilters].sort((a, b) => a.localeCompare(b, "pt-BR")).join(", "),
+      yearFilters.length > 0 ? `Ano: ${[...yearFilters].sort().join(", ")}` : "",
+      difficultyLevels.length > 0 ? `Dificuldade: ${difficultyOptions.filter((item) => difficultyLevels.includes(item.value)).map((item) => item.label).join(", ")}` : "",
+      statusFilters.length > 0 ? `Status: ${BANK_STATUS_FILTER_OPTIONS.filter((item) => statusFilters.includes(item.value)).map((item) => item.label).join(", ")}` : "",
+      missingTopicsFilter ? "Sem tópicos avaliados" : "",
+    ]);
   }
 
   function toggleDifficultyLevel(level: string) {
@@ -2221,32 +2246,12 @@ export default function QuestoesClient({
               )}
             </div>
 
-            <SimpleSelectDropdown
-              label="Status"
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: "", label: "Todos" },
-                ...[
-                  { value: "draft", label: "Rascunho" },
-                  { value: "published", label: "Publicada" },
-                  { value: "archived", label: "Arquivada" },
-                  // Anuladas no Banco: questions.status = "annulled" — status
-                  // real da questão, já existente (edição/badge/toggle
-                  // Anular-Reativar). Anuladas em Simulados: não é status da
-                  // questão — deriva de simulado_questions.status = "annulled"
-                  // em pelo menos um vínculo (ver questionAnnulledInAnySimulado).
-                  // Os dois convivem no mesmo seletor por pedido de UX, mas
-                  // aplicam predicados internos diferentes.
-                  { value: "annulled", label: "Anuladas no Banco" },
-                  { value: SIMULADO_ANNULLED_FILTER_VALUE, label: "Anuladas em Simulados" },
-                ]
-                  .filter((item) => item.value === "annulled" || item.value === SIMULADO_ANNULLED_FILTER_VALUE || (statusFacetCounts[item.value] || 0) > 0 || status === item.value)
-                  .map((item) => ({
-                    value: item.value,
-                    label: `${item.label} (${statusFacetCounts[item.value] || 0})`,
-                  })),
-              ]}
+            <StatusFilterDropdown
+              selected={statusFilters}
+              onChange={setStatusFilters}
+              options={BANK_STATUS_FILTER_OPTIONS
+                .filter((item) => item.value === "annulled" || item.value === SIMULADO_ANNULLED_FILTER_VALUE || (item.value !== READY_TO_PUBLISH_STATUS && (statusFacetCounts[item.value] || 0) > 0) || statusFilters.includes(item.value))
+                .map((item) => ({ ...item, count: statusFacetCounts[item.value] || 0 }))}
             />
 
             <div className="flex flex-col">
@@ -2396,15 +2401,37 @@ export default function QuestoesClient({
                 <input
                   type="checkbox"
                   checked={allVisibleSelected}
+                  ref={(input) => { if (input) input.indeterminate = someVisibleSelected && !allVisibleSelected; }}
                   onChange={toggleAllVisible}
                   className="h-5 w-5 rounded border-white/20 text-orange-500 focus:ring-orange-400"
                 />
                 Selecionar questões exibidas
               </label>
-              <span className="text-xs font-semibold text-white/30">
-                {selectedIds.length} selecionada(s) • {renderedQuestions.length} exibida(s)
-              </span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold">
+                {isGlobalSelection ? (
+                  <span className="text-orange-300">Todas as {selectedIds.length.toLocaleString("pt-BR")} questões filtradas estão selecionadas.</span>
+                ) : filteredQuestions.length > renderedQuestions.length ? (
+                  <button type="button" onClick={selectAllFilteredQuestions} className="font-bold text-orange-300 underline-offset-2 transition hover:text-orange-200 hover:underline">
+                    Selecionar todas as {filteredQuestions.length.toLocaleString("pt-BR")} questões filtradas
+                  </button>
+                ) : null}
+                {selectedIds.length > 0 && (
+                  <button type="button" onClick={() => setSelectedIds([])} className="font-bold text-white/50 underline-offset-2 transition hover:text-white/80 hover:underline">
+                    Limpar seleção
+                  </button>
+                )}
+                <span className="text-white/30">
+                  {selectedIds.length} selecionada(s) • {renderedQuestions.length} exibida(s)
+                </span>
+              </div>
             </div>
+          )}
+          {filteredQuestions.length > 0 && (isGlobalSelection || selectionNotice) && (
+            <p className="-mt-2 mb-4 px-1 text-xs font-semibold text-white/45">
+              {isGlobalSelection
+                ? "Seleção de todas as questões filtradas: disponível apenas para Exportar TXT. Arquivar, publicar, editar em massa e excluir ficam desabilitados — use a seleção por página para essas ações."
+                : selectionNotice}
+            </p>
           )}
 
           {filteredQuestions.length === 0 ? (
@@ -2936,7 +2963,7 @@ export default function QuestoesClient({
 
       <SelectionGhostBar
         count={selectedIds.length + publicationQueueIds.length + (isViewingPublicationQueue && publicationQueueVisibleIds.length > 0 && selectedIds.length === 0 ? publicationQueueVisibleIds.length : 0) + inlineEditingIds.length}
-        actions={[
+        actions={blockForGlobalSelection([
           ...(inlineEditingIds.length > 1
             ? [{ label: "Salvar todas as alterações", icon: <Save size={14} />, onClick: () => setSaveAllTrigger((t) => t + 1), variant: "primary" as const }]
             : inlineEditingIds.length === 1
@@ -2991,7 +3018,7 @@ export default function QuestoesClient({
                   { label: "Excluir", icon: <Trash2 size={14} />, onClick: deleteSelected, variant: "danger" as const },
                 ]
             : []),
-        ]}
+        ])}
       />
       </section>
     </main>

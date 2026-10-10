@@ -1,6 +1,7 @@
 import QuestoesClient from "./page-client";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
+import { bankStatusLoadPlan, parseStatusParams } from "@/lib/questions/status-filter";
 
 type InitialFilters = {
   search: string;
@@ -11,7 +12,8 @@ type InitialFilters = {
   inspirationBoardIds: string[];
   orgaos: string[];
   difficultyLevels: string[];
-  status: string;
+  // Filtro de Status (multisseleção): vazio = Todos.
+  statuses: string[];
   yearFilters: string[];
   missingTopics?: boolean;
 };
@@ -99,16 +101,15 @@ async function getData(initialFilters: InitialFilters) {
     )
     .order("created_at", { ascending: false });
 
-  if (initialFilters.status && QUESTION_STATUSES.includes(initialFilters.status)) {
-    if (initialFilters.status === "published") {
-      questionsQuery = questionsQuery.in("status", ["published", "active"]);
-    } else {
-      questionsQuery = questionsQuery.eq("status", initialFilters.status);
-    }
+  // Carrega o conjunto exato dos status selecionados (um status = mesma consulta
+  // de antes; "published" inclui "active"). Sem status, ou com "Anuladas em
+  // Simulados" (derivado), usa a carga abrangente de "Todos".
+  const loadPlan = bankStatusLoadPlan(initialFilters.statuses);
+  if (loadPlan.mode === "in") {
+    questionsQuery = questionsQuery.in("status", loadPlan.statuses);
   } else {
-    questionsQuery = questionsQuery
-      .neq("status", "pending_review")
-      .neq("status", "ready_to_publish");
+    questionsQuery = questionsQuery.neq("status", "pending_review");
+    if (!loadPlan.includeReadyToPublish) questionsQuery = questionsQuery.neq("status", "ready_to_publish");
   }
 
   // A busca textual fica 100% no client para evitar carregar apenas um subconjunto
@@ -211,7 +212,6 @@ export default async function QuestoesPage({
     return [];
   }
 
-  const rawStatus = str("status");
   const initialFilters = {
     search: str("q"),
     disciplineId: str("disciplina"),
@@ -221,7 +221,8 @@ export default async function QuestoesPage({
     inspirationBoardIds: arr("inspirada"),
     orgaos: arr("orgao"),
     difficultyLevels: arr("dificuldade"),
-    status: QUESTION_STATUSES.includes(rawStatus) || rawStatus === SIMULADO_ANNULLED_FILTER_VALUE ? rawStatus : "",
+    // ?status= aceita um (URLs antigas, inclusive ready_to_publish) ou vários valores.
+    statuses: parseStatusParams(arr("status"), [...QUESTION_STATUSES, SIMULADO_ANNULLED_FILTER_VALUE]),
     yearFilters: arr("ano"),
     missingTopics: str("topicos") === "sem",
   };

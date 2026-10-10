@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Clock,
+  Download,
   FileQuestion,
   Filter,
   Loader2,
@@ -37,8 +38,23 @@ import QuestionEditor, { type Question as EditorQuestion } from "../../component
 import { hasEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
+import { buildTxtExportFileName, buildTxtExportFilterLine, downloadQuestionsTxt } from "@/lib/questions/txt-export";
+import { isOnlyStatus, reviewStatusMatches, reviewStatusParams } from "@/lib/questions/status-filter";
+import StatusFilterDropdown from "@/app/components/questions/StatusFilterDropdown";
 
 const QUESTIONS_PER_PAGE = 40;
+
+// Rótulos exibidos nos filtros de Status e Dificuldade (também usados na linha de
+// identificação do TXT).
+const REVIEW_STATUS_FILTER_OPTIONS = [
+  { value: "pending_review", label: "Pendente revisão" },
+  { value: "ready_to_publish", label: "Fila de publicação" },
+  { value: "draft", label: "Rascunho" },
+  { value: "published", label: "Publicada" },
+  { value: "active", label: "Ativa" },
+  { value: "archived", label: "Arquivada" },
+];
+const REVIEW_DIFFICULTY_OPTIONS = [{ value: "1", label: "Muito fácil" }, { value: "2", label: "Fácil" }, { value: "3", label: "Média" }, { value: "4", label: "Difícil" }, { value: "5", label: "Muito difícil" }];
 function notifyPublicationQueueUpdated() {
   window.dispatchEvent(new Event("estudotop:publication-queue-updated"));
 }
@@ -285,7 +301,7 @@ type RevisarInitialFilters = {
   disciplineId: string;
   difficultyLevels: string[];
   orgaos: string[];
-  status: string;
+  statuses: string[];
   years: string[];
   q: string;
   missingTopics?: boolean;
@@ -317,7 +333,8 @@ export default function RevisarQuestoesClient({
   const [filterDifficultyLevels, setFilterDifficultyLevels] = useState<string[]>(initialFilters?.difficultyLevels ?? []);
   const [filterOrgaos, setFilterOrgaos] = useState<string[]>(initialFilters?.orgaos ?? []);
   const [showDifficultyDropdown, setShowDifficultyDropdown] = useState(false);
-  const [filterStatus, setFilterStatus] = useState(initialFilters?.status ?? "pending_review");
+  // Filtro de Status (multisseleção, OU); vazio = Todos. Padrão: Pendente revisão.
+  const [filterStatus, setFilterStatus] = useState<string[]>(initialFilters?.statuses ?? ["pending_review"]);
   const [filterYears, setFilterYears] = useState<string[]>(initialFilters?.years ?? []);
   const [filterText, setFilterText] = useState(initialFilters?.q ?? "");
   const [filterMissingTopics, setFilterMissingTopics] = useState(Boolean(initialFilters?.missingTopics));
@@ -328,6 +345,9 @@ export default function RevisarQuestoesClient({
   const [pendingPublicationQueueDraft, setPendingPublicationQueueDraft] = useState<PublicationQueueDraft | null>(null);
   const [publicationQueueDraftChecked, setPublicationQueueDraftChecked] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Seleção de todas as questões filtradas (todas as páginas) — mesma regra do Banco.
+  const [globalSelection, setGlobalSelection] = useState(false);
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [discardingSelected, setDiscardingSelected] = useState(false);
   // Each entry stores { code, save } so the queue can report failures per-question.
@@ -466,7 +486,7 @@ export default function RevisarQuestoesClient({
     if (filterTopicIds.length > 0) filterTopicIds.forEach((id) => params.append("topico", id));
     if (filterDifficultyLevels.length > 0) filterDifficultyLevels.forEach((l) => params.append("dificuldade", l));
     if (filterOrgaos.length > 0) filterOrgaos.forEach((orgao) => params.append("orgao", orgao));
-    if (filterStatus && filterStatus !== "pending_review") params.set("status", filterStatus);
+    reviewStatusParams(filterStatus).forEach((value) => params.append("status", value));
     if (filterYears.length > 0) filterYears.forEach((y) => params.append("ano", y));
     if (filterText) params.set("q", filterText);
     if (filterMissingTopics) params.set("topicos", "sem");
@@ -496,7 +516,7 @@ export default function RevisarQuestoesClient({
       const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(question.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(question.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((question.orgao || "").trim());
-      const matchesStatus = !filterStatus || question.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(question.status, filterStatus);
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(question.year || ""));
       const matchesText = !text || getQuestionSearchText(question).includes(text);
       const matchesMissingTopics = !filterMissingTopics || !hasEvaluatedTopics(question.evaluated_topics);
@@ -547,7 +567,7 @@ export default function RevisarQuestoesClient({
       const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
-      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(q.status, filterStatus);
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
       if (!matchesDiscipline || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
@@ -566,7 +586,7 @@ export default function RevisarQuestoesClient({
       const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
-      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(q.status, filterStatus);
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
       if (!matchesDiscipline || !matchesBoard || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
@@ -584,7 +604,7 @@ export default function RevisarQuestoesClient({
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
-      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(q.status, filterStatus);
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
       if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesYear || !matchesText) return;
@@ -610,7 +630,7 @@ export default function RevisarQuestoesClient({
       const matchesSubject = filterSubjectIds.length === 0 || filterSubjectIds.some((id) => getQuestionSubjectIds(q).includes(id));
       const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
-      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(q.status, filterStatus);
       const matchesYear = filterYears.length === 0 || filterYears.includes(String(q.year || ""));
       const matchesText = !text || getQuestionSearchText(q).includes(text);
       if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesStatus || !matchesYear || !matchesText) return;
@@ -630,7 +650,7 @@ export default function RevisarQuestoesClient({
       const matchesTopic = filterTopicIds.length === 0 || (topicIdsByQuestion.get(q.id) || []).some((id) => filterTopicIds.includes(id));
       const matchesDifficulty = filterDifficultyLevels.length === 0 || filterDifficultyLevels.includes(String(q.difficulty_level || ""));
       const matchesOrgao = filterOrgaos.length === 0 || filterOrgaos.includes((q.orgao || "").trim());
-      const matchesStatus = !filterStatus || q.status === filterStatus;
+      const matchesStatus = reviewStatusMatches(q.status, filterStatus);
       const matchesText = !text || getQuestionSearchText(q).includes(text);
       if (!matchesDiscipline || !matchesBoard || !matchesSubject || !matchesTopic || !matchesDifficulty || !matchesOrgao || !matchesStatus || !matchesText) return;
       const year = String(q.year || "");
@@ -646,9 +666,10 @@ export default function RevisarQuestoesClient({
     );
   }, [topics, filterDisciplineId, filterSubjectIds, topicCounts, filterTopicIds]);
 
-  const hasActiveFilters = Boolean(filterDisciplineId || filterBoardIds.length > 0 || filterOrgaos.length > 0 || filterSubjectIds.length > 0 || filterTopicIds.length > 0 || filterDifficultyLevels.length > 0 || filterStatus !== "pending_review" || filterYears.length > 0 || filterText.trim() || filterMissingTopics);
+  const hasActiveFilters = Boolean(filterDisciplineId || filterBoardIds.length > 0 || filterOrgaos.length > 0 || filterSubjectIds.length > 0 || filterTopicIds.length > 0 || filterDifficultyLevels.length > 0 || !isOnlyStatus(filterStatus, "pending_review") || filterYears.length > 0 || filterText.trim() || filterMissingTopics);
   const publicationQueueCount = publicationQueueIds.length;
-  const isReadyToPublishView = filterStatus === "ready_to_publish" && filteredQueue.length > 0;
+  // "Publicar N questão(ões)" publica a lista filtrada: só vale quando a fila é o único status.
+  const isReadyToPublishView = isOnlyStatus(filterStatus, "ready_to_publish") && filteredQueue.length > 0;
 
   // Ghost bar appears when 2+ questions are selected, when staged for queue, or in ready-to-publish view;
   // with a single selection it still appears (only "Descartar selecionadas" applies)
@@ -665,7 +686,7 @@ export default function RevisarQuestoesClient({
     setFilterSubjectIds([]);
     setFilterTopicIds([]);
     setFilterDifficultyLevels([]);
-    setFilterStatus("pending_review");
+    setFilterStatus(["pending_review"]);
     setFilterYears([]);
     setFilterText("");
     setFilterMissingTopics(false);
@@ -703,6 +724,78 @@ export default function RevisarQuestoesClient({
   }, []);
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  // Selecionar todas: mesma regra do Banco de Questões — atua sobre as questões
+  // exibidas na página atual (paginatedQueue). Só mexe em selectedIds; nunca em
+  // publicationQueueIds ("Preparar para fila") nem em status.
+  const allVisibleSelected = paginatedQueue.length > 0 && paginatedQueue.every((question) => selectedIds.includes(question.id));
+
+  const toggleAllVisible = useCallback(() => {
+    if (allVisibleSelected) {
+      setSelectedIds((current) => current.filter((id) => !paginatedQueue.some((question) => question.id === id)));
+      return;
+    }
+    setSelectedIds((current) => {
+      const merged = new Set(current);
+      paginatedQueue.forEach((question) => merged.add(question.id));
+      return [...merged];
+    });
+  }, [allVisibleSelected, paginatedQueue]);
+
+  const someVisibleSelected = paginatedQueue.some((question) => selectedIds.includes(question.id));
+  const isGlobalSelection = globalSelection && selectedIds.length > 0;
+
+  const selectAllFilteredQuestions = useCallback(() => {
+    setSelectedIds(filteredQueue.map((question) => question.id));
+    setGlobalSelection(true);
+    setSelectionNotice(null);
+  }, [filteredQueue]);
+
+  // Seleção vazia encerra o modo global (ajuste durante a renderização, sem efeito).
+  if (selectedIds.length === 0 && globalSelection) setGlobalSelection(false);
+
+  // Filtros mudaram: a seleção global pertencia ao conjunto anterior e é desfeita.
+  const filterSelectionKey = JSON.stringify([filterText, filterDisciplineId, filterSubjectIds, filterTopicIds, filterBoardIds, filterOrgaos, filterYears, filterDifficultyLevels, filterStatus, filterMissingTopics]);
+  const [selectionFilterKey, setSelectionFilterKey] = useState(filterSelectionKey);
+  if (selectionFilterKey !== filterSelectionKey) {
+    setSelectionFilterKey(filterSelectionKey);
+    if (globalSelection) {
+      setSelectedIds([]);
+      setGlobalSelection(false);
+      setSelectionNotice("A seleção de todas as questões filtradas foi desfeita porque os filtros mudaram.");
+    }
+  }
+
+  // 1ª linha do TXT: filtros aplicados, com nomes legíveis e na ordem da tela
+  // (Busca, Disciplina, Assuntos, Tópicos, Bancas, Órgão, Ano, Dificuldade, Status,
+  // Sem tópicos). Filtros em "Todos" são omitidos.
+  const buildTxtFilterLine = useCallback(() => {
+    const namesInListOrder = (list: { id: string; name: string }[], ids: string[]) =>
+      list.filter((item) => ids.includes(item.id)).map((item) => item.name).join(", ");
+    const term = filterText.trim();
+    return buildTxtExportFilterLine([
+      term ? `Busca: "${term}"` : "",
+      filterDisciplineId ? disciplines.find((item) => item.id === filterDisciplineId)?.name : "",
+      namesInListOrder(subjects, filterSubjectIds),
+      namesInListOrder(topics, filterTopicIds),
+      namesInListOrder(boards, filterBoardIds),
+      [...filterOrgaos].sort((a, b) => a.localeCompare(b, "pt-BR")).join(", "),
+      filterYears.length > 0 ? `Ano: ${[...filterYears].sort().join(", ")}` : "",
+      filterDifficultyLevels.length > 0 ? `Dificuldade: ${REVIEW_DIFFICULTY_OPTIONS.filter((item) => filterDifficultyLevels.includes(item.value)).map((item) => item.label).join(", ")}` : "",
+      filterStatus.length > 0 ? `Status: ${REVIEW_STATUS_FILTER_OPTIONS.filter((item) => filterStatus.includes(item.value)).map((item) => item.label).join(", ")}` : "",
+      filterMissingTopics ? "Sem tópicos avaliados" : "",
+    ]);
+  }, [filterText, filterDisciplineId, disciplines, subjects, filterSubjectIds, topics, filterTopicIds, boards, filterBoardIds, filterOrgaos, filterYears, filterDifficultyLevels, filterStatus, filterMissingTopics]);
+
+  // Exportar TXT: mesmo formato e regra do Banco de Questões (lib/questions/txt-export.ts).
+  // Exporta as questões selecionadas presentes na lista filtrada, na ordem visual.
+  // Só leitura: não altera status, fila de revisão nem "Preparar para fila".
+  const exportSelectedQuestionsAsTxt = useCallback(() => {
+    const selectedQuestions = filteredQueue.filter((question) => selectedIds.includes(question.id));
+    if (selectedQuestions.length === 0) return;
+    const singleSubjectName = filterSubjectIds.length === 1 ? subjects.find((s) => s.id === filterSubjectIds[0])?.name : null;
+    downloadQuestionsTxt(selectedQuestions, buildTxtExportFileName(singleSubjectName), buildTxtFilterLine());
+  }, [filteredQueue, selectedIds, filterSubjectIds, subjects, buildTxtFilterLine]);
 
   const runBulkEdit = useCallback(
     async (idsToUpdate: string[], fields: BulkEditFields) => {
@@ -1260,12 +1353,15 @@ export default function RevisarQuestoesClient({
         actions={[
           ...(selectedIds.length >= 2
             ? [
-                { label: "Edições em massa", icon: <Pencil size={14} />, onClick: () => setBulkEditOpen(true), variant: "primary" as const },
+                { label: "Edições em massa", icon: <Pencil size={14} />, onClick: () => setBulkEditOpen(true), variant: "primary" as const, disabled: isGlobalSelection },
                 { label: "Limpar seleção", onClick: clearSelection, variant: "secondary" as const },
               ]
             : []),
           ...(selectedIds.length > 0
-            ? [{ label: "Descartar selecionadas", icon: <Archive size={14} />, onClick: confirmDiscardSelected, variant: "danger" as const, disabled: discardingSelected || !queue.some((question) => selectedIds.includes(question.id)) }]
+            ? [{ label: "Exportar TXT", icon: <Download size={14} />, onClick: exportSelectedQuestionsAsTxt, variant: "secondary" as const }]
+            : []),
+          ...(selectedIds.length > 0
+            ? [{ label: "Descartar selecionadas", icon: <Archive size={14} />, onClick: confirmDiscardSelected, variant: "danger" as const, disabled: discardingSelected || isGlobalSelection || !queue.some((question) => selectedIds.includes(question.id)) }]
             : []),
           ...(publicationQueueCount > 0
             ? [
@@ -1372,7 +1468,7 @@ export default function RevisarQuestoesClient({
               {showDifficultyDropdown && (
                 <div className="absolute left-0 top-full z-[9999] mt-2 w-full min-w-72 rounded-2xl border border-white/[0.09] bg-[#0D1B2E] p-3 shadow-2xl shadow-black/50 backdrop-blur-xl">
                   <div className="space-y-1">
-                    {[{value:"1",label:"Muito fácil"},{value:"2",label:"Fácil"},{value:"3",label:"Média"},{value:"4",label:"Difícil"},{value:"5",label:"Muito difícil"}].map((opt) => {
+                    {REVIEW_DIFFICULTY_OPTIONS.map((opt) => {
                       const sel = filterDifficultyLevels.includes(opt.value);
                       return (
                         <button key={opt.value} type="button" onClick={() => toggleDifficultyLevel(opt.value)}
@@ -1399,19 +1495,10 @@ export default function RevisarQuestoesClient({
               )}
             </div>
 
-            <SimpleSelectDropdown
-              label="Status"
-              value={filterStatus}
+            <StatusFilterDropdown
+              selected={filterStatus}
               onChange={setFilterStatus}
-              options={[
-                { value: "", label: "Todos" },
-                { value: "pending_review", label: "Pendente revisão" },
-                { value: "ready_to_publish", label: "Fila de publicação" },
-                { value: "draft", label: "Rascunho" },
-                { value: "published", label: "Publicada" },
-                { value: "active", label: "Ativa" },
-                { value: "archived", label: "Arquivada" },
-              ]}
+              options={REVIEW_STATUS_FILTER_OPTIONS}
             />
 
             <div className="flex flex-col">
@@ -1552,6 +1639,42 @@ export default function RevisarQuestoesClient({
         </div>
       ) : (
         <div className="space-y-5">
+          <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <label className="inline-flex cursor-pointer items-center gap-3 font-bold text-white/65">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                ref={(input) => { if (input) input.indeterminate = someVisibleSelected && !allVisibleSelected; }}
+                onChange={toggleAllVisible}
+                className="h-5 w-5 rounded border-white/20 text-orange-500 focus:ring-orange-400"
+              />
+              Selecionar questões exibidas
+            </label>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold">
+              {isGlobalSelection ? (
+                <span className="text-orange-300">Todas as {selectedIds.length.toLocaleString("pt-BR")} questões filtradas estão selecionadas.</span>
+              ) : filteredQueue.length > paginatedQueue.length ? (
+                <button type="button" onClick={selectAllFilteredQuestions} className="font-bold text-orange-300 underline-offset-2 transition hover:text-orange-200 hover:underline">
+                  Selecionar todas as {filteredQueue.length.toLocaleString("pt-BR")} questões filtradas
+                </button>
+              ) : null}
+              {selectedIds.length > 0 && (
+                <button type="button" onClick={clearSelection} className="font-bold text-white/50 underline-offset-2 transition hover:text-white/80 hover:underline">
+                  Limpar seleção
+                </button>
+              )}
+              <span className="text-white/30">
+                {selectedIds.length} selecionada(s) • {paginatedQueue.length} exibida(s)
+              </span>
+            </div>
+          </div>
+          {(isGlobalSelection || selectionNotice) && (
+            <p className="-mt-2 mb-4 px-1 text-xs font-semibold text-white/45">
+              {isGlobalSelection
+                ? "Seleção de todas as questões filtradas: disponível apenas para Exportar TXT. Edições em massa e descarte ficam desabilitados — use a seleção por página para essas ações."
+                : selectionNotice}
+            </p>
+          )}
           {paginatedQueue.map((question, index) => (
             <MemoizedQuestionEditor
               key={question.id}

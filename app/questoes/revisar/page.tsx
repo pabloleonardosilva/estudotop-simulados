@@ -2,6 +2,7 @@ import RevisarQuestoesClient from "./page-client";
 import type { Board, Discipline, Question, Subject } from "./page-client";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
+import { parseReviewStatusParams } from "@/lib/questions/status-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -219,7 +220,8 @@ export default async function RevisarQuestoesPage({
     disciplineId: str("disciplina"),
     difficultyLevels: arr("dificuldade"),
     orgaos: arr("orgao"),
-    status: str("status") || "pending_review",
+    // ?status= aceita um (URLs antigas) ou vários valores; sem parâmetro = Pendente revisão; "todos" = Todos.
+    statuses: parseReviewStatusParams(arr("status")),
     years: arr("ano"),
     q: str("q"),
     missingTopics: str("topicos") === "sem",
