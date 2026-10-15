@@ -906,26 +906,38 @@ async function testHotmartExternalClient() {
       const logs = [];
       console.error = (...args) => { logs.push(args.map(String).join(" ")); };
       try {
-        const calls = salesWith((count) => count === 1
+        const calls = salesWith((count, url) => count === 1
           ? new Response(JSON.stringify({ error: "invalid_parameter", error_description: "start_date inválido para comprador pessoa@x.com", buyer: { email: "pessoa@x.com" } }), { status: 400 })
-          : new Response(JSON.stringify({ items: [], page_info: {} }), { status: count === 4 ? 400 : 200 }));
+          : new Response(JSON.stringify({ items: [], page_info: {} }), { status: url.pathname.endsWith("/summary") ? 403 : url.searchParams.has("start_date") && !url.searchParams.has("end_date") ? 400 : 200 }));
         let captured = null;
         await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: 8718446, now: nowMs, retryDelayMs: 0 }), (error) => { captured = error; return error.code === "remote_rejected" && error.details.status === 400 && error.details.page === 0; });
-        assert.equal(calls.length, 6, "1 consulta + 5 sondagens");
-        const probeParams = calls.slice(1).map((call) => [...call.url.searchParams.keys()].sort().join("+"));
-        assert.deepEqual(probeParams, ["product_id", "max_results+product_id", "product_id+start_date", "end_date+product_id", "end_date+product_id+start_date"]);
-        assert.equal(calls.slice(1).every((call) => call.init.method === "GET" && call.url.pathname === "/payments/api/v1/sales/history" && !call.url.searchParams.has("transaction_status") && !call.url.searchParams.has("page_token")), true, "sondagens somente leitura, sem status/page_token");
+        assert.equal(calls.length, 9, "1 consulta + 8 sondagens");
+        const probeRequests = calls.slice(1).map((call) => call.url.pathname + "?" + [...call.url.searchParams.keys()].sort().join("+"));
+        assert.deepEqual(probeRequests, [
+          "/payments/api/v1/sales/history?",
+          "/payments/api/v1/sales/users?max_results+product_id",
+          "/payments/api/v1/sales/summary?product_id",
+          "/payments/api/v1/sales/history?product_id",
+          "/payments/api/v1/sales/history?max_results+product_id",
+          "/payments/api/v1/sales/history?product_id+start_date",
+          "/payments/api/v1/sales/history?end_date+product_id",
+          "/payments/api/v1/sales/history?end_date+product_id+start_date",
+        ]);
+        assert.equal(calls[2].url.searchParams.get("product_id"), "8718446");
+        assert.equal(calls[2].url.searchParams.get("max_results"), "1");
+        assert.equal(calls.slice(1).every((call) => call.init.method === "GET" && call.url.origin === "https://developers.hotmart.com" && !call.url.searchParams.has("transaction_status") && !call.url.searchParams.has("page_token") && !call.url.searchParams.has("transaction")), true, "sondagens somente leitura (GET), sem status/page_token/transaction");
         assert.deepEqual(captured.details.diagnostics, {
           request_pathname: "/payments/api/v1/sales/history", request_max_results: 50, request_start_date: 1262304000000, request_end_date: nowMs,
           request_transaction_status: null, request_has_page_token: false, request_has_transaction: false,
           remote_error: "invalid_parameter", remote_error_description: "start_date inválido para comprador [email]", remote_message: null, remote_code: null, remote_body_format: "json",
+          probe_history_no_params: 200, probe_sales_users: 200, probe_sales_summary: 403,
           probe_product_id_only: 200, probe_product_id_max_results: 200, probe_product_id_start_date: 400, probe_product_id_end_date: 200, probe_product_id_start_end: 200,
         });
         assert.equal(Object.values(captured.details.diagnostics).every((value) => value === null || ["string", "number", "boolean"].includes(typeof value)), true, "somente campos planos");
         assert.equal(logs.filter((line) => /HOTMART_SALES_(REQUEST|400|PROBE)/.test(line)).length, 0, "sem linhas separadas antigas");
         // Revalidação por transação: sem sondagens, mas com a query e o erro nos mesmos campos planos.
         const transactionCalls = salesWith(() => new Response("{}", { status: 400 }));
-        await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: 8718446, transaction: "HP0001", retryDelayMs: 0 }), (error) => error.code === "remote_rejected" && error.details.diagnostics.request_has_transaction === true && error.details.diagnostics.probe_product_id_only === null && error.details.diagnostics.remote_body_format === "json");
+        await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: 8718446, transaction: "HP0001", retryDelayMs: 0 }), (error) => error.code === "remote_rejected" && error.details.diagnostics.request_has_transaction === true && error.details.diagnostics.probe_product_id_only === null && error.details.diagnostics.probe_history_no_params === null && error.details.diagnostics.probe_sales_users === null && error.details.diagnostics.probe_sales_summary === null && error.details.diagnostics.remote_body_format === "json");
         assert.equal(transactionCalls.length, 1);
         assert.equal(hotmartProductionCatalog.sanitizeHotmartErrorBody("<html>bad</html>").remote_body_format, "non_json");
         assert.equal(hotmartProductionCatalog.sanitizeHotmartErrorBody("").remote_body_format, "empty");
@@ -1271,6 +1283,7 @@ async function testHotmartExternalClient() {
           request_pathname: "/payments/api/v1/sales/history", request_max_results: 50, request_start_date: 1262304000000, request_end_date: "number",
           request_transaction_status: null, request_has_page_token: false, request_has_transaction: false,
           remote_error: "invalid_parameter", remote_error_description: null, remote_message: null, remote_code: null, remote_body_format: "json",
+          probe_history_no_params: 400, probe_sales_users: 400, probe_sales_summary: 400,
           probe_product_id_only: 400, probe_product_id_max_results: 400, probe_product_id_start_date: 400, probe_product_id_end_date: 400, probe_product_id_start_end: 400,
         });
         assert.equal(/@/.test(diagnosticLines[0]), false, "nenhum e-mail na linha de diagnóstico");

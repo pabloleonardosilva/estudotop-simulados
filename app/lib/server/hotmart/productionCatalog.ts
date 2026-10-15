@@ -303,19 +303,25 @@ export function sanitizeHotmartErrorBody(body: string): HotmartSalesDiagnosticFi
 }
 
 // Eliminação somente leitura (GET) executada apenas após um 400 na 1ª página: o status de cada
-// combinação mostra qual parâmetro torna a query inválida. Não altera o resultado da consulta.
+// combinação (e de /sales/users e /sales/summary) isola parâmetro, endpoint ou escopo. Respostas são
+// descartadas; não altera o resultado da consulta.
 async function probeHotmartSalesParameters(productId: number, endDate: number, accessToken: string, signal: AbortSignal): Promise<HotmartSalesDiagnosticFields> {
-  const variants: Array<[string, Record<string, string>]> = [
-    ["probe_product_id_only", { product_id: String(productId) }],
-    ["probe_product_id_max_results", { product_id: String(productId), max_results: String(HOTMART_SALES_PAGE_SIZE) }],
-    ["probe_product_id_start_date", { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START) }],
-    ["probe_product_id_end_date", { product_id: String(productId), end_date: String(endDate) }],
-    ["probe_product_id_start_end", { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START), end_date: String(endDate) }],
+  const history = "/payments/api/v1/sales/history";
+  const variants: Array<[string, string, Record<string, string>]> = [
+    // Isolamento do endpoint (somente leitura): history sem nenhum parâmetro, e outras APIs de Vendas.
+    ["probe_history_no_params", history, {}],
+    ["probe_sales_users", "/payments/api/v1/sales/users", { product_id: String(productId), max_results: "1" }],
+    ["probe_sales_summary", "/payments/api/v1/sales/summary", { product_id: String(productId) }],
+    ["probe_product_id_only", history, { product_id: String(productId) }],
+    ["probe_product_id_max_results", history, { product_id: String(productId), max_results: String(HOTMART_SALES_PAGE_SIZE) }],
+    ["probe_product_id_start_date", history, { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START) }],
+    ["probe_product_id_end_date", history, { product_id: String(productId), end_date: String(endDate) }],
+    ["probe_product_id_start_end", history, { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START), end_date: String(endDate) }],
   ];
   const results: HotmartSalesDiagnosticFields = {};
-  for (const [key, params] of variants) {
+  for (const [key, pathname, params] of variants) {
     try {
-      const url = new URL("https://developers.hotmart.com/payments/api/v1/sales/history");
+      const url = new URL(`https://developers.hotmart.com${pathname}`);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
       const response = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "Content-Type": "application/json" }, signal, cache: "no-store" });
       await response.text().catch(() => "");
@@ -327,7 +333,7 @@ async function probeHotmartSalesParameters(productId: number, endDate: number, a
   return results;
 }
 
-const EMPTY_PROBES: HotmartSalesDiagnosticFields = { probe_product_id_only: null, probe_product_id_max_results: null, probe_product_id_start_date: null, probe_product_id_end_date: null, probe_product_id_start_end: null };
+const EMPTY_PROBES: HotmartSalesDiagnosticFields = { probe_history_no_params: null, probe_sales_users: null, probe_sales_summary: null, probe_product_id_only: null, probe_product_id_max_results: null, probe_product_id_start_date: null, probe_product_id_end_date: null, probe_product_id_start_end: null };
 
 // Histórico de vendas REAL (somente leitura), com as mesmas credenciais HOTMART_PRODUCTION_* do catálogo.
 // Percorre todas as páginas via next_page_token, com limite de páginas e detecção de token repetido.

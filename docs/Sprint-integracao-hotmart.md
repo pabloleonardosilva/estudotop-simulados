@@ -267,4 +267,12 @@ O `/sales/users` lista participantes com papel (`role`), mas não traz datas da 
 
 No 400, a ordem é: corpo lido uma vez → sanitização → sondagens → erro com o diagnóstico completo → linha única emitida pela rota. As linhas separadas foram removidas.
 
+**Resultado em Production e isolamento do endpoint.** `remote_error = invalid_parameter`, e as 5 sondagens de `/sales/history` com `product_id` deram 400. Entraram mais três sondagens GET somente leitura, na mesma linha, com as respostas descartadas:
+
+- `probe_history_no_params`: `/sales/history` sem parâmetro algum;
+- `probe_sales_users`: `/sales/users?product_id=…&max_results=1`;
+- `probe_sales_summary`: `/sales/summary?product_id=…`.
+
+Elas indicam se a recusa é do filtro `product_id`, do endpoint `/sales/history` ou do escopo da credencial para as APIs de Vendas. Somente diagnóstico; nenhum endpoint funcional foi trocado.
+
 O resultado da consulta não muda (continua `remote_rejected`); o navegador não recebe o corpo bruto. A correção do parâmetro causador e a remoção desta instrumentação ficam para depois do próximo teste em Production.
