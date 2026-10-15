@@ -1,5 +1,19 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 15/10/2026 - Hotmart: instrumentacao temporaria do HTTP 400 da Sales API (aguardando novo teste em Production)
+
+O log de Production comprovou HTTP 400 na 1a chamada de `/payments/api/v1/sales/history` (`product_id` 8718446; OAuth e produto OK). A query enviada confere com a documentacao, e a causa nao esta comprovada:
+
+- `product_id`;
+- `max_results=50`;
+- `start_date=1262304000000`;
+- `end_date` em ms;
+- sem `transaction_status`.
+
+Foram publicados logs sanitizados `[HOTMART_SALES_REQUEST]`, `[HOTMART_SALES_400]` e `[HOTMART_SALES_PROBE]` (5 sondagens GET somente leitura por eliminacao), sem segredos nem dados de comprador. Nada mais foi alterado.
+
+**Pendente:** um novo teste em Production para identificar o parametro causador. Detalhes: `docs/Sprint-integracao-hotmart.md`.
+
 ## 15/10/2026 - Hotmart: diagnostico e robustez da consulta de compradores (reteste em Production pendente)
 
 **Sintoma:** o modal "Compradores Hotmart" falhava com mensagem generica em Production.
