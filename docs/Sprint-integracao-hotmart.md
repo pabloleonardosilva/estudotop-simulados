@@ -83,3 +83,51 @@ Comportamento funcional descoberto durante a homologação, registrado aqui por 
 G5 continua quarentenado e não pertence à linha oficial — não reintroduzir. A linha oficial de reconciliação de anulação usa `simulado_questions.pending_reconciliation_at` (confirmado ao vivo no schema operacional, com índice), nunca `simulado_results.pending_reconciliation_at` (confirmado ausente do schema operacional). O backup externo (`D:/Projetos_Software/estudotop-reconciliation-backup-20260916/`) preserva o histórico do protótipo G5 e não foi alterado.
 
 Este fechamento é exclusivamente funcional/documental: nenhuma migration foi executada, nenhum código foi alterado nesta rodada, nenhum commit ou push foi realizado como parte desta entrada.
+
+## 15/10/2026 — Correção do "Salvar vínculo" e catálogo em modal
+
+**Causa do botão sem efeito.** `createMapping` (`app/admin/configuracoes/hotmart/page-client.tsx`) enviava `verify_product_with_hotmart: true` sem informar a origem. O `POST /api/admin/hotmart` então revalidava todos os produtos com `lookupHotmartProductByUcode`, que usa `HOTMART_CLIENT_*` e `HOTMART_ENVIRONMENT`. Um produto escolhido no catálogo Produção foi localizado com `HOTMART_PRODUCTION_*`, mas era revalidado com outra credencial e podia ser rejeitado (404/503). A resposta só aparecia no banner do topo da página, fora da área visível do card. Também não havia loading nem bloqueio de duplo clique, e uma resposta não JSON lançava uma exceção sem tratamento. O resultado era um clique aparentemente silencioso.
+
+**Correção.**
+
+- O painel envia `product_source` (`sandbox`/`production`). A rota revalida com o catálogo da mesma origem. Produção usa `lookupHotmartProductionProductByUcode`, somente leitura e exclusivamente com `HOTMART_PRODUCTION_*`. A origem Sandbox, ou a ausência do campo, mantém o comportamento anterior.
+- As mensagens de Produção são próprias. Duplicidade (409), destino inexistente (404), validação (400) e `requireAdmin` não mudaram.
+- O clique valida produto e destino com mensagem explícita. O botão fica em loading ("Salvando...") e um `ref` impede um segundo POST concorrente.
+- O sucesso ("Produto vinculado com sucesso.") e os erros aparecem ao lado do botão. 401 e 403 têm textos de sessão/permissão; os demais erros usam a mensagem segura da API.
+- Após o sucesso, `load(true)` atualiza "Produtos vinculados" sem recarregar a página nem trocar a aba por "Carregando...". Somente produto, nome e destino são limpos; origem e tipo são preservados.
+
+**Catálogo em modal.** "Listar produtos Sandbox" e "Listar meus produtos Hotmart" abrem `HotmartCatalogModal`, um componente local portado para `document.body`. O `PremiumModal` compartilhado não oferece Escape, backdrop, `role="dialog"` nem rolagem interna e não foi alterado.
+
+- Títulos: "Produtos Hotmart — Sandbox" e "Meus produtos Hotmart".
+- Busca local por nome, também aceitando UCODE: instantânea, sem diferenciar maiúsculas, acentos ou espaços extras, sobre a lista já carregada.
+- Estado vazio: "Nenhum produto encontrado para esta busca."
+- Fechamento por X, "Fechar", Escape ou clique no backdrop. O foco inicial fica na busca, o scroll do body é bloqueado e o foco anterior é restaurado.
+- Altura limitada ao viewport, com lista rolável e cabeçalho/busca fixos.
+- "Usar este produto" preenche UCODE, nome e origem, fecha o modal e rola até "Vincular produto". O vínculo não é salvo automaticamente.
+- "Copiar UCODE" foi preservado.
+- Cada modal recebe somente o estado, o loading e o erro da própria origem.
+
+**Credenciais e ambientes.** Os valores nunca são registrados; abaixo constam só os nomes das variáveis.
+
+| Uso | Variáveis | Observação |
+| --- | --- | --- |
+| Catálogo Sandbox / homologação, lookup Sandbox e OAuth do refund | `HOTMART_CLIENT_ID`, `HOTMART_CLIENT_SECRET`, `HOTMART_BASIC_TOKEN` | Base URL definida por `HOTMART_ENVIRONMENT` (`products.ts`, `config.ts`, `refund.ts`) |
+| Catálogo REAL de Produção (somente leitura) e revalidação do vínculo com origem Produção | `HOTMART_PRODUCTION_CLIENT_ID`, `HOTMART_PRODUCTION_CLIENT_SECRET`, `HOTMART_PRODUCTION_BASIC_TOKEN` | Conjunto separado, usado exclusivamente por `productionCatalog.ts`, que não lê `HOTMART_CLIENT_*` nem `HOTMART_ENVIRONMENT` |
+| Ambiente da integração comercial | `HOTMART_ENVIRONMENT` | O deployment oficial Production usa `production`; não substitui `HOTMART_PRODUCTION_*` |
+| Autenticação do webhook recebido | `HOTMART_HOTTOK` | Valida o header `x-hotmart-hottok`; não é credencial OAuth e não consulta o catálogo |
+
+- As credenciais `HOTMART_PRODUCTION_*` servem ao catálogo real da Hotmart na aplicação publicada. No deployment oficial da Vercel, precisam estar configuradas no ambiente **Production**.
+- A aplicação online não depende de `.env.local`. O localhost não é fonte de credenciais da aplicação publicada: a Production da Vercel recebe suas próprias variáveis de ambiente. Sem essas variáveis no ambiente local, o catálogo de Produção apenas responde que a credencial não está configurada.
+- O catálogo real foi isolado intencionalmente das credenciais Sandbox. Essa separação não interfere em webhook, refund ou processor comercial, que continuam com `HOTMART_HOTTOK`, `HOTMART_ENVIRONMENT` e `HOTMART_CLIENT_*`, como antes.
+
+**Preservado.** Não houve migration. O banco ficou estruturalmente intacto. Webhook, refund, processor comercial e regras de matrícula também não foram alterados, assim como o fluxo "Vincular" a partir de uma transação.
+
+**Validação.** `node scripts/test-hotmart-unit.cjs` PASS. A suíte executa a rota POST com `requireAdmin`/Supabase stubados e cobre:
+
+- origem Produção sem credenciais Sandbox, e Sandbox sem `HOTMART_PRODUCTION_*`;
+- 404/503 de Produção, duplicidade 409 sem chamada externa e destino inválido;
+- contratos do painel, do modal e da busca.
+
+`npx tsc --noEmit` PASS, `npm run build` PASS e ESLint dos arquivos alterados sem diagnósticos.
+
+Implementação e testes automatizados concluídos; validação visual/funcional final em Production será realizada após o deploy deste commit.

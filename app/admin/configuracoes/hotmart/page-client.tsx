@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Calendar, Check, CheckCircle2, ChevronDown, ChevronRight, CreditCard, Filter, Link2, Package, RefreshCw, ScrollText } from "lucide-react";
+import { AlertTriangle, Calendar, Check, CheckCircle2, ChevronDown, ChevronRight, CreditCard, Filter, Link2, Package, RefreshCw, ScrollText, X } from "lucide-react";
 import PageBackground from "@/app/components/ui/PageBackground";
 import PageHeader from "@/app/components/ui/PageHeader";
 import MetricCard from "@/app/components/ui/MetricCard";
@@ -242,6 +242,84 @@ function HotmartDropdown({ label, value, onChange, options, disabled = false, so
   </div>;
 }
 
+type CatalogProduct = { name: string; ucode: string };
+
+function normalizeCatalogSearch(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+// PremiumModal não oferece Escape, clique no backdrop, role="dialog" nem rolagem interna da lista;
+// por isso o catálogo usa um modal local, portado para document.body acima de sidebar/header.
+// A busca filtra só a lista já carregada — nenhuma nova chamada à Hotmart por caractere.
+function HotmartCatalogModal({ source, products, loading, error, copiedUcode, copyFailedUcode, onCopy, onUse, onClose }: {
+  source: "sandbox" | "production";
+  products: CatalogProduct[] | null;
+  loading: boolean;
+  error: string;
+  copiedUcode: string;
+  copyFailedUcode: string;
+  onCopy: (ucode: string) => void;
+  onUse: (product: CatalogProduct) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const isProduction = source === "production";
+  const titleId = `hotmart-catalog-title-${source}`;
+  const term = normalizeCatalogSearch(search);
+  const filteredProducts = (products || []).filter((product) => !term || normalizeCatalogSearch(product.name).includes(term) || product.ucode.toLowerCase().includes(term));
+
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus?.({ preventScroll: true });
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 p-4 font-sans backdrop-blur-md" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="et-admin-dark-panel relative flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden text-white">
+        <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${isProduction ? "from-amber-500 via-amber-300 to-yellow-200" : "from-orange-600 via-amber-400 to-yellow-300"}`} />
+        <div className="flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-6 sm:px-7">
+          <div className="min-w-0">
+            <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isProduction ? "text-amber-300" : "text-slate-400"}`}>{isProduction ? "Produção" : "Sandbox"}</p>
+            <h2 id={titleId} className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">{isProduction ? "Meus produtos Hotmart" : "Produtos Hotmart — Sandbox"}</h2>
+            <p className="mt-1.5 text-sm text-slate-400">{isProduction ? "Catálogo real da conta Hotmart, somente leitura. Nenhuma venda, acesso ou configuração será alterada." : "Catálogo fictício de homologação."}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fechar catálogo" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="shrink-0 px-5 pb-3 sm:px-7">
+          <PremiumInput variant="jornada" autoFocus aria-label="Buscar produto pelo nome" placeholder="Buscar produto pelo nome..." value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} />
+          {products && products.length ? <p className="mt-2 text-xs text-slate-500">{filteredProducts.length} de {products.length} {products.length === 1 ? "produto" : "produtos"}</p> : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/[0.065] px-5 py-4 sm:px-7">
+          {loading ? <p className="et-admin-dark-muted text-sm" role="status">Buscando produtos na Hotmart...</p>
+            : error ? <p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>
+            : products && !products.length ? <p className="et-admin-dark-muted text-sm">{isProduction ? "Nenhum produto foi retornado pela conta Hotmart de produção." : "Nenhum produto foi retornado pela API Hotmart neste ambiente."}</p>
+            : products && !filteredProducts.length ? <p className="et-admin-dark-muted text-sm">Nenhum produto encontrado para esta busca.</p>
+            : <div className="space-y-2">{filteredProducts.map((product) => <div key={product.ucode} className={`flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${isProduction ? "border-amber-300/15 bg-amber-400/[0.04]" : "border-white/10 bg-white/[0.03]"}`}>
+              <div className="min-w-0"><p className="font-medium text-white">{product.name}</p><p className="break-all font-mono text-xs text-slate-400">UCODE: {product.ucode}</p></div>
+              <div className="flex shrink-0 flex-wrap gap-2"><PremiumButton variant="dark" className="!min-h-0 !px-3 !py-2 !text-xs" onClick={() => onCopy(product.ucode)}>{copiedUcode === product.ucode ? "UCODE copiado." : copyFailedUcode === product.ucode ? "Não foi possível copiar" : "Copiar UCODE"}</PremiumButton><PremiumButton variant="dark-primary" className="!min-h-0 !px-3 !py-2 !text-xs" onClick={() => onUse(product)}>Usar este produto</PremiumButton></div>
+            </div>)}</div>}
+        </div>
+        <div className="flex shrink-0 justify-end border-t border-white/[0.065] px-5 py-4 sm:px-7">
+          <PremiumButton variant="dark" onClick={onClose}>Fechar</PremiumButton>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function HotmartPageClient({ jornadas, events }: { jornadas: Destination[]; events: Destination[] }) {
   const [data, setData] = useState<Data>({ configured: false, readiness: emptyReadiness, mappings: [], transactions: [], history: [] });
   const [tab, setTab] = useState("overview");
@@ -257,6 +335,12 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
   const [loadingSandboxProducts, setLoadingSandboxProducts] = useState(false);
   const [sandboxProductsError, setSandboxProductsError] = useState("");
   const [copiedUcode, setCopiedUcode] = useState("");
+  const [copyFailedUcode, setCopyFailedUcode] = useState("");
+  const [catalogSource, setCatalogSource] = useState<"sandbox" | "production" | null>(null);
+  const [savingMapping, setSavingMapping] = useState(false);
+  const savingMappingRef = useRef(false);
+  const [mappingFeedback, setMappingFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const mappingFormRef = useRef<HTMLDivElement>(null);
   const [productionProducts, setProductionProducts] = useState<{ name: string; ucode: string }[] | null>(null);
   const [loadingProductionProducts, setLoadingProductionProducts] = useState(false);
   const [productionProductsError, setProductionProductsError] = useState("");
@@ -306,13 +390,15 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     };
   }, [dateRangeOpen]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent: recarrega sem trocar a aba pelo "Carregando..." (usado após salvar um vínculo, para a
+  // lista atualizar no lugar sem perder a posição nem o feedback ao lado do botão).
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const response = await adminFetch("/api/admin/hotmart");
     const json = await response.json();
     if (response.ok && json.ok) setData(json);
     else setMessage(json.message || "Não foi possível carregar.");
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -320,11 +406,31 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
   }, [load]);
 
   async function createMapping() {
-    if (!form.hotmart_product_name) { setMessage("Busque e confirme o produto na Hotmart antes de salvar."); return; }
-    const response = await adminFetch("/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, verify_product_with_hotmart: true }) });
-    const json = await response.json();
-    setMessage(json.message);
-    if (response.ok) { setForm({ ...form, hotmart_product_ucode: "", hotmart_product_name: "", hotmart_product_id: "", destination_id: "" }); await load(); }
+    if (savingMappingRef.current) return;
+    if (!form.hotmart_product_ucode.trim() || !form.hotmart_product_name) { setMappingFeedback({ tone: "error", text: "Busque e confirme o produto na Hotmart antes de salvar." }); return; }
+    if (!form.destination_id) { setMappingFeedback({ tone: "error", text: form.destination_type === "event" ? "Selecione o Evento de destino." : "Selecione a Jornada de destino." }); return; }
+    savingMappingRef.current = true;
+    setSavingMapping(true);
+    setMappingFeedback(null);
+    try {
+      const response = await adminFetch("/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, product_source: productSource, verify_product_with_hotmart: true }) });
+      const json = await response.json().catch(() => null) as { ok?: boolean; message?: string } | null;
+      if (!response.ok || !json?.ok) {
+        const text = response.status === 401 ? "Sua sessão expirou. Entre novamente para salvar o vínculo."
+          : response.status === 403 ? "Sua conta não tem permissão de administrador para salvar vínculos."
+          : json?.message || `Não foi possível salvar o vínculo (erro ${response.status}).`;
+        setMappingFeedback({ tone: "error", text });
+        return;
+      }
+      setForm((current) => ({ ...current, hotmart_product_ucode: "", hotmart_product_name: "", hotmart_product_id: "", destination_id: "" }));
+      setMappingFeedback({ tone: "success", text: "Produto vinculado com sucesso." });
+      await load(true);
+    } catch {
+      setMappingFeedback({ tone: "error", text: "Erro inesperado ao salvar o vínculo. Verifique a conexão e tente novamente." });
+    } finally {
+      savingMappingRef.current = false;
+      setSavingMapping(false);
+    }
   }
   async function lookupProduct() {
     const ucode = form.hotmart_product_ucode.trim();
@@ -371,6 +477,18 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
   function fillProductFromCatalog(product: { name: string; ucode: string }, source: "sandbox" | "production") {
     setProductSource(source);
     setForm((current) => ({ ...current, hotmart_product_ucode: product.ucode, hotmart_product_name: product.name }));
+    setMappingFeedback(null);
+    setCatalogSource(null);
+    window.requestAnimationFrame(() => mappingFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+  const closeCatalog = useCallback(() => setCatalogSource(null), []);
+  function openSandboxCatalog() {
+    setCatalogSource("sandbox");
+    void listSandboxProducts();
+  }
+  function openProductionCatalog() {
+    setCatalogSource("production");
+    void listProductionProducts();
   }
   async function copyUcode(ucode: string) {
     try {
@@ -378,7 +496,9 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
       setCopiedUcode(ucode);
       window.setTimeout(() => setCopiedUcode((current) => (current === ucode ? "" : current)), 2000);
     } catch {
-      setSandboxProductsError("Não foi possível copiar o UCODE.");
+      setMessage("Não foi possível copiar o UCODE.");
+      setCopyFailedUcode(ucode);
+      window.setTimeout(() => setCopyFailedUcode((current) => (current === ucode ? "" : current)), 2000);
     }
   }
   async function setMappingStatus(id: string, status: string) {
@@ -641,7 +761,7 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     {message ? <div className="mb-4 rounded-xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{message}</div> : null}
     {loading ? <PremiumCard><p className="et-admin-dark-text">Carregando...</p></PremiumCard> : null}
     {!loading && tab === "overview" ? <PremiumCard title="Estado operacional" icon={<CreditCard size={18} />}><p className="et-admin-dark-text">O webhook autentica, deduplica e processa cada produto isoladamente. Credenciais nunca são exibidas nesta tela.</p><div className="mt-4"><PremiumButton variant="dark" onClick={() => void recoverEmails()}>Recuperar e-mails pendentes</PremiumButton></div></PremiumCard> : null}
-    {!loading && tab === "mappings" ? <div className="space-y-5"><PremiumCard title="Descoberta de produtos (temporário)"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Sandbox — catálogo fictício de homologação</p><p className="mt-1 et-admin-dark-muted text-sm">{data.readiness.environment === "sandbox" ? "Produtos disponíveis no Sandbox Hotmart." : data.readiness.environment === "production" ? "Produtos disponíveis na Hotmart (produção)." : "Ambiente Hotmart não definido."}</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingSandboxProducts} onClick={() => void listSandboxProducts()}>{loadingSandboxProducts ? "Buscando produtos..." : "Listar produtos Sandbox"}</PremiumButton></div>{sandboxProductsError ? <p className="mt-3 text-sm text-red-300">{sandboxProductsError}</p> : null}{sandboxProducts && !sandboxProducts.length ? <p className="mt-3 et-admin-dark-muted">Nenhum produto foi retornado pela API Hotmart neste ambiente.</p> : null}{sandboxProducts && sandboxProducts.length ? <div className="mt-3 space-y-2">{sandboxProducts.map((product) => <div key={product.ucode} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="font-medium text-white">{product.name}</p><p className="break-all text-xs text-slate-400">UCODE: {product.ucode}</p></div><div className="flex flex-wrap gap-2"><PremiumButton variant="dark" onClick={() => void copyUcode(product.ucode)}>{copiedUcode === product.ucode ? "UCODE copiado." : "Copiar UCODE"}</PremiumButton><PremiumButton variant="dark-primary" onClick={() => fillProductFromCatalog(product, "sandbox")}>Usar este produto</PremiumButton></div></div>)}</div> : null}</div><div className="mt-6 border-t border-amber-300/20 pt-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Produção — catálogo real da conta Hotmart</p><p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">Consulta somente leitura. Nenhuma venda, acesso ou configuração da Hotmart será alterada.</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingProductionProducts} onClick={() => void listProductionProducts()}>{loadingProductionProducts ? "Buscando produtos..." : "Listar meus produtos Hotmart"}</PremiumButton></div>{productionProductsError ? <p className="mt-3 text-sm text-red-300">{productionProductsError}</p> : null}{productionProducts && !productionProducts.length ? <p className="mt-3 et-admin-dark-muted">Nenhum produto foi retornado pela conta Hotmart de produção.</p> : null}{productionProducts && productionProducts.length ? <div className="mt-3 space-y-2">{productionProducts.map((product) => <div key={product.ucode} className="flex flex-col gap-2 rounded-xl border border-amber-300/15 bg-amber-400/[0.04] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="font-medium text-white">{product.name}</p><p className="break-all text-xs text-slate-400">UCODE: {product.ucode}</p></div><div className="flex flex-wrap gap-2"><PremiumButton variant="dark" onClick={() => void copyUcode(product.ucode)}>{copiedUcode === product.ucode ? "UCODE copiado." : "Copiar UCODE"}</PremiumButton><PremiumButton variant="dark-primary" onClick={() => fillProductFromCatalog(product, "production")}>Usar este produto</PremiumButton></div></div>)}</div> : null}</div></PremiumCard><PremiumCard title="Vincular produto"><div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div className="max-w-xs"><HotmartDropdown label="Origem do produto Hotmart" value={productSource} onChange={(value) => setProductSource(value === "production" ? "production" : "sandbox")} options={[{ value: "production", label: "Produção — meus produtos reais" }, { value: "sandbox", label: "Sandbox — produtos fictícios de homologação" }]} /></div><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${productSource === "production" ? "border border-amber-300/30 bg-amber-400/10 text-amber-200" : "border border-white/10 bg-white/[0.03] text-slate-300"}`}>Origem: {productSource === "production" ? "Produção" : "Sandbox"}</span></div><div className="grid gap-4 md:grid-cols-2"><div><PremiumInput variant="jornada" label="Product UCODE" value={form.hotmart_product_ucode} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_ucode: event.target.value, hotmart_product_name: "" })} /><div className="mt-2"><PremiumButton variant="dark" disabled={lookingUpProduct || !form.hotmart_product_ucode.trim()} onClick={() => void lookupProduct()}>{lookingUpProduct ? "Buscando..." : "Buscar produto"}</PremiumButton></div></div><PremiumInput variant="jornada" label="Nome do produto" value={form.hotmart_product_name} readOnly placeholder="Busque pelo UCODE para preencher" /><HotmartDropdown sort label="Tipo" value={form.destination_type} onChange={(value) => setForm({ ...form, destination_type: value, destination_id: "" })} options={[{ value: "jornada", label: "Jornada" }, { value: "event", label: "Evento" }]} /><HotmartDropdown sort label="Destino" value={form.destination_id} onChange={(value) => setForm({ ...form, destination_id: value })} options={[{ value: "", label: "Selecione" }, ...destinations.map((item) => ({ value: item.id, label: `${item.title || item.name} — ${item.status}` }))]} /></div>{form.hotmart_product_name ? <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">Produto encontrado</p><p className="mt-1 font-semibold text-white">{form.hotmart_product_name}</p><p className="mt-1 break-all text-xs text-slate-400">{form.hotmart_product_ucode}</p></div> : null}<div className="mt-4"><PremiumButton variant="dark-primary" disabled={!form.hotmart_product_name || !form.destination_id || lookingUpProduct} onClick={() => void createMapping()}>Salvar vínculo</PremiumButton></div></PremiumCard><PremiumCard title="Produtos vinculados"><div className="space-y-3">{data.mappings.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-white">{item.hotmart_product_name}</p><p className="text-xs text-slate-400">{item.hotmart_product_ucode} → {item.jornadas?.title || item.simulado_events?.name}</p></div><div className="flex gap-2"><PremiumButton variant="dark" onClick={() => void setMappingStatus(item.id, item.status === "active" ? "inactive" : "active")}>{item.status === "active" ? "Inativar" : "Ativar"}</PremiumButton><PremiumButton variant="dark-warning" onClick={() => void setMappingStatus(item.id, "archived")}>Arquivar</PremiumButton></div></div>)}{!data.mappings.length ? <p className="et-admin-dark-muted">Nenhum produto vinculado.</p> : null}</div></PremiumCard></div> : null}
+    {!loading && tab === "mappings" ? <div className="space-y-5"><PremiumCard title="Descoberta de produtos (temporário)"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Sandbox — catálogo fictício de homologação</p><p className="mt-1 et-admin-dark-muted text-sm">{data.readiness.environment === "sandbox" ? "Produtos disponíveis no Sandbox Hotmart." : data.readiness.environment === "production" ? "Produtos disponíveis na Hotmart (produção)." : "Ambiente Hotmart não definido."}</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingSandboxProducts} onClick={openSandboxCatalog}>{loadingSandboxProducts ? "Buscando produtos..." : "Listar produtos Sandbox"}</PremiumButton></div></div><div className="mt-6 border-t border-amber-300/20 pt-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Produção — catálogo real da conta Hotmart</p><p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">Consulta somente leitura. Nenhuma venda, acesso ou configuração da Hotmart será alterada.</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingProductionProducts} onClick={openProductionCatalog}>{loadingProductionProducts ? "Buscando produtos..." : "Listar meus produtos Hotmart"}</PremiumButton></div></div></PremiumCard><div ref={mappingFormRef} className="scroll-mt-6"><PremiumCard title="Vincular produto"><div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div className="max-w-xs"><HotmartDropdown label="Origem do produto Hotmart" value={productSource} onChange={(value) => setProductSource(value === "production" ? "production" : "sandbox")} options={[{ value: "production", label: "Produção — meus produtos reais" }, { value: "sandbox", label: "Sandbox — produtos fictícios de homologação" }]} /></div><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${productSource === "production" ? "border border-amber-300/30 bg-amber-400/10 text-amber-200" : "border border-white/10 bg-white/[0.03] text-slate-300"}`}>Origem: {productSource === "production" ? "Produção" : "Sandbox"}</span></div><div className="grid gap-4 md:grid-cols-2"><div><PremiumInput variant="jornada" label="Product UCODE" value={form.hotmart_product_ucode} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_ucode: event.target.value, hotmart_product_name: "" })} /><div className="mt-2"><PremiumButton variant="dark" disabled={lookingUpProduct || !form.hotmart_product_ucode.trim()} onClick={() => void lookupProduct()}>{lookingUpProduct ? "Buscando..." : "Buscar produto"}</PremiumButton></div></div><PremiumInput variant="jornada" label="Nome do produto" value={form.hotmart_product_name} readOnly placeholder="Busque pelo UCODE para preencher" /><HotmartDropdown sort label="Tipo" value={form.destination_type} onChange={(value) => setForm({ ...form, destination_type: value, destination_id: "" })} options={[{ value: "jornada", label: "Jornada" }, { value: "event", label: "Evento" }]} /><HotmartDropdown sort label="Destino" value={form.destination_id} onChange={(value) => setForm({ ...form, destination_id: value })} options={[{ value: "", label: "Selecione" }, ...destinations.map((item) => ({ value: item.id, label: `${item.title || item.name} — ${item.status}` }))]} /></div>{form.hotmart_product_name ? <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">Produto encontrado</p><p className="mt-1 font-semibold text-white">{form.hotmart_product_name}</p><p className="mt-1 break-all text-xs text-slate-400">{form.hotmart_product_ucode}</p></div> : null}<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><PremiumButton variant="dark-primary" disabled={savingMapping || lookingUpProduct} onClick={() => void createMapping()}>{savingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton>{mappingFeedback ? <p role={mappingFeedback.tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-2.5 text-sm ${mappingFeedback.tone === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : "border-red-400/20 bg-red-400/10 text-red-200"}`}>{mappingFeedback.text}</p> : null}</div></PremiumCard></div><PremiumCard title="Produtos vinculados"><div className="space-y-3">{data.mappings.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-white">{item.hotmart_product_name}</p><p className="text-xs text-slate-400">{item.hotmart_product_ucode} → {item.jornadas?.title || item.simulado_events?.name}</p></div><div className="flex gap-2"><PremiumButton variant="dark" onClick={() => void setMappingStatus(item.id, item.status === "active" ? "inactive" : "active")}>{item.status === "active" ? "Inativar" : "Ativar"}</PremiumButton><PremiumButton variant="dark-warning" onClick={() => void setMappingStatus(item.id, "archived")}>Arquivar</PremiumButton></div></div>)}{!data.mappings.length ? <p className="et-admin-dark-muted">Nenhum produto vinculado.</p> : null}</div></PremiumCard></div> : null}
     {!loading && tab === "pending" && commercialDateReviews.length ? <PremiumCard title="Datas comerciais em revisão" icon={<AlertTriangle size={18} />}><div className="space-y-3">{commercialDateReviews.map((item) => { const calculatedExpiresAt = calculatedCommercialExpiration(item); return <div key={`commercial-date-${item.id}`} className="rounded-2xl border border-amber-300/20 bg-amber-400/[0.06] p-5"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Data da compra requer verificação</p><h3 className="mt-1 text-lg font-semibold text-white">{item.product_name_snapshot}</h3><p className="mt-1 break-all text-xs text-slate-400">UCODE: {item.hotmart_product_ucode}</p></div><PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><div><p className="text-xs text-slate-500">Transação</p><p className="mt-1 text-sm text-slate-200">{item.transaction_code}</p></div><div><p className="text-xs text-slate-500">Comprador</p><p className="mt-1 text-sm text-slate-200">{item.students?.name || item.buyer_email}</p></div><div><p className="text-xs text-slate-500">Aprovação Hotmart</p><p className="mt-1 text-sm text-slate-200">{formatDate(item.purchase_approved_at)}</p></div><div><p className="text-xs text-slate-500">Expiração calculada</p><p className="mt-1 text-sm text-slate-200">{formatDate(calculatedExpiresAt)}</p></div><div><p className="text-xs text-slate-500">Jornada vinculada</p><p className="mt-1 text-sm text-slate-200">{item.jornadas?.title || "—"}</p></div></div><p className="mt-4 text-sm leading-6 text-amber-100">A Hotmart informou aprovação em {formatDate(item.purchase_approved_at)}. Com a duração atual da Jornada, o acesso expiraria em {formatDate(calculatedExpiresAt)}. Revise a transação antes de conceder o acesso.</p></div>; })}</div></PremiumCard> : null}
     {!loading && tab === "transactions" ? <div className="space-y-5">
       {/* "Filtrar transações" e "Transações" são PremiumCards irmãos; .et-admin-dark-panel usa
@@ -698,6 +818,8 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     {!loading && ["pending","duplicates"].includes(tab) ? <PremiumCard title={tab === "pending" ? "Pendências" : "Compras em duplicidade"}><div className="space-y-4">{(tab === "pending" ? pending.filter((item) => item.processing_error_code !== "COMMERCIAL_DATE_REQUIRES_REVIEW") : duplicates).map((item) => renderTransactionCard(item))}{!(tab === "pending" ? pending : duplicates).length ? <p className="et-admin-dark-muted">Nenhum registro nesta seção.</p> : null}</div></PremiumCard> : null}
     {!loading && tab === "students" ? <PremiumCard title="Possíveis cadastros duplicados"><div className="space-y-3">{duplicateStudents.map((item) => <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="font-semibold text-white">Conta Hotmart: {item.students?.name || item.students?.email}</p><p className="mt-1 text-xs text-slate-400">Possível cadastro existente: {item.possible_duplicate?.name || item.possible_duplicate?.email}</p><div className="mt-3 flex gap-2"><PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "keep_separate")}>Manter separados</PremiumButton><PremiumButton variant="dark-danger" disabled>Mesclar — bloqueado</PremiumButton></div></div>)}{!duplicateStudents.length ? <p className="et-admin-dark-muted">Nenhuma possível duplicidade pendente.</p> : null}<p className="et-admin-dark-muted mt-4">O merge permanece indisponível até que todas as relações críticas e o Supabase Auth possam ser migrados de forma transacional.</p></div></PremiumCard> : null}
     {!loading && tab === "history" ? <PremiumCard title="Histórico comercial" icon={<ScrollText size={18} />}><div className="space-y-2">{data.history.map((item) => <div key={item.id} className="flex justify-between rounded-xl border border-white/10 px-4 py-3 text-sm"><span className="text-slate-200">{item.action}</span><span className="text-slate-500">{new Date(item.created_at).toLocaleString("pt-BR")}</span></div>)}</div></PremiumCard> : null}
+    {catalogSource === "sandbox" ? <HotmartCatalogModal source="sandbox" products={sandboxProducts} loading={loadingSandboxProducts} error={sandboxProductsError} copiedUcode={copiedUcode} copyFailedUcode={copyFailedUcode} onCopy={(ucode) => void copyUcode(ucode)} onUse={(product) => fillProductFromCatalog(product, "sandbox")} onClose={closeCatalog} /> : null}
+    {catalogSource === "production" ? <HotmartCatalogModal source="production" products={productionProducts} loading={loadingProductionProducts} error={productionProductsError} copiedUcode={copiedUcode} copyFailedUcode={copyFailedUcode} onCopy={(ucode) => void copyUcode(ucode)} onUse={(product) => fillProductFromCatalog(product, "production")} onClose={closeCatalog} /> : null}
     <PremiumModal open={Boolean(mappingTarget)} title="Vincular produto Hotmart" message="Escolha o destino EstudoTOP para esta compra. O produto e o código vieram da transação e não podem ser alterados neste fluxo." tone="info" dismissible={!savingPendingMapping} onClose={() => { if (!savingPendingMapping) setMappingTarget(null); }} actions={<><PremiumButton variant="dark" disabled={savingPendingMapping} onClick={() => setMappingTarget(null)}>Cancelar</PremiumButton><PremiumButton variant={mappingTarget && HOTMART_REPROCESS_ELIGIBLE_STATUSES.includes(mappingTarget.processing_status) ? "dark" : "dark-primary"} disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(false)}>{savingPendingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton>{mappingTarget && HOTMART_REPROCESS_ELIGIBLE_STATUSES.includes(mappingTarget.processing_status) ? <PremiumButton variant="dark-primary" disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(true)}>{savingPendingMapping ? "Processando..." : "Vincular e reprocessar"}</PremiumButton> : null}</>}>
       <div className="grid gap-4 md:grid-cols-2"><PremiumInput variant="jornada" label="Produto Hotmart" value={mappingTarget?.product_name_snapshot || ""} readOnly /><PremiumInput variant="jornada" label="Código do produto" value={mappingTarget?.hotmart_product_ucode || ""} readOnly /><HotmartDropdown sort label="Tipo de destino" value={pendingMappingForm.destination_type} disabled={savingPendingMapping} onChange={(value) => setPendingMappingForm({ destination_type: value, destination_id: "" })} options={[{ value: "jornada", label: "Jornada" }, { value: "event", label: "Evento" }]} /><HotmartDropdown sort label={pendingMappingForm.destination_type === "jornada" ? "Jornada" : "Evento"} value={pendingMappingForm.destination_id} disabled={savingPendingMapping} onChange={(value) => setPendingMappingForm({ ...pendingMappingForm, destination_id: value })} options={[{ value: "", label: "Selecione" }, ...pendingMappingDestinations.map((item) => ({ value: item.id, label: item.title || item.name || "" }))]} /></div>
     </PremiumModal>

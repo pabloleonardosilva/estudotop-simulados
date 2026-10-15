@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/server/authGuard";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { getHotmartReadiness } from "@/app/lib/server/hotmart/config";
 import { HOTMART_UCODE_PATTERN, HotmartProductLookupError, lookupHotmartProductByUcode } from "@/app/lib/server/hotmart/products";
+import { HotmartProductionCatalogError, lookupHotmartProductionProductByUcode } from "@/app/lib/server/hotmart/productionCatalog";
 
 export async function GET(request: Request) {
   const admin = await requireAdmin(request);
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   const ucode = typeof body?.hotmart_product_ucode === "string" ? body.hotmart_product_ucode.trim().toLowerCase() : "";
   const submittedName = typeof body?.hotmart_product_name === "string" ? body.hotmart_product_name.trim() : "";
   const verifyWithHotmart = body?.verify_product_with_hotmart === true;
+  const productSource = body?.product_source === "production" ? "production" : "sandbox";
   const type = body?.destination_type === "jornada" || body?.destination_type === "event" ? body.destination_type : null;
   const destinationId = typeof body?.destination_id === "string" ? body.destination_id.trim() : "";
   if (!ucode || (!submittedName && !verifyWithHotmart) || !type || !destinationId) return NextResponse.json({ ok: false, message: "Informe ucode, produto, tipo e destino." }, { status: 400 });
@@ -43,7 +45,17 @@ export async function POST(request: Request) {
   if (existingMappingError) return NextResponse.json({ ok: false, message: "Não foi possível verificar os vínculos existentes." }, { status: 500 });
   if (existingMapping) return NextResponse.json({ ok: false, message: "Este produto já possui um vínculo." }, { status: 409 });
   let name = submittedName;
-  if (verifyWithHotmart) {
+  // A revalidação usa a mesma origem em que o Admin localizou o produto: um produto do catálogo
+  // Produção (HOTMART_PRODUCTION_*, read-only) não existe para as credenciais HOTMART_CLIENT_*.
+  if (verifyWithHotmart && productSource === "production") {
+    try {
+      name = (await lookupHotmartProductionProductByUcode(ucode)).name;
+    } catch (error) {
+      if (error instanceof HotmartProductionCatalogError && error.code === "not_found") return NextResponse.json({ ok: false, message: "Produto não encontrado no catálogo de produção da Hotmart." }, { status: 404 });
+      if (error instanceof HotmartProductionCatalogError && ["not_configured", "unauthorized"].includes(error.code)) return NextResponse.json({ ok: false, message: "A credencial de produção da Hotmart não está configurada corretamente." }, { status: 503 });
+      return NextResponse.json({ ok: false, message: "Não foi possível validar o produto no catálogo real da Hotmart agora." }, { status: error instanceof HotmartProductionCatalogError && error.code === "timeout" ? 504 : 502 });
+    }
+  } else if (verifyWithHotmart) {
     try {
       name = (await lookupHotmartProductByUcode(ucode)).name;
     } catch (error) {

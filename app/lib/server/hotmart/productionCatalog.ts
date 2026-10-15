@@ -5,7 +5,8 @@ import "server-only";
 // HOTMART_PRODUCTION_BASIC_TOKEN — nunca as credenciais Sandbox, independente da variável de
 // ambiente global da integração, e mantém seu próprio cache de token, sem nenhuma dependência
 // do módulo de OAuth do Sandbox (refund.ts).
-// Não é usada pelo webhook, processor, refund ou criação de mapping.
+// Não é usada pelo webhook, processor ou refund. Na criação de mapping, serve apenas para
+// revalidar (somente leitura) um produto que o Admin escolheu no catálogo Produção.
 
 type CachedToken = { value: string; expiresAt: number };
 let cachedProductionToken: CachedToken | null = null;

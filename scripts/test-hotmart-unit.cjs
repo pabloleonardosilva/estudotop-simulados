@@ -672,6 +672,169 @@ async function testHotmartExternalClient() {
     assert.equal(pageClientSource.includes("moeda não informada"), true);
     assert.equal(pageClientSource.includes("function formatPlainAmount("), true);
 
+    // --- Salvar vínculo (POST /api/admin/hotmart) — rota executada com requireAdmin/Supabase stubados ---
+    // Causa do "Salvar vínculo" sem efeito: o POST revalidava todo produto com HOTMART_CLIENT_* /
+    // HOTMART_ENVIRONMENT, inclusive o escolhido no catálogo Produção (HOTMART_PRODUCTION_*), e a
+    // resposta só aparecia no banner do topo da página. Agora a revalidação segue a origem.
+    const mappingState = { existing: false, destinationFound: true, inserted: [] };
+    cache.set(path.resolve("lib/server/authGuard.ts"), { exports: { requireAdmin: async () => ({ id: "admin-unit" }) } });
+    cache.set(path.resolve("lib/server/supabaseAdmin.ts"), { exports: { createSupabaseAdminClient: () => ({
+      from(table) {
+        const builder = {
+          select: () => builder,
+          eq: () => builder,
+          maybeSingle: async () => table === "hotmart_product_mappings"
+            ? { data: mappingState.existing ? { id: "mapping-existing" } : null, error: null }
+            : { data: mappingState.destinationFound ? { id: "jornada-1" } : null, error: null },
+          insert: (row) => { mappingState.inserted.push(row); return { select: () => ({ single: async () => ({ data: { id: "mapping-new" }, error: null }) }) }; },
+        };
+        return builder;
+      },
+    }) } });
+    const hotmartAdminRoute = loadTypeScript("app/api/admin/hotmart/route.ts");
+    const postMapping = (body) => hotmartAdminRoute.POST(new Request("http://localhost/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    const realUcode = "57912595-ba4b-02e0-8c72-71cb71e13136";
+    const mappingBody = { hotmart_product_ucode: realUcode, hotmart_product_name: "Marketing Digital do Zero", hotmart_product_id: "", destination_type: "jornada", destination_id: "jornada-1", verify_product_with_hotmart: true };
+
+    // A/F/M: produto do catálogo Produção é revalidado só com HOTMART_PRODUCTION_*, nunca com HOTMART_CLIENT_*.
+    configureHotmart("sandbox");
+    configureHotmartProduction();
+    const productionMappingRequests = [];
+    global.fetch = async (input, init) => {
+      productionMappingRequests.push({ url: String(input), init });
+      return String(input).includes("oauth/token")
+        ? new Response(JSON.stringify({ access_token: "mock-mapping-prod", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+        : new Response(JSON.stringify({ items: [{ ucode: realUcode, name: "Marketing Digital do Zero" }], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    let mappingResponse = await postMapping({ ...mappingBody, product_source: "production" });
+    let mappingJson = await mappingResponse.json();
+    assert.equal(mappingResponse.status, 201);
+    assert.equal(mappingJson.ok, true);
+    assert.equal(mappingState.inserted.length, 1);
+    assert.deepEqual(
+      { ucode: mappingState.inserted[0].hotmart_product_ucode, name: mappingState.inserted[0].hotmart_product_name, type: mappingState.inserted[0].destination_type, jornada: mappingState.inserted[0].jornada_id, event: mappingState.inserted[0].event_id, status: mappingState.inserted[0].status },
+      { ucode: realUcode, name: "Marketing Digital do Zero", type: "jornada", jornada: "jornada-1", event: null, status: "active" },
+    );
+    assert.equal(productionMappingRequests[0].init.headers.Authorization, "Basic prod-basic-token");
+    assert.equal(productionMappingRequests.some((request) => request.url.includes("client_id=test-client-id") || request.url.startsWith("https://sandbox.hotmart.com")), false);
+    assert.equal(productionMappingRequests.some((request) => request.url.startsWith("https://developers.hotmart.com/products/api/v1/products")), true);
+
+    // E/M: sem product_source (ou sandbox), a revalidação continua com a infra Sandbox, sem tocar HOTMART_PRODUCTION_*.
+    const sandboxMappingRequests = [];
+    global.fetch = async (input, init) => {
+      sandboxMappingRequests.push({ url: String(input), init });
+      return String(input).includes("oauth/token")
+        ? new Response(JSON.stringify({ access_token: "mock-mapping-sandbox", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+        : new Response(JSON.stringify({ items: [{ ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", name: "Produto test postback2" }], page_info: {} }), { status: 200 });
+    };
+    refund.resetHotmartAccessTokenCache();
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    mappingResponse = await postMapping({ ...mappingBody, hotmart_product_ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f" });
+    assert.equal(mappingResponse.status, 201);
+    assert.equal(mappingState.inserted[1].hotmart_product_name, "Produto test postback2");
+    assert.equal(sandboxMappingRequests[0].init.headers.Authorization, "Basic test-basic-token");
+    assert.equal(sandboxMappingRequests.some((request) => request.url.includes("prod-client-id")), false);
+    assert.equal(sandboxMappingRequests.some((request) => request.url.startsWith("https://sandbox.hotmart.com/products/api/v1/products")), true);
+
+    // B: erros da API chegam com mensagem específica e status correto (o painel exibe json.message).
+    global.fetch = async (input) => String(input).includes("oauth/token")
+      ? new Response(JSON.stringify({ access_token: "mock-mapping-prod-404", token_type: "bearer", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    mappingResponse = await postMapping({ ...mappingBody, product_source: "production" });
+    assert.equal(mappingResponse.status, 404);
+    assert.equal((await mappingResponse.json()).message, "Produto não encontrado no catálogo de produção da Hotmart.");
+    restoreHotmartProductionEnv();
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    mappingResponse = await postMapping({ ...mappingBody, product_source: "production" });
+    assert.equal(mappingResponse.status, 503);
+    assert.equal((await mappingResponse.json()).message, "A credencial de produção da Hotmart não está configurada corretamente.");
+    configureHotmartProduction();
+    // Duplicidade: regra existente preservada (409, nenhuma inserção nova, nenhuma chamada à Hotmart).
+    mappingState.existing = true;
+    let duplicateFetchCalls = 0;
+    global.fetch = async () => { duplicateFetchCalls += 1; throw new Error("unexpected fetch"); };
+    const insertedBeforeDuplicate = mappingState.inserted.length;
+    mappingResponse = await postMapping({ ...mappingBody, product_source: "production" });
+    assert.equal(mappingResponse.status, 409);
+    assert.equal((await mappingResponse.json()).message, "Este produto já possui um vínculo.");
+    assert.equal(mappingState.inserted.length, insertedBeforeDuplicate);
+    assert.equal(duplicateFetchCalls, 0);
+    mappingState.existing = false;
+    // Destino inválido.
+    mappingState.destinationFound = false;
+    mappingResponse = await postMapping({ ...mappingBody, verify_product_with_hotmart: false });
+    assert.equal(mappingResponse.status, 404);
+    assert.equal((await mappingResponse.json()).message, "Destino não encontrado.");
+    mappingState.destinationFound = true;
+    mappingResponse = await postMapping({ ...mappingBody, destination_id: "" });
+    assert.equal(mappingResponse.status, 400);
+    cache.delete(path.resolve("lib/server/authGuard.ts"));
+    cache.delete(path.resolve("lib/server/supabaseAdmin.ts"));
+    cache.delete(path.resolve("app/api/admin/hotmart/route.ts"));
+
+    // A/B/C/D: contrato do painel — origem enviada, guard contra POST concorrente, loading, feedback e lista.
+    const createMappingSource = pageClientSource.slice(pageClientSource.indexOf("async function createMapping()"), pageClientSource.indexOf("async function lookupProduct()"));
+    assert.equal(createMappingSource.includes("body: JSON.stringify({ ...form, product_source: productSource, verify_product_with_hotmart: true })"), true);
+    assert.equal(createMappingSource.indexOf("if (savingMappingRef.current) return;") < createMappingSource.indexOf("savingMappingRef.current = true;"), true);
+    assert.equal(createMappingSource.indexOf("savingMappingRef.current = true;") < createMappingSource.indexOf("adminFetch("), true);
+    assert.equal(createMappingSource.includes("finally {\n      savingMappingRef.current = false;\n      setSavingMapping(false);"), true);
+    assert.equal(createMappingSource.includes("await response.json().catch(() => null)"), true);
+    assert.equal(createMappingSource.includes("json?.message ||"), true);
+    assert.equal(createMappingSource.includes("Sua sessão expirou. Entre novamente para salvar o vínculo."), true);
+    assert.equal(createMappingSource.includes('"Selecione a Jornada de destino."'), true);
+    assert.equal(createMappingSource.includes('setMappingFeedback({ tone: "success", text: "Produto vinculado com sucesso." });'), true);
+    assert.equal(createMappingSource.includes("await load(true);"), true);
+    assert.equal(createMappingSource.includes("setMessage("), false, "O feedback do vínculo não pode depender do banner do topo da página.");
+    assert.equal(pageClientSource.includes('disabled={savingMapping || lookingUpProduct} onClick={() => void createMapping()}>{savingMapping ? "Salvando..." : "Salvar vínculo"}'), true);
+    assert.equal(pageClientSource.includes('role={mappingFeedback.tone === "error" ? "alert" : "status"}'), true);
+    assert.equal(pageClientSource.includes("if (!silent) setLoading(true);"), true);
+
+    // G/K/L: modal do catálogo — abre pelo botão, acessível, fecha por X, Fechar, Escape e backdrop.
+    assert.equal(pageClientSource.includes('onClick={openSandboxCatalog}>{loadingSandboxProducts ? "Buscando produtos..." : "Listar produtos Sandbox"}'), true);
+    assert.equal(pageClientSource.includes('onClick={openProductionCatalog}>{loadingProductionProducts ? "Buscando produtos..." : "Listar meus produtos Hotmart"}'), true);
+    assert.equal(pageClientSource.includes('role="dialog" aria-modal="true" aria-labelledby={titleId}'), true);
+    assert.equal(pageClientSource.includes('{isProduction ? "Meus produtos Hotmart" : "Produtos Hotmart — Sandbox"}'), true);
+    assert.equal(pageClientSource.includes('aria-label="Fechar catálogo"'), true);
+    assert.equal(pageClientSource.includes('<PremiumButton variant="dark" onClick={onClose}>Fechar</PremiumButton>'), true);
+    assert.equal(pageClientSource.includes('if (event.key === "Escape") onClose();'), true);
+    assert.equal(pageClientSource.includes("if (event.target === event.currentTarget) onClose();"), true);
+    assert.equal(pageClientSource.includes('document.body.style.overflow = "hidden";'), true);
+    assert.equal(pageClientSource.includes("max-h-[calc(100dvh-2rem)]"), true);
+    assert.equal(pageClientSource.includes("min-h-0 flex-1 overflow-y-auto"), true);
+    // Catálogo não fica mais renderizado em linha na página.
+    assert.equal(pageClientSource.includes("{sandboxProducts.map("), false);
+    assert.equal(pageClientSource.includes("{productionProducts.map("), false);
+    // J: "Usar este produto" preenche e fecha o modal, sem salvar vínculo automaticamente.
+    const fillSource = pageClientSource.slice(pageClientSource.indexOf("function fillProductFromCatalog("), pageClientSource.indexOf("const closeCatalog"));
+    assert.equal(fillSource.includes("hotmart_product_ucode: product.ucode, hotmart_product_name: product.name"), true);
+    assert.equal(fillSource.includes("setCatalogSource(null);"), true);
+    assert.equal(fillSource.includes("createMapping"), false);
+    assert.equal(fillSource.includes("adminFetch"), false);
+    // M: cada modal recebe somente o estado da própria origem.
+    assert.equal(pageClientSource.includes('<HotmartCatalogModal source="sandbox" products={sandboxProducts} loading={loadingSandboxProducts} error={sandboxProductsError}'), true);
+    assert.equal(pageClientSource.includes('<HotmartCatalogModal source="production" products={productionProducts} loading={loadingProductionProducts} error={productionProductsError}'), true);
+
+    // H/I: busca local por nome (espelho exato de normalizeCatalogSearch + filtro do modal).
+    function normalizeCatalogSearchMirror(value) {
+      return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    }
+    assert.equal(pageClientSource.includes('return value.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toLowerCase();'), true);
+    assert.equal(pageClientSource.includes("(products || []).filter((product) => !term || normalizeCatalogSearch(product.name).includes(term) || product.ucode.toLowerCase().includes(term))"), true);
+    assert.equal(pageClientSource.includes("Nenhum produto encontrado para esta busca."), true);
+    const catalogFixture = [{ name: "Marketing Digital do Zero", ucode: realUcode }, { name: "Jornada PCMG — Informática", ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f" }];
+    const filterCatalogMirror = (search) => {
+      const term = normalizeCatalogSearchMirror(search);
+      return catalogFixture.filter((product) => !term || normalizeCatalogSearchMirror(product.name).includes(term) || product.ucode.toLowerCase().includes(term)).map((product) => product.name);
+    };
+    assert.deepEqual(filterCatalogMirror(""), ["Marketing Digital do Zero", "Jornada PCMG — Informática"]);
+    assert.deepEqual(filterCatalogMirror("  MARKETING   digital "), ["Marketing Digital do Zero"]);
+    assert.deepEqual(filterCatalogMirror("informatica"), ["Jornada PCMG — Informática"]);
+    assert.deepEqual(filterCatalogMirror("FB056612"), ["Jornada PCMG — Informática"]);
+    assert.deepEqual(filterCatalogMirror("produto inexistente"), []);
+
     // --- Mirrors funcionais (funções puras copiadas do arquivo para teste isolado sem parser JSX) ---
     function formatCurrencyAmountMirror(amount, currency) {
       if (amount === null || amount === undefined || Number.isNaN(Number(amount)) || !currency) return null;

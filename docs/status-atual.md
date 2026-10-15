@@ -1,5 +1,33 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 15/10/2026 - Hotmart: correcao do "Salvar vinculo" + catalogo em modal (commit e push em main; validacao em Production pendente)
+
+**Causa:** o POST de mapping revalidava qualquer produto com `HOTMART_CLIENT_*`/`HOTMART_ENVIRONMENT`, inclusive os escolhidos no catalogo Producao (`HOTMART_PRODUCTION_*`). A resposta so aparecia no banner do topo, sem loading.
+
+**Correcao:**
+
+- O painel envia `product_source` e a rota revalida pela mesma origem (Producao read-only com `HOTMART_PRODUCTION_*`).
+- O botao tem loading e bloqueio de duplo POST, com sucesso/erro exibidos ao lado do botao.
+- "Produtos vinculados" e atualizado sem recarregar a pagina.
+
+**Catalogo em modal:** Sandbox e Producao abrem em modal local, com busca por nome e fechamento por X, Fechar, Escape ou backdrop. "Usar este produto" preenche o formulario e fecha o modal.
+
+**Fora do escopo:** webhook, processor, refund, matricula, schema e migrations nao foram alterados. Detalhes: `docs/Sprint-integracao-hotmart.md` (15/10/2026).
+
+**Validacao:** `node scripts/test-hotmart-unit.cjs` PASS (inclui a rota POST com stubs e os contratos do modal/busca). TypeScript, build e ESLint dos arquivos alterados aprovados.
+
+**Credenciais (somente nomes, nunca valores):**
+
+- O catalogo Sandbox usa `HOTMART_CLIENT_ID`, `HOTMART_CLIENT_SECRET` e `HOTMART_BASIC_TOKEN`.
+- O catalogo real de Producao usa o conjunto separado `HOTMART_PRODUCTION_CLIENT_ID`, `HOTMART_PRODUCTION_CLIENT_SECRET` e `HOTMART_PRODUCTION_BASIC_TOKEN`, exclusivo de `productionCatalog.ts`. Essas variaveis devem estar no ambiente Production da Vercel; o localhost/`.env.local` nao e fonte de credenciais da aplicacao publicada.
+- `HOTMART_ENVIRONMENT=production` (deployment oficial) nao substitui `HOTMART_PRODUCTION_*`.
+- `HOTMART_HOTTOK` apenas autentica o webhook e nao e credencial OAuth do catalogo.
+- O isolamento nao interfere em webhook, refund ou processor.
+
+Sem migration; banco estruturalmente intacto.
+
+**Pendente:** Implementacao e testes automatizados concluidos; validacao visual/funcional final em Production sera realizada apos o deploy deste commit. Inclui conferencia em 1920x1080, 1366x768, tablet e celular, e um vinculo real de teste feito pelo responsavel.
+
 ## 10/10/2026 - Adendo: selecao de todas as filtradas + identificacao e numeracao no TXT (commit e push em main; homologacao visual pendente)
 
 "Selecionar todas as N questoes filtradas" no Banco e no Revisar (todas as paginas, a partir dos dados ja carregados; mudar filtros desfaz a selecao global; estado intermediario no checkbox da pagina). Na selecao global, as acoes em massa que alteram dados ficam desabilitadas com aviso: a rota `/api/admin/questions/bulk` envia todos os ids numa so requisicao, sem lotes, e nao foi alterada (ampliar exige autorizacao). TXT: 1a linha com os filtros aplicados (ou "Todas as questoes") e numeracao `01)`, `02)`...; texto por questao, BOM e separador inalterados.

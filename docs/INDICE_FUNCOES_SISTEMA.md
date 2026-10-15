@@ -4431,6 +4431,20 @@ Implementado em `reconcile/main-hotmart`, ainda sem merge na main ou deploy. Reg
 
 Datas comerciais são validadas antes da compra duplicada; UCODE hexadecimal 8-4-4-4-12 é normalizado com trim/lowercase e mapping case-insensitive. Consulta de catálogo não cria mapping. As três variáveis `HOTMART_PRODUCTION_*` em `.env.example` são exclusivas do catálogo read-only; não mudam o ambiente do webhook/processor/refund.
 
+**Vincular produto e catálogo em modal (15/10/2026):**
+
+- `createMapping` envia `product_source`. O `POST /api/admin/hotmart` revalida o produto no catálogo da mesma origem: Produção com `lookupHotmartProductionProductByUcode`, somente leitura, e Sandbox com `lookupHotmartProductByUcode`.
+- "Salvar vínculo" tem loading, bloqueio de POST concorrente e feedback de sucesso ou erro ao lado do botão. A lista de vínculos é recarregada com `load(true)`.
+- `HotmartCatalogModal`, local a `page-client.tsx`, exibe o catálogo Sandbox ou Produção com busca local por nome/UCODE. Fecha por X, "Fechar", Escape ou backdrop. "Usar este produto" preenche o formulário sem salvar.
+- Credenciais:
+  - Sandbox: `HOTMART_CLIENT_ID`, `HOTMART_CLIENT_SECRET` e `HOTMART_BASIC_TOKEN`.
+  - Catálogo real de Produção: conjunto separado `HOTMART_PRODUCTION_CLIENT_ID`, `HOTMART_PRODUCTION_CLIENT_SECRET` e `HOTMART_PRODUCTION_BASIC_TOKEN`. É usado só por `productionCatalog.ts` e deve estar configurado no ambiente Production da Vercel; não é requisito de `.env.local` para a aplicação online.
+  - `HOTMART_ENVIRONMENT=production` no deployment oficial define o ambiente da integração comercial, mas não substitui `HOTMART_PRODUCTION_*`.
+  - `HOTMART_HOTTOK` só autentica o webhook. A separação não altera webhook, refund ou processor.
+- Sem migration. Webhook, refund e processor não foram alterados.
+- Implementação e testes automatizados concluídos; validação visual/funcional final em Production será realizada após o deploy deste commit.
+- Detalhes: [Sprint Integração Hotmart](Sprint-integracao-hotmart.md), entrada de 15/10/2026.
+
 ### 34.1. Detector contextual de referências de imagem e separação de Tópicos
 
 - `lib/questions/image-pending.ts`: detecção contextual que reduz falsos positivos e enumera ocorrências individuais.
