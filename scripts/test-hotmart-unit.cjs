@@ -894,10 +894,43 @@ async function testHotmartExternalClient() {
       hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
       return calls;
     };
-    for (const [status, code] of [[403, "unauthorized"], [404, "remote_rejected"], [400, "remote_rejected"], [422, "remote_rejected"]]) {
+    for (const [status, code] of [[403, "unauthorized"], [404, "remote_rejected"], [422, "remote_rejected"]]) {
       const calls = salesWith(() => new Response("{}", { status }));
       await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === code && error.details.status === status, "HTTP " + status);
       assert.equal(calls.length, 1, "HTTP " + status + " não é repetido");
+    }
+    // HTTP 400 (diagnóstico temporário): registra a query sem segredo, os campos técnicos do erro e
+    // sondagens somente leitura por eliminação de parâmetros; o resultado continua sendo remote_rejected.
+    {
+      const originalConsoleError = console.error;
+      const logs = [];
+      console.error = (...args) => { logs.push(args.map(String).join(" ")); };
+      try {
+        const calls = salesWith((count) => count === 1
+          ? new Response(JSON.stringify({ error: "invalid_parameter", error_description: "start_date inválido para comprador pessoa@x.com", buyer: { email: "pessoa@x.com" } }), { status: 400 })
+          : new Response(JSON.stringify({ items: [], page_info: {} }), { status: count === 4 ? 400 : 200 }));
+        await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: 8718446, now: nowMs, retryDelayMs: 0 }), (error) => error.code === "remote_rejected" && error.details.status === 400 && error.details.page === 0);
+        assert.equal(calls.length, 6, "1 consulta + 5 sondagens");
+        const probeParams = calls.slice(1).map((call) => [...call.url.searchParams.keys()].sort().join("+"));
+        assert.deepEqual(probeParams, ["product_id", "max_results+product_id", "product_id+start_date", "end_date+product_id", "end_date+product_id+start_date"]);
+        assert.equal(calls.slice(1).every((call) => call.init.method === "GET" && call.url.pathname === "/payments/api/v1/sales/history" && !call.url.searchParams.has("transaction_status") && !call.url.searchParams.has("page_token")), true, "sondagens somente leitura, sem status/page_token");
+        const request = JSON.parse(logs.find((line) => line.startsWith("[HOTMART_SALES_REQUEST]")).slice("[HOTMART_SALES_REQUEST] ".length));
+        assert.deepEqual(request, { pathname: "/payments/api/v1/sales/history", page: 0, product_id: "8718446", start_date: String(hotmartProductionCatalog.HOTMART_SALES_HISTORY_START), end_date: String(nowMs), transaction_status: null, max_results: "50", transaction_present: false, page_token_present: false });
+        assert.equal(request.start_date, "1262304000000", "start_date em milissegundos (01/01/2010), sem ×1000 duplicado");
+        const error400 = JSON.parse(logs.find((line) => line.startsWith("[HOTMART_SALES_400]")).slice("[HOTMART_SALES_400] ".length));
+        assert.deepEqual(error400, { page: 0, error: "invalid_parameter", error_description: "start_date inválido para comprador [email]" });
+        const probes = logs.filter((line) => line.startsWith("[HOTMART_SALES_PROBE]")).map((line) => JSON.parse(line.slice("[HOTMART_SALES_PROBE] ".length)));
+        assert.deepEqual(probes.map((probe) => [probe.variant, probe.status]), [["product_id", 200], ["product_id+max_results", 200], ["product_id+start_date", 400], ["product_id+end_date", 200], ["product_id+start_date+end_date", 200]]);
+        assert.equal(/mock-sales-status|Bearer|prod-client|prod-basic|pessoa@x\.com/.test(logs.join(" ")), false, "logs sem token, credencial ou dado de comprador");
+        // Revalidação por transação e páginas seguintes não disparam sondagens.
+        const transactionCalls = salesWith(() => new Response("{}", { status: 400 }));
+        await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: 8718446, transaction: "HP0001", retryDelayMs: 0 }), (error) => error.code === "remote_rejected");
+        assert.equal(transactionCalls.length, 1);
+        assert.deepEqual(hotmartProductionCatalog.sanitizeHotmartErrorBody("<html>bad</html>"), { body_format: "non_json" });
+        assert.deepEqual(hotmartProductionCatalog.sanitizeHotmartErrorBody(""), { body_format: "empty" });
+      } finally {
+        console.error = originalConsoleError;
+      }
     }
     // 401 persistente: renova o token uma vez e então falha como credencial.
     let statusCalls = salesWith(() => new Response("{}", { status: 401 }));

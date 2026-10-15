@@ -250,3 +250,17 @@ O `/sales/users` lista participantes com papel (`role`), mas não traz datas da 
 - log de diagnóstico sem segredo e mensagem sem erro bruto.
 
 `npx tsc --noEmit`, `npm run build`, ESLint e `git diff --check` aprovados. Sem migration; webhook, refund, processor, regras de matrícula e a operação "Inserir selecionados" não foram alterados.
+
+## 15/10/2026 — Instrumentação temporária do HTTP 400 da Sales API
+
+**Fato observado em Production.** O log `[HOTMART_SALES_DIAGNOSTIC]` registrou `sales_request` / `remote_rejected` / HTTP 400 na página 0, com `product_id` 8718446. OAuth de produção e resolução UCODE → `product_id` funcionaram.
+
+**Query enviada.** `GET /payments/api/v1/sales/history?product_id=8718446&max_results=50&start_date=1262304000000&end_date=<agora em ms>`, sem `transaction_status` e sem `page_token` na 1ª página. A comparação literal com a documentação não mostra divergência: datas em milissegundos via `Date.UTC`/`Date.now` (sem ×1000 duplicado), inteiros seguros e `end_date` > `start_date`. A causa ainda não está comprovada.
+
+**Instrumentação.** Nenhum log inclui Authorization, token, credenciais ou dados de comprador.
+
+- `[HOTMART_SALES_REQUEST]`: registra pathname, página, `product_id`, datas, `transaction_status`, `max_results` e se há `page_token`/`transaction`.
+- `[HOTMART_SALES_400]`: registra só `error`, `error_description`, `message` e `code` do corpo, com e-mails mascarados.
+- `[HOTMART_SALES_PROBE]`: após um 400 na 1ª página, roda 5 sondagens GET somente leitura por eliminação de parâmetros e registra o status de cada uma. As combinações são `product_id`, `+max_results`, `+start_date`, `+end_date` e `+start_date+end_date`.
+
+O resultado da consulta não muda (continua `remote_rejected`); o navegador não recebe o corpo bruto. A correção do parâmetro causador e a remoção desta instrumentação ficam para depois do próximo teste em Production.

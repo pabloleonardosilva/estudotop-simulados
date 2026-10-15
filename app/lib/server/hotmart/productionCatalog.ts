@@ -261,6 +261,64 @@ export function parseHotmartProductionSale(item: NonNullable<HotmartSalesHistory
   };
 }
 
+// Diagnóstico TEMPORÁRIO do HTTP 400 da Sales API (15/10/2026): registra só parâmetros não sensíveis da
+// query e campos técnicos do erro; nunca Authorization, token, credenciais ou dados de comprador.
+function logHotmartSalesRequest(url: URL, page: number) {
+  const params = url.searchParams;
+  console.error("[HOTMART_SALES_REQUEST]", JSON.stringify({
+    pathname: url.pathname,
+    page,
+    product_id: params.get("product_id"),
+    start_date: params.get("start_date"),
+    end_date: params.get("end_date"),
+    transaction_status: params.get("transaction_status"),
+    max_results: params.get("max_results"),
+    transaction_present: params.has("transaction"),
+    page_token_present: params.has("page_token"),
+  }));
+}
+
+export function sanitizeHotmartErrorBody(body: string) {
+  if (!body.trim()) return { body_format: "empty" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { body_format: "non_json" };
+  }
+  if (!parsed || typeof parsed !== "object") return { body_format: "unexpected" };
+  const record = parsed as Record<string, unknown>;
+  const safe: Record<string, string> = {};
+  for (const key of ["error", "error_description", "message", "code"]) {
+    const value = record[key];
+    if (typeof value === "string" || typeof value === "number") safe[key] = String(value).replace(/[^\s@]+@[^\s@]+/g, "[email]").slice(0, 300);
+  }
+  return Object.keys(safe).length ? safe : { body_format: "json_without_error_fields" };
+}
+
+// Eliminação somente leitura (GET, max_results=1) executada apenas após um 400 na 1ª página:
+// mostra no log qual parâmetro torna a query inválida. Não altera o resultado da consulta.
+async function probeHotmartSalesParameters(productId: number, endDate: number, accessToken: string, signal: AbortSignal) {
+  const variants: Array<[string, Record<string, string>]> = [
+    ["product_id", { product_id: String(productId) }],
+    ["product_id+max_results", { product_id: String(productId), max_results: String(HOTMART_SALES_PAGE_SIZE) }],
+    ["product_id+start_date", { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START) }],
+    ["product_id+end_date", { product_id: String(productId), end_date: String(endDate) }],
+    ["product_id+start_date+end_date", { product_id: String(productId), start_date: String(HOTMART_SALES_HISTORY_START), end_date: String(endDate) }],
+  ];
+  for (const [variant, params] of variants) {
+    try {
+      const url = new URL("https://developers.hotmart.com/payments/api/v1/sales/history");
+      for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+      const response = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "Content-Type": "application/json" }, signal, cache: "no-store" });
+      const body = await response.text().catch(() => "");
+      console.error("[HOTMART_SALES_PROBE]", JSON.stringify({ variant, status: response.status, ...(response.ok ? {} : sanitizeHotmartErrorBody(body)) }));
+    } catch (error) {
+      console.error("[HOTMART_SALES_PROBE]", JSON.stringify({ variant, status: null, network_error: error instanceof Error ? error.name : "unknown" }));
+    }
+  }
+}
+
 // Histórico de vendas REAL (somente leitura), com as mesmas credenciais HOTMART_PRODUCTION_* do catálogo.
 // Percorre todas as páginas via next_page_token, com limite de páginas e detecção de token repetido.
 // Sem `transaction`, a Hotmart devolve só APPROVED e COMPLETE; com `transaction`, devolve qualquer status.
@@ -293,6 +351,7 @@ export async function listHotmartProductionSales(input: { productId: number; tra
         url.searchParams.set("end_date", String(input.now ?? Date.now()));
       }
       if (pageToken) url.searchParams.set("page_token", pageToken);
+      logHotmartSalesRequest(url, page);
       const send = () => fetch(url, {
         method: "GET",
         headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "Content-Type": "application/json" },
@@ -315,6 +374,10 @@ export async function listHotmartProductionSales(input: { productId: number; tra
       if (response.status === 401 || response.status === 403) throw new HotmartProductionCatalogError("unauthorized", { phase: "sales_request", status: response.status, page });
       if (response.status === 429) throw new HotmartProductionCatalogError("rate_limited", { phase: "sales_request", status: 429, page });
       if (response.status >= 500) throw new HotmartProductionCatalogError("remote_unavailable", { phase: "sales_request", status: response.status, page });
+      if (response.status === 400) {
+        console.error("[HOTMART_SALES_400]", JSON.stringify({ page, ...sanitizeHotmartErrorBody(await response.text().catch(() => "")) }));
+        if (page === 0 && !input.transaction) await probeHotmartSalesParameters(input.productId, Number(url.searchParams.get("end_date")), accessToken, controller.signal);
+      }
       if (!response.ok) throw new HotmartProductionCatalogError("remote_rejected", { phase: "sales_request", status: response.status, page });
       // A Hotmart pode responder 200/204 sem corpo quando não há dados; isso é uma página vazia, não erro.
       const body = (await response.text()).trim();
