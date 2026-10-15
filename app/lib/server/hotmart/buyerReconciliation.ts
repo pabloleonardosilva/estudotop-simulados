@@ -328,8 +328,8 @@ export function hotmartSalesErrorResponse(error: unknown) {
   return NextResponse.json({ ok: false, message: "Não foi possível consultar as vendas reais da Hotmart agora." }, { status: 502 });
 }
 
-// Log sanitizado para os logs do servidor (Vercel): etapa, código interno, status remoto e
-// identificadores do vínculo/produto. Nunca inclui token, credencial ou dados de comprador.
+// Fonte ÚNICA do log [HOTMART_SALES_DIAGNOSTIC] (Vercel): etapa, código, status remoto, vínculo/produto e,
+// quando houver, os campos planos da query/erro/sondagens. Nunca inclui token, credencial ou dados de comprador.
 export function logHotmartSalesDiagnostic(error: unknown, context: { mappingId: string; productUcode: string; productId?: number | null; phase?: string }) {
   const details = error instanceof HotmartProductionCatalogError ? error.details : {};
   console.error("[HOTMART_SALES_DIAGNOSTIC]", JSON.stringify({
@@ -340,6 +340,7 @@ export function logHotmartSalesDiagnostic(error: unknown, context: { mappingId: 
     mapping_id: context.mappingId,
     product_ucode: context.productUcode,
     product_id: context.productId ?? null,
+    ...(details.diagnostics || {}),
   }));
 }
 

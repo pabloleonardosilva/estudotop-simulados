@@ -259,8 +259,12 @@ O `/sales/users` lista participantes com papel (`role`), mas não traz datas da 
 
 **Instrumentação.** Nenhum log inclui Authorization, token, credenciais ou dados de comprador.
 
-- `[HOTMART_SALES_REQUEST]`: registra pathname, página, `product_id`, datas, `transaction_status`, `max_results` e se há `page_token`/`transaction`.
-- `[HOTMART_SALES_400]`: registra só `error`, `error_description`, `message` e `code` do corpo, com e-mails mascarados.
-- `[HOTMART_SALES_PROBE]`: após um 400 na 1ª página, roda 5 sondagens GET somente leitura por eliminação de parâmetros e registra o status de cada uma. As combinações são `product_id`, `+max_results`, `+start_date`, `+end_date` e `+start_date+end_date`.
+**Consolidação (mesmo dia).** A primeira versão emitia `[HOTMART_SALES_REQUEST]`, `[HOTMART_SALES_400]` e `[HOTMART_SALES_PROBE]` em linhas separadas. A única linha de diagnóstico efetiva em Production, `[HOTMART_SALES_DIAGNOSTIC]` (`logHotmartSalesDiagnostic`, chamada pela rota), continuava com só 7 campos. Agora `listHotmartProductionSales` grava tudo em `HotmartProductionCatalogError.details.diagnostics`, como campos planos, e essa linha única os inclui:
+
+- `request_*`: pathname, `max_results`, datas, `transaction_status` e presença de `page_token`/`transaction`.
+- `remote_*`: `error`, `error_description`, `message` e `code` do corpo, com e-mails mascarados, além do formato do corpo.
+- `probe_*`: o status de 5 sondagens GET somente leitura, rodadas após um 400 na 1ª página, com `product_id`, `+max_results`, `+start_date`, `+end_date` e `+start_date+end_date`.
+
+No 400, a ordem é: corpo lido uma vez → sanitização → sondagens → erro com o diagnóstico completo → linha única emitida pela rota. As linhas separadas foram removidas.
 
 O resultado da consulta não muda (continua `remote_rejected`); o navegador não recebe o corpo bruto. A correção do parâmetro causador e a remoção desta instrumentação ficam para depois do próximo teste em Production.

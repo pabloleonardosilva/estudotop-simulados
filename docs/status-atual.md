@@ -10,7 +10,7 @@ O log de Production comprovou HTTP 400 na 1a chamada de `/payments/api/v1/sales/
 - `end_date` em ms;
 - sem `transaction_status`.
 
-Foram publicados logs sanitizados `[HOTMART_SALES_REQUEST]`, `[HOTMART_SALES_400]` e `[HOTMART_SALES_PROBE]` (5 sondagens GET somente leitura por eliminacao), sem segredos nem dados de comprador. Nada mais foi alterado.
+A instrumentacao sanitizada (query, campos tecnicos do erro e 5 sondagens GET somente leitura por eliminacao), sem segredos nem dados de comprador, foi consolidada como campos planos na unica linha `[HOTMART_SALES_DIAGNOSTIC]`. A primeira versao usava linhas separadas, que nao apareciam no diagnostico efetivo. Nada mais foi alterado.
 
 **Pendente:** um novo teste em Production para identificar o parametro causador. Detalhes: `docs/Sprint-integracao-hotmart.md`.
 
