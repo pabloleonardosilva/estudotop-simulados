@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { findHotmartProductionProduct, listHotmartProductionSales } from "@/app/lib/server/hotmart/productionCatalog";
-import { classifyHotmartSales, getImportBlockedReason, hotmartSalesErrorResponse, loadHotmartReconciliationContext, loadReconciliationMapping, summarizeReconciliationRows } from "@/app/lib/server/hotmart/buyerReconciliation";
+import { classifyHotmartSales, getImportBlockedReason, hotmartSalesErrorResponse, loadHotmartReconciliationContext, loadReconciliationMapping, logHotmartSalesDiagnostic, summarizeReconciliationRows } from "@/app/lib/server/hotmart/buyerReconciliation";
 
 export const maxDuration = 60;
 
@@ -17,13 +17,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!mapping) return NextResponse.json({ ok: false, message: "Vínculo não encontrado." }, { status: 404 });
 
   let productId: number | null;
-  let sales;
   try {
     productId = (await findHotmartProductionProduct(mapping.hotmart_product_ucode)).id;
-    if (!productId) return NextResponse.json({ ok: false, message: "A Hotmart não informou o ID numérico deste produto; não é possível consultar as vendas." }, { status: 502 });
-    sales = (await listHotmartProductionSales({ productId })).filter((sale) => sale.productId === null || sale.productId === productId);
   } catch (catalogError) {
+    logHotmartSalesDiagnostic(catalogError, { mappingId: mapping.id, productUcode: mapping.hotmart_product_ucode, phase: "product_resolution" });
     return hotmartSalesErrorResponse(catalogError);
+  }
+  if (!productId) {
+    logHotmartSalesDiagnostic(null, { mappingId: mapping.id, productUcode: mapping.hotmart_product_ucode, phase: "product_resolution_missing_id" });
+    return NextResponse.json({ ok: false, message: "A Hotmart não informou o ID numérico deste produto; não é possível consultar as vendas." }, { status: 502 });
+  }
+  let sales;
+  try {
+    sales = (await listHotmartProductionSales({ productId })).filter((sale) => sale.productId === null || sale.productId === productId);
+  } catch (salesError) {
+    logHotmartSalesDiagnostic(salesError, { mappingId: mapping.id, productUcode: mapping.hotmart_product_ucode, productId });
+    return hotmartSalesErrorResponse(salesError);
   }
 
   try {

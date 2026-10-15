@@ -12,10 +12,11 @@ import "server-only";
 type CachedToken = { value: string; expiresAt: number };
 let cachedProductionToken: CachedToken | null = null;
 
-export type HotmartProductionCatalogCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable" | "pagination_loop" | "pagination_limit";
+export type HotmartProductionCatalogCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable" | "pagination_loop" | "pagination_limit" | "rate_limited" | "remote_rejected" | "remote_unavailable" | "invalid_response";
 
+// details guarda só metadados de diagnóstico (etapa, status HTTP remoto, página) — nunca tokens ou payload.
 export class HotmartProductionCatalogError extends Error {
-  constructor(public readonly code: HotmartProductionCatalogCode) {
+  constructor(public readonly code: HotmartProductionCatalogCode, public readonly details: { phase?: string; status?: number; page?: number } = {}) {
     super(`HOTMART_PRODUCTION_CATALOG_${code.toUpperCase()}`);
   }
 }
@@ -263,22 +264,25 @@ export function parseHotmartProductionSale(item: NonNullable<HotmartSalesHistory
 // Histórico de vendas REAL (somente leitura), com as mesmas credenciais HOTMART_PRODUCTION_* do catálogo.
 // Percorre todas as páginas via next_page_token, com limite de páginas e detecção de token repetido.
 // Sem `transaction`, a Hotmart devolve só APPROVED e COMPLETE; com `transaction`, devolve qualquer status.
-export async function listHotmartProductionSales(input: { productId: number; transaction?: string; now?: number }) {
+// Cada falha carrega etapa e status HTTP remoto para o log de diagnóstico do servidor.
+export async function listHotmartProductionSales(input: { productId: number; transaction?: string; now?: number; retryDelayMs?: number }) {
   let accessToken: string;
   try {
     accessToken = await getHotmartProductionAccessToken();
   } catch (error) {
-    if (error instanceof HotmartProductionCatalogError) throw error;
-    throw new HotmartProductionCatalogError("not_configured");
+    if (error instanceof HotmartProductionCatalogError) throw new HotmartProductionCatalogError(error.code, { phase: "oauth" });
+    throw new HotmartProductionCatalogError("not_configured", { phase: "oauth" });
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   const sales = new Map<string, HotmartProductionSale>();
   const seenTokens = new Set<string>();
+  const retryDelayMs = input.retryDelayMs ?? 1_500;
   let pageToken: string | null = null;
+  let page = 0;
   try {
-    for (let page = 0; page < HOTMART_SALES_MAX_PAGES; page += 1) {
+    for (; page < HOTMART_SALES_MAX_PAGES; page += 1) {
       const url = new URL("https://developers.hotmart.com/payments/api/v1/sales/history");
       url.searchParams.set("product_id", String(input.productId));
       url.searchParams.set("max_results", String(HOTMART_SALES_PAGE_SIZE));
@@ -291,7 +295,7 @@ export async function listHotmartProductionSales(input: { productId: number; tra
       if (pageToken) url.searchParams.set("page_token", pageToken);
       const send = () => fetch(url, {
         method: "GET",
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "Content-Type": "application/json" },
         signal: controller.signal,
         cache: "no-store",
       });
@@ -300,30 +304,46 @@ export async function listHotmartProductionSales(input: { productId: number; tra
         try {
           accessToken = await getHotmartProductionAccessToken(true);
         } catch {
-          throw new HotmartProductionCatalogError("unauthorized");
+          throw new HotmartProductionCatalogError("unauthorized", { phase: "oauth", status: 401, page });
         }
         response = await send();
       }
-      if (response.status === 401 || response.status === 403) throw new HotmartProductionCatalogError("unauthorized");
-      if (!response.ok) throw new HotmartProductionCatalogError("unavailable");
-      const payload = await response.json() as HotmartSalesHistoryPage;
-      for (const item of Array.isArray(payload.items) ? payload.items : []) {
-        const sale = parseHotmartProductionSale(item);
+      if (response.status === 429 || response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        response = await send();
+      }
+      if (response.status === 401 || response.status === 403) throw new HotmartProductionCatalogError("unauthorized", { phase: "sales_request", status: response.status, page });
+      if (response.status === 429) throw new HotmartProductionCatalogError("rate_limited", { phase: "sales_request", status: 429, page });
+      if (response.status >= 500) throw new HotmartProductionCatalogError("remote_unavailable", { phase: "sales_request", status: response.status, page });
+      if (!response.ok) throw new HotmartProductionCatalogError("remote_rejected", { phase: "sales_request", status: response.status, page });
+      // A Hotmart pode responder 200/204 sem corpo quando não há dados; isso é uma página vazia, não erro.
+      const body = (await response.text()).trim();
+      let payload: HotmartSalesHistoryPage;
+      try {
+        payload = body ? JSON.parse(body) as HotmartSalesHistoryPage : {};
+      } catch {
+        throw new HotmartProductionCatalogError("invalid_response", { phase: "parsing", status: response.status, page });
+      }
+      if (!payload || typeof payload !== "object" || (payload.items !== undefined && !Array.isArray(payload.items))) {
+        throw new HotmartProductionCatalogError("invalid_response", { phase: "parsing", status: response.status, page });
+      }
+      for (const item of payload.items || []) {
+        const sale = item && typeof item === "object" ? parseHotmartProductionSale(item) : null;
         if (sale) sales.set(sale.transaction, sale);
       }
       const nextToken = typeof payload.page_info?.next_page_token === "string" && payload.page_info.next_page_token
         ? payload.page_info.next_page_token
         : null;
       if (!nextToken) return [...sales.values()];
-      if (seenTokens.has(nextToken)) throw new HotmartProductionCatalogError("pagination_loop");
+      if (seenTokens.has(nextToken)) throw new HotmartProductionCatalogError("pagination_loop", { phase: "pagination", page });
       seenTokens.add(nextToken);
       pageToken = nextToken;
     }
-    throw new HotmartProductionCatalogError("pagination_limit");
+    throw new HotmartProductionCatalogError("pagination_limit", { phase: "pagination", page });
   } catch (error) {
     if (error instanceof HotmartProductionCatalogError) throw error;
-    if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout");
-    throw new HotmartProductionCatalogError("unavailable");
+    if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout", { phase: "sales_request", page });
+    throw new HotmartProductionCatalogError("unavailable", { phase: "sales_request", page });
   } finally {
     clearTimeout(timeout);
   }

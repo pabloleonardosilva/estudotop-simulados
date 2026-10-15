@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/server/authGuard";
 import { logAdminAction } from "@/app/lib/server/auditLogger";
 import { findHotmartProductionProduct, listHotmartProductionSales } from "@/app/lib/server/hotmart/productionCatalog";
-import { hotmartSalesErrorResponse, importHotmartHistoricalSale, loadReconciliationMapping, type ReconciliationImportOutcome, type ReconciliationRow } from "@/app/lib/server/hotmart/buyerReconciliation";
+import { hotmartSalesErrorResponse, importHotmartHistoricalSale, loadReconciliationMapping, logHotmartSalesDiagnostic, type ReconciliationImportOutcome, type ReconciliationRow } from "@/app/lib/server/hotmart/buyerReconciliation";
 import { recordHotmartHistory } from "@/app/lib/server/hotmart/history";
 
 export const maxDuration = 60;
@@ -32,6 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     productId = (await findHotmartProductionProduct(mapping.hotmart_product_ucode)).id;
   } catch (catalogError) {
+    logHotmartSalesDiagnostic(catalogError, { mappingId: mapping.id, productUcode: mapping.hotmart_product_ucode, phase: "product_resolution" });
     return hotmartSalesErrorResponse(catalogError);
   }
   if (!productId) return NextResponse.json({ ok: false, message: "A Hotmart não informou o ID numérico deste produto; não é possível validar as vendas." }, { status: 502 });
@@ -41,7 +42,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     let sale;
     try {
       sale = (await listHotmartProductionSales({ productId, transaction: code })).find((item) => item.transaction === code) || null;
-    } catch {
+    } catch (salesError) {
+      logHotmartSalesDiagnostic(salesError, { mappingId: mapping.id, productUcode: mapping.hotmart_product_ucode, productId });
       results.push({ transaction: code, outcome: "error", reason: "Não foi possível revalidar esta venda na Hotmart.", row: null });
       continue;
     }

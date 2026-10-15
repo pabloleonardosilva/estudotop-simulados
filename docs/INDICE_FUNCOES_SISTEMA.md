@@ -4460,6 +4460,10 @@ Datas comerciais são validadas antes da compra duplicada; UCODE hexadecimal 8-4
 - **Já inseridos:** nunca são alterados.
 - **Sem migration:** a rastreabilidade fica em `hotmart_history`.
 - Validação com compradores reais pendente do teste controlado em Production.
+- **Diagnóstico da consulta (15/10/2026):** cada falha de `listHotmartProductionSales` carrega etapa, status HTTP remoto e página (`HotmartProductionCatalogError.details`).
+  - `logHotmartSalesDiagnostic` (`buyerReconciliation.ts`) registra `[HOTMART_SALES_DIAGNOSTIC]` sem segredo nem dado de comprador.
+  - 429/5xx têm uma nova tentativa; corpo vazio vale como zero vendas.
+  - O Admin vê o status remoto na mensagem.
 
 ### 34.1. Detector contextual de referências de imagem e separação de Tópicos
 

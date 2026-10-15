@@ -1,5 +1,24 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 15/10/2026 - Hotmart: diagnostico e robustez da consulta de compradores (reteste em Production pendente)
+
+**Sintoma:** o modal "Compradores Hotmart" falhava com mensagem generica em Production.
+
+**Analise:** confirmado no codigo que o `product_id` enviado e numerico (do catalogo), que o OAuth e o de producao e que a URL e a oficial. A mensagem so ocorria em status remoto diferente de 401/403 (ou corpo invalido), que o codigo descartava sem log. A causa remota exata nao pode ser observada daqui (sem logs Vercel nem credenciais; nenhuma chamada real).
+
+**Correcao:**
+
+- Log sanitizado `[HOTMART_SALES_DIAGNOSTIC]` (etapa, status HTTP, pagina, mapping/produto) e mensagem ao Admin com o status remoto.
+- Nova tentativa em 429/5xx.
+- Corpo vazio tratado como zero vendas, e payload inesperado com erro proprio.
+- Cabecalho `Content-Type` igual ao exemplo oficial.
+
+**Fora do escopo:** endpoint mantido em `/sales/history`, que traz comprador e data original (`/sales/users` nao traz datas). Sem migration; importacao, webhook, refund e processor nao foram alterados.
+
+**Validacao:** testes Hotmart, TypeScript, build, ESLint e diff-check aprovados. Detalhes: `docs/Sprint-integracao-hotmart.md`.
+
+**Pendente:** reabrir o modal em Production apos o deploy. Se falhar, informar o HTTP exibido ou o log `[HOTMART_SALES_DIAGNOSTIC]`.
+
 ## 15/10/2026 - Hotmart: reconciliacao de compradores historicos (commit e push em main; teste real em Production pendente)
 
 Cada vinculo em "Produtos vinculados" ganhou "Ver compradores nao inseridos". O botao consulta as vendas reais do produto (`GET /payments/api/v1/sales/history`, `product_id` resolvido pelo catalogo, paginacao completa por `next_page_token`, somente `HOTMART_PRODUCTION_*`) e classifica cada compra:

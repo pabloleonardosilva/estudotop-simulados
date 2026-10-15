@@ -209,3 +209,44 @@ Função permanente em cada vínculo Produto → Jornada/Evento. Ela lista as co
 O transporte HTTP e o banco foram simulados; nenhuma chamada real à Hotmart. `npx tsc --noEmit` PASS, `npm run build` PASS e ESLint dos arquivos alterados sem diagnósticos.
 
 Implementado e testado automaticamente; validação com compradores reais pendente do teste controlado em Production pelo responsável.
+
+## 15/10/2026 — Correção da consulta de compradores (diagnóstico + robustez)
+
+**Sintoma em Production.** O modal "Compradores Hotmart" retornava "Não foi possível consultar as vendas reais da Hotmart agora." O catálogo real continuava funcionando.
+
+**Análise do fluxo** (modal → `GET /api/admin/hotmart/mappings/[id]/buyers` → `findHotmartProductionProduct` → OAuth de produção → `listHotmartProductionSales` → paginação → parsing):
+
+- O `product_id` enviado é o `id` numérico devolvido pelo catálogo de produção para o UCODE do mapping, nunca o UCODE. Um id ausente geraria outra mensagem ("A Hotmart não informou o ID numérico..."). Não há validação por número fixo de dígitos.
+- OAuth: o mesmo `getHotmartProductionAccessToken` do catálogo, exclusivamente com `HOTMART_PRODUCTION_*`. Nunca usa `HOTMART_CLIENT_*` nem `HOTMART_HOTTOK`.
+- URL: `https://developers.hotmart.com/payments/api/v1/sales/history`. Paginação com `page_token` = `page_info.next_page_token`.
+- A mensagem observada exclui 401/403, timeout, falha de paginação e produto não encontrado. Ela só ocorria quando a Sales API respondia com outro status de erro (400/404/429/5xx), com corpo vazio ou não JSON, ou com falha de rede.
+- **Defeito comprovado no código:** todos esses casos viravam o mesmo erro genérico, sem registrar etapa nem status HTTP remoto. A causa remota exata não pôde ser observada: não há acesso aos logs da Vercel nem às credenciais de produção neste ambiente, e nenhuma chamada real foi feita.
+
+**Correção.**
+
+- Cada falha carrega etapa (`oauth`, `product_resolution`, `sales_request`, `pagination`, `parsing`), código interno, status HTTP remoto e página.
+- O servidor registra `[HOTMART_SALES_DIAGNOSTIC]` com mapping id, UCODE e `product_id`, sem token, credencial ou dados de comprador.
+- O Admin recebe uma mensagem sanitizada com o status remoto, por exemplo "A Hotmart recusou a consulta de vendas (HTTP 400)", sem o corpo de erro da Hotmart.
+- 429 e 5xx têm uma nova tentativa antes de falhar com código próprio.
+- Corpo vazio (200/204) é tratado como página sem vendas. JSON inválido ou `items` fora do formato vira `invalid_response`, e itens nulos são ignorados.
+- A requisição passa a enviar `Content-Type: application/json`, como no exemplo oficial.
+
+**Endpoint mantido.** O `/payments/api/v1/sales/history` foi conferido na documentação oficial (página de dados do portal Hotmart Developers):
+
+- traz `buyer` (nome, e-mail, ucode) exclusivo do comprador e `purchase.approved_date`/`order_date`, necessários para a data original;
+- tem `product_id` long, datas em epoch ms e paginação `page_token`/`next_page_token`;
+- sem `transaction`/`transaction_status`, retorna só `APPROVED` e `COMPLETE`.
+
+O `/sales/users` lista participantes com papel (`role`), mas não traz datas da compra, então exigiria uma segunda consulta sem ganho. Ele não foi adotado. A regra de status segue `APPROVED` e `COMPLETE` (compra aprovada com garantia encerrada), sem filtro múltiplo.
+
+**Próximo passo.** Após o deploy, reabrir o modal. Se ainda falhar, a mensagem mostra o status HTTP da Hotmart e o log da Vercel registra a etapa exata. Hipótese a confirmar nesse caso: rejeição da janela explícita `start_date` = 01/01/2010.
+
+**Validação.** `node scripts/test-hotmart-unit.cjs` PASS. Os novos casos cobrem:
+
+- 401 (com renovação), 403, 400, 404, 422, 429 (com nova tentativa), 5xx com recuperação;
+- corpo vazio 200/204, HTML, `items` inválido e itens nulos;
+- erro de OAuth na etapa `oauth`;
+- `product_id` numérico;
+- log de diagnóstico sem segredo e mensagem sem erro bruto.
+
+`npx tsc --noEmit`, `npm run build`, ESLint e `git diff --check` aprovados. Sem migration; webhook, refund, processor, regras de matrícula e a operação "Inserir selecionados" não foram alterados.

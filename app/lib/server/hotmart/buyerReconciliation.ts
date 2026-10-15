@@ -315,11 +315,32 @@ export async function importHotmartHistoricalSale(supabase: SupabaseClient, inpu
 
 export function hotmartSalesErrorResponse(error: unknown) {
   const code = error instanceof HotmartProductionCatalogError ? error.code : "unavailable";
+  const status = error instanceof HotmartProductionCatalogError ? error.details.status : undefined;
+  const remote = status ? ` (HTTP ${status})` : "";
   if (code === "not_found") return NextResponse.json({ ok: false, message: "Produto não encontrado no catálogo de produção da Hotmart." }, { status: 404 });
-  if (code === "not_configured" || code === "unauthorized") return NextResponse.json({ ok: false, message: "A credencial de produção da Hotmart não está configurada corretamente." }, { status: 503 });
+  if (code === "not_configured" || code === "unauthorized") return NextResponse.json({ ok: false, message: `A credencial de produção da Hotmart não está configurada corretamente ou não tem acesso às vendas${remote}.` }, { status: 503 });
   if (code === "timeout") return NextResponse.json({ ok: false, message: "A consulta às vendas da Hotmart excedeu o tempo limite. Tente novamente." }, { status: 504 });
   if (code === "pagination_loop" || code === "pagination_limit") return NextResponse.json({ ok: false, message: "A paginação do histórico de vendas da Hotmart não terminou de forma segura. Nenhum dado foi alterado." }, { status: 502 });
+  if (code === "rate_limited") return NextResponse.json({ ok: false, message: "A Hotmart limitou temporariamente as consultas (HTTP 429). Aguarde alguns minutos e tente novamente." }, { status: 503 });
+  if (code === "remote_rejected") return NextResponse.json({ ok: false, message: `A Hotmart recusou a consulta de vendas${remote}. Nenhum dado foi alterado.` }, { status: 502 });
+  if (code === "remote_unavailable") return NextResponse.json({ ok: false, message: `A Hotmart está instável no momento${remote}. Tente novamente em instantes.` }, { status: 502 });
+  if (code === "invalid_response") return NextResponse.json({ ok: false, message: "A Hotmart retornou as vendas em um formato inesperado. Nenhum dado foi alterado." }, { status: 502 });
   return NextResponse.json({ ok: false, message: "Não foi possível consultar as vendas reais da Hotmart agora." }, { status: 502 });
+}
+
+// Log sanitizado para os logs do servidor (Vercel): etapa, código interno, status remoto e
+// identificadores do vínculo/produto. Nunca inclui token, credencial ou dados de comprador.
+export function logHotmartSalesDiagnostic(error: unknown, context: { mappingId: string; productUcode: string; productId?: number | null; phase?: string }) {
+  const details = error instanceof HotmartProductionCatalogError ? error.details : {};
+  console.error("[HOTMART_SALES_DIAGNOSTIC]", JSON.stringify({
+    phase: details.phase || context.phase || "unknown",
+    code: error instanceof HotmartProductionCatalogError ? error.code : "unexpected_error",
+    remote_status: details.status ?? null,
+    page: details.page ?? null,
+    mapping_id: context.mappingId,
+    product_ucode: context.productUcode,
+    product_id: context.productId ?? null,
+  }));
 }
 
 export async function loadReconciliationMapping(id: string) {

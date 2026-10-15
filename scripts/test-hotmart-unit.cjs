@@ -880,7 +880,54 @@ async function testHotmartExternalClient() {
       return url.searchParams.get("page_token") ? new Response("{}", { status: 500 }) : new Response(JSON.stringify({ items: [saleItem({ transaction: "HP0001", email: "a@x.com" })], page_info: { next_page_token: "T2" } }), { status: 200 });
     };
     hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
-    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID }), (error) => error.code === "unavailable");
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "remote_unavailable" && error.details.status === 500 && error.details.page === 1 && error.details.phase === "sales_request");
+
+    // Correção 15/10/2026: cada falha remota preserva etapa + status HTTP (antes tudo virava "unavailable" sem log).
+    const salesWith = (handler) => {
+      const calls = [];
+      global.fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname.includes("oauth/token")) return oauthResponse("mock-sales-status");
+        calls.push({ url, init });
+        return handler(calls.length, url);
+      };
+      hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+      return calls;
+    };
+    for (const [status, code] of [[403, "unauthorized"], [404, "remote_rejected"], [400, "remote_rejected"], [422, "remote_rejected"]]) {
+      const calls = salesWith(() => new Response("{}", { status }));
+      await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === code && error.details.status === status, "HTTP " + status);
+      assert.equal(calls.length, 1, "HTTP " + status + " não é repetido");
+    }
+    // 401 persistente: renova o token uma vez e então falha como credencial.
+    let statusCalls = salesWith(() => new Response("{}", { status: 401 }));
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "unauthorized" && error.details.status === 401);
+    assert.equal(statusCalls.length, 2);
+    // 429 e 5xx: uma nova tentativa; se persistir, erro específico.
+    statusCalls = salesWith(() => new Response("{}", { status: 429 }));
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "rate_limited" && error.details.status === 429);
+    assert.equal(statusCalls.length, 2);
+    statusCalls = salesWith((count) => count === 1 ? new Response("{}", { status: 503 }) : new Response(JSON.stringify({ items: [saleItem({ transaction: "HPRETRY", email: "retry@x.com" })], page_info: {} }), { status: 200 }));
+    assert.deepEqual((await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 })).map((sale) => sale.transaction), ["HPRETRY"]);
+    assert.equal(statusCalls.length, 2);
+    // Corpo vazio (200/204) = nenhuma venda; JSON inválido ou items fora do formato = invalid_response.
+    salesWith(() => new Response(null, { status: 204 }));
+    assert.deepEqual(await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), []);
+    salesWith(() => new Response("", { status: 200 }));
+    assert.deepEqual(await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), []);
+    salesWith(() => new Response("<html>gateway</html>", { status: 200 }));
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "invalid_response" && error.details.phase === "parsing");
+    salesWith(() => new Response(JSON.stringify({ items: { unexpected: true } }), { status: 200 }));
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "invalid_response");
+    statusCalls = salesWith(() => new Response(JSON.stringify({ items: [null, { purchase: {} }, saleItem({ transaction: "HPOK", email: "ok@x.com" })], page_info: {} }), { status: 200 }));
+    assert.deepEqual((await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 })).map((sale) => sale.transaction), ["HPOK"], "itens nulos ou sem transação são ignorados");
+    assert.equal(statusCalls[0].init.headers["Content-Type"], "application/json", "mesmo cabeçalho do exemplo oficial");
+    assert.equal(statusCalls[0].url.searchParams.get("product_id"), String(PRODUCT_ID), "product_id numérico, nunca o UCODE");
+    assert.equal(/[a-f0-9]{8}-/.test(statusCalls[0].url.searchParams.get("product_id")), false);
+    // Falha de OAuth de produção é identificada na etapa oauth.
+    global.fetch = async () => new Response("{}", { status: 401 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, retryDelayMs: 0 }), (error) => error.code === "unauthorized" && error.details.phase === "oauth");
     // Proteção contra loop: token repetido.
     global.fetch = async (input) => String(input).includes("oauth/token") ? oauthResponse("mock-sales-3") : new Response(JSON.stringify({ items: [], page_info: { next_page_token: "SAME" } }), { status: 200 });
     hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
@@ -1162,6 +1209,36 @@ async function testHotmartExternalClient() {
       assert.deepEqual(postJson.summary, { inserted: 1, already_inserted: 1, review: 3, errors: 0 });
       assert.equal(memory.db.hotmart_history.some((row) => row.action === "historical_reconciliation_batch" && row.actor_id === "admin-unit" && row.metadata.inserted === 1), true);
       assert.equal(routeRequests.some((url) => url.hostname === "sandbox.hotmart.com"), false);
+      // Diagnóstico: Sales API recusando (HTTP 400) registra etapa/status sem segredo e informa o status ao Admin.
+      const originalConsoleError = console.error;
+      const diagnostics = [];
+      console.error = (...args) => { diagnostics.push(args.map(String).join(" ")); };
+      try {
+        global.fetch = async (input) => {
+          const url = new URL(String(input));
+          if (url.pathname.includes("oauth/token")) return oauthResponse("mock-route-secret-token");
+          if (url.pathname === "/products/api/v1/products") return new Response(JSON.stringify({ items: [{ ucode: PRODUCT_UCODE, name: "Marketing Digital do Zero", id: PRODUCT_ID }], page_info: {} }), { status: 200 });
+          return new Response(JSON.stringify({ error: "invalid_parameter", buyer: "pessoa@x.com" }), { status: 400 });
+        };
+        hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+        const rejected = await buyersRoute.GET(new Request("http://localhost/api"), routeParams("mapping-1"));
+        const rejectedJson = await rejected.json();
+        assert.equal(rejected.status, 502);
+        assert.equal(rejectedJson.message, "A Hotmart recusou a consulta de vendas (HTTP 400). Nenhum dado foi alterado.");
+        assert.equal(JSON.stringify(rejectedJson).includes("invalid_parameter"), false, "erro bruto da Hotmart não vai ao navegador");
+        const diagnostic = diagnostics.find((line) => line.startsWith("[HOTMART_SALES_DIAGNOSTIC]"));
+        assert.ok(diagnostic, "falha registrada no log do servidor");
+        assert.deepEqual(JSON.parse(diagnostic.slice("[HOTMART_SALES_DIAGNOSTIC] ".length)), { phase: "sales_request", code: "remote_rejected", remote_status: 400, page: 0, mapping_id: "mapping-1", product_ucode: PRODUCT_UCODE, product_id: PRODUCT_ID });
+        assert.equal(/mock-route-secret-token|prod-client-secret|prod-basic-token|pessoa@x\.com/.test(diagnostics.join(" ")), false, "log sem token, credencial ou dado de comprador");
+        // Produto ausente no catálogo: falha na etapa de resolução do produto.
+        global.fetch = async (input) => String(input).includes("oauth/token") ? oauthResponse("mock-route-2") : new Response(JSON.stringify({ items: [], page_info: {} }), { status: 200 });
+        hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+        const missingProduct = await buyersRoute.GET(new Request("http://localhost/api"), routeParams("mapping-1"));
+        assert.equal(missingProduct.status, 404);
+        assert.equal(diagnostics.some((line) => line.includes("\"phase\":\"product_resolution\"") && line.includes("\"code\":\"not_found\"")), true);
+      } finally {
+        console.error = originalConsoleError;
+      }
       // Mapping inativo bloqueia a importação.
       memory.db.hotmart_product_mappings[0].status = "inactive";
       assert.equal((await postImport("mapping-1", { transaction_codes: ["HPNEW"] })).status, 409);
