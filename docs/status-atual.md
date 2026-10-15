@@ -1,5 +1,18 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 15/10/2026 - Cadastro manual de aluno pelo Admin: CPF opcional (commit e push em main; conferencia visual pendente)
+
+Em Admin → Alunos → Novo aluno (`app/admin/alunos/novo/page.tsx` + `POST /api/admin/students/create`), o CPF passou a ser opcional, rotulado "CPF (opcional)". Nome, e-mail e telefone continuam obrigatorios. O telefone, antes opcional, agora tambem e exigido, com ao menos 10 digitos (DDD).
+
+- **CPF informado:** continua validado e sujeito a duplicidade.
+- **CPF ausente ou vazio:** e persistido como `null`, sem placeholder e sem consulta de duplicidade por CPF.
+- **Banco:** conferido por SELECT somente leitura; `students.cpf` aceita NULL e os indices unicos de CPF sao parciais (`WHERE cpf IS NOT NULL`). Nenhuma migration.
+- **Fora do escopo:** cadastro publico, Hotmart, edicao do aluno, listagem e politica de senha nao foram alterados (os tres ultimos ja tratavam CPF nulo).
+
+**Validacao:** `node scripts/test-admin-student-create-unit.cjs` PASS (rota real com Auth, banco, Resend e logs simulados; reprova a versao anterior da rota). TypeScript, build, ESLint e diff-check aprovados. As specs Playwright de integridade de conta e politica de senha exigem o ambiente Supabase de testes, ja excluido, e nao foram executadas.
+
+**Pendente:** conferencia visual em Production.
+
 ## 15/10/2026 - Hotmart: instrumentacao temporaria do HTTP 400 da Sales API (aguardando novo teste em Production)
 
 O log de Production comprovou HTTP 400 na 1a chamada de `/payments/api/v1/sales/history` (`product_id` 8718446; OAuth e produto OK). A query enviada confere com a documentacao, e a causa nao esta comprovada:

@@ -2285,8 +2285,13 @@ As rotas abaixo existem no projeto (visíveis no `git status`) mas ainda não t�
 
 - `app/admin/alunos/page.tsx` — server component: busca alunos e passa para o client
 - `app/admin/alunos/page-client.tsx` — client component: UI interativa dark premium
-- `app/admin/alunos/novo/page.tsx` — cadastro de novo aluno
-- `app/api/admin/students/create/route.ts`
+- `app/admin/alunos/novo/page.tsx` — cadastro de novo aluno. Desde 15/10/2026: nome, e-mail e telefone (com DDD) obrigatórios; "CPF (opcional)" é validado só quando preenchido.
+- `app/api/admin/students/create/route.ts` — no cadastro manual do Admin:
+  - CPF ausente, `null` ou vazio é persistido como `null`, sem validação nem duplicidade por CPF;
+  - CPF informado segue validação e duplicidade (409 `CPF_ALREADY_EXISTS`);
+  - nome, e-mail e telefone são obrigatórios; o telefone exige ao menos 10 dígitos.
+
+  O cadastro público (`/cadastro`) continua exigindo CPF. Testes: `scripts/test-admin-student-create-unit.cjs`.
 - `app/api/admin/students/[id]/route.ts`
 - `app/api/admin/students/resend-welcome/route.ts`
 

@@ -251,3 +251,16 @@ Sem suíte Playwright dedicada nesta Sprint (não há suíte de `/api/auth/regis
 - Retenção automática de tentativas antigas: não definida, decisão de produto/jurídica.
 - Backfill de dados legados: script de auditoria criado e não executado; importação, se decidida, exige script novo e aprovação explícita.
 - Busca administrativa não faz *accent-folding* no banco (sem extensão `unaccent`, não usada em nenhum outro ponto do projeto) — busca é case-insensitive (`ilike`) mas sensível a acentos no termo digitado.
+
+## 15/10/2026 — CPF opcional no cadastro manual do Admin
+
+Vale somente para Admin → Alunos → Novo aluno (`app/admin/alunos/novo/page.tsx` e `POST /api/admin/students/create`):
+
+- Nome, e-mail e telefone são obrigatórios. O telefone, antes opcional, agora é exigido com ao menos 10 dígitos, incluindo DDD.
+- O campo passou a se chamar "CPF (opcional)". CPF ausente, `null` ou vazio é persistido como `null`: sem validação, sem consulta de duplicidade por CPF e sem valor fictício.
+- CPF informado continua normalizado para dígitos, validado e sujeito à duplicidade (409 `CPF_ALREADY_EXISTS`). A duplicidade por e-mail não mudou.
+- `requireAdmin`, criação de Auth/profile/student (`createStudentAccount`), senha temporária e e-mail de boas-vindas também não mudaram.
+- **Banco:** `students.cpf` aceita NULL e os índices únicos de CPF são parciais, conforme verificado por consulta somente leitura. Não houve migration.
+- **Já compatíveis com CPF nulo, sem alteração:** edição posterior do aluno (o CPF pode ser incluído depois), listagem (exibe "—"), busca e política de senha (sem CPF, apenas não o usa como dado pessoal).
+- **Cadastro público** (`/cadastro`): não foi alterado e continua exigindo CPF.
+- **Testes:** `scripts/test-admin-student-create-unit.cjs`.

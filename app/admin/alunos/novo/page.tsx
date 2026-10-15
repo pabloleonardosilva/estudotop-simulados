@@ -45,13 +45,16 @@ export default function NovoAlunoAdminPage() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const cpfClean = onlyDigits(String(form.get("cpf") || ""));
+    const phoneValue = String(form.get("phone") || "").trim();
 
-    if (!cpfClean || !isValidCpf(cpfClean)) {
+    if (onlyDigits(phoneValue).length < 10) {
+      setState({ type: "error", message: "Telefone é obrigatório. Informe o número com DDD." });
+      return;
+    }
+
+    if (cpfClean && !isValidCpf(cpfClean)) {
       setCpfTouched(true);
-      setState({
-        type: "error",
-        message: !cpfClean ? "CPF é obrigatório." : "CPF inválido. Verifique os dígitos informados.",
-      });
+      setState({ type: "error", message: "CPF inválido. Verifique os dígitos informados." });
       return;
     }
 
@@ -61,8 +64,8 @@ export default function NovoAlunoAdminPage() {
     const payload = {
       fullName: String(form.get("fullName") || ""),
       email: String(form.get("email") || ""),
-      cpf: cpfClean,
-      phone: String(form.get("phone") || ""),
+      cpf: cpfClean || null,
+      phone: phoneValue,
       origin: String(form.get("origin") || "Manual"),
       notes: String(form.get("notes") || ""),
       desiredContests: String(form.get("desiredContests") || ""),
@@ -162,8 +165,8 @@ export default function NovoAlunoAdminPage() {
             <div>
               <h2 className="text-base font-semibold text-white">Dados do aluno</h2>
               <p className="mt-0.5 text-sm text-white/40">
-                Preencha os dados essenciais. O CPF é obrigatório e será validado para evitar cadastros
-                duplicados.
+                Preencha os dados essenciais. Nome, e-mail e telefone são obrigatórios; o CPF é opcional e,
+                quando informado, será validado para evitar cadastros duplicados.
               </p>
             </div>
           </div>
@@ -194,14 +197,13 @@ export default function NovoAlunoAdminPage() {
               {/* Row 2: CPF + WhatsApp + Origem */}
               <div className="grid gap-5 md:grid-cols-3">
                 <div>
-                  <DarkField label="CPF obrigatório">
+                  <DarkField label="CPF (opcional)">
                     <DarkInput
                       name="cpf"
                       value={cpf}
                       onChange={(e) => setCpf(formatCpf(e.target.value))}
                       onBlur={() => setCpfTouched(true)}
                       placeholder="000.000.000-00"
-                      required
                       iconLeft={<Shield size={15} />}
                       error={cpfInvalid}
                     />
@@ -216,6 +218,7 @@ export default function NovoAlunoAdminPage() {
                   <DarkInput
                     name="phone"
                     placeholder="(31) 99999-9999"
+                    required
                     iconLeft={<Phone size={15} />}
                   />
                 </DarkField>

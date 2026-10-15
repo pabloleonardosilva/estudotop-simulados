@@ -17,7 +17,7 @@ const REPLY_TO_EMAIL = "estudotop@estudotop.com.br";
 type CreateStudentPayload = {
   fullName: string;
   email: string;
-  cpf?: string;
+  cpf?: string | null;
   phone?: string;
   origin?: string;
   notes?: string;
@@ -34,19 +34,29 @@ export async function POST(request: Request) {
 
     const fullName = body.fullName?.trim();
     const email = body.email?.trim().toLowerCase();
-    const cpf = body.cpf ? onlyDigits(body.cpf) : null;
+    // CPF é opcional apenas neste cadastro administrativo manual: ausente/null/vazio vira null e não
+    // passa por validação nem duplicidade; quando informado, segue a validação e a duplicidade de sempre.
+    const rawCpf = typeof body.cpf === "string" ? body.cpf.trim() : "";
+    const cpf = rawCpf ? onlyDigits(rawCpf) : null;
     const phone = body.phone?.trim() || null;
     const origin = body.origin?.trim() || "Manual";
     const notes = body.notes?.trim() || null;
     const desiredContests = body.desiredContests?.trim() || null;
-    if (!fullName || !email || !cpf) {
+    if (!fullName || !email || !phone) {
       return NextResponse.json(
-        { ok: false, message: "Nome completo, e-mail e CPF são obrigatórios." },
+        { ok: false, message: "Nome completo, e-mail e telefone são obrigatórios." },
         { status: 400 }
       );
     }
 
-    if (!isValidCpf(cpf)) {
+    if (onlyDigits(phone).length < 10) {
+      return NextResponse.json(
+        { ok: false, message: "Telefone inválido. Informe o número com DDD." },
+        { status: 400 }
+      );
+    }
+
+    if (rawCpf && (!cpf || !isValidCpf(cpf))) {
       return NextResponse.json(
         { ok: false, message: "CPF inválido. Verifique os dígitos informados." },
         { status: 400 }
@@ -113,7 +123,7 @@ export async function POST(request: Request) {
       const account = await createStudentAccount(supabase, {
         fullName,
         email,
-        cpf: cpf || null,
+        cpf,
         phone,
         desiredContests,
         temporaryPassword,
