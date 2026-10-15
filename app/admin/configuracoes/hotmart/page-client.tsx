@@ -320,6 +320,264 @@ function HotmartCatalogModal({ source, products, loading, error, copiedUcode, co
   );
 }
 
+type BuyerCategory = "ready" | "already_inserted" | "review" | "expired" | "not_eligible";
+type BuyerRow = { transaction: string; buyer_name: string | null; buyer_email: string | null; purchase_status: string; approved_at: string | null; ordered_at: string | null; category: BuyerCategory; reason: string | null; situation: string; access_start: string | null; access_end: string | null; transaction_registered: boolean };
+type BuyerSummary = { eligible: number; already_inserted: number; not_inserted: number; review: number; expired: number; not_eligible: number };
+type BuyersData = { mapping: { id: string; product_name: string; product_ucode: string; status: string }; destination: { type: "jornada" | "event"; name: string; status: string } | null; import_blocked_reason: string | null; summary: BuyerSummary; rows: BuyerRow[] };
+type BuyerImportResult = { transaction: string; outcome: BuyerCategory | "inserted" | "not_found" | "error"; reason: string | null; row: BuyerRow | null };
+
+const BUYER_IMPORT_BATCH_SIZE = 5;
+const buyerCategoryBadge: Record<BuyerCategory, { label: string; tone: string }> = {
+  ready: { label: "Pronto para inserir", tone: "info" },
+  already_inserted: { label: "Já inserido", tone: "success" },
+  review: { label: "Revisão necessária", tone: "warning" },
+  expired: { label: "Acesso expirado", tone: "danger" },
+  not_eligible: { label: "Não elegível", tone: "neutral" },
+};
+
+function summarizeBuyerRows(rows: BuyerRow[]): BuyerSummary {
+  return {
+    eligible: rows.filter((row) => row.category !== "not_eligible").length,
+    already_inserted: rows.filter((row) => row.category === "already_inserted").length,
+    not_inserted: rows.filter((row) => row.category === "ready").length,
+    review: rows.filter((row) => row.category === "review").length,
+    expired: rows.filter((row) => row.category === "expired").length,
+    not_eligible: rows.filter((row) => row.category === "not_eligible").length,
+  };
+}
+
+function applyBuyerImportResult(row: BuyerRow, result: BuyerImportResult): BuyerRow {
+  if (result.row) return result.row;
+  if (result.outcome === "inserted") return { ...row, category: "already_inserted", situation: "Já inserido", reason: "Inserido agora pela reconciliação." };
+  if (result.outcome === "not_found" || result.outcome === "error") return { ...row, category: "review", situation: "Revisão necessária", reason: result.reason };
+  return { ...row, category: result.outcome, situation: buyerCategoryBadge[result.outcome].label, reason: result.reason };
+}
+
+// Reconciliação de compradores históricos do vínculo: consulta as vendas reais na Hotmart (via API
+// administrativa) e só insere os códigos que o Admin selecionar; o servidor revalida cada um.
+function HotmartBuyersModal({ mappingId, productName, onClose, onImported }: { mappingId: string; productName: string; onClose: () => void; onImported: () => void }) {
+  const [data, setData] = useState<BuyersData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | BuyerCategory>("ready");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sendAccessEmail, setSendAccessEmail] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [importSummary, setImportSummary] = useState<{ inserted: number; already_inserted: number; review: number; errors: number } | null>(null);
+  const processingRef = useRef(false);
+  const confirmOpenRef = useRef(false);
+  const processing = progress !== null;
+  function showConfirm(open: boolean) {
+    confirmOpenRef.current = open;
+    setConfirmOpen(open);
+  }
+  const titleId = `hotmart-buyers-title-${mappingId}`;
+
+  const loadBuyers = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await adminFetch(`/api/admin/hotmart/mappings/${mappingId}/buyers`);
+      const json = await response.json().catch(() => null) as ({ ok?: boolean; message?: string } & Partial<BuyersData>) | null;
+      if (!response.ok || !json?.ok || !json.rows || !json.summary || !json.mapping) {
+        setError(response.status === 401 ? "Sua sessão expirou. Entre novamente." : json?.message || `Não foi possível consultar os compradores (erro ${response.status}).`);
+        setData(null);
+      } else {
+        setData({ mapping: json.mapping, destination: json.destination || null, import_blocked_reason: json.import_blocked_reason || null, summary: json.summary, rows: json.rows });
+      }
+    } catch {
+      setError("Erro inesperado ao consultar os compradores. Verifique a conexão e tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  }, [mappingId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadBuyers(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadBuyers]);
+
+  const requestClose = useCallback(() => {
+    if (processingRef.current) return;
+    if (confirmOpenRef.current) showConfirm(false); else onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") requestClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus?.({ preventScroll: true });
+    };
+  }, [requestClose]);
+
+  const rows = data?.rows || [];
+  const summary = summarizeBuyerRows(rows);
+  const importBlocked = data?.import_blocked_reason || null;
+  const term = normalizeCatalogSearch(search);
+  const visibleRows = rows.filter((row) => (filter === "all" || row.category === filter) && (!term || normalizeCatalogSearch(row.buyer_name || "").includes(term) || (row.buyer_email || "").includes(term) || row.transaction.toLowerCase().includes(term)));
+  const selectableVisible = visibleRows.filter((row) => row.category === "ready" && !importBlocked);
+  const selectedRows = rows.filter((row) => selected.has(row.transaction) && row.category === "ready");
+  const filters: Array<["all" | BuyerCategory, string, number]> = [
+    ["all", "Todos", rows.length],
+    ["ready", "Não inseridos", summary.not_inserted],
+    ["already_inserted", "Já inseridos", summary.already_inserted],
+    ["review", "Revisão necessária", summary.review],
+    ["expired", "Expirados", summary.expired],
+    ...(summary.not_eligible ? [["not_eligible", "Não elegíveis", summary.not_eligible] as ["not_eligible", string, number]] : []),
+  ];
+
+  function toggle(transaction: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(transaction)) next.delete(transaction); else next.add(transaction);
+      return next;
+    });
+  }
+
+  async function runImport() {
+    if (processingRef.current || !selectedRows.length || importBlocked) return;
+    processingRef.current = true;
+    const codes = selectedRows.map((row) => row.transaction);
+    const totals = { inserted: 0, already_inserted: 0, review: 0, errors: 0 };
+    showConfirm(false);
+    setImportSummary(null);
+    setProgress({ done: 0, total: codes.length });
+    for (let index = 0; index < codes.length; index += BUYER_IMPORT_BATCH_SIZE) {
+      const batch = codes.slice(index, index + BUYER_IMPORT_BATCH_SIZE);
+      let results: BuyerImportResult[];
+      try {
+        const response = await adminFetch(`/api/admin/hotmart/mappings/${mappingId}/buyers/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transaction_codes: batch, send_access_email: sendAccessEmail }) });
+        const json = await response.json().catch(() => null) as { ok?: boolean; message?: string; results?: BuyerImportResult[] } | null;
+        results = response.ok && json?.ok && Array.isArray(json.results)
+          ? json.results
+          : batch.map((transaction) => ({ transaction, outcome: "error" as const, reason: json?.message || `Falha na requisição (erro ${response.status}).`, row: null }));
+      } catch {
+        results = batch.map((transaction) => ({ transaction, outcome: "error" as const, reason: "Falha de conexão durante a inserção.", row: null }));
+      }
+      for (const result of results) {
+        if (result.outcome === "inserted") totals.inserted += 1;
+        else if (result.outcome === "already_inserted") totals.already_inserted += 1;
+        else if (result.outcome === "error") totals.errors += 1;
+        else totals.review += 1;
+      }
+      const byCode = new Map(results.map((result) => [result.transaction, result]));
+      setData((current) => current ? { ...current, rows: current.rows.map((row) => byCode.has(row.transaction) ? applyBuyerImportResult(row, byCode.get(row.transaction) as BuyerImportResult) : row) } : current);
+      setSelected((current) => {
+        const next = new Set(current);
+        for (const transaction of batch) next.delete(transaction);
+        return next;
+      });
+      setProgress({ done: Math.min(index + batch.length, codes.length), total: codes.length });
+    }
+    setImportSummary(totals);
+    setProgress(null);
+    processingRef.current = false;
+    if (totals.inserted) onImported();
+  }
+
+  const metrics: Array<[string, number, string]> = [
+    ["Compradores elegíveis", summary.eligible, "text-white"],
+    ["Já inseridos", summary.already_inserted, "text-emerald-200"],
+    ["Não inseridos", summary.not_inserted, "text-orange-200"],
+    ["Revisão necessária", summary.review, "text-amber-200"],
+  ];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/75 p-3 font-sans backdrop-blur-md sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="et-admin-dark-panel relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden text-white sm:max-h-[calc(100dvh-2rem)]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-amber-400 to-yellow-300" />
+        <div className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-orange-500/15 blur-3xl" />
+        <div className="relative flex shrink-0 items-start justify-between gap-4 px-5 pb-4 pt-6 sm:px-7">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-orange-300">Produção — vendas reais</p>
+            <h2 id={titleId} className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Compradores Hotmart</h2>
+            <p className="mt-1.5 text-sm text-slate-400">Confira quem comprou este produto e ainda não possui acesso ao destino vinculado.</p>
+            <p className="mt-2 truncate text-xs text-slate-500">{productName}{data?.destination ? ` → ${data.destination.type === "event" ? "Evento" : "Jornada"}: ${data.destination.name}` : ""}</p>
+          </div>
+          <button type="button" onClick={requestClose} disabled={processing} aria-label="Fechar compradores" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+            <X size={18} />
+          </button>
+        </div>
+
+        {loading ? <div className="relative border-t border-white/[0.065] px-5 py-10 text-center sm:px-7" role="status"><p className="et-admin-dark-text">Consultando as vendas na Hotmart e comparando com o destino...</p><p className="mt-1 text-xs text-slate-500">Todas as páginas do histórico são percorridas; isso pode levar alguns segundos.</p></div>
+          : error ? <div className="relative border-t border-white/[0.065] px-5 py-6 sm:px-7"><p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200" role="alert">{error}</p><div className="mt-3"><PremiumButton variant="dark" onClick={() => void loadBuyers()}>Tentar novamente</PremiumButton></div></div>
+          : <>
+            <div className="relative shrink-0 space-y-3 px-5 pb-3 sm:px-7">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {metrics.map(([label, value, tone]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p></div>)}
+              </div>
+              {summary.expired ? <p className="w-fit rounded-full border border-red-400/20 bg-red-400/10 px-3 py-1 text-xs font-semibold text-red-200">Acesso expirado: {summary.expired}</p> : null}
+              {importBlocked ? <p className="rounded-xl border border-amber-300/20 bg-amber-400/10 px-4 py-2.5 text-sm text-amber-100" role="alert">{importBlocked}</p> : null}
+              {importSummary ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-2.5" role="status"><p className="text-sm text-emerald-100">{importSummary.inserted} inseridos com sucesso · {importSummary.already_inserted} já estavam inseridos · {importSummary.review} exigem revisão · {importSummary.errors} erros</p><PremiumButton variant="dark" className="!min-h-0 !px-3 !py-1.5 !text-xs" onClick={() => setFilter("ready")}>Ver somente pendentes</PremiumButton></div> : null}
+              {progress ? <p className="rounded-xl border border-orange-300/20 bg-orange-400/10 px-4 py-2.5 text-sm text-orange-100" role="status">Processando {progress.done} de {progress.total}...</p> : null}
+              <PremiumInput variant="jornada" aria-label="Buscar por nome ou e-mail" placeholder="Buscar por nome ou e-mail..." value={search} onChange={(event: ChangeEvent<HTMLInputElement>) => setSearch(event.target.value)} />
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {filters.map(([key, label, count]) => <button key={key} type="button" onClick={() => setFilter(key)} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${filter === key ? "border-orange-400/40 bg-orange-500/[0.14] text-orange-100" : "border-white/[0.08] bg-white/[0.03] text-slate-300 hover:border-white/[0.15] hover:text-white"}`}>{label} <span className="ml-1 text-slate-500">{count}</span></button>)}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <PremiumButton variant="dark" className="!min-h-0 !px-3 !py-1.5 !text-xs" disabled={processing || !selectableVisible.length} onClick={() => setSelected((current) => new Set([...current, ...selectableVisible.map((row) => row.transaction)]))}>Selecionar todos os elegíveis visíveis</PremiumButton>
+                <PremiumButton variant="dark" className="!min-h-0 !px-3 !py-1.5 !text-xs" disabled={processing || !selected.size} onClick={() => setSelected(new Set())}>Limpar seleção</PremiumButton>
+                <span className="text-slate-500">{selectedRows.length} selecionado(s)</span>
+              </div>
+            </div>
+            <div className="relative min-h-0 flex-1 overflow-y-auto border-t border-white/[0.065] px-5 py-4 sm:px-7">
+              {!rows.length ? <p className="et-admin-dark-muted text-sm">A Hotmart não retornou compras aprovadas para este produto.</p>
+                : !visibleRows.length ? <p className="et-admin-dark-muted text-sm">Nenhum comprador nesta visão.</p>
+                : <div className="space-y-2">{visibleRows.map((row) => {
+                  const badge = buyerCategoryBadge[row.category];
+                  const selectable = row.category === "ready" && !importBlocked;
+                  const checked = selectable && selected.has(row.transaction);
+                  return <div key={row.transaction} className={`flex gap-3 rounded-xl border p-4 transition ${checked ? "border-orange-400/35 bg-orange-500/[0.07]" : "border-white/[0.07] bg-white/[0.025] hover:border-white/[0.12]"}`}>
+                    <div className="pt-0.5"><input type="checkbox" aria-label={`Selecionar ${row.buyer_name || row.buyer_email || row.transaction}`} className="h-4 w-4 accent-orange-500 disabled:opacity-30" checked={checked} disabled={!selectable || processing} onChange={() => toggle(row.transaction)} /></div>
+                    <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.1fr)]">
+                      <div className="min-w-0"><p className="truncate font-semibold text-white">{row.buyer_name || "Comprador sem nome"}</p><p className="truncate text-xs text-slate-400">{row.buyer_email || "E-mail não informado"}</p><p className="mt-1 truncate font-mono text-[11px] text-slate-500">{row.transaction} · {row.purchase_status}</p></div>
+                      <div className="min-w-0 text-xs"><p className="text-slate-500">Compra</p><p className="et-admin-dark-text">{formatDateTime(row.approved_at || row.ordered_at) || "—"}</p><p className="mt-1 text-slate-500">Acesso previsto</p><p className="et-admin-dark-text">{row.access_start ? `${formatDate(row.access_start)} → ${row.access_end ? formatDate(row.access_end) : "fim do Evento"}` : "—"}</p></div>
+                      <div className="min-w-0"><span className={`et-admin-dark-badge et-admin-dark-badge-${badge.tone}`}>{badge.label}</span><p className="mt-1.5 text-xs text-slate-400">{row.situation}</p>{row.reason ? <p className="mt-1 text-xs text-slate-500">{row.reason}</p> : null}</div>
+                    </div>
+                  </div>;
+                })}</div>}
+            </div>
+          </>}
+
+        <div className="relative flex shrink-0 flex-col-reverse gap-2 border-t border-white/[0.065] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <p className="text-xs text-slate-500">Expirados e conflitos não são selecionáveis. Quem já está no destino nunca é alterado.</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <PremiumButton variant="dark" disabled={processing} onClick={requestClose}>Fechar</PremiumButton>
+            <PremiumButton variant="dark-primary" disabled={processing || loading || !selectedRows.length || Boolean(importBlocked)} onClick={() => showConfirm(true)}>{processing ? "Processando..." : `Inserir ${selectedRows.length} selecionado${selectedRows.length === 1 ? "" : "s"}`}</PremiumButton>
+          </div>
+        </div>
+
+        {confirmOpen ? <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div role="alertdialog" aria-modal="true" aria-labelledby={`${titleId}-confirm`} className="et-admin-dark-panel w-full max-w-lg p-6">
+            <h3 id={`${titleId}-confirm`} className="text-lg font-semibold text-white">Inserir {selectedRows.length} comprador{selectedRows.length === 1 ? "" : "es"}?</h3>
+            <div className="mt-3 space-y-1.5 text-sm text-slate-300">
+              <p>Produto: <span className="text-white">{productName}</span></p>
+              <p>Destino: <span className="text-white">{data?.destination ? `${data.destination.type === "event" ? "Evento" : "Jornada"} ${data.destination.name}` : "—"}</span></p>
+              <p className="rounded-xl border border-orange-300/20 bg-orange-400/10 px-3 py-2 text-orange-100">Os acessos serão calculados a partir da data original de cada compra.</p>
+              <p className="text-xs text-slate-500">Cada venda é revalidada na Hotmart antes da inserção. Acessos expirados não são criados por este fluxo.</p>
+            </div>
+            <label className="mt-4 flex items-start gap-2 text-sm text-slate-300"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-orange-500" checked={sendAccessEmail} onChange={(event) => setSendAccessEmail(event.target.checked)} />Enviar e-mail de acesso aos novos alunos inseridos</label>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <PremiumButton variant="dark" onClick={() => showConfirm(false)}>Cancelar</PremiumButton>
+              <PremiumButton variant="dark-primary" onClick={() => void runImport()}>Confirmar inserção</PremiumButton>
+            </div>
+          </div>
+        </div> : null}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function HotmartPageClient({ jornadas, events }: { jornadas: Destination[]; events: Destination[] }) {
   const [data, setData] = useState<Data>({ configured: false, readiness: emptyReadiness, mappings: [], transactions: [], history: [] });
   const [tab, setTab] = useState("overview");
@@ -341,6 +599,8 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
   const savingMappingRef = useRef(false);
   const [mappingFeedback, setMappingFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const mappingFormRef = useRef<HTMLDivElement>(null);
+  const [buyersTarget, setBuyersTarget] = useState<{ id: string; name: string } | null>(null);
+  const [buyerPreview, setBuyerPreview] = useState<{ mappingId: string; name: string; state: "loading" | "done" | "error"; summary?: BuyerSummary; message?: string } | null>(null);
   const [productionProducts, setProductionProducts] = useState<{ name: string; ucode: string }[] | null>(null);
   const [loadingProductionProducts, setLoadingProductionProducts] = useState(false);
   const [productionProductsError, setProductionProductsError] = useState("");
@@ -414,7 +674,7 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     setMappingFeedback(null);
     try {
       const response = await adminFetch("/api/admin/hotmart", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, product_source: productSource, verify_product_with_hotmart: true }) });
-      const json = await response.json().catch(() => null) as { ok?: boolean; message?: string } | null;
+      const json = await response.json().catch(() => null) as { ok?: boolean; message?: string; mapping?: { id?: string } } | null;
       if (!response.ok || !json?.ok) {
         const text = response.status === 401 ? "Sua sessão expirou. Entre novamente para salvar o vínculo."
           : response.status === 403 ? "Sua conta não tem permissão de administrador para salvar vínculos."
@@ -424,7 +684,9 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
       }
       setForm((current) => ({ ...current, hotmart_product_ucode: "", hotmart_product_name: "", hotmart_product_id: "", destination_id: "" }));
       setMappingFeedback({ tone: "success", text: "Produto vinculado com sucesso." });
+      const savedName = form.hotmart_product_name;
       await load(true);
+      if (json.mapping?.id && productSource === "production") void previewBuyers(json.mapping.id, savedName);
     } catch {
       setMappingFeedback({ tone: "error", text: "Erro inesperado ao salvar o vínculo. Verifique a conexão e tente novamente." });
     } finally {
@@ -432,6 +694,20 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
       setSavingMapping(false);
     }
   }
+  // Resumo discreto após salvar o vínculo; nada é inserido. Falha aqui não desfaz o vínculo salvo.
+  async function previewBuyers(mappingId: string, name: string) {
+    setBuyerPreview({ mappingId, name, state: "loading" });
+    try {
+      const response = await adminFetch(`/api/admin/hotmart/mappings/${mappingId}/buyers`);
+      const json = await response.json().catch(() => null) as { ok?: boolean; message?: string; summary?: BuyerSummary } | null;
+      setBuyerPreview(response.ok && json?.ok && json.summary
+        ? { mappingId, name, state: "done", summary: json.summary }
+        : { mappingId, name, state: "error", message: json?.message || "Não foi possível verificar os compradores anteriores agora." });
+    } catch {
+      setBuyerPreview({ mappingId, name, state: "error", message: "Não foi possível verificar os compradores anteriores agora." });
+    }
+  }
+  const closeBuyers = useCallback(() => setBuyersTarget(null), []);
   async function lookupProduct() {
     const ucode = form.hotmart_product_ucode.trim();
     if (!ucode) { setMessage("Informe o Product UCODE."); return; }
@@ -761,7 +1037,7 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     {message ? <div className="mb-4 rounded-xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{message}</div> : null}
     {loading ? <PremiumCard><p className="et-admin-dark-text">Carregando...</p></PremiumCard> : null}
     {!loading && tab === "overview" ? <PremiumCard title="Estado operacional" icon={<CreditCard size={18} />}><p className="et-admin-dark-text">O webhook autentica, deduplica e processa cada produto isoladamente. Credenciais nunca são exibidas nesta tela.</p><div className="mt-4"><PremiumButton variant="dark" onClick={() => void recoverEmails()}>Recuperar e-mails pendentes</PremiumButton></div></PremiumCard> : null}
-    {!loading && tab === "mappings" ? <div className="space-y-5"><PremiumCard title="Descoberta de produtos (temporário)"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Sandbox — catálogo fictício de homologação</p><p className="mt-1 et-admin-dark-muted text-sm">{data.readiness.environment === "sandbox" ? "Produtos disponíveis no Sandbox Hotmart." : data.readiness.environment === "production" ? "Produtos disponíveis na Hotmart (produção)." : "Ambiente Hotmart não definido."}</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingSandboxProducts} onClick={openSandboxCatalog}>{loadingSandboxProducts ? "Buscando produtos..." : "Listar produtos Sandbox"}</PremiumButton></div></div><div className="mt-6 border-t border-amber-300/20 pt-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Produção — catálogo real da conta Hotmart</p><p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">Consulta somente leitura. Nenhuma venda, acesso ou configuração da Hotmart será alterada.</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingProductionProducts} onClick={openProductionCatalog}>{loadingProductionProducts ? "Buscando produtos..." : "Listar meus produtos Hotmart"}</PremiumButton></div></div></PremiumCard><div ref={mappingFormRef} className="scroll-mt-6"><PremiumCard title="Vincular produto"><div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div className="max-w-xs"><HotmartDropdown label="Origem do produto Hotmart" value={productSource} onChange={(value) => setProductSource(value === "production" ? "production" : "sandbox")} options={[{ value: "production", label: "Produção — meus produtos reais" }, { value: "sandbox", label: "Sandbox — produtos fictícios de homologação" }]} /></div><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${productSource === "production" ? "border border-amber-300/30 bg-amber-400/10 text-amber-200" : "border border-white/10 bg-white/[0.03] text-slate-300"}`}>Origem: {productSource === "production" ? "Produção" : "Sandbox"}</span></div><div className="grid gap-4 md:grid-cols-2"><div><PremiumInput variant="jornada" label="Product UCODE" value={form.hotmart_product_ucode} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_ucode: event.target.value, hotmart_product_name: "" })} /><div className="mt-2"><PremiumButton variant="dark" disabled={lookingUpProduct || !form.hotmart_product_ucode.trim()} onClick={() => void lookupProduct()}>{lookingUpProduct ? "Buscando..." : "Buscar produto"}</PremiumButton></div></div><PremiumInput variant="jornada" label="Nome do produto" value={form.hotmart_product_name} readOnly placeholder="Busque pelo UCODE para preencher" /><HotmartDropdown sort label="Tipo" value={form.destination_type} onChange={(value) => setForm({ ...form, destination_type: value, destination_id: "" })} options={[{ value: "jornada", label: "Jornada" }, { value: "event", label: "Evento" }]} /><HotmartDropdown sort label="Destino" value={form.destination_id} onChange={(value) => setForm({ ...form, destination_id: value })} options={[{ value: "", label: "Selecione" }, ...destinations.map((item) => ({ value: item.id, label: `${item.title || item.name} — ${item.status}` }))]} /></div>{form.hotmart_product_name ? <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">Produto encontrado</p><p className="mt-1 font-semibold text-white">{form.hotmart_product_name}</p><p className="mt-1 break-all text-xs text-slate-400">{form.hotmart_product_ucode}</p></div> : null}<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><PremiumButton variant="dark-primary" disabled={savingMapping || lookingUpProduct} onClick={() => void createMapping()}>{savingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton>{mappingFeedback ? <p role={mappingFeedback.tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-2.5 text-sm ${mappingFeedback.tone === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : "border-red-400/20 bg-red-400/10 text-red-200"}`}>{mappingFeedback.text}</p> : null}</div></PremiumCard></div><PremiumCard title="Produtos vinculados"><div className="space-y-3">{data.mappings.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-white">{item.hotmart_product_name}</p><p className="text-xs text-slate-400">{item.hotmart_product_ucode} → {item.jornadas?.title || item.simulado_events?.name}</p></div><div className="flex gap-2"><PremiumButton variant="dark" onClick={() => void setMappingStatus(item.id, item.status === "active" ? "inactive" : "active")}>{item.status === "active" ? "Inativar" : "Ativar"}</PremiumButton><PremiumButton variant="dark-warning" onClick={() => void setMappingStatus(item.id, "archived")}>Arquivar</PremiumButton></div></div>)}{!data.mappings.length ? <p className="et-admin-dark-muted">Nenhum produto vinculado.</p> : null}</div></PremiumCard></div> : null}
+    {!loading && tab === "mappings" ? <div className="space-y-5"><PremiumCard title="Descoberta de produtos (temporário)"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Sandbox — catálogo fictício de homologação</p><p className="mt-1 et-admin-dark-muted text-sm">{data.readiness.environment === "sandbox" ? "Produtos disponíveis no Sandbox Hotmart." : data.readiness.environment === "production" ? "Produtos disponíveis na Hotmart (produção)." : "Ambiente Hotmart não definido."}</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingSandboxProducts} onClick={openSandboxCatalog}>{loadingSandboxProducts ? "Buscando produtos..." : "Listar produtos Sandbox"}</PremiumButton></div></div><div className="mt-6 border-t border-amber-300/20 pt-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">Produção — catálogo real da conta Hotmart</p><p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">Consulta somente leitura. Nenhuma venda, acesso ou configuração da Hotmart será alterada.</p><div className="mt-3"><PremiumButton variant="dark" disabled={loadingProductionProducts} onClick={openProductionCatalog}>{loadingProductionProducts ? "Buscando produtos..." : "Listar meus produtos Hotmart"}</PremiumButton></div></div></PremiumCard><div ref={mappingFormRef} className="scroll-mt-6"><PremiumCard title="Vincular produto"><div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div className="max-w-xs"><HotmartDropdown label="Origem do produto Hotmart" value={productSource} onChange={(value) => setProductSource(value === "production" ? "production" : "sandbox")} options={[{ value: "production", label: "Produção — meus produtos reais" }, { value: "sandbox", label: "Sandbox — produtos fictícios de homologação" }]} /></div><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${productSource === "production" ? "border border-amber-300/30 bg-amber-400/10 text-amber-200" : "border border-white/10 bg-white/[0.03] text-slate-300"}`}>Origem: {productSource === "production" ? "Produção" : "Sandbox"}</span></div><div className="grid gap-4 md:grid-cols-2"><div><PremiumInput variant="jornada" label="Product UCODE" value={form.hotmart_product_ucode} onChange={(event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, hotmart_product_ucode: event.target.value, hotmart_product_name: "" })} /><div className="mt-2"><PremiumButton variant="dark" disabled={lookingUpProduct || !form.hotmart_product_ucode.trim()} onClick={() => void lookupProduct()}>{lookingUpProduct ? "Buscando..." : "Buscar produto"}</PremiumButton></div></div><PremiumInput variant="jornada" label="Nome do produto" value={form.hotmart_product_name} readOnly placeholder="Busque pelo UCODE para preencher" /><HotmartDropdown sort label="Tipo" value={form.destination_type} onChange={(value) => setForm({ ...form, destination_type: value, destination_id: "" })} options={[{ value: "jornada", label: "Jornada" }, { value: "event", label: "Evento" }]} /><HotmartDropdown sort label="Destino" value={form.destination_id} onChange={(value) => setForm({ ...form, destination_id: value })} options={[{ value: "", label: "Selecione" }, ...destinations.map((item) => ({ value: item.id, label: `${item.title || item.name} — ${item.status}` }))]} /></div>{form.hotmart_product_name ? <div className="mt-4 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">Produto encontrado</p><p className="mt-1 font-semibold text-white">{form.hotmart_product_name}</p><p className="mt-1 break-all text-xs text-slate-400">{form.hotmart_product_ucode}</p></div> : null}<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><PremiumButton variant="dark-primary" disabled={savingMapping || lookingUpProduct} onClick={() => void createMapping()}>{savingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton>{mappingFeedback ? <p role={mappingFeedback.tone === "error" ? "alert" : "status"} className={`rounded-xl border px-4 py-2.5 text-sm ${mappingFeedback.tone === "success" ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100" : "border-red-400/20 bg-red-400/10 text-red-200"}`}>{mappingFeedback.text}</p> : null}</div>{buyerPreview ? <div className="mt-4 flex flex-col gap-3 rounded-xl border border-orange-300/15 bg-orange-400/[0.05] px-4 py-3 sm:flex-row sm:items-center sm:justify-between" role="status"><div className="min-w-0 text-sm">{buyerPreview.state === "loading" ? <p className="text-slate-300">Verificando compradores anteriores de {buyerPreview.name}...</p> : buyerPreview.state === "error" ? <p className="text-amber-100">{buyerPreview.message} O vínculo continua salvo; tente novamente pelo botão do vínculo.</p> : buyerPreview.summary ? <p className="text-slate-200">{buyerPreview.summary.eligible} compradores aprovados encontrados · {buyerPreview.summary.already_inserted} já inseridos · {buyerPreview.summary.not_inserted} ainda não inseridos · {buyerPreview.summary.review} exigem revisão</p> : null}</div>{buyerPreview.state !== "loading" ? <PremiumButton variant="dark-primary" className="!min-h-0 shrink-0 !px-3 !py-2 !text-xs" onClick={() => setBuyersTarget({ id: buyerPreview.mappingId, name: buyerPreview.name })}>Ver compradores não inseridos</PremiumButton> : null}</div> : null}</PremiumCard></div><PremiumCard title="Produtos vinculados"><div className="space-y-3">{data.mappings.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold text-white">{item.hotmart_product_name}</p><p className="text-xs text-slate-400">{item.hotmart_product_ucode} → {item.jornadas?.title || item.simulado_events?.name}</p></div><div className="flex flex-wrap gap-2"><PremiumButton variant="dark-primary" onClick={() => setBuyersTarget({ id: item.id, name: item.hotmart_product_name })}>Ver compradores não inseridos</PremiumButton><PremiumButton variant="dark" onClick={() => void setMappingStatus(item.id, item.status === "active" ? "inactive" : "active")}>{item.status === "active" ? "Inativar" : "Ativar"}</PremiumButton><PremiumButton variant="dark-warning" onClick={() => void setMappingStatus(item.id, "archived")}>Arquivar</PremiumButton></div></div>)}{!data.mappings.length ? <p className="et-admin-dark-muted">Nenhum produto vinculado.</p> : null}</div></PremiumCard></div> : null}
     {!loading && tab === "pending" && commercialDateReviews.length ? <PremiumCard title="Datas comerciais em revisão" icon={<AlertTriangle size={18} />}><div className="space-y-3">{commercialDateReviews.map((item) => { const calculatedExpiresAt = calculatedCommercialExpiration(item); return <div key={`commercial-date-${item.id}`} className="rounded-2xl border border-amber-300/20 bg-amber-400/[0.06] p-5"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Data da compra requer verificação</p><h3 className="mt-1 text-lg font-semibold text-white">{item.product_name_snapshot}</h3><p className="mt-1 break-all text-xs text-slate-400">UCODE: {item.hotmart_product_ucode}</p></div><PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "reprocess")}>Reprocessar</PremiumButton></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><div><p className="text-xs text-slate-500">Transação</p><p className="mt-1 text-sm text-slate-200">{item.transaction_code}</p></div><div><p className="text-xs text-slate-500">Comprador</p><p className="mt-1 text-sm text-slate-200">{item.students?.name || item.buyer_email}</p></div><div><p className="text-xs text-slate-500">Aprovação Hotmart</p><p className="mt-1 text-sm text-slate-200">{formatDate(item.purchase_approved_at)}</p></div><div><p className="text-xs text-slate-500">Expiração calculada</p><p className="mt-1 text-sm text-slate-200">{formatDate(calculatedExpiresAt)}</p></div><div><p className="text-xs text-slate-500">Jornada vinculada</p><p className="mt-1 text-sm text-slate-200">{item.jornadas?.title || "—"}</p></div></div><p className="mt-4 text-sm leading-6 text-amber-100">A Hotmart informou aprovação em {formatDate(item.purchase_approved_at)}. Com a duração atual da Jornada, o acesso expiraria em {formatDate(calculatedExpiresAt)}. Revise a transação antes de conceder o acesso.</p></div>; })}</div></PremiumCard> : null}
     {!loading && tab === "transactions" ? <div className="space-y-5">
       {/* "Filtrar transações" e "Transações" são PremiumCards irmãos; .et-admin-dark-panel usa
@@ -818,6 +1094,7 @@ export default function HotmartPageClient({ jornadas, events }: { jornadas: Dest
     {!loading && ["pending","duplicates"].includes(tab) ? <PremiumCard title={tab === "pending" ? "Pendências" : "Compras em duplicidade"}><div className="space-y-4">{(tab === "pending" ? pending.filter((item) => item.processing_error_code !== "COMMERCIAL_DATE_REQUIRES_REVIEW") : duplicates).map((item) => renderTransactionCard(item))}{!(tab === "pending" ? pending : duplicates).length ? <p className="et-admin-dark-muted">Nenhum registro nesta seção.</p> : null}</div></PremiumCard> : null}
     {!loading && tab === "students" ? <PremiumCard title="Possíveis cadastros duplicados"><div className="space-y-3">{duplicateStudents.map((item) => <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="font-semibold text-white">Conta Hotmart: {item.students?.name || item.students?.email}</p><p className="mt-1 text-xs text-slate-400">Possível cadastro existente: {item.possible_duplicate?.name || item.possible_duplicate?.email}</p><div className="mt-3 flex gap-2"><PremiumButton variant="dark" onClick={() => void transactionAction(item.id, "keep_separate")}>Manter separados</PremiumButton><PremiumButton variant="dark-danger" disabled>Mesclar — bloqueado</PremiumButton></div></div>)}{!duplicateStudents.length ? <p className="et-admin-dark-muted">Nenhuma possível duplicidade pendente.</p> : null}<p className="et-admin-dark-muted mt-4">O merge permanece indisponível até que todas as relações críticas e o Supabase Auth possam ser migrados de forma transacional.</p></div></PremiumCard> : null}
     {!loading && tab === "history" ? <PremiumCard title="Histórico comercial" icon={<ScrollText size={18} />}><div className="space-y-2">{data.history.map((item) => <div key={item.id} className="flex justify-between rounded-xl border border-white/10 px-4 py-3 text-sm"><span className="text-slate-200">{item.action}</span><span className="text-slate-500">{new Date(item.created_at).toLocaleString("pt-BR")}</span></div>)}</div></PremiumCard> : null}
+    {buyersTarget ? <HotmartBuyersModal key={buyersTarget.id} mappingId={buyersTarget.id} productName={buyersTarget.name} onClose={closeBuyers} onImported={() => void load(true)} /> : null}
     {catalogSource === "sandbox" ? <HotmartCatalogModal source="sandbox" products={sandboxProducts} loading={loadingSandboxProducts} error={sandboxProductsError} copiedUcode={copiedUcode} copyFailedUcode={copyFailedUcode} onCopy={(ucode) => void copyUcode(ucode)} onUse={(product) => fillProductFromCatalog(product, "sandbox")} onClose={closeCatalog} /> : null}
     {catalogSource === "production" ? <HotmartCatalogModal source="production" products={productionProducts} loading={loadingProductionProducts} error={productionProductsError} copiedUcode={copiedUcode} copyFailedUcode={copyFailedUcode} onCopy={(ucode) => void copyUcode(ucode)} onUse={(product) => fillProductFromCatalog(product, "production")} onClose={closeCatalog} /> : null}
     <PremiumModal open={Boolean(mappingTarget)} title="Vincular produto Hotmart" message="Escolha o destino EstudoTOP para esta compra. O produto e o código vieram da transação e não podem ser alterados neste fluxo." tone="info" dismissible={!savingPendingMapping} onClose={() => { if (!savingPendingMapping) setMappingTarget(null); }} actions={<><PremiumButton variant="dark" disabled={savingPendingMapping} onClick={() => setMappingTarget(null)}>Cancelar</PremiumButton><PremiumButton variant={mappingTarget && HOTMART_REPROCESS_ELIGIBLE_STATUSES.includes(mappingTarget.processing_status) ? "dark" : "dark-primary"} disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(false)}>{savingPendingMapping ? "Salvando..." : "Salvar vínculo"}</PremiumButton>{mappingTarget && HOTMART_REPROCESS_ELIGIBLE_STATUSES.includes(mappingTarget.processing_status) ? <PremiumButton variant="dark-primary" disabled={savingPendingMapping || !pendingMappingForm.destination_id} onClick={() => void savePendingMapping(true)}>{savingPendingMapping ? "Processando..." : "Vincular e reprocessar"}</PremiumButton> : null}</>}>

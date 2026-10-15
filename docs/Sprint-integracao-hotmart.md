@@ -131,3 +131,81 @@ Este fechamento é exclusivamente funcional/documental: nenhuma migration foi ex
 `npx tsc --noEmit` PASS, `npm run build` PASS e ESLint dos arquivos alterados sem diagnósticos.
 
 Implementação e testes automatizados concluídos; validação visual/funcional final em Production será realizada após o deploy deste commit.
+
+## 15/10/2026 — Reconciliação de compradores históricos
+
+Função permanente em cada vínculo Produto → Jornada/Evento. Ela lista as compras reais do produto, identifica quem ainda não está no destino e insere **somente** os compradores selecionados pelo Admin. Nada é inserido automaticamente: nem ao salvar o vínculo, nem ao abrir a prévia.
+
+**API Hotmart.** A documentação oficial e a referência da Sales API foram consultadas antes da implementação.
+
+- **Endpoint:** `GET https://developers.hotmart.com/payments/api/v1/sales/history`.
+- **Produto:** filtro por `product_id` numérico (7 dígitos). O mapping guarda o UCODE; o id é resolvido em tempo de consulta pelo catálogo de produção, que devolve `ucode` e `id` (`findHotmartProductionProduct`). Nenhum dado novo é persistido.
+- **Paginação:** cursor `page_info.next_page_token` → `page_token`, com `max_results=50`. Todas as páginas são percorridas, com limite defensivo de 200 páginas e erro explícito em token repetido ou no limite. Uma falha intermediária interrompe a consulta inteira, sem lista parcial.
+- **Período:** `start_date` (01/01/2010) e `end_date` (agora) são sempre explícitos, em epoch ms. A janela padrão da API sem datas não foi confirmada na documentação acessível.
+- **Status:** sem `transaction`, a API devolve só `APPROVED` e `COMPLETE`. Na revalidação por `transaction`, devolve qualquer status, e o servidor reaplica a regra.
+- **Elegibilidade:** `APPROVED` e `COMPLETE` (compra paga com garantia já expirada, também tratada como concessão pelo processor em `PURCHASE_COMPLETE`). Todos os demais status são não elegíveis.
+- **Credenciais:** exclusivamente `HOTMART_PRODUCTION_*`, via `productionCatalog.ts`. Nunca Sandbox; o `HOTMART_HOTTOK` não é usado.
+
+**Classificação** (`app/lib/server/hotmart/buyerReconciliation.ts`):
+
+- **Pronto para inserir:** compra elegível, comprador identificável, sem acesso no destino e sem conflito.
+- **Já inserido:** a transação já tem `hotmart_access_links`, ou o aluno, identificado por e-mail ou pela transação, já tem matrícula/participação no destino, em qualquer situação. Nada é alterado.
+- **Revisão necessária:**
+  - transação registrada para outro produto;
+  - conta associada com e-mail diferente;
+  - mais de uma conta para o e-mail;
+  - possível cadastro duplicado (CPF/telefone) pendente;
+  - conta bloqueada;
+  - compra sem e-mail;
+  - transação em outra situação comercial;
+  - data de aprovação ausente;
+  - compra repetida do mesmo comprador (só a aprovação mais recente fica selecionável).
+- **Acesso expirado:** o prazo calculado pela data original (`evaluateHotmartJornadaCommercialDates`, a mesma regra do processor) já terminou. Não é selecionável: o processor rejeita concessões expiradas, e criar histórico expirado sem conceder prazo não é suportado com segurança. Nenhum novo prazo é concedido.
+- **Não elegível:** status não aprovado, ou bloqueio financeiro/estorno registrado na transação.
+
+**Datas.** O acesso começa na data ORIGINAL de aprovação da compra, nunca na data da importação ou do mapping. A prévia mostra a compra e o "Acesso previsto" (aprovação → aprovação + duração da Jornada; em Evento, até o fim do Evento).
+
+**Inserção e rastreabilidade.**
+
+- O navegador envia apenas os códigos de transação selecionados, em lotes de 5 (máximo de 10 por requisição).
+- `POST /api/admin/hotmart/mappings/[id]/buyers/import` (`requireAdmin`) revalida, código a código e na Hotmart, o produto (`product_id`), o status e o comprador.
+- O mapping salvo é a única fonte de produto e destino; campos extras no corpo são ignorados.
+- Em seguida, a venda é reclassificada com o estado atual do banco, e só "pronto" escreve:
+  - transação ausente → `processHotmartEvent` (mesma regra de datas, matrícula e cronograma), sem criar `hotmart_webhook_events`; o `externalEventId` é `historical-reconciliation:<código>` e não é persistido;
+  - transação já registrada sem acesso → `reprocessHotmartTransaction`, a partir do próprio registro.
+- Cada item gera `hotmart_history` `historical_buyer_reconciled`, com ator admin, `source = hotmart_sales_history` e `transaction_registered_before`. Cada lote gera `historical_reconciliation_batch` com contagens, além de `admin_audit_logs` `admin.hotmart.historical_reconciliation`. Sem dados pessoais na metadata.
+- **Schema atual suficiente:** sem migration, sem alteração de banco.
+
+**Idempotência e preservação.** Repetir a mesma seleção reclassifica a venda como "Já inserido": não chama o processor e não duplica transação, matrícula, cronograma ou e-mail. Matrículas e participações existentes não são recriadas nem alteradas, inclusive `started_at`, `expires_at`, cronograma, simulados liberados, tentativas, resultados, TopCoins e `access_origin`. O pré-filtro impede que a conversão de matrícula manual do processor seja acionada por este fluxo.
+
+**E-mail.** Não há envio em massa. Na confirmação existe a opção explícita "Enviar e-mail de acesso aos novos alunos inseridos", **desmarcada por padrão**. Ela usa `sendHotmartTransactionEmail`, idempotente por claim e chave do Resend, somente para quem foi inserido agora. Observação: as transações importadas sem envio ficam com `access_email_sent_at` nulo, e o botão administrativo existente "Recuperar e-mails pendentes" pode enviá-las se for acionado.
+
+**Interface.**
+
+- Cada item de "Produtos vinculados" tem o botão permanente "Ver compradores não inseridos".
+- Após salvar um vínculo de origem Produção, um resumo discreto ("Verificando compradores anteriores...") mostra aprovados, já inseridos, não inseridos e em revisão, com atalho para o modal. Uma falha nesse resumo não desfaz o vínculo.
+- O modal "Compradores Hotmart" tem:
+  - 4 métricas, mais "Acesso expirado" quando houver;
+  - busca por nome, e-mail ou transação;
+  - filtros Todos / Não inseridos (padrão) / Já inseridos / Revisão necessária / Expirados, e Não elegíveis quando houver;
+  - seleção individual, "Selecionar todos os elegíveis visíveis" e "Limpar seleção";
+  - "Inserir N selecionados" com confirmação (produto, destino e regra da data original);
+  - progresso "Processando X de N..." e um resumo final com "Ver somente pendentes", com as linhas atualizadas no lugar.
+- Fecha por X, Fechar, Escape ou backdrop, exceto durante o processamento. Altura limitada ao viewport, lista com rolagem interna, cabeçalho e rodapé fixos. CPF e telefone não são exibidos.
+
+**Rollback.** Somente código: reverter o commit. Não há migration. Acessos já inseridos permanecem registrados como concessões Hotmart comuns, rastreáveis pelo histórico.
+
+**Validação.** `node scripts/test-hotmart-unit.cjs` PASS. Os testes cobrem:
+
+- paginação multi-página, fim, erro intermediário, loop e limite;
+- credenciais de produção e resolução do `product_id`;
+- elegibilidade;
+- classificação: novo, conta existente, já inserido, conflito, expirado, transação existente ou ausente, compra repetida;
+- importação via processor simulado e idempotência (2 execuções);
+- preservação de matrícula e progresso e e-mail opcional;
+- rotas sem admin, mapping inexistente, códigos manipulados, produto diferente, destino forjado no corpo e mapping inativo;
+- contratos de UI.
+
+O transporte HTTP e o banco foram simulados; nenhuma chamada real à Hotmart. `npx tsc --noEmit` PASS, `npm run build` PASS e ESLint dos arquivos alterados sem diagnósticos.
+
+Implementado e testado automaticamente; validação com compradores reais pendente do teste controlado em Production pelo responsável.

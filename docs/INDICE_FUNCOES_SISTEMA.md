@@ -4445,6 +4445,22 @@ Datas comerciais são validadas antes da compra duplicada; UCODE hexadecimal 8-4
 - Implementação e testes automatizados concluídos; validação visual/funcional final em Production será realizada após o deploy deste commit.
 - Detalhes: [Sprint Integração Hotmart](Sprint-integracao-hotmart.md), entrada de 15/10/2026.
 
+**Reconciliação de compradores históricos (15/10/2026):**
+
+| Responsabilidade | Caminho |
+| --- | --- |
+| Resolução UCODE → `product_id` e histórico de vendas paginado (`/payments/api/v1/sales/history`, somente GET, `HOTMART_PRODUCTION_*`) | `app/lib/server/hotmart/productionCatalog.ts` (`findHotmartProductionProduct`, `listHotmartProductionSales`) |
+| Contexto do banco, classificação, resumo e importação idempotente via processor | `app/lib/server/hotmart/buyerReconciliation.ts` |
+| Prévia somente leitura | `GET /api/admin/hotmart/mappings/[id]/buyers` |
+| Inserção dos códigos selecionados, revalidados na Hotmart | `POST /api/admin/hotmart/mappings/[id]/buyers/import` |
+| Botão permanente, resumo pós-vínculo e modal "Compradores Hotmart" | `app/admin/configuracoes/hotmart/page-client.tsx` (`HotmartBuyersModal`) |
+
+- **Elegíveis:** `APPROVED` e `COMPLETE`.
+- **Acesso:** calculado a partir da data original da compra. Expirados não são selecionáveis.
+- **Já inseridos:** nunca são alterados.
+- **Sem migration:** a rastreabilidade fica em `hotmart_history`.
+- Validação com compradores reais pendente do teste controlado em Production.
+
 ### 34.1. Detector contextual de referências de imagem e separação de Tópicos
 
 - `lib/questions/image-pending.ts`: detecção contextual que reduz falsos positivos e enumera ocorrências individuais.

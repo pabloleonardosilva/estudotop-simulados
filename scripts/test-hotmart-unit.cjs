@@ -206,7 +206,9 @@ assert.equal(rawFetchCallCount, 0, "Nenhuma chamada deste painel deve usar fetch
 // vínculo por pendência (savePendingMapping + reprocessar), elevando de 6 para 11 chamadas — todas
 // via adminFetch, nenhuma via fetch() puro (checado acima).
 const adminFetchCallCount = (pageClientSource.match(/adminFetch\(/g) || []).length;
-assert.equal(adminFetchCallCount, 11, "As 11 chamadas administrativas conhecidas (carregar, criar vínculo, buscar produto no catálogo, listar catálogo sandbox, listar catálogo produção, alterar status, estorno, reprocessar/ação, recuperar e-mails, salvar vínculo pendente, reprocessar via pendência) devem usar adminFetch.");
+// Reconciliação de compradores (15/10/2026): +3 chamadas — resumo após salvar o vínculo, prévia do
+// modal de compradores e importação em lote.
+assert.equal(adminFetchCallCount, 14, "As 14 chamadas administrativas conhecidas (as 11 anteriores + resumo de compradores, prévia do modal e importação em lote) devem usar adminFetch.");
 
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("pending_mapping"), "process");
 assert.equal(hotmartProcessor.getHotmartCommercialProcessingDecision("refund_reconciliation_required"), "process");
@@ -834,6 +836,384 @@ async function testHotmartExternalClient() {
     assert.deepEqual(filterCatalogMirror("informatica"), ["Jornada PCMG — Informática"]);
     assert.deepEqual(filterCatalogMirror("FB056612"), ["Jornada PCMG — Informática"]);
     assert.deepEqual(filterCatalogMirror("produto inexistente"), []);
+
+    // --- Reconciliação de compradores históricos (Sales API real, somente HOTMART_PRODUCTION_*) ---
+    const { NextResponse } = require("next/server");
+    const DAY = 86_400_000;
+    const nowMs = Date.now();
+    const PRODUCT_ID = 1234567;
+    const PRODUCT_UCODE = "57912595-ba4b-02e0-8c72-71cb71e13136";
+    const saleItem = ({ transaction, status = "APPROVED", email, name = "Comprador", approvedDaysAgo = 10, productId = PRODUCT_ID }) => ({
+      product: { id: productId, name: "Marketing Digital do Zero" },
+      buyer: { name, email, ucode: "BUYER-UCODE" },
+      purchase: { transaction, status, approved_date: nowMs - approvedDaysAgo * DAY, order_date: nowMs - approvedDaysAgo * DAY, price: { value: 97, currency_code: "BRL" }, payment: { type: "PIX", installments_number: 1 } },
+    });
+    const oauthResponse = (token) => new Response(JSON.stringify({ access_token: token, token_type: "bearer", expires_in: 3600 }), { status: 200 });
+
+    // Paginação: percorre todas as páginas por next_page_token, com janela de datas explícita.
+    configureHotmartProduction();
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    const salesRequests = [];
+    global.fetch = async (input, init) => {
+      const url = new URL(String(input));
+      salesRequests.push({ url, init });
+      if (url.pathname.includes("oauth/token")) return oauthResponse("mock-sales-1");
+      const token = url.searchParams.get("page_token");
+      const pages = { "": { items: [saleItem({ transaction: "HP0001", email: "a@x.com" })], page_info: { next_page_token: "T2" } }, T2: { items: [saleItem({ transaction: "HP0002", email: "b@x.com" })], page_info: { next_page_token: "T3" } }, T3: { items: [saleItem({ transaction: "HP0003", email: "C@X.COM" }), saleItem({ transaction: "HP0001", email: "a@x.com" })], page_info: {} } };
+      return new Response(JSON.stringify(pages[token || ""]), { status: 200 });
+    };
+    const pagedSales = await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, now: nowMs });
+    assert.deepEqual(pagedSales.map((sale) => sale.transaction), ["HP0001", "HP0002", "HP0003"], "todas as páginas, sem duplicar transação repetida");
+    assert.equal(pagedSales[2].buyerEmail, "c@x.com");
+    assert.equal(pagedSales[0].approvedAt, new Date(nowMs - 10 * DAY).toISOString());
+    const historyRequests = salesRequests.filter((request) => request.url.pathname === "/payments/api/v1/sales/history");
+    assert.equal(historyRequests.length, 3);
+    assert.equal(historyRequests.every((request) => request.url.origin === "https://developers.hotmart.com" && request.url.searchParams.get("product_id") === String(PRODUCT_ID)), true);
+    assert.equal(historyRequests.every((request) => request.url.searchParams.get("start_date") === String(hotmartProductionCatalog.HOTMART_SALES_HISTORY_START) && request.url.searchParams.get("end_date") === String(nowMs)), true);
+    assert.deepEqual(historyRequests.map((request) => request.url.searchParams.get("page_token")), [null, "T2", "T3"]);
+    assert.equal(salesRequests[0].init.headers.Authorization, "Basic prod-basic-token");
+    assert.equal(salesRequests.some((request) => String(request.url).includes("sandbox.hotmart.com") || String(request.url).includes("test-client-id")), false);
+    // Erro intermediário: falha na 2ª página interrompe tudo (nunca devolve lista parcial).
+    global.fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("oauth/token")) return oauthResponse("mock-sales-2");
+      return url.searchParams.get("page_token") ? new Response("{}", { status: 500 }) : new Response(JSON.stringify({ items: [saleItem({ transaction: "HP0001", email: "a@x.com" })], page_info: { next_page_token: "T2" } }), { status: 200 });
+    };
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID }), (error) => error.code === "unavailable");
+    // Proteção contra loop: token repetido.
+    global.fetch = async (input) => String(input).includes("oauth/token") ? oauthResponse("mock-sales-3") : new Response(JSON.stringify({ items: [], page_info: { next_page_token: "SAME" } }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID }), (error) => error.code === "pagination_loop");
+    // Limite de páginas: tokens sempre novos param no limite defensivo.
+    let endlessPage = 0;
+    global.fetch = async (input) => String(input).includes("oauth/token") ? oauthResponse("mock-sales-4") : new Response(JSON.stringify({ items: [], page_info: { next_page_token: `N${++endlessPage}` } }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    await assert.rejects(() => hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID }), (error) => error.code === "pagination_limit");
+    assert.equal(endlessPage, hotmartProductionCatalog.HOTMART_SALES_MAX_PAGES);
+    // Revalidação por transação: sem janela de datas, com o código informado.
+    let transactionLookupUrl = null;
+    global.fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("oauth/token")) return oauthResponse("mock-sales-5");
+      transactionLookupUrl = url;
+      return new Response(JSON.stringify({ items: [saleItem({ transaction: "HP0009", status: "REFUNDED", email: "z@x.com" })], page_info: {} }), { status: 200 });
+    };
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    const singleSale = await hotmartProductionCatalog.listHotmartProductionSales({ productId: PRODUCT_ID, transaction: "HP0009" });
+    assert.equal(singleSale[0].status, "REFUNDED");
+    assert.equal(transactionLookupUrl.searchParams.get("transaction"), "HP0009");
+    assert.equal(transactionLookupUrl.searchParams.get("start_date"), null);
+    // UCODE → product_id numérico vem do catálogo de produção; lookup antigo continua devolvendo só {ucode,name}.
+    global.fetch = async (input) => String(input).includes("oauth/token") ? oauthResponse("mock-sales-6") : new Response(JSON.stringify({ items: [{ ucode: PRODUCT_UCODE.toUpperCase(), name: "Marketing Digital do Zero", id: PRODUCT_ID }], page_info: {} }), { status: 200 });
+    hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+    assert.deepEqual(await hotmartProductionCatalog.findHotmartProductionProduct(PRODUCT_UCODE), { ucode: PRODUCT_UCODE, name: "Marketing Digital do Zero", id: PRODUCT_ID });
+    assert.deepEqual(await hotmartProductionCatalog.lookupHotmartProductionProductByUcode(PRODUCT_UCODE), { ucode: PRODUCT_UCODE, name: "Marketing Digital do Zero" });
+    const salesCatalogSource = fs.readFileSync("app/lib/server/hotmart/productionCatalog.ts", "utf8");
+    assert.equal(salesCatalogSource.includes("https://developers.hotmart.com/payments/api/v1/sales/history"), true);
+    assert.equal(/HOTMART_CLIENT_ID|HOTMART_HOTTOK|sandbox\.hotmart/.test(salesCatalogSource), false);
+
+    // Banco em memória (somente o subconjunto do PostgREST usado pela reconciliação).
+    function createMemorySupabase(seed) {
+      const db = seed;
+      let sequence = 0;
+      function from(table) {
+        db[table] = db[table] || [];
+        const filters = [];
+        let mode = "select";
+        let payload = null;
+        const run = () => {
+          if (mode === "insert") return payload;
+          const rows = db[table].filter((row) => filters.every((filter) => filter(row)));
+          if (mode === "update") rows.forEach((row) => Object.assign(row, payload));
+          return rows;
+        };
+        const builder = {
+          select: () => builder,
+          eq: (column, value) => { filters.push((row) => row[column] === value); return builder; },
+          in: (column, values) => { filters.push((row) => values.includes(row[column])); return builder; },
+          ilike: (column, value) => { filters.push((row) => String(row[column] || "").toLowerCase() === String(value).toLowerCase()); return builder; },
+          or: (expression) => { const values = [...expression.matchAll(/email\.ilike\."([^"]*)"/g)].map((match) => match[1].toLowerCase()); filters.push((row) => values.includes(String(row.email || "").toLowerCase())); return builder; },
+          is: (column, value) => { filters.push((row) => (row[column] ?? null) === value); return builder; },
+          order: () => builder,
+          limit: () => builder,
+          insert: (rows) => { mode = "insert"; payload = (Array.isArray(rows) ? rows : [rows]).map((row) => ({ id: `${table}-${++sequence}`, ...row })); db[table].push(...payload); return builder; },
+          update: (values) => { mode = "update"; payload = values; return builder; },
+          maybeSingle: async () => ({ data: run()[0] || null, error: null }),
+          single: async () => { const rows = run(); return { data: rows[0] || null, error: rows[0] ? null : { message: "not found" } }; },
+          then: (resolve, reject) => Promise.resolve({ data: run(), error: null }).then(resolve, reject),
+        };
+        return builder;
+      }
+      return { from, rpc: async () => ({ data: null, error: null }), db };
+    }
+
+    let memory = createMemorySupabase({});
+    let currentAdmin = { id: "admin-unit", email: "admin@example.invalid" };
+    cache.set(path.resolve("lib/server/supabaseAdmin.ts"), { exports: { createSupabaseAdminClient: () => memory } });
+    cache.set(path.resolve("lib/server/authGuard.ts"), { exports: { requireAdmin: async () => currentAdmin || NextResponse.json({ ok: false, message: "Não autorizado." }, { status: 401 }) } });
+    for (const modulePath of ["app/lib/server/hotmart/buyerReconciliation.ts", "app/api/admin/hotmart/mappings/[id]/buyers/route.ts", "app/api/admin/hotmart/mappings/[id]/buyers/import/route.ts"]) cache.delete(path.resolve(modulePath));
+    const reconciliation = loadTypeScript("app/lib/server/hotmart/buyerReconciliation.ts");
+    const buyersRoute = loadTypeScript("app/api/admin/hotmart/mappings/[id]/buyers/route.ts");
+    const buyersImportRoute = loadTypeScript("app/api/admin/hotmart/mappings/[id]/buyers/import/route.ts");
+
+    const MAPPING = { id: "mapping-1", hotmart_product_ucode: PRODUCT_UCODE, hotmart_product_name: "Marketing Digital do Zero", destination_type: "jornada", jornada_id: "jornada-1", event_id: null, status: "active" };
+    const seedDatabase = () => ({
+      hotmart_product_mappings: [{ ...MAPPING }],
+      jornadas: [{ id: "jornada-1", title: "Jornada PCMG", status: "published", duration_days: 90, duration_months: null }],
+      students: [
+        { id: "st-enrolled", email: "enrolled@x.com", status: "active" },
+        { id: "st-existing", email: "existing@x.com", status: "active" },
+        { id: "st-dup-1", email: "dup@x.com", status: "active" },
+        { id: "st-dup-2", email: "DUP@x.com", status: "active" },
+        { id: "st-other", email: "outro@x.com", status: "active" },
+      ],
+      student_jornadas: [{ id: "sj-1", student_id: "st-enrolled", jornada_id: "jornada-1", status: "active", started_at: "2026-01-10", expires_at: "2026-04-10", access_origin: "manual" }],
+      hotmart_transactions: [
+        { id: "tx-linked", transaction_code: "HPLINKED", hotmart_product_ucode: PRODUCT_UCODE, student_id: null, processing_status: "processed", refund_status: null, refund_request_state: null, possible_duplicate_student_id: null, resolved_at: null },
+        { id: "tx-pending", transaction_code: "HPPENDING", hotmart_product_ucode: PRODUCT_UCODE, student_id: null, processing_status: "pending_mapping", refund_status: null, refund_request_state: null, possible_duplicate_student_id: null, resolved_at: null },
+        { id: "tx-refund", transaction_code: "HPREFUND", hotmart_product_ucode: PRODUCT_UCODE, student_id: null, processing_status: "blocked_financial", refund_status: "confirmed", refund_request_state: "confirmed", possible_duplicate_student_id: null, resolved_at: null },
+        { id: "tx-otherprod", transaction_code: "HPOTHERPROD", hotmart_product_ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", student_id: null, processing_status: "processed", refund_status: null, refund_request_state: null, possible_duplicate_student_id: null, resolved_at: null },
+        { id: "tx-mismatch", transaction_code: "HPMISMATCH", hotmart_product_ucode: PRODUCT_UCODE, student_id: "st-other", processing_status: "pending_mapping", refund_status: null, refund_request_state: null, possible_duplicate_student_id: null, resolved_at: null },
+        { id: "tx-possibledup", transaction_code: "HPPOSSIBLEDUP", hotmart_product_ucode: PRODUCT_UCODE, student_id: null, processing_status: "pending_mapping", refund_status: null, refund_request_state: null, possible_duplicate_student_id: "st-other", resolved_at: null },
+      ],
+      hotmart_access_links: [{ id: "link-1", hotmart_transaction_id: "tx-linked", student_id: "st-other" }],
+      hotmart_history: [],
+      student_jornada_simulados: [{ id: "sjs-1", student_jornada_id: "sj-1", status: "available" }],
+      simulado_attempts: [{ id: "attempt-1", student_id: "st-enrolled" }],
+    });
+    const parse = (item) => hotmartProductionCatalog.parseHotmartProductionSale(item);
+    const fixtureSales = [
+      parse(saleItem({ transaction: "HPNEW", email: "novo@x.com", name: "Aluno Novo" })),
+      parse(saleItem({ transaction: "HPEXISTING", status: "COMPLETE", email: "EXISTING@x.com" })),
+      parse(saleItem({ transaction: "HPENROLLED", email: "enrolled@x.com" })),
+      parse(saleItem({ transaction: "HPLINKED", email: "linked@x.com" })),
+      parse(saleItem({ transaction: "HPPENDING", email: "pending@x.com" })),
+      parse(saleItem({ transaction: "HPREFUND", email: "refund@x.com" })),
+      parse(saleItem({ transaction: "HPSTATUS", status: "REFUNDED", email: "status@x.com" })),
+      parse(saleItem({ transaction: "HPOTHERPROD", email: "otherprod@x.com" })),
+      parse(saleItem({ transaction: "HPMISMATCH", email: "mismatch@x.com" })),
+      parse(saleItem({ transaction: "HPPOSSIBLEDUP", email: "possibledup@x.com" })),
+      parse(saleItem({ transaction: "HPDUPACCOUNTS", email: "dup@x.com" })),
+      parse(saleItem({ transaction: "HPEXPIRED", email: "expired@x.com", approvedDaysAgo: 400 })),
+      parse(saleItem({ transaction: "HPREPEAT-OLD", email: "repeat@x.com", approvedDaysAgo: 30 })),
+      parse(saleItem({ transaction: "HPREPEAT-NEW", email: "repeat@x.com", approvedDaysAgo: 5 })),
+      parse(saleItem({ transaction: "HPNOMAIL", email: null })),
+    ];
+
+    // Elegibilidade + classificação.
+    assert.deepEqual(reconciliation.HOTMART_RECONCILIATION_ELIGIBLE_STATUSES, ["APPROVED", "COMPLETE"]);
+    memory = createMemorySupabase(seedDatabase());
+    const context = await reconciliation.loadHotmartReconciliationContext(memory, { ...MAPPING }, fixtureSales);
+    const classified = Object.fromEntries(reconciliation.classifyHotmartSales(fixtureSales, context, new Date(nowMs)).map((row) => [row.transaction, row]));
+    const categoryOf = (code) => classified[code].category;
+    assert.equal(categoryOf("HPNEW"), "ready");
+    assert.equal(classified.HPNEW.situation, "Pronto para inserir (nova conta)");
+    assert.equal(classified.HPNEW.access_start, new Date(nowMs - 10 * DAY).toISOString(), "acesso começa na data ORIGINAL da compra");
+    assert.equal(classified.HPNEW.access_end, new Date(nowMs + 80 * DAY).toISOString());
+    assert.equal(categoryOf("HPEXISTING"), "ready", "COMPLETE é elegível e e-mail casa sem diferenciar maiúsculas");
+    assert.equal(classified.HPEXISTING.situation, "Pronto para inserir (conta existente)");
+    assert.equal(categoryOf("HPENROLLED"), "already_inserted");
+    assert.equal(categoryOf("HPLINKED"), "already_inserted");
+    assert.equal(categoryOf("HPPENDING"), "ready", "transação já registrada sem acesso é recuperável");
+    assert.equal(classified.HPPENDING.transaction_registered, true);
+    assert.equal(categoryOf("HPREFUND"), "not_eligible");
+    assert.equal(categoryOf("HPSTATUS"), "not_eligible");
+    for (const code of ["HPOTHERPROD", "HPMISMATCH", "HPPOSSIBLEDUP", "HPDUPACCOUNTS", "HPNOMAIL"]) assert.equal(categoryOf(code), "review", `${code} exige revisão`);
+    assert.equal(categoryOf("HPEXPIRED"), "expired");
+    assert.equal(classified.HPEXPIRED.access_end, new Date(nowMs - 310 * DAY).toISOString(), "expiração calculada da data original, sem novo prazo");
+    assert.equal(categoryOf("HPREPEAT-NEW"), "ready");
+    assert.equal(categoryOf("HPREPEAT-OLD"), "review");
+    for (const status of ["CANCELLED", "CHARGEBACK", "BLOCKED", "EXPIRED", "OVERDUE", "PARTIALLY_REFUNDED", "WAITING_PAYMENT", "STARTED", "PROCESSING_TRANSACTION", "PROTESTED", "UNDER_ANALISYS"]) {
+      assert.equal(reconciliation.classifyHotmartSale({ ...fixtureSales[0], status }, context, new Date(nowMs)).category, "not_eligible", status);
+    }
+    assert.deepEqual(reconciliation.summarizeReconciliationRows(Object.values(classified)), { eligible: 13, already_inserted: 2, not_inserted: 4, review: 6, expired: 1, not_eligible: 2 });
+    assert.equal(reconciliation.getImportBlockedReason({ mapping: MAPPING, destination: { type: "jornada", status: "draft" } }) !== null, true);
+    assert.equal(reconciliation.getImportBlockedReason({ mapping: { ...MAPPING, status: "inactive" }, destination: context.destination }) !== null, true);
+    assert.equal(reconciliation.getImportBlockedReason(context), null);
+
+    // Importação reutiliza o processor (stub) — sem alterar processor, webhook ou refund.
+    const originalProcess = hotmartProcessor.processHotmartEvent;
+    const originalReprocess = hotmartProcessor.reprocessHotmartTransaction;
+    const originalSendEmail = hotmartEmail.sendHotmartTransactionEmail;
+    const processorCalls = [];
+    const reprocessCalls = [];
+    const emailCalls = [];
+    hotmartProcessor.processHotmartEvent = async (supabase, event) => {
+      processorCalls.push(event);
+      let student = supabase.db.students.find((row) => row.email.toLowerCase() === event.buyer.email);
+      if (!student) { student = { id: `st-${event.transactionCode}`, email: event.buyer.email, status: "active" }; supabase.db.students.push(student); }
+      const tx = { id: `tx-${event.transactionCode}`, transaction_code: event.transactionCode, hotmart_product_ucode: event.product.ucode, student_id: student.id, processing_status: "processed", refund_status: null, refund_request_state: null, possible_duplicate_student_id: null, resolved_at: null };
+      supabase.db.hotmart_transactions.push(tx);
+      supabase.db.student_jornadas.push({ id: `sj-${event.transactionCode}`, student_id: student.id, jornada_id: "jornada-1", status: "active", started_at: event.purchase.approvedAt.slice(0, 10) });
+      supabase.db.hotmart_access_links.push({ id: `link-${event.transactionCode}`, hotmart_transaction_id: tx.id, student_id: student.id });
+      return "processed";
+    };
+    hotmartProcessor.reprocessHotmartTransaction = async (supabase, transactionId) => {
+      reprocessCalls.push(transactionId);
+      const tx = supabase.db.hotmart_transactions.find((row) => row.id === transactionId);
+      tx.processing_status = "processed";
+      supabase.db.students.push({ id: "st-pending", email: "pending@x.com", status: "active" });
+      tx.student_id = "st-pending";
+      supabase.db.student_jornadas.push({ id: `sj-${transactionId}`, student_id: "st-pending", jornada_id: "jornada-1", status: "active" });
+      supabase.db.hotmart_access_links.push({ id: `link-${transactionId}`, hotmart_transaction_id: transactionId, student_id: "st-pending" });
+      return "processed";
+    };
+    hotmartEmail.sendHotmartTransactionEmail = async (supabase, transactionId, pending) => { emailCalls.push({ transactionId, pending }); return true; };
+    try {
+      memory = createMemorySupabase(seedDatabase());
+      const preservedEnrollment = JSON.stringify(memory.db.student_jornadas[0]);
+      const saleByCode = Object.fromEntries(fixtureSales.map((sale) => [sale.transaction, sale]));
+      const importSale = (code, extra = {}) => reconciliation.importHotmartHistoricalSale(memory, { sale: saleByCode[code], mapping: { ...MAPPING }, productId: PRODUCT_ID, adminId: "admin-unit", sendAccessEmail: false, ...extra });
+
+      let imported = await importSale("HPNEW");
+      assert.equal(imported.outcome, "inserted");
+      assert.equal(processorCalls.length, 1);
+      assert.equal(processorCalls[0].externalEventId, "historical-reconciliation:HPNEW");
+      assert.equal(processorCalls[0].event, "PURCHASE_APPROVED");
+      assert.equal(processorCalls[0].purchase.approvedAt, new Date(nowMs - 10 * DAY).toISOString(), "processor recebe a data original da compra");
+      assert.equal(processorCalls[0].product.ucode, PRODUCT_UCODE);
+      assert.equal(memory.db.hotmart_webhook_events, undefined, "nenhum webhook fictício é registrado");
+      const historyEntry = memory.db.hotmart_history.find((row) => row.action === "historical_buyer_reconciled");
+      assert.equal(historyEntry.actor_type, "admin");
+      assert.equal(historyEntry.actor_id, "admin-unit");
+      assert.equal(historyEntry.mapping_id, MAPPING.id);
+      assert.equal(historyEntry.metadata.source, "hotmart_sales_history");
+      assert.equal(historyEntry.metadata.transaction_registered_before, false);
+      assert.equal(emailCalls.length, 0, "sem envio de e-mail por padrão");
+      // Idempotência: repetir a mesma venda não chama o processor nem duplica nada.
+      const rowCounts = () => ["hotmart_transactions", "student_jornadas", "hotmart_access_links", "students"].map((table) => memory.db[table].length).join(",");
+      const countsAfterFirst = rowCounts();
+      imported = await importSale("HPNEW");
+      assert.equal(imported.outcome, "already_inserted");
+      assert.equal(processorCalls.length, 1);
+      assert.equal(rowCounts(), countsAfterFirst);
+      // Transação já registrada: reprocessa a partir do próprio registro, sem novo upsert.
+      imported = await importSale("HPPENDING");
+      assert.equal(imported.outcome, "inserted");
+      assert.deepEqual(reprocessCalls, ["tx-pending"]);
+      assert.equal(processorCalls.length, 1);
+      // Já matriculado / não elegível / revisão / expirado: nada é escrito, matrícula e progresso preservados.
+      for (const [code, outcome] of [["HPENROLLED", "already_inserted"], ["HPREFUND", "not_eligible"], ["HPSTATUS", "not_eligible"], ["HPMISMATCH", "review"], ["HPEXPIRED", "expired"], ["HPDUPACCOUNTS", "review"]]) {
+        assert.equal((await importSale(code)).outcome, outcome, code);
+      }
+      assert.equal(processorCalls.length, 1);
+      assert.equal(reprocessCalls.length, 1);
+      assert.equal(JSON.stringify(memory.db.student_jornadas[0]), preservedEnrollment, "matrícula existente intacta");
+      assert.equal(memory.db.student_jornada_simulados.length, 1);
+      assert.equal(memory.db.simulado_attempts.length, 1);
+      // E-mail opcional, somente para inseridos agora.
+      imported = await importSale("HPEXISTING", { sendAccessEmail: true });
+      assert.equal(imported.outcome, "inserted");
+      assert.equal(processorCalls[1].event, "PURCHASE_COMPLETE");
+      assert.deepEqual(emailCalls, [{ transactionId: "tx-HPEXISTING", pending: false }]);
+      assert.equal((await importSale("HPEXISTING", { sendAccessEmail: true })).outcome, "already_inserted");
+      assert.equal(emailCalls.length, 1, "quem já está inserido nunca recebe e-mail novamente");
+      // Destino indisponível bloqueia a escrita.
+      memory = createMemorySupabase(seedDatabase());
+      memory.db.jornadas[0].status = "draft";
+      assert.equal((await importSale("HPNEW")).outcome, "review");
+      assert.equal(processorCalls.length, 2);
+
+      // Rotas: requireAdmin, mapping, revalidação na Hotmart e manipulação do corpo.
+      memory = createMemorySupabase(seedDatabase());
+      const remoteSales = { HPNEW: saleItem({ transaction: "HPNEW", email: "novo@x.com" }), HPWRONGPROD: saleItem({ transaction: "HPWRONGPROD", email: "x@x.com", productId: 7654321 }), HPREFUNDNOW: saleItem({ transaction: "HPREFUNDNOW", status: "REFUNDED", email: "r@x.com" }), HPENROLLED: saleItem({ transaction: "HPENROLLED", email: "enrolled@x.com" }) };
+      const routeRequests = [];
+      global.fetch = async (input) => {
+        const url = new URL(String(input));
+        routeRequests.push(url);
+        if (url.pathname.includes("oauth/token")) return oauthResponse("mock-route");
+        if (url.pathname === "/products/api/v1/products") return new Response(JSON.stringify({ items: [{ ucode: PRODUCT_UCODE, name: "Marketing Digital do Zero", id: PRODUCT_ID }], page_info: {} }), { status: 200 });
+        const code = url.searchParams.get("transaction");
+        if (code) return new Response(JSON.stringify({ items: remoteSales[code] ? [remoteSales[code]] : [], page_info: {} }), { status: 200 });
+        return new Response(JSON.stringify({ items: Object.values(remoteSales).filter((item) => item.purchase.status === "APPROVED"), page_info: {} }), { status: 200 });
+      };
+      hotmartProductionCatalog.resetHotmartProductionAccessTokenCache();
+      const routeParams = (id) => ({ params: Promise.resolve({ id }) });
+      const postImport = (id, body) => buyersImportRoute.POST(new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), routeParams(id));
+
+      currentAdmin = null;
+      assert.equal((await buyersRoute.GET(new Request("http://localhost/api"), routeParams("mapping-1"))).status, 401);
+      assert.equal((await postImport("mapping-1", { transaction_codes: ["HPNEW"] })).status, 401);
+      currentAdmin = { id: "admin-unit", email: "admin@example.invalid" };
+      assert.equal((await buyersRoute.GET(new Request("http://localhost/api"), routeParams("missing"))).status, 404);
+      assert.equal((await postImport("missing", { transaction_codes: ["HPNEW"] })).status, 404);
+      assert.equal((await postImport("mapping-1", { transaction_codes: ["HP'; drop table"] })).status, 400);
+      assert.equal((await postImport("mapping-1", { transaction_codes: Array.from({ length: 11 }, (_, index) => `HPX${index}0`) })).status, 400);
+      assert.equal((await postImport("mapping-1", { transaction_codes: [] })).status, 400);
+
+      const getResponse = await buyersRoute.GET(new Request("http://localhost/api"), routeParams("mapping-1"));
+      const getJson = await getResponse.json();
+      assert.equal(getResponse.status, 200);
+      assert.equal(getJson.summary.not_inserted, 1);
+      assert.equal(getJson.summary.already_inserted, 1);
+      assert.equal(getJson.rows[0].transaction, "HPNEW", "não inseridos primeiro");
+      assert.equal(JSON.stringify(getJson).includes("prod-client-secret") || JSON.stringify(getJson).includes("mock-route"), false, "nenhum segredo/token na resposta");
+      assert.equal(memory.db.hotmart_history.length, 0, "GET é somente leitura");
+
+      const callsBeforeRoute = processorCalls.length;
+      const postResponse = await postImport("mapping-1", { transaction_codes: ["HPNEW", "HPWRONGPROD", "HPREFUNDNOW", "HPENROLLED", "HPMISSING"], destination_id: "jornada-forjada", hotmart_product_ucode: "fb056612-bcc6-4217-9e6d-2a5d1110ac2f", purchase_status: "APPROVED" });
+      const postJson = await postResponse.json();
+      assert.equal(postResponse.status, 200);
+      assert.deepEqual(postJson.results.map((item) => [item.transaction, item.outcome]), [["HPNEW", "inserted"], ["HPWRONGPROD", "not_eligible"], ["HPREFUNDNOW", "not_eligible"], ["HPENROLLED", "already_inserted"], ["HPMISSING", "not_found"]]);
+      assert.equal(processorCalls.length, callsBeforeRoute + 1, "só a venda revalidada e pronta chega ao processor");
+      assert.equal(processorCalls.at(-1).product.ucode, PRODUCT_UCODE, "produto/destino vêm do mapping salvo, nunca do corpo");
+      assert.equal(memory.db.student_jornadas.some((row) => row.jornada_id === "jornada-forjada"), false);
+      assert.deepEqual(postJson.summary, { inserted: 1, already_inserted: 1, review: 3, errors: 0 });
+      assert.equal(memory.db.hotmart_history.some((row) => row.action === "historical_reconciliation_batch" && row.actor_id === "admin-unit" && row.metadata.inserted === 1), true);
+      assert.equal(routeRequests.some((url) => url.hostname === "sandbox.hotmart.com"), false);
+      // Mapping inativo bloqueia a importação.
+      memory.db.hotmart_product_mappings[0].status = "inactive";
+      assert.equal((await postImport("mapping-1", { transaction_codes: ["HPNEW"] })).status, 409);
+    } finally {
+      hotmartProcessor.processHotmartEvent = originalProcess;
+      hotmartProcessor.reprocessHotmartTransaction = originalReprocess;
+      hotmartEmail.sendHotmartTransactionEmail = originalSendEmail;
+      cache.delete(path.resolve("lib/server/authGuard.ts"));
+      cache.delete(path.resolve("lib/server/supabaseAdmin.ts"));
+    }
+
+    // Arquivos comerciais preservados: webhook, processor e refund não referenciam a reconciliação.
+    for (const preserved of ["app/api/webhooks/hotmart/route.ts", "app/lib/server/hotmart/processor.ts", "app/lib/server/hotmart/refund.ts"]) {
+      assert.equal(fs.readFileSync(preserved, "utf8").includes("buyerReconciliation"), false, preserved);
+    }
+
+    // UI: botão permanente, modal, métricas, busca, filtros, seleção, confirmação, progresso e resultado.
+    for (const contract of [
+      'onClick={() => setBuyersTarget({ id: item.id, name: item.hotmart_product_name })}>Ver compradores não inseridos</PremiumButton>',
+      ">Compradores Hotmart</h2>",
+      "Confira quem comprou este produto e ainda não possui acesso ao destino vinculado.",
+      '["Compradores elegíveis", summary.eligible',
+      '["Já inseridos", summary.already_inserted',
+      '["Não inseridos", summary.not_inserted',
+      '["Revisão necessária", summary.review',
+      "Acesso expirado: {summary.expired}",
+      'placeholder="Buscar por nome ou e-mail..."',
+      '["ready", "Não inseridos", summary.not_inserted]',
+      '["expired", "Expirados", summary.expired]',
+      'useState<"all" | BuyerCategory>("ready")',
+      "Selecionar todos os elegíveis visíveis",
+      "Limpar seleção",
+      "const selectable = row.category === \"ready\" && !importBlocked;",
+      "disabled={!selectable || processing}",
+      "`Inserir ${selectedRows.length} selecionado${selectedRows.length === 1 ? \"\" : \"s\"}`",
+      "Os acessos serão calculados a partir da data original de cada compra.",
+      "Enviar e-mail de acesso aos novos alunos inseridos",
+      "const [sendAccessEmail, setSendAccessEmail] = useState(false);",
+      "const BUYER_IMPORT_BATCH_SIZE = 5;",
+      "Processando {progress.done} de {progress.total}...",
+      "inseridos com sucesso",
+      "Ver somente pendentes",
+      "if (processingRef.current || !selectedRows.length || importBlocked) return;",
+      'role="dialog" aria-modal="true" aria-labelledby={titleId} className="et-admin-dark-panel relative flex max-h-[calc(100dvh-1.5rem)]',
+      'if (event.key === "Escape") requestClose();',
+      "if (event.target === event.currentTarget) requestClose();",
+      'if (json.mapping?.id && productSource === "production") void previewBuyers(json.mapping.id, savedName);',
+      "Verificando compradores anteriores de",
+    ]) assert.equal(pageClientSource.includes(contract), true, `Contrato de UI ausente: ${contract}`);
+    const runImportSource = pageClientSource.slice(pageClientSource.indexOf("async function runImport()"), pageClientSource.indexOf("const metrics:"));
+    assert.equal(runImportSource.includes("body: JSON.stringify({ transaction_codes: batch, send_access_email: sendAccessEmail })"), true, "o navegador envia só códigos selecionados");
+    assert.equal(/destination_id|purchase_status|product_ucode/.test(runImportSource.split("body: JSON.stringify")[1].split(")")[0]), false);
 
     // --- Mirrors funcionais (funções puras copiadas do arquivo para teste isolado sem parser JSX) ---
     function formatCurrencyAmountMirror(amount, currency) {

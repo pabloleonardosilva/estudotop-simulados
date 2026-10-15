@@ -6,12 +6,13 @@ import "server-only";
 // ambiente global da integração, e mantém seu próprio cache de token, sem nenhuma dependência
 // do módulo de OAuth do Sandbox (refund.ts).
 // Não é usada pelo webhook, processor ou refund. Na criação de mapping, serve apenas para
-// revalidar (somente leitura) um produto que o Admin escolheu no catálogo Produção.
+// revalidar (somente leitura) um produto que o Admin escolheu no catálogo Produção; na
+// reconciliação de compradores, lê o histórico de vendas (somente GET).
 
 type CachedToken = { value: string; expiresAt: number };
 let cachedProductionToken: CachedToken | null = null;
 
-export type HotmartProductionCatalogCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable";
+export type HotmartProductionCatalogCode = "not_found" | "not_configured" | "unauthorized" | "timeout" | "unavailable" | "pagination_loop" | "pagination_limit";
 
 export class HotmartProductionCatalogError extends Error {
   constructor(public readonly code: HotmartProductionCatalogCode) {
@@ -121,7 +122,7 @@ export async function listHotmartProductionProducts() {
 }
 
 type HotmartProductionProductPage = {
-  items?: Array<{ ucode?: unknown; name?: unknown }>;
+  items?: Array<{ ucode?: unknown; name?: unknown; id?: unknown }>;
   page_info?: { next_page_token?: unknown };
 };
 
@@ -130,11 +131,18 @@ function productionProductFromPage(payload: HotmartProductionProductPage, ucode:
     ? payload.items.find((item) => typeof item.ucode === "string" && item.ucode.toLowerCase() === ucode.toLowerCase())
     : null;
   return product && typeof product.name === "string" && product.name.trim()
-    ? { ucode: String(product.ucode).toLowerCase(), name: product.name.trim() }
+    ? { ucode: String(product.ucode).toLowerCase(), name: product.name.trim(), id: typeof product.id === "number" || (typeof product.id === "string" && /^\d+$/.test(product.id)) ? Number(product.id) : null }
     : null;
 }
 
 export async function lookupHotmartProductionProductByUcode(ucode: string) {
+  const product = await findHotmartProductionProduct(ucode);
+  return { ucode: product.ucode, name: product.name };
+}
+
+// A Sales API da Hotmart filtra por product_id numérico (7 dígitos); o mapping guarda o UCODE.
+// O catálogo /products devolve os dois, então o id é resolvido aqui em tempo de consulta.
+export async function findHotmartProductionProduct(ucode: string) {
   let accessToken: string;
   try {
     accessToken = await getHotmartProductionAccessToken();
@@ -177,6 +185,141 @@ export async function lookupHotmartProductionProductByUcode(ucode: string) {
       if (!pageToken) break;
     }
     throw new HotmartProductionCatalogError("not_found");
+  } catch (error) {
+    if (error instanceof HotmartProductionCatalogError) throw error;
+    if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout");
+    throw new HotmartProductionCatalogError("unavailable");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export type HotmartProductionSale = {
+  transaction: string;
+  status: string;
+  productId: number | null;
+  productName: string | null;
+  buyerName: string | null;
+  buyerEmail: string | null;
+  approvedAt: string | null;
+  orderedAt: string | null;
+  amount: number | null;
+  currency: string | null;
+  paymentType: string | null;
+  installments: number | null;
+};
+
+type HotmartSalesHistoryPage = {
+  items?: Array<{
+    product?: { id?: unknown; name?: unknown };
+    buyer?: { name?: unknown; email?: unknown };
+    purchase?: {
+      transaction?: unknown; status?: unknown; approved_date?: unknown; order_date?: unknown;
+      price?: { value?: unknown; currency_code?: unknown };
+      payment?: { type?: unknown; installments_number?: unknown };
+    };
+  }>;
+  page_info?: { next_page_token?: unknown };
+};
+
+export const HOTMART_SALES_PAGE_SIZE = 50;
+export const HOTMART_SALES_MAX_PAGES = 200;
+// Sem start_date/end_date a API não garante o período retornado; a janela é sempre explícita.
+export const HOTMART_SALES_HISTORY_START = Date.UTC(2010, 0, 1);
+
+function millisToIso(value: unknown) {
+  const number = typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isFinite(number) || number <= 0) return null;
+  const date = new Date(number);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function textOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function parseHotmartProductionSale(item: NonNullable<HotmartSalesHistoryPage["items"]>[number]): HotmartProductionSale | null {
+  const transaction = textOrNull(item.purchase?.transaction);
+  if (!transaction) return null;
+  const productId = item.product?.id;
+  const amount = item.purchase?.price?.value;
+  const installments = item.purchase?.payment?.installments_number;
+  return {
+    transaction,
+    status: (textOrNull(item.purchase?.status) || "").toUpperCase(),
+    productId: typeof productId === "number" || (typeof productId === "string" && /^\d+$/.test(productId)) ? Number(productId) : null,
+    productName: textOrNull(item.product?.name),
+    buyerName: textOrNull(item.buyer?.name),
+    buyerEmail: textOrNull(item.buyer?.email)?.toLowerCase() || null,
+    approvedAt: millisToIso(item.purchase?.approved_date),
+    orderedAt: millisToIso(item.purchase?.order_date),
+    amount: typeof amount === "number" ? amount : null,
+    currency: textOrNull(item.purchase?.price?.currency_code),
+    paymentType: textOrNull(item.purchase?.payment?.type),
+    installments: typeof installments === "number" && installments > 0 ? installments : null,
+  };
+}
+
+// Histórico de vendas REAL (somente leitura), com as mesmas credenciais HOTMART_PRODUCTION_* do catálogo.
+// Percorre todas as páginas via next_page_token, com limite de páginas e detecção de token repetido.
+// Sem `transaction`, a Hotmart devolve só APPROVED e COMPLETE; com `transaction`, devolve qualquer status.
+export async function listHotmartProductionSales(input: { productId: number; transaction?: string; now?: number }) {
+  let accessToken: string;
+  try {
+    accessToken = await getHotmartProductionAccessToken();
+  } catch (error) {
+    if (error instanceof HotmartProductionCatalogError) throw error;
+    throw new HotmartProductionCatalogError("not_configured");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  const sales = new Map<string, HotmartProductionSale>();
+  const seenTokens = new Set<string>();
+  let pageToken: string | null = null;
+  try {
+    for (let page = 0; page < HOTMART_SALES_MAX_PAGES; page += 1) {
+      const url = new URL("https://developers.hotmart.com/payments/api/v1/sales/history");
+      url.searchParams.set("product_id", String(input.productId));
+      url.searchParams.set("max_results", String(HOTMART_SALES_PAGE_SIZE));
+      if (input.transaction) {
+        url.searchParams.set("transaction", input.transaction);
+      } else {
+        url.searchParams.set("start_date", String(HOTMART_SALES_HISTORY_START));
+        url.searchParams.set("end_date", String(input.now ?? Date.now()));
+      }
+      if (pageToken) url.searchParams.set("page_token", pageToken);
+      const send = () => fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      let response = await send();
+      if (response.status === 401) {
+        try {
+          accessToken = await getHotmartProductionAccessToken(true);
+        } catch {
+          throw new HotmartProductionCatalogError("unauthorized");
+        }
+        response = await send();
+      }
+      if (response.status === 401 || response.status === 403) throw new HotmartProductionCatalogError("unauthorized");
+      if (!response.ok) throw new HotmartProductionCatalogError("unavailable");
+      const payload = await response.json() as HotmartSalesHistoryPage;
+      for (const item of Array.isArray(payload.items) ? payload.items : []) {
+        const sale = parseHotmartProductionSale(item);
+        if (sale) sales.set(sale.transaction, sale);
+      }
+      const nextToken = typeof payload.page_info?.next_page_token === "string" && payload.page_info.next_page_token
+        ? payload.page_info.next_page_token
+        : null;
+      if (!nextToken) return [...sales.values()];
+      if (seenTokens.has(nextToken)) throw new HotmartProductionCatalogError("pagination_loop");
+      seenTokens.add(nextToken);
+      pageToken = nextToken;
+    }
+    throw new HotmartProductionCatalogError("pagination_limit");
   } catch (error) {
     if (error instanceof HotmartProductionCatalogError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw new HotmartProductionCatalogError("timeout");

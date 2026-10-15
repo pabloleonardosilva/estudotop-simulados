@@ -1,5 +1,26 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 15/10/2026 - Hotmart: reconciliacao de compradores historicos (commit e push em main; teste real em Production pendente)
+
+Cada vinculo em "Produtos vinculados" ganhou "Ver compradores nao inseridos". O botao consulta as vendas reais do produto (`GET /payments/api/v1/sales/history`, `product_id` resolvido pelo catalogo, paginacao completa por `next_page_token`, somente `HOTMART_PRODUCTION_*`) e classifica cada compra:
+
+- pronto para inserir;
+- ja inserido;
+- revisao necessaria;
+- acesso expirado;
+- nao elegivel.
+
+So os compradores selecionados sao inseridos, em lotes, com revalidacao servidor na Hotmart. A concessao reutiliza o processor, com a data ORIGINAL da compra. Matriculas e progresso existentes nunca sao alterados, e repetir a operacao nao duplica nada. Os expirados nao sao selecionaveis.
+
+- **E-mail:** opcional, desmarcado por padrao.
+- **Apos salvar um vinculo de Producao:** aparece um resumo discreto, e nada e inserido automaticamente.
+- **Fora do escopo:** sem migration (rastreabilidade em `hotmart_history`); webhook, refund e processor nao foram alterados.
+- **Detalhes:** `docs/Sprint-integracao-hotmart.md` (reconciliacao, 15/10/2026).
+
+**Validacao:** `node scripts/test-hotmart-unit.cjs` PASS (paginacao, elegibilidade, classificacao, idempotencia, preservacao, seguranca das rotas e contratos de UI, com HTTP e banco simulados). TypeScript, build e ESLint dos arquivos alterados aprovados.
+
+**Pendente:** Implementado e testado automaticamente; validacao com compradores reais pendente do teste controlado em Production pelo responsavel. Inclui confirmar a aceitacao da janela explicita de datas pela Sales API.
+
 ## 15/10/2026 - Hotmart: correcao do "Salvar vinculo" + catalogo em modal (commit e push em main; validacao em Production pendente)
 
 **Causa:** o POST de mapping revalidava qualquer produto com `HOTMART_CLIENT_*`/`HOTMART_ENVIRONMENT`, inclusive os escolhidos no catalogo Producao (`HOTMART_PRODUCTION_*`). A resposta so aparecia no banner do topo, sem loading.
