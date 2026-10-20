@@ -1,5 +1,41 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 20/10/2026 - Modo Apresentação de Questões: popup Normal / Vertical 9:16 (commit e push em main; homologação visual autenticada pendente)
+
+O botão **Visualizar** do Banco de Questões (card da listagem e editor inline `QuestionEditor`) abre `/questoes/[id]/preview` em uma **janela popup independente**, sem sidebar nem cabeçalho administrativo, com barra de ferramentas própria: **Normal | Vertical**, **Mostrar/Ocultar fonte** (adendo abaixo), **Mostrar/Ocultar gabarito**, **Mostrar/Ocultar comentário** (quando houver), **Área segura** (somente no Vertical) e **Fechar**.
+
+- **Causa do problema original:** a rota não constava em `isFocusRoute` do `AppShell` e era renderizada dentro do shell admin. `.et-admin-dark-content` força, com `!important`, `text-slate-900/950` para branco e `bg-white` para translúcido, mas não altera o fundo arbitrário `bg-[#f5f7fb]` da página, resultando em texto claro sobre fundo claro. Além disso, as classes `prose` não tinham efeito, porque o plugin de tipografia não está instalado.
+- **Normal (padrão):** composição clara, centralizada (`max-w-6xl`), tipografia ampla, logomarca oficial (`public/images/Logo 04 -transp.png`) e chips de Disciplina/Assunto/Banca somente quando existirem.
+- **Vertical:** composição lógica de **1080 × 1920** escalada por `transform: scale()`, até o maior tamanho 9:16 que caiba na janela (nunca acima de 1:1). A proporção é preservada em qualquer tamanho. A zona de leitura reservava inicialmente 250 px no topo, 380 px na base e 96 px nas laterais; a correção de aproveitamento vertical (abaixo) a redefiniu para topo 230, base 96 e laterais 96. A questão rola dentro dessa zona quando não cabe.
+- **Gabarito e comentário** iniciam ocultos e só aparecem por ação do professor, nos dois modos. O estado é preservado ao alternar os modos, sem recarregar a página.
+- **Popup bloqueado:** o Banco exibe aviso `warning` e o editor usa `onError`, ambos com a orientação de permitir pop-ups.
+- **Sem mutações:** a página continua protegida por `requireAdminPage` e faz somente SELECT; o client não chama APIs. Sem migration, sem alteração de API ou RLS.
+- **Fora do escopo:** "Visualizar questão" do modal de sucesso de `/questoes/nova` (arquivo tratado como protegido) não foi alterado. Ele continua abrindo nova guia, que agora também exibe o modo apresentação sem o shell.
+
+**Validação:** `tests/question-presentation-mode.spec.ts` com 19/19 aprovados; repetido 3× (57/57) e com os cenários de redimensionamento, área segura e rolagem repetidos 10× (30/30). O Client Component real foi montado no Chromium com o CSS do build, sem servidor nem banco. A suíte local completa (`PLAYWRIGHT_LOCAL_ONLY=1`) teve 933/933 aprovados. TypeScript, build e `git diff --check` aprovados. ESLint comparado regra a regra com HEAD: nenhum diagnóstico novo (preview 2 → 0; `page.tsx`, Banco e editor mantêm os diagnósticos preexistentes). O smoke autenticado `test:preview` exige o ambiente Supabase de testes e não foi executado.
+
+**Adendo — Mostrar fonte (20/10/2026):** novo controle **Mostrar fonte / Ocultar fonte** (`aria-pressed`), no mesmo padrão de gabarito e comentário, desativado ao abrir. Quando ativo, exibe `Banca • Concurso • Ano` imediatamente antes do enunciado, dentro da composição, nos dois modos (no Vertical, dentro da área segura e da rolagem). Origem dos dados, verificada no código: Banca = `exam_boards.name`; Concurso = `questions.orgao` (rotulado "Órgão" no editor e descrito no importador como "órgão do concurso/prova"; não existe coluna de cargo); Ano = `questions.year`. Campos ausentes são omitidos; sem nenhum, aparece "Fonte não informada". O estado é preservado ao alternar Normal/Vertical, sem afetar gabarito ou comentário. `page.tsx` passou a ler `year` e `orgao` (somente SELECT). O schema remoto não foi consultado. Validação: spec 22/22; suíte local completa 936/936; TypeScript, build, ESLint sem diagnóstico novo e `git diff --check` aprovados.
+
+**Refinamento — ajuste tipográfico do Vertical (20/10/2026):** no Vertical, o conteúdo renderizado é medido (`scrollHeight` x `clientHeight` da área rolável da zona segura, medidas nativas que não sofrem efeito da escala externa). O sistema escolhe o primeiro de 12 níveis em que a questão cabe:
+
+- Nível 0: layout original (enunciado 38 px, alternativas 34 px, fonte 26 px).
+- Níveis 1–3: reduzem somente os espaçamentos (até 55%).
+- Níveis 4–11: reduzem 1 px de enunciado por nível, até os mínimos de 30/28/24 px, mantendo a proporção.
+
+Se nem o mínimo couber, a tipografia fica no mínimo e a área rola. Nada é cortado. O recálculo ocorre ao entrar no Vertical, ao alternar fonte, gabarito ou comentário e ao carregar imagens e fontes; o cálculo sempre parte do nível 0, sem observar o próprio tamanho (sem oscilação nem histerese). Logomarca, zona segura, 9:16, 1080 × 1920 e barra de ferramentas não mudam. O Modo Normal não foi alterado: há teste comparando os estilos computados com uma referência capturada antes do ajuste. Validação: spec 31/31 (bloco do ajuste repetido 5×, 45/45); suíte local completa 945/945; TypeScript, build, ESLint sem diagnóstico novo e `git diff --check` aprovados.
+
+**Correção — aproveitamento máximo da altura do Vertical (20/10/2026):**
+
+- **Causa:** a medição da composição mostrou que a área de leitura era limitada por `VERTICAL_SAFE_AREA.bottom = 380` (`bottom-[380px]`). Essa reserva foi adotada presumindo a sobreposição dos controles do Instagram, e deixava 380 px (19,8%) vazios na base. Além disso, a zona de topo de 250 px centralizava a logomarca de 150 px e sobravam 44 px vazios sob ela. Não havia `max-height` ou `overflow` limitante: a área rolável era `flex-1`.
+- **Correção:** base igual às laterais (96 px, moldura simétrica de acabamento) e topo encerrado 24 px abaixo da logomarca (`VERTICAL_SAFE_AREA` = topo 230, base 96). A logomarca permanece em 56–206 px, com o mesmo tamanho. O guia "Área segura" mostra "Topo: identificação EstudoTOP" e "Base: margem de acabamento".
+- **Resultado:** a área de leitura passou de **1150 para 1454 px** (+304 px; 59,9% → 75,7% da composição). Os níveis do ajuste tipográfico ficaram iguais e passaram a trabalhar sobre a nova altura. Calibração com 5 alternativas curtas: até cerca de 50 palavras, layout original (antes ~25); cerca de 60–80, só espaçamento; cerca de 100–115, 34–32 px; cerca de 120–130, mínimo sem rolagem; a partir de ~140, mínimo com rolagem. Cinco alternativas extensas passaram a caber sem rolagem.
+- **Trade-off:** a base não reserva mais a faixa de legenda/controles do Reels. No post publicado, a interface do Instagram pode sobrepor a parte inferior da questão.
+- **Validação:** spec 35/35 (bloco do Vertical repetido 4×, 52/52); suíte local completa 949/949; TypeScript, build, ESLint sem diagnóstico novo e `git diff --check` aprovados. O Modo Normal continua idêntico à referência.
+
+**Encerramento da Sprint (20/10/2026):** verificações finais repetidas antes do commit: suíte local completa (`PLAYWRIGHT_LOCAL_ONLY=1`) 949/949; `tests/question-presentation-mode.spec.ts` 35/35; TypeScript, build e `git diff --check` aprovados; ESLint sem diagnóstico novo em relação a HEAD. Nenhuma migration criada ou alterada; sem escrita no banco e sem deploy manual. Commit único `feat(questoes): adiciona modo apresentacao normal e vertical` e push para `origin/main`. Validação somente local: nada desta entrega está homologado em produção.
+
+**Pendente:** homologação visual autenticada (popup real com sessão admin, captura no OBS/vMix e conferência em Instagram, incluindo a sobreposição da interface do Reels na base e a captura em 1080 × 1920 reais, que exige janela com essa área útil). O smoke autenticado `test:preview` não foi executado.
+
 ## 15/10/2026 - Cadastro manual de aluno pelo Admin: CPF opcional (commit e push em main; conferencia visual pendente)
 
 Em Admin → Alunos → Novo aluno (`app/admin/alunos/novo/page.tsx` + `POST /api/admin/students/create`), o CPF passou a ser opcional, rotulado "CPF (opcional)". Nome, e-mail e telefone continuam obrigatorios. O telefone, antes opcional, agora tambem e exigido, com ao menos 10 digitos (DDD).

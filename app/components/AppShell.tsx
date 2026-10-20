@@ -81,6 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [isPopupRoute, setIsPopupRoute] = useState(false);
   const isFocusRoute =
     /^\/simulados\/[^/]+\/preview/.test(pathname) ||
+    /^\/questoes\/[^/]+\/preview$/.test(pathname) ||
     /^\/meus-simulados\/[^/]+(\/resultado)?$/.test(pathname) ||
     /^\/admin\/raio-x-provas\/[^/]+\/relatorio/.test(pathname);
   const isStudentSimulationRoute = /^\/meus-simulados\/[^/]+$/.test(pathname);

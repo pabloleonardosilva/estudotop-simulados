@@ -1462,3 +1462,29 @@ Validacoes executadas na Fase C: `npx tsc --noEmit` PASS; `npm run build` PASS; 
 ## 08/10/2026 - Migrations executadas e verificadas
 
 `20261002120000_contextual_simulado_settings.sql` e `20261008120000_restrict_close_stale_user_sessions.sql` foram executadas manualmente pelo proprietario no Supabase operacional (fora do ledger). Verificacao somente leitura confirmou estrutura, permissoes, hash das funcoes identico ao arquivo, backfill de 4/4 tentativas de Jornada e 0 pendencias de liberacao. Registro completo, publicacao do codigo e riscos residuais: `docs/status-atual.md` (08/10/2026).
+
+## 20/10/2026 - Modo Apresentação de Questões (Normal / Vertical 9:16)
+
+**Escopo:** `/questoes/[id]/preview` (Visualizar do Banco de Questões) virou uma janela de apresentação para gravação. Simulados, execução do aluno, Jornadas, Eventos, Resultados, Hotmart, APIs, RLS e migrations não foram alterados.
+
+**Diagnóstico:** a rota era renderizada dentro do shell administrativo escuro. O contrato `.et-admin-dark-content` converte `text-slate-900/950` em branco e `bg-white` em translúcido (`!important`), mas não altera o fundo arbitrário `bg-[#f5f7fb]` da página, produzindo texto claro sobre fundo claro. As classes `prose` não tinham efeito (o plugin de tipografia não está instalado). Correção na causa: a rota passou a ser rota de foco no `AppShell`, sem shell nem overrides.
+
+**Popup:** `openQuestionPresentationWindow` (`lib/questions/question-presentation-window.ts`) é chamado direto no clique. Popup redimensionável e maximizável, com rolagem; o bloqueio é detectado e informado pelo próprio chamador. A autorização continua no servidor (`requireAdminPage`).
+
+**Modos:**
+
+- **Normal** (padrão): composição clara e centralizada, sem proporção imposta, com tipografia de 20–24 px no enunciado.
+- **Vertical:** composição de 1080 × 1920 escalada sem distorção (máximo 1:1). Zona de leitura: topo 250 px (logomarca), base 380 px, laterais 96 px (substituída pela correção de aproveitamento vertical abaixo: topo 230, base 96). Questões extensas rolam dentro da zona (tipografia definida pelo ajuste inteligente abaixo). Não há promessa de que toda questão caiba em uma única tela.
+- Para captura em 1080 × 1920 reais, a janela precisa ter área útil de pelo menos 1080 × 1920 px CSS (ex.: monitor em retrato). Em janelas menores, a composição é exibida reduzida, na mesma proporção, e o software de captura deve reescalar.
+
+**Gabarito/comentário:** ocultos ao abrir; o professor alterna nos dois modos. Sem correção, pontuação ou persistência.
+
+**Limitações conhecidas:** a rolagem interna no Vertical aparece na gravação como rolagem real; as imagens externas dependem da URL salva; o "Visualizar questão" do cadastro (`/questoes/nova`) continua abrindo nova guia (arquivo protegido), já sem o shell.
+
+**Adendo — Mostrar fonte (20/10/2026):** botão na barra do Modo Apresentação que exibe `Banca • Concurso • Ano` antes do enunciado, nos dois modos. Inicia oculto, alterna por clique ou teclado e mantém o estado na troca de modo sem afetar gabarito ou comentário. Concurso corresponde a `questions.orgao` (rotulado "Órgão" no editor); não existe campo de cargo nas questões, e campos ausentes são omitidos (nenhum → "Fonte não informada"). A banca de inspiração (`inspiration_board_id`) não é exibida.
+
+**Refinamento — ajuste tipográfico do Vertical (20/10/2026):** o Vertical mede o conteúdo renderizado e escolhe o primeiro nível que cabe na zona de leitura (cerca de 1150 px lógicos de altura). Primeiro reduz os espaçamentos e depois as fontes, até os mínimos de 30 (enunciado), 28 (alternativas) e 24 px (fonte). Calibração observada com 5 alternativas curtas: até cerca de 25 palavras de enunciado ficam no layout original; cerca de 30–48 palavras só reduzem espaçamento; cerca de 52–70 reduzem a fonte (35 a 31 px); dois parágrafos ou mais ficam no mínimo, com rolagem. Gabarito, comentário e fonte entram no cálculo. A questão nunca é cortada, e o ajuste não garante captura integral numa única imagem. O Modo Normal permanece idêntico (teste de referência).
+
+**Correção — aproveitamento máximo da altura do Vertical (20/10/2026):** a reserva inferior de 380 px (presumida para os controles do Instagram) e 44 px ociosos sob a logomarca limitavam a leitura a 1150 px. Agora a zona é topo 230 (24 px abaixo da logomarca, que não mudou), base 96 e laterais 96, e a leitura passou a 1454 px. O ajuste tipográfico ficou igual e reduz menos: cerca de 50 palavras ficam no layout original e cinco alternativas extensas cabem sem rolagem. A calibração da seção anterior (1150 px) está superada. Contrapartida: no post publicado, a interface do Reels pode sobrepor a parte inferior.
+
+**Encerramento (20/10/2026):** suíte local completa 949/949, spec do Modo Apresentação 35/35, TypeScript, build, ESLint sem diagnóstico novo e `git diff --check` aprovados. Nenhuma migration criada ou alterada. Commit único e push para `origin/main`. Validação apenas local; a homologação visual autenticada (popup com sessão admin, OBS/vMix e Instagram) continua pendente.

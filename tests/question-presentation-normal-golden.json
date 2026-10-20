@@ -1,0 +1,470 @@
+{
+ "1600:q-short": {
+  "article": {
+   "width": "1152px",
+   "paddingTop": "56px",
+   "paddingLeft": "48px"
+  },
+  "source": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "1056px",
+   "height": "24px"
+  },
+  "statement": {
+   "font-size": "24px",
+   "line-height": "40.8px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "40.7969px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "1056px",
+   "height": "100px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "24px",
+   "height": "100px"
+  },
+  "altText": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "936px",
+   "height": "34px"
+  },
+  "badge": {
+   "width": "48px",
+   "height": "48px",
+   "font-size": "18px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "80px"
+  },
+  "comment": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "24px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "334.594px"
+  },
+  "commentText": {
+   "font-size": "18px",
+   "line-height": "30.6px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "1004px",
+   "height": "30.5938px"
+  }
+ },
+ "1600:q-long": {
+  "article": {
+   "width": "1152px",
+   "paddingTop": "56px",
+   "paddingLeft": "48px"
+  },
+  "source": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "1056px",
+   "height": "24px"
+  },
+  "statement": {
+   "font-size": "24px",
+   "line-height": "40.8px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "1518.2px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "1056px",
+   "height": "120px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "24px",
+   "height": "290.797px"
+  },
+  "altText": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "936px",
+   "height": "68px"
+  },
+  "badge": {
+   "width": "48px",
+   "height": "48px",
+   "font-size": "18px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "80px"
+  },
+  "comment": null,
+  "commentText": null
+ },
+ "1600:q-tf": {
+  "article": {
+   "width": "1152px",
+   "paddingTop": "56px",
+   "paddingLeft": "48px"
+  },
+  "source": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "1056px",
+   "height": "24px"
+  },
+  "statement": {
+   "font-size": "24px",
+   "line-height": "40.8px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "40.7969px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "1056px",
+   "height": "88px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "24px",
+   "height": "88px"
+  },
+  "altText": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "952px",
+   "height": "34px"
+  },
+  "badge": {
+   "width": "32px",
+   "height": "32px",
+   "font-size": "16px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "1056px",
+   "height": "80px"
+  },
+  "comment": null,
+  "commentText": null
+ },
+ "700:q-short": {
+  "article": {
+   "width": "700px",
+   "paddingTop": "40px",
+   "paddingLeft": "24px"
+  },
+  "source": {
+   "font-size": "14px",
+   "line-height": "20px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "652px",
+   "height": "20px"
+  },
+  "statement": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "34px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "20px",
+   "padding-left": "20px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "652px",
+   "height": "92px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "20px",
+   "height": "92px"
+  },
+  "altText": {
+   "font-size": "18px",
+   "line-height": "30.6px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "540px",
+   "height": "30.5938px"
+  },
+  "badge": {
+   "width": "48px",
+   "height": "48px",
+   "font-size": "18px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "80px"
+  },
+  "comment": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "24px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "331.188px"
+  },
+  "commentText": {
+   "font-size": "16px",
+   "line-height": "27.2px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "600px",
+   "height": "27.1875px"
+  }
+ },
+ "700:q-long": {
+  "article": {
+   "width": "700px",
+   "paddingTop": "40px",
+   "paddingLeft": "24px"
+  },
+  "source": {
+   "font-size": "14px",
+   "line-height": "20px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "652px",
+   "height": "20px"
+  },
+  "statement": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "1606px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "20px",
+   "padding-left": "20px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "652px",
+   "height": "105.188px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "20px",
+   "height": "230.781px"
+  },
+  "altText": {
+   "font-size": "18px",
+   "line-height": "30.6px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "540px",
+   "height": "61.1875px"
+  },
+  "badge": {
+   "width": "48px",
+   "height": "48px",
+   "font-size": "18px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "80px"
+  },
+  "comment": null,
+  "commentText": null
+ },
+ "700:q-tf": {
+  "article": {
+   "width": "700px",
+   "paddingTop": "40px",
+   "paddingLeft": "24px"
+  },
+  "source": {
+   "font-size": "14px",
+   "line-height": "20px",
+   "padding-top": "0px",
+   "padding-left": "16px",
+   "margin-top": "0px",
+   "margin-bottom": "20px",
+   "width": "652px",
+   "height": "20px"
+  },
+  "statement": {
+   "font-size": "20px",
+   "line-height": "34px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "34px"
+  },
+  "altList": {
+   "margin-top": "40px"
+  },
+  "altCardA": {
+   "font-size": "16px",
+   "line-height": "24px",
+   "padding-top": "20px",
+   "padding-left": "20px",
+   "margin-top": "0px",
+   "margin-bottom": "16px",
+   "width": "652px",
+   "height": "80px"
+  },
+  "altCardB": {
+   "margin-top": "0px",
+   "padding-top": "20px",
+   "height": "80px"
+  },
+  "altText": {
+   "font-size": "18px",
+   "line-height": "30.6px",
+   "padding-top": "0px",
+   "padding-left": "0px",
+   "margin-top": "0px",
+   "margin-bottom": "0px",
+   "width": "556px",
+   "height": "30.5938px"
+  },
+  "badge": {
+   "width": "32px",
+   "height": "32px",
+   "font-size": "16px"
+  },
+  "answer": {
+   "font-size": "18px",
+   "line-height": "28px",
+   "padding-top": "24px",
+   "padding-left": "24px",
+   "margin-top": "32px",
+   "margin-bottom": "0px",
+   "width": "652px",
+   "height": "80px"
+  },
+  "comment": null,
+  "commentText": null
+ }
+}

@@ -35,6 +35,7 @@ import { extractQuestionSubjectIds, primarySubjectId } from "@/lib/questions/que
 import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/evaluated-topics";
 import { findCandidateImageOccurrences, isQuestionImagePending, toggleImageOccurrenceRejection, type ImageOccurrence } from "@/lib/questions/image-pending";
 import { adminFetch } from "@/lib/supabase/adminFetch";
+import { openQuestionPresentationWindow, QUESTION_PRESENTATION_BLOCKED_MESSAGE } from "@/lib/questions/question-presentation-window";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -872,9 +873,9 @@ export default function QuestionEditor({
   }, [onArchived, onError, question.id, question.status]);
 
   const openPreview = useCallback(() => {
-    window.open(`/questoes/${question.id}/preview`, "_blank", "noopener,noreferrer");
     setActionModal(null);
-  }, [question.id]);
+    if (!openQuestionPresentationWindow(question.id)) onError?.(QUESTION_PRESENTATION_BLOCKED_MESSAGE);
+  }, [onError, question.id]);
 
   const generateExplanation = useCallback(async () => {
     if (!stripHtml(question.statement).trim()) { onError?.("Digite o enunciado antes de gerar a explicação."); return; }
@@ -1020,7 +1021,7 @@ export default function QuestionEditor({
           </div>
 
           <button type="button"
-            onClick={() => setActionModal({ title: "Visualizar no simulado", message: "Abrir a prévia desta questão em uma nova aba?", confirmLabel: "Abrir prévia", variant: "preview", onConfirm: openPreview })}
+            onClick={() => setActionModal({ title: "Visualizar no simulado", message: "Abrir esta questão no modo apresentação, em uma janela separada?", confirmLabel: "Abrir apresentação", variant: "preview", onConfirm: openPreview })}
             disabled={processing}
             className="inline-flex items-center gap-2 rounded-xl border border-white/[0.09] bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/60 transition hover:border-orange-400/30 hover:bg-orange-400/[0.08] hover:text-orange-300 disabled:opacity-50">
             <Eye size={14} /> Visualizar

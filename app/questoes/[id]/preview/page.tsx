@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import PreviewQuestaoClient from "./page-client";
 import { requireAdminPage } from "@/lib/server/authGuard";
+
+export const metadata: Metadata = {
+  title: "Modo Apresentação — EstudoTOP Simulados",
+};
 
 type PageProps = {
   params: Promise<{
@@ -23,6 +28,8 @@ export default async function PreviewQuestaoPage({ params }: PageProps) {
       status,
       question_type,
       difficulty_level,
+      year,
+      orgao,
       image_url,
       explanation_text,
       created_at,

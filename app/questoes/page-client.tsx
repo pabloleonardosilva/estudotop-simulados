@@ -64,6 +64,7 @@ import { hasEvaluatedTopics, normalizeEvaluatedTopics } from "@/lib/questions/ev
 import { normalizeTopicComparableName } from "@/lib/utils/text";
 import { adminFetch } from "@/app/lib/supabase/adminFetch";
 import { buildTxtExportFileName, buildTxtExportFilterLine, downloadQuestionsTxt } from "@/lib/questions/txt-export";
+import { openQuestionPresentationWindow, QUESTION_PRESENTATION_BLOCKED_MESSAGE } from "@/lib/questions/question-presentation-window";
 import { bankStatusMatches, bankStatusSelectionCovered, READY_TO_PUBLISH_STATUS, SIMULADO_ANNULLED_FILTER_VALUE } from "@/lib/questions/status-filter";
 import StatusFilterDropdown from "@/app/components/questions/StatusFilterDropdown";
 
@@ -2828,11 +2829,17 @@ export default function QuestoesClient({
                           {inlineEditingIds.includes(question.id) ? "Fechar edição" : "Editar"}
                         </PremiumButton>
 
-                        <Link href={`/questoes/${question.id}/preview`} target="_blank">
-                          <PremiumButton variant="dark" icon={<Eye size={16} />}>
-                            Visualizar
-                          </PremiumButton>
-                        </Link>
+                        <PremiumButton
+                          variant="dark"
+                          icon={<Eye size={16} />}
+                          onClick={() => {
+                            if (!openQuestionPresentationWindow(question.id)) {
+                              setFeedback({ type: "warning", message: QUESTION_PRESENTATION_BLOCKED_MESSAGE });
+                            }
+                          }}
+                        >
+                          Visualizar
+                        </PremiumButton>
 
                         {question.status !== "published" && (
                           <PremiumButton

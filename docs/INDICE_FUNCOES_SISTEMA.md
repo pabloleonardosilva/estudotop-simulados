@@ -4493,3 +4493,59 @@ O fechamento técnico do delta não libera merge: permanecem as 20 falhas 401 pe
 - Migration 20261002120000_contextual_simulado_settings.sql: executada manualmente pelo proprietario no Supabase operacional em 08/10/2026 (fora do ledger; o comentario "PREPARADA, NAO EXECUTADA" do arquivo e historico e o arquivo nao foi alterado); 12 colunas, 2 triggers, constraints e funcoes verificados por leitura com hash identico ao arquivo; consume_student_owl_help atomico, sequencia fechada independente de feedback, autorizacao definitiva de Jornada.
 - Testes novos: tests/contextual-simulado-settings.spec.ts. Contratos antigos atualizados em context-attempt-limits, student-journey-access e jornada-admin-create.
 - Descricao completa, inventario, compatibilidade, riscos e implantacao: docs/Sprint-simulados.md, Fase B de 02/10/2026. Sem commit/push/deploy ou alteracao remota.
+
+## 35. Modo Apresentação de Questões — popup Normal / Vertical 9:16 (2026-10-20)
+
+**Função:** apresentar uma questão do Banco em janela independente e limpa para videoaulas, compartilhamento de tela e Reels/Stories/Shorts. Somente leitura.
+
+**Arquivos:**
+
+- `app/questoes/[id]/preview/page.tsx`: Server Component. `requireAdminPage()` antes da leitura, somente SELECT e `metadata.title` da janela.
+- `app/questoes/[id]/preview/page-client.tsx`: barra de ferramentas (`role="toolbar"`, seletor `role="radiogroup"` com setas/Home/End) e composições `data-presentation-composition="normal|vertical"`. Exporta `VERTICAL_CANVAS`, `VERTICAL_SAFE_AREA` e `computeVerticalScale`.
+- `lib/questions/question-presentation-window.ts`: `openQuestionPresentationWindow(id)` abre o popup (`popup=yes,resizable=yes,scrollbars=yes`, nome por questão, opener desfeito) e retorna `false` quando o navegador bloqueia. Também expõe `QUESTION_PRESENTATION_BLOCKED_MESSAGE` e `getQuestionPresentationPath`.
+- Pontos de entrada: `app/questoes/page-client.tsx` (botão "Visualizar" do card) e `app/components/questions/QuestionEditor.tsx` (`openPreview`, após confirmação).
+- `app/components/AppShell.tsx`: `/^\/questoes\/[^/]+\/preview$/` em `isFocusRoute`, renderizado sem sidebar, header e `.et-admin-dark-content`.
+
+**Regras:**
+
+- Normal é o modo padrão. A alternância não recarrega a página nem perde o estado (gabarito, comentário).
+- Vertical: área lógica fixa 1080 × 1920; a moldura recebe `1080·s × 1920·s` com `s = min(1, largura/1080, altura/1920)` via ResizeObserver. A zona de leitura (`VERTICAL_SAFE_AREA`: topo 230, base 96, laterais 96; vigente desde a seção 35.3) contém metadados, enunciado e alternativas; a logomarca (`VERTICAL_LOGO`: 56–206 px) ocupa a faixa superior. O guia "Área segura" é opcional e fica desligado por padrão.
+- Conteúdo extenso rola dentro da zona segura (`data-presentation-scroll="vertical"`); a página em si não rola no Vertical.
+- HTML rico: o normalizador local decodifica entidades e normaliza `<mark>`; cor, fonte, tamanho e altura de linha inline são neutralizados (contraste); destaques, listas, tabelas e imagens são preservados e limitados à largura. O normalizador anterior trocava **todo** `</span>` por `</mark>`, o que podia deixar spans abertos; esse trecho foi removido.
+- Gabarito e comentário iniciam ocultos. Certo/Errado segue a convenção existente (Errado correto em vermelho, coruja no marcador).
+- A barra de ferramentas e o guia de área segura ficam fora da composição capturável.
+- Botões da barra são nativos: `PremiumButton` não aceita `role`/`aria-checked`/`aria-pressed`/`onKeyDown` nem tamanho compacto (mesmo critério do preview anterior e do `PrintToolbar`).
+- `PrintSlideFrame` (16:9, módulo de impressão de Simulados) não foi alterado nem reutilizado; o Vertical aplica o mesmo princípio de "maior retângulo que cabe".
+
+**Testes:** `tests/question-presentation-mode.spec.ts` (19 casos). O Client Component real é montado no Chromium com o CSS do `npm run build`, servido por `context.route`, sem servidor nem banco. Requer build atualizado.
+
+**Não implementado nesta Sprint:** exportação de imagem/vídeo; alteração do "Visualizar questão" de `/questoes/nova`.
+
+### 35.1 Adendo — Mostrar fonte (2026-10-20)
+
+- Controle **Mostrar fonte / Ocultar fonte** na barra (`aria-pressed`, mouse e teclado), desativado a cada nova abertura e preservado ao alternar Normal/Vertical. Independente de gabarito e comentário.
+- Linha `data-presentation-source` ("FONTE" em laranja + `Banca • Concurso • Ano`), primeiro elemento do corpo da questão: imediatamente antes do enunciado (imagem do enunciado, quando houver, e texto), menor que o enunciado. No Vertical fica dentro da zona segura e rola com o conteúdo.
+- Fontes dos dados: `exam_boards.name` (Banca), `questions.orgao` (Concurso — único campo de concurso nas questões; não há cargo) e `questions.year` (Ano). `buildPresentationData` → `sourceParts`. Campos vazios ou só com espaços são omitidos; sem nenhum → "Fonte não informada". Não há formatador de origem preexistente; a banca é exibida como gravada.
+- `page.tsx` lê `year, orgao` no SELECT existente. Sem API, migration ou escrita.
+- Testes 13–15 em `tests/question-presentation-mode.spec.ts` (total 22).
+
+### 35.2 Refinamento — ajuste tipográfico inteligente do Vertical (2026-10-20)
+
+- `VerticalFitScroll` (em `page-client.tsx`) envolve a área rolável do Vertical (`data-presentation-scroll="vertical"`). Aplica propriedades `--vt-*` (fontes de enunciado, alternativas, fonte, gabarito e comentário; espaçamentos entre blocos, entre alternativas, padding dos cartões e margens de fonte/gabarito/comentário) e expõe `data-fit-level` e `data-fit-overflow`.
+- `VERTICAL_FIT_LEVELS` (12 níveis) e `VERTICAL_FONT_LIMITS` (enunciado 38→30, alternativas 34→28, fonte 26→24) são exportados. Os níveis 0–3 mantêm as fontes e reduzem os espaçamentos (100/85/70/55%); os níveis 4–11 reduzem o enunciado 1 px por vez, com alternativas, fonte, gabarito (32 px de base) e comentário (30 px de base) proporcionais.
+- Medição: o primeiro nível em que `scrollHeight <= clientHeight`. São medidas de layout na composição nativa, independentes do `transform: scale` da moldura. Sem nível que caiba, usa o último e mantém a rolagem.
+- Gatilhos: montagem do Vertical, mudança de fonte/gabarito/comentário (`fitKey`), eventos `load`/`error` de imagens em captura e `document.fonts.ready`. Não há ResizeObserver no conteúdo: redimensionar a janela não muda o nível, porque a composição é fixa em 1080 × 1920.
+- Inalterados: logomarca, zona segura, chips de metadados, tamanho máximo das imagens, badges, o 9:16 e todo o Modo Normal (`VARIANT_STYLES.normal`).
+- Testes F1–F9 em `tests/question-presentation-mode.spec.ts`. A referência do Normal fica em `tests/question-presentation-normal-golden.json` (estilos computados capturados antes do ajuste, em 1600 e 700 px de largura).
+
+### 35.3 Correção — aproveitamento máximo da altura do Vertical (2026-10-20)
+
+- Causa medida: `VERTICAL_SAFE_AREA.bottom = 380` (reserva presumida para os controles do Instagram), além de 44 px ociosos sob a logomarca na zona de topo de 250 px. A área de leitura ficava com 1150 de 1920 px.
+- Vigente: `VERTICAL_LOGO = { top: 56, height: 150 }` (logomarca posicionada explicitamente, mesma posição e tamanho) e `VERTICAL_SAFE_AREA = { top: 230, bottom: 96, left: 96, right: 96 }`. A base é igual às laterais, formando uma moldura simétrica. A área rolável vai de 370 a 1824 px (1454 px de altura).
+- O ajuste tipográfico (35.2) não mudou: os mesmos 12 níveis agora medem contra a nova altura. `verticalFitVariables(level)` foi exportada (mapeamento puro nível → `--vt-*`) para os testes provarem que o nível escolhido é o mínimo necessário.
+- Testes G1–G4: geometria (logomarca, topo, base de 96 px, altura ≥ 1450 px e > 75% da composição), redução mínima (o nível anterior ao escolhido transborda), antes x depois (40 palavras: nível 2 → 0; 60 palavras: 35 → 38 px; cinco alternativas extensas sem rolagem) e questão muito longa com fonte, gabarito e comentário rolando até o último bloco.
+
+### 35.4 Encerramento (2026-10-20)
+
+- Total vigente de `tests/question-presentation-mode.spec.ts`: 35 casos (19 iniciais + 3 da fonte + 9 do ajuste tipográfico + 4 da altura útil).
+- Verificações finais: suíte local completa 949/949, spec 35/35, TypeScript, build, ESLint sem diagnóstico novo e `git diff --check`. Sem migration. Homologação visual autenticada pendente (ver `docs/status-atual.md`).
