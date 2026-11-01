@@ -695,6 +695,49 @@ Desde 2026-10-09 essas funções ficam em `report-model.ts` (movidas sem altera�
 | `getQuestionTags` | Extrai tags de uma questão. |
 | `moduleTags` | Consolida tags por assunto. |
 
+### 13.7 Fidelidade do conteúdo das questões (2026-11-01)
+
+**Defeito corrigido:** a seção "Lista de questões da prova" exibia enunciado e alternativas com `cleanText`, que apaga todas as tags e junta as quebras. Na Tela e no PDF, as questões perdiam parágrafos, afirmativas em linhas próprias, negrito/itálico e **as imagens**. No Raio-X, as imagens ficam embutidas no próprio HTML do `statement` como `<img src="data:image/png;base64,…">`, coladas pelo editor e, às vezes, envoltas em `span data-image-marker` com estilo vermelho. O banco e a Revisão estavam corretos; a perda acontecia só na exibição do relatório.
+
+**Correção:** função pura `parseRichContent(html, reserva)` em `report-model.ts`. Ela converte o HTML em linhas de trechos (`RichLine`/`RichRun`): texto com negrito, itálico e sublinhado, imagem com largura e altura reais, ou aviso de imagem não suportada, sempre na ordem original. Tela e PDF consomem a mesma estrutura.
+
+- **Preparação idêntica à da Revisão:** antes da análise aplica `insertListItemBreaks` (de `HtmlWithImageMarkers`). Em texto sem tags de bloco, `\n` e itens "I –"/"1." viram quebras, como na tela de revisão.
+- **Segurança:** o tokenizador é próprio, sem dependência nova, e tolerante a HTML malformado.
+  - O conteúdo de `script`, `style`, `iframe`, `svg`, `object` etc. é descartado.
+  - Todos os atributos são ignorados, exceto `src`/`width`/`height` de imagem e largura/altura em px do `style`. Os estilos do marcador vermelho não chegam ao relatório.
+  - Só passam imagens `data:image/png|jpeg;base64`, e só quando a assinatura do arquivo confere com o formato declarado (as dimensões são lidas do cabeçalho PNG ou do marcador SOF do JPEG).
+  - URL externa, SVG, GIF, WebP, base64 inválido e formato divergente viram o aviso `UNSUPPORTED_IMAGE_TEXT`, exibido no lugar da imagem. Nada é omitido em silêncio.
+  - O texto vazio usa a reserva ("Enunciado não disponível." / "Alternativa sem texto.").
+- **Versão Tela:** `RichText`/`RichRunView` em `relatorio/page-client.tsx` montam a estrutura com elementos React, sem `dangerouslySetInnerHTML`. CSS mínimo:
+  - `.rx-rich-line` (linha em bloco; linha vazia = `<br/>`);
+  - `.rx-rich-image` (`max-width:100%`, `height:auto`, alinhamento ao centro do texto);
+  - `.rx-rich-indent`, `.rx-rich-marker` e `.rx-rich-missing`;
+  - os seletores da bolinha da alternativa passaram a `.rx-alternative > span`, para não atingir as linhas internas.
+  Cartões, cores e tipografia estão inalterados.
+- **Versão PDF (`raio-x-report-pdf.ts`):**
+  - `buildRaioXPdfModel` entrega `statement: RichLine[]` e `alternatives[].content: RichLine[]`.
+  - Uma linha sem imagem é um único `Text` com trechos aninhados.
+  - Uma linha com imagem flui palavra a palavra numa fileira com quebra, com `Image` na posição original (px→pt 0,75, proporcional, limitada à largura e a 45% da altura útil); essa fileira fica indivisível quando a estimativa permite.
+  - O texto continua vetorial e selecionável.
+  - **Itálico:** a família exclusiva não tem arquivo itálico. Trechos em itálico usam a Helvetica Oblique padrão do PDF (sem arquivo e sem registro global) quando cabem na codificação WinAnsi; os demais seguem em Inter reta.
+- **Paginação:**
+  - `estimateRichHeight` soma as linhas, e a altura da maior imagem conta por fileira.
+  - `estimateQuestionHeadHeight`, `estimateQuestionHeight` e `estimateAlternativeHeight` usam essa estimativa.
+  - No card quebrável, `splitRichLead` substitui `splitLead` no enunciado: as linhas que cabem vão para o topo indivisível com o cabeçalho e o restante quebra. Uma única linha longa só de texto é dividida em fim de frase, preservando os estilos. Nada é descartado.
+  - `renderWithOversizeGuard` foi mantido sem alteração.
+- `cleanText` e seus demais consumidores (tags, assuntos, parecer, `clampText`) **não foram alterados**.
+
+**Validação (2026-11-01):** Raio-X real "PC-MG — Analista da Polícia Civil — 2022 — FUMARC", lido do banco somente leitura.
+
+- **Q2** (guia Referências): 4/4 ícones na ordem I–IV, 23 linhas, idêntica à Revisão.
+- **Q4:** 3/3 ícones no meio das frases, negrito em I/II/III.
+- **Q1:** texto puro com `\n`, com as mesmas quebras da Revisão.
+- Tela renderizada com o componente real: 4 `<img>` na Q2, 0 `data-image-marker`, 0 px de rolagem horizontal em 390 px.
+- PDF real: 15 páginas (antes 12), sem modo seguro. Páginas 1–6 idênticas às do HEAD; 78/78 linhas de texto de enunciados e alternativas presentes no PDF e na Tela. Páginas das questões inspecionadas visualmente.
+- `tests/raio-x-report-pdf` 39/39 (21 novos: imagens PNG/JPEG, quebras, negrito/itálico, `\n`, listas, malformado, perigoso, não suportado, entidades, imagem grande, 20 imagens, 7.000 caracteres, modo seguro, Tela SSR).
+- **Pendente:** teste autenticado no navegador.
+- **Observação pré-existente:** neste Raio-X a página 2 do PDF contém só os KPIs, também no HEAD; não alterado.
+
 ---
 
 ## 14. VARIAÇÕES DE QUESTÕES
@@ -1105,6 +1148,10 @@ O clone possui lógica delicada de duas fases. Nunca salvar antes da aprovação
 
 - Auditoria: o botão e o `exportPdf()` documentados nunca existiram no código desde a baseline Git; `captureReportPdf.ts` e `raio-x-pdf.ts` sem consumidores.
 - Implementadas Versão Tela e Versão PDF (seção 13.5): gerador `raio-x-report-pdf.ts` (React PDF), regras compartilhadas em `report-model.ts`, Inter estática exclusiva do PDF, capa provisória substituível, paginação com guarda contra corte.
+
+### 2026-11-01
+
+- Relatório final (Tela e PDF) passou a preservar parágrafos, quebras, negrito/itálico e imagens embutidas das questões via `parseRichContent` compartilhado (seção 13.7). Antes, `cleanText` achatava o HTML e apagava as imagens; banco e Revisão não foram alterados.
 
 ### 2026-06-07 e 2026-06-08
 

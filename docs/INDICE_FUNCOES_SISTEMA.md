@@ -955,7 +955,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, 
 - `app/admin/raio-x-provas/nova/page-client.tsx` — formulário de nova análise, normalização, autocomplete/cadastro inline, validação, `StepPct` e overlay de processamento.
 - `app/admin/raio-x-provas/[id]/page-client.tsx` — arquivo central do módulo: revisão, `QuestionCard`, `QuestionNavigator`, publicação direta, variações, Raio-X final, Parecer EstudoTOP, relatório e clone.
 - `app/admin/raio-x-provas/[id]/relatorio/page-client.tsx` — Versão Tela: landing page final do relatório, backgrounds oficiais e infográficos (não exporta PDF).
-- `app/admin/raio-x-provas/[id]/relatorio/report-model.ts` — regras puras do relatório usadas pela Tela e pelo PDF (`buildReportSummary`, `computeDominance`, `moduleTags`, `getQuestionTags`, `questionCorrectLabel`, `isAlternativeCorrect`, `parecerText`, `safeFileName` etc.).
+- `app/admin/raio-x-provas/[id]/relatorio/report-model.ts` — regras puras do relatório usadas pela Tela e pelo PDF (`buildReportSummary`, `computeDominance`, `moduleTags`, `getQuestionTags`, `questionCorrectLabel`, `isAlternativeCorrect`, `parecerText`, `safeFileName` etc.). Desde 2026-11-01 também `parseRichContent` (HTML da questão → linhas seguras com negrito/itálico/imagens PNG/JPEG embutidas; consumida pela Tela e pelo PDF), `richLineText`, `richContentText` e `UNSUPPORTED_IMAGE_TEXT` — ver `docs/Sprint-raio-x.md` §13.7.
 - `app/admin/raio-x-provas/[id]/relatorio/pdf-version-client.tsx` — Versão PDF: gera, pré-visualiza (o próprio Blob) e baixa o PDF.
 - `app/lib/pdf/raio-x-report-pdf.ts` — gerador oficial do PDF do Raio-X (React PDF, A4). Ver §18.5.
 - `app/admin/raio-x-provas/types.ts` — tipos do módulo.
@@ -3047,6 +3047,8 @@ Exemplo correto:
 | `RaioXReportDocument` | Documento A4: capa, KPIs, seções 01–05, fechamento; cabeçalho/rodapé fixos com "Página X de Y". |
 | `topicBlocks` / `questionBlocks` | Card indivisível quando cabe; senão topo indivisível + restante quebrável. |
 | `splitLead` | Divide texto longo em fim de frase (abertura + restante) sem descartar conteúdo. |
+| `richLineElements` / `richRunStyle` | (2026-11-01) Renderiza `RichLine[]` de `parseRichContent`: linha só de texto = `Text` com trechos aninhados; linha com imagem = fileira palavra a palavra com `Image` na posição original. Itálico em Helvetica Oblique padrão do PDF quando o texto cabe na WinAnsi. |
+| `estimateRichHeight` / `richImageSize` / `splitRichLead` | (2026-11-01) Estimativa com imagens (px→pt, proporcional, ≤ largura e ≤ 45% da altura útil) e divisão do enunciado estruturado no card quebrável sem descartar linhas, imagens ou texto. |
 | `renderWithOversizeGuard` | Rede de segurança contra corte: refaz em modo seguro ou falha com `RAIO_X_PDF_OVERSIZE_ERROR`. |
 | `registerRaioXPdfFonts` | Família exclusiva `EstudoTopRaioXInter` (Inter estática Regular/Bold). |
 | `RAIO_X_PDF_ASSETS` / `loadRaioXPdfAssets` | Capa oficial `coverImage: "/images/pdf/capa_raiox.png"` e mascote, reduzidos no navegador; o banner da capa composta só é carregado se a capa oficial falhar; falha de imagem não bloqueia o PDF. |
@@ -3057,7 +3059,7 @@ Exemplo correto:
 
 **Regras:** não alterar registros globais do React PDF (`Font.registerHyphenationCallback`/`registerEmojiSource`); não usar `wrap={false}` em bloco de altura variável sem estimativa + guarda; não usar `minPresenceAhead` (comportamento inconsistente comprovado); Versão Tela e PDF devem ler as mesmas regras de `report-model.ts`.
 
-**Testes:** `tests/raio-x-report-pdf/raio-x-report-pdf.spec.ts` (18). Detalhes da validação em `docs/Sprint-raio-x.md` §13.5.
+**Testes:** `tests/raio-x-report-pdf/raio-x-report-pdf.spec.ts` (39 desde 2026-11-01). Detalhes da validação em `docs/Sprint-raio-x.md` §13.5 e §13.7 (fidelidade de formatação e imagens das questões).
 
 ### 18.6 Markdown renderer do relatório
 

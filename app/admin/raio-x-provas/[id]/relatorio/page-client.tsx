@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -29,7 +29,6 @@ import {
   alternativeLabel,
   buildReportSummary,
   cleanBlockText,
-  cleanText,
   difficultyLabel,
   difficultyTone,
   getQuestionTags,
@@ -39,11 +38,15 @@ import {
   moduleTags,
   paragraphList,
   parecerText,
+  parseRichContent,
   profileIndicators,
   questionCorrectLabel,
   questionDisplayNumber,
+  UNSUPPORTED_IMAGE_TEXT,
   unique,
   type ReportProps,
+  type RichLine,
+  type RichRun,
 } from "./report-model";
 
 const HERO_BG = "/images/raio-x/bg-simulados1.png";
@@ -85,6 +88,28 @@ function TopicTagList({ tags, limit = 18 }: { tags?: string[] | null; limit?: nu
       ))}
     </ul>
   );
+}
+
+function RichRunView({ run }: { run: RichRun }) {
+  if (run.kind === "image") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className="rx-rich-image" src={run.src} width={run.width} height={run.height} alt="" />;
+  }
+  if (run.kind === "unsupported-image") return <em className="rx-rich-missing">{UNSUPPORTED_IMAGE_TEXT}</em>;
+  let node: ReactNode = run.text;
+  if (run.underline) node = <u>{node}</u>;
+  if (run.italic) node = <em>{node}</em>;
+  if (run.bold) node = <strong>{node}</strong>;
+  return <>{node}</>;
+}
+
+function RichText({ lines }: { lines: RichLine[] }) {
+  return lines.map((line, index) => (
+    <span className={`rx-rich-line${line.indent ? " rx-rich-indent" : ""}`} key={index}>
+      {line.marker ? <strong className="rx-rich-marker">{line.marker}</strong> : null}
+      {line.runs.length || line.marker ? line.runs.map((run, runIndex) => <RichRunView run={run} key={runIndex} />) : <br />}
+    </span>
+  ));
 }
 
 function MiniLogo() {
@@ -359,7 +384,7 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
                         <small>{difficultyLabel(diff)}</small>
                       </div>
                     </div>
-                    <p className="rx-question-statement">{cleanText(q.statement || "Enunciado não disponível.")}</p>
+                    <p className="rx-question-statement"><RichText lines={parseRichContent(q.statement, "Enunciado não disponível.")} /></p>
                     {alternatives.length ? (
                       <div className="rx-alternatives">
                         {alternatives.map((alt, altIndex) => {
@@ -368,7 +393,7 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
                           return (
                             <div className={`rx-alternative ${isCorrect ? "correct" : ""}`} key={`${q.id}-${label}-${altIndex}`}>
                               <span>{label}</span>
-                              <p>{cleanText(alt.text || "Alternativa sem texto.")}</p>
+                              <p><RichText lines={parseRichContent(alt.text, "Alternativa sem texto.")} /></p>
                             </div>
                           );
                         })}
@@ -535,10 +560,15 @@ const STYLES = `
   .rx-question-card > *:not(.rx-annulled-watermark) { position: relative; z-index: 1; }
   .rx-alternatives { display: grid; gap: 9px; margin: 18px 0; }
   .rx-alternative { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: flex-start; border-radius: 14px; border: 1px solid rgba(255,255,255,.09); background: rgba(3,8,15,.33); padding: 11px 13px; }
-  .rx-alternative span { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: rgba(255,255,255,.06); color: #dbeafe; font-weight: 1000; }
+  .rx-rich-line { display: block; overflow-wrap: break-word; }
+  .rx-rich-indent { padding-left: 18px; }
+  .rx-rich-marker { margin-right: 6px; }
+  .rx-rich-image { display: inline-block; max-width: 100%; height: auto; vertical-align: middle; margin: 2px 3px; }
+  .rx-rich-missing { opacity: .75; }
+  .rx-alternative > span { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: rgba(255,255,255,.06); color: #dbeafe; font-weight: 1000; }
   .rx-alternative p { margin: 0; color: #dbeafe; font-size: 13px; line-height: 1.55; }
   .rx-alternative.correct { border-color: rgba(34,197,94,.36); background: rgba(34,197,94,.08); }
-  .rx-alternative.correct span { color: #052e16; background: #22c55e; }
+  .rx-alternative.correct > span { color: #052e16; background: #22c55e; }
   .rx-question-foot { display: flex; gap: 12px; flex-wrap: wrap; }
   .rx-question-foot span { display: inline-flex; align-items: center; gap: 6px; color: #cbd5e1; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.1); padding: 8px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
   .rx-question-foot strong { color: #fb923c; }

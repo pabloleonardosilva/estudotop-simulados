@@ -3,6 +3,8 @@
 // Funções puras, sem React: as duas versões leem exatamente os mesmos números,
 // textos e ordenações. Os helpers foram movidos sem alteração de page-client.tsx.
 
+import { insertListItemBreaks } from "@/app/components/ui/HtmlWithImageMarkers";
+
 export const COLORS = ["#f97316", "#38bdf8", "#8b5cf6", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#ef4444"];
 
 export const PARECER_FALLBACK = "Para esse perfil de prova, o aluno deve estudar com equilíbrio, reforçar os assuntos de maior dificuldade e treinar questões objetivas com regularidade.";
@@ -81,6 +83,258 @@ export function cleanBlockText(value?: string | null) {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// ─── Conteúdo rico das questões (enunciado e alternativas) ───────────────────
+// O HTML salvo pelo editor vira linhas de trechos (texto com negrito/itálico/sublinhado e
+// imagens embutidas), na ordem original. Tela e PDF renderizam essa estrutura com
+// componentes próprios: nenhum HTML do banco é injetado. Tokenizador tolerante a HTML
+// malformado; conteúdo de script/style/iframe etc. é descartado, atributos são ignorados
+// (exceto src/width/height de imagem) e só imagens PNG/JPEG embutidas (data URI) passam.
+
+export type RichRun =
+  | { kind: "text"; text: string; bold?: boolean; italic?: boolean; underline?: boolean }
+  | { kind: "image"; src: string; width: number; height: number }
+  | { kind: "unsupported-image" };
+
+export type RichLine = { runs: RichRun[]; marker?: string; indent?: number };
+
+export const UNSUPPORTED_IMAGE_TEXT = "[Imagem não exibida: formato não suportado no relatório]";
+
+const SKIP_CONTENT_TAGS = new Set(["script", "style", "iframe", "object", "embed", "noscript", "template", "svg", "math", "textarea", "select", "head", "title", "video", "audio", "canvas", "frameset", "frame", "applet"]);
+const BLOCK_TAGS = new Set(["p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "table", "thead", "tbody", "tfoot", "blockquote", "section", "article", "header", "footer", "pre", "hr", "dl", "dt", "dd", "figure", "figcaption", "caption"]);
+const BOLD_TAGS = new Set(["b", "strong"]);
+const ITALIC_TAGS = new Set(["i", "em"]);
+
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú",
+  agrave: "à", Agrave: "À", acirc: "â", ecirc: "ê", ocirc: "ô", Acirc: "Â", Ecirc: "Ê", Ocirc: "Ô",
+  atilde: "ã", otilde: "õ", Atilde: "Ã", Otilde: "Õ", ccedil: "ç", Ccedil: "Ç", uuml: "ü", Uuml: "Ü",
+  ordm: "º", ordf: "ª", deg: "°", ndash: "–", mdash: "—", hellip: "…", laquo: "«", raquo: "»",
+  ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", bull: "•", middot: "·", times: "×", divide: "÷",
+  ge: "≥", le: "≤", ne: "≠", rarr: "→", larr: "←", copy: "©", reg: "®", trade: "™", sup2: "²", sup3: "³", frac12: "½", euro: "€",
+};
+
+function decodeEntities(value: string) {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (match, entity: string) => {
+    if (entity[0] === "#") {
+      const code = entity[1] === "x" || entity[1] === "X" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    }
+    return NAMED_ENTITIES[entity] ?? match;
+  });
+}
+
+function parseAttributes(source: string) {
+  const attrs: Record<string, string> = {};
+  let i = 0;
+  while (i < source.length) {
+    while (i < source.length && /[\s/]/.test(source[i])) i++;
+    const nameStart = i;
+    while (i < source.length && !/[\s=/>]/.test(source[i])) i++;
+    const name = source.slice(nameStart, i).toLowerCase();
+    if (!name) { i++; continue; }
+    while (i < source.length && /\s/.test(source[i])) i++;
+    let value = "";
+    if (source[i] === "=") {
+      i++;
+      while (i < source.length && /\s/.test(source[i])) i++;
+      const quote = source[i];
+      if (quote === '"' || quote === "'") {
+        const end = source.indexOf(quote, i + 1);
+        value = source.slice(i + 1, end < 0 ? source.length : end);
+        i = end < 0 ? source.length : end + 1;
+      } else {
+        const valueStart = i;
+        while (i < source.length && !/\s/.test(source[i])) i++;
+        value = source.slice(valueStart, i);
+      }
+    }
+    if (!(name in attrs)) attrs[name] = decodeEntities(value);
+  }
+  return attrs;
+}
+
+function decodeBase64Prefix(base64: string, maxBytes: number) {
+  const chars = base64.slice(0, Math.ceil(maxBytes / 3) * 4);
+  const binary = atob(chars.slice(0, chars.length - (chars.length % 4)));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// Dimensões naturais lidas do próprio arquivo (cabeçalho PNG / marcador SOF do JPEG).
+// Também confirma que o conteúdo é do formato declarado: o React PDF falha com imagem inválida.
+function embeddedImageSize(format: "png" | "jpeg", base64: string) {
+  try {
+    if (format === "png") {
+      const b = decodeBase64Prefix(base64, 24);
+      const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      if (b.length < 24 || signature.some((byte, i) => b[i] !== byte)) return null;
+      const width = ((b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19]) >>> 0;
+      const height = ((b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23]) >>> 0;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    const b = decodeBase64Prefix(base64, 262144);
+    if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+    let o = 2;
+    while (o + 9 < b.length) {
+      if (b[o] !== 0xff) return null;
+      const marker = b[o + 1];
+      if (marker === 0xff) { o++; continue; }
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const height = (b[o + 5] << 8) | b[o + 6];
+        const width = (b[o + 7] << 8) | b[o + 8];
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+      o += 2 + ((b[o + 2] << 8) | b[o + 3]);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function cssPixels(style: string | undefined, property: "width" | "height") {
+  const match = style?.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([\\d.]+)px`, "i"));
+  return match ? Number(match[1]) : NaN;
+}
+
+function imageRun(attrs: Record<string, string>): RichRun {
+  const src = String(attrs.src || "").replace(/\s+/g, "");
+  const match = src.match(/^data:image\/(png|jpe?g);base64,([a-z0-9+/]+={0,2})$/i);
+  if (!match) return { kind: "unsupported-image" };
+  const natural = embeddedImageSize(match[1].toLowerCase() === "png" ? "png" : "jpeg", match[2]);
+  if (!natural) return { kind: "unsupported-image" };
+  const declaredW = Number(attrs.width) || cssPixels(attrs.style, "width");
+  const declaredH = Number(attrs.height) || cssPixels(attrs.style, "height");
+  const width = declaredW > 0 ? declaredW : declaredH > 0 ? (declaredH * natural.width) / natural.height : natural.width;
+  const height = declaredH > 0 ? declaredH : (width * natural.height) / natural.width;
+  return { kind: "image", src, width: Math.round(width), height: Math.round(height) };
+}
+
+export function parseRichContent(value?: string | null, fallback = ""): RichLine[] {
+  // Mesma preparação da Revisão (HtmlWithImageMarkers): em texto sem tags de bloco, "\n" e
+  // itens "I –" / "1." viram quebras de linha.
+  const html = insertListItemBreaks(String(value ?? ""));
+  const lines: RichLine[] = [];
+  let line: RichLine = { runs: [] };
+  let bold = 0;
+  let italic = 0;
+  let underline = 0;
+  const lists: Array<{ ordered: boolean; count: number }> = [];
+
+  const isEmpty = (l: RichLine) => !l.runs.length && !l.marker;
+  const breakLine = () => { lines.push(line); line = { runs: [] }; };
+  const blockBoundary = () => { if (!isEmpty(line)) breakLine(); };
+  const pushText = (raw: string) => {
+    let text = raw.replace(/[ \t\n\r\f]+/g, " ");
+    const last = line.runs[line.runs.length - 1];
+    if (!last || (last.kind === "text" && last.text.endsWith(" "))) text = text.replace(/^ /, "");
+    text = decodeEntities(text);
+    if (!text) return;
+    const style = { bold: bold > 0, italic: italic > 0, underline: underline > 0 };
+    if (last?.kind === "text" && Boolean(last.bold) === style.bold && Boolean(last.italic) === style.italic && Boolean(last.underline) === style.underline) {
+      last.text += text;
+      return;
+    }
+    line.runs.push({ kind: "text", text, ...(style.bold ? { bold: true } : {}), ...(style.italic ? { italic: true } : {}), ...(style.underline ? { underline: true } : {}) });
+  };
+
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf("<", i);
+    if (lt < 0) { pushText(html.slice(i)); break; }
+    if (lt > i) pushText(html.slice(i, lt));
+    if (html.startsWith("<!--", lt)) {
+      const end = html.indexOf("-->", lt + 4);
+      i = end < 0 ? html.length : end + 3;
+      continue;
+    }
+    const tagMatch = /^<(\/?)([a-z][a-z0-9-]*)/i.exec(html.slice(lt, lt + 40));
+    if (!tagMatch) {
+      if (html[lt + 1] === "!" || html[lt + 1] === "?") {
+        const end = html.indexOf(">", lt);
+        i = end < 0 ? html.length : end + 1;
+      } else {
+        pushText("<");
+        i = lt + 1;
+      }
+      continue;
+    }
+    // Fim da tag respeitando atributos entre aspas.
+    let j = lt + tagMatch[0].length;
+    let quote = "";
+    while (j < html.length && (quote || html[j] !== ">")) {
+      if (quote) { if (html[j] === quote) quote = ""; } else if (html[j] === '"' || html[j] === "'") quote = html[j];
+      j++;
+    }
+    if (j >= html.length) { pushText(html.slice(lt)); break; }
+    const closing = tagMatch[1] === "/";
+    const name = tagMatch[2].toLowerCase();
+    i = j + 1;
+
+    if (!closing && SKIP_CONTENT_TAGS.has(name)) {
+      const end = html.toLowerCase().indexOf(`</${name}`, i);
+      if (end < 0) { i = html.length; continue; }
+      const close = html.indexOf(">", end);
+      i = close < 0 ? html.length : close + 1;
+      continue;
+    }
+    if (name === "br") { breakLine(); continue; }
+    if (name === "img") {
+      if (!closing) line.runs.push(imageRun(parseAttributes(html.slice(lt + tagMatch[0].length, j))));
+      continue;
+    }
+    const delta = closing ? -1 : 1;
+    if (BOLD_TAGS.has(name)) { bold = Math.max(0, bold + delta); continue; }
+    if (ITALIC_TAGS.has(name)) { italic = Math.max(0, italic + delta); continue; }
+    if (name === "u") { underline = Math.max(0, underline + delta); continue; }
+    if (name === "ul" || name === "ol") {
+      blockBoundary();
+      if (closing) lists.pop();
+      else lists.push({ ordered: name === "ol", count: 0 });
+      continue;
+    }
+    if (name === "li") {
+      blockBoundary();
+      if (!closing) {
+        const list = lists[lists.length - 1];
+        if (list) list.count++;
+        line.marker = list?.ordered ? `${list.count}.` : "•";
+        if (lists.length > 1) line.indent = lists.length - 1;
+      }
+      continue;
+    }
+    if ((name === "td" || name === "th") && !closing) {
+      if (line.runs.length) pushText(" | ");
+      continue;
+    }
+    if (BLOCK_TAGS.has(name)) blockBoundary();
+  }
+  if (!isEmpty(line)) lines.push(line);
+
+  for (const l of lines) {
+    const last = l.runs[l.runs.length - 1];
+    if (last?.kind === "text") {
+      last.text = last.text.replace(/ +$/, "");
+      if (!last.text) l.runs.pop();
+    }
+  }
+  while (lines.length && isEmpty(lines[0])) lines.shift();
+  while (lines.length && isEmpty(lines[lines.length - 1])) lines.pop();
+  if (!lines.length && fallback) return [{ runs: [{ kind: "text", text: fallback }] }];
+  return lines;
+}
+
+export function richLineText(line: RichLine) {
+  return line.runs.map((run) => (run.kind === "text" ? run.text : run.kind === "unsupported-image" ? UNSUPPORTED_IMAGE_TEXT : "")).join("");
+}
+
+// Texto puro da estrutura (uma linha por quebra), para estimativas e verificações.
+export function richContentText(lines: RichLine[]) {
+  return lines.map((line) => `${line.marker ? `${line.marker} ` : ""}${richLineText(line)}`).join("\n");
 }
 
 export function clampText(value: string, max = 220) {

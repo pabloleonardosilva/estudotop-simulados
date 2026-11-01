@@ -6,7 +6,6 @@ import {
   alternativeLabel,
   buildReportSummary,
   cleanBlockText,
-  cleanText,
   difficultyLabel,
   difficultyTone,
   getQuestionTags,
@@ -16,12 +15,17 @@ import {
   moduleTags,
   paragraphList,
   parecerText,
+  parseRichContent,
   profileIndicators,
   questionCorrectLabel,
   questionDisplayNumber,
+  richLineText,
   safeFileName,
+  UNSUPPORTED_IMAGE_TEXT,
   unique,
   type ReportProps,
+  type RichLine,
+  type RichRun,
 } from "@/app/admin/raio-x-provas/[id]/relatorio/report-model";
 
 // PDF premium do relatório final do Raio-X (Versão PDF de /admin/raio-x-provas/[id]/relatorio).
@@ -178,10 +182,11 @@ export function buildRaioXPdfModel(props: ReportProps) {
         difficulty: diff ? `${diff.toFixed(1)} / 5` : "—",
         difficultyLabel: difficultyLabel(diff),
         difficultyColor: difficultyTone(diff),
-        statement: cleanText(q.statement || "Enunciado não disponível."),
+        // Mesma estrutura da Versão Tela (parseRichContent): linhas, negrito/itálico e imagens.
+        statement: parseRichContent(q.statement, "Enunciado não disponível."),
         alternatives: alternatives.map((alt, altIndex) => {
           const label = alternativeLabel(alt, altIndex);
-          return { label, text: cleanText(alt.text || "Alternativa sem texto."), correct: isAlternativeCorrect(q, alt, label) };
+          return { label, content: parseRichContent(alt.text, "Alternativa sem texto."), correct: isAlternativeCorrect(q, alt, label) };
         }),
         correct: questionCorrectLabel(q),
         hasImage: Boolean(q.has_image),
@@ -211,20 +216,54 @@ function estimateChipRows(tags: string[], width: number, fontSize: number) {
 }
 
 const Q_INNER_W = CONTENT_W - 30;
+const ALT_TEXT_W = Q_INNER_W - 30;
 const TOPIC_COL_W = Math.floor((CONTENT_W - 32 - 14) / 2) - 2;
 
+// Imagens das questões: px do editor → pt (96 → 72 dpi), proporcionais, limitadas à
+// largura disponível e a 45% da altura útil.
+const PX_TO_PT = 0.75;
+const RICH_IMAGE_MAX_H = CONTENT_H * 0.45;
+const RICH_IMAGE_GAP = 4;
+
+export function richImageSize(run: Extract<RichRun, { kind: "image" }>, maxWidth: number) {
+  const width = run.width * PX_TO_PT;
+  const height = run.height * PX_TO_PT;
+  const scale = Math.min(1, maxWidth / width, RICH_IMAGE_MAX_H / height);
+  return { width: width * scale, height: height * scale };
+}
+
+function estimateRichLineHeight(line: RichLine, width: number, fontSize: number, lineHeight: number) {
+  const lineH = fontSize * lineHeight;
+  const textWidth = `${line.marker ? `${line.marker} ` : ""}${richLineText(line)}`.length * fontSize * 0.52;
+  const images = line.runs.flatMap((run) => (run.kind === "image" ? [richImageSize(run, width)] : []));
+  if (!images.length) return Math.max(1, Math.ceil(textWidth / width)) * lineH;
+  // Linha com imagem flui palavra a palavra: cada fileira tem a altura da maior imagem;
+  // 10% de folga na largura pela quebra entre palavras.
+  const used = textWidth + images.reduce((sum, image) => sum + image.width + RICH_IMAGE_GAP, 0);
+  const rows = Math.max(1, Math.ceil(used / (width * 0.9)));
+  return rows * Math.max(lineH, ...images.map((image) => image.height + RICH_IMAGE_GAP));
+}
+
+// Mesma convenção de estimateTextHeight: uma linha extra por bloco.
+export function estimateRichHeight(lines: RichLine[], width: number, fontSize: number, lineHeight: number) {
+  return lines.reduce((sum, line) => sum + estimateRichLineHeight(line, width, fontSize, lineHeight), fontSize * lineHeight);
+}
+
+function estimateQuestionHeaderHeight(question: RaioXPdfModel["questions"][number]) {
+  return 34 + estimateChipRows(question.tags, Q_INNER_W - 140, 7) * 15;
+}
+
 export function estimateQuestionHeadHeight(question: RaioXPdfModel["questions"][number]) {
-  const header = 34 + estimateChipRows(question.tags, Q_INNER_W - 140, 7) * 15;
-  return header + estimateTextHeight(question.statement, Q_INNER_W, 9.6, 1.45);
+  return estimateQuestionHeaderHeight(question) + estimateRichHeight(question.statement, Q_INNER_W, 9.6, 1.45);
 }
 
 export function estimateQuestionHeight(question: RaioXPdfModel["questions"][number]) {
-  const alternatives = question.alternatives.reduce((sum, alt) => sum + estimateAlternativeHeight(alt.text) + 4, 0);
+  const alternatives = question.alternatives.reduce((sum, alt) => sum + estimateAlternativeHeight(alt.content) + 4, 0);
   return estimateQuestionHeadHeight(question) + alternatives + 48;
 }
 
-export function estimateAlternativeHeight(text: string) {
-  return estimateTextHeight(text, Q_INNER_W - 30, 9, 1.4) + 11;
+export function estimateAlternativeHeight(content: RichLine[]) {
+  return estimateRichHeight(content, ALT_TEXT_W, 9, 1.4) + 11;
 }
 
 export function estimateTopicHeight(topic: RaioXPdfModel["topics"][number]) {
@@ -328,12 +367,17 @@ const s = StyleSheet.create({
   qDiffValue: { fontSize: 11, fontWeight: 700 },
   qDiffLabel: { fontSize: 7.5, color: C.muted, marginTop: 2 },
   qAnnulledBadge: { marginTop: 4, fontSize: 7, fontWeight: 700, color: C.orangeDeep, letterSpacing: 1 },
-  qStatement: { fontSize: 9.6, color: C.ink, lineHeight: 1.45, marginBottom: 8 },
+  qStatement: { marginBottom: 8 },
+  qStatementText: { fontSize: 9.6, color: C.ink, lineHeight: 1.45 },
   alt: { flexDirection: "row", gap: 8, borderRadius: 7, borderWidth: 0.8, borderColor: C.line, backgroundColor: C.soft, paddingVertical: 4.5, paddingHorizontal: 8, marginBottom: 4 },
   altCorrect: { borderColor: C.greenLine, backgroundColor: C.greenSoft },
   altLetter: { width: 16, height: 16, borderRadius: 8, backgroundColor: C.line, color: C.ink, fontSize: 7.5, fontWeight: 700, textAlign: "center", paddingTop: 4 },
   altLetterCorrect: { backgroundColor: C.green, color: C.white },
-  altText: { flex: 1, fontSize: 9, color: C.body, lineHeight: 1.4 },
+  altText: { flex: 1 },
+  altTextLine: { fontSize: 9, color: C.body, lineHeight: 1.4 },
+  richRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
+  richIndent: { paddingLeft: 14 },
+  richMissing: { color: C.muted },
   qFoot: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 3 },
   qFootChip: { fontSize: 7.5, color: C.body, backgroundColor: C.soft, borderWidth: 0.8, borderColor: C.line, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   qFootStrong: { fontWeight: 700, color: C.orangeDeep },
@@ -368,6 +412,109 @@ function noHyphenation(word: string) {
 type TProps = React.ComponentProps<typeof Text>;
 function T(props: TProps) {
   return h(Text, { hyphenationCallback: noHyphenation, ...props });
+}
+
+// ─── Conteúdo rico das questões ──────────────────────────────────────────────
+// Itálico: a família exclusiva só tem Inter Regular/Bold (sem arquivo itálico). Trechos em
+// itálico usam a Helvetica Oblique padrão do PDF (sem arquivo, sem registro global) quando
+// todos os caracteres cabem na codificação WinAnsi; caso contrário seguem em Inter reta.
+const WIN_ANSI_TEXT = /^[ -~ -ÿ–—‘’‚“”„†‡•…‰‹›€™]*$/;
+
+function richRunStyle(run: Extract<RichRun, { kind: "text" }>) {
+  return {
+    ...(run.bold ? { fontWeight: 700 as const } : {}),
+    ...(run.underline ? { textDecoration: "underline" as const } : {}),
+    ...(run.italic && WIN_ANSI_TEXT.test(run.text) ? { fontFamily: "Helvetica", fontStyle: "italic" as const } : {}),
+  };
+}
+
+type RichTextStyle = { fontSize: number; lineHeight: number };
+
+// Linha sem imagem: um único Text com trechos aninhados (quebra e justificação naturais).
+// Linha com imagem: fluxo palavra a palavra numa fileira com quebra, imagens na ordem
+// original, alinhadas ao centro do texto; indivisível quando a estimativa permite.
+function richLineElements(lines: RichLine[], textStyle: RichTextStyle, maxWidth: number, keyPrefix: string) {
+  const space = textStyle.fontSize * 0.28;
+  return lines.map((line, index) => {
+    const key = `${keyPrefix}-${index}`;
+    const indent = line.indent ? s.richIndent : {};
+    const marker = line.marker ? `${line.marker} ` : null;
+    if (!line.runs.length && !marker) return h(T, { key, style: textStyle }, " ");
+    if (!line.runs.some((run) => run.kind === "image")) {
+      return h(
+        T,
+        { key, style: [textStyle, indent] },
+        marker ? h(Text, { style: { fontWeight: 700 } }, marker) : null,
+        ...line.runs.map((run, runIndex) =>
+          run.kind === "text" ? h(Text, { key: runIndex, style: richRunStyle(run) }, run.text) : h(Text, { key: runIndex, style: s.richMissing }, UNSUPPORTED_IMAGE_TEXT),
+        ),
+      );
+    }
+    type Part = { el: (spaceAfter: boolean) => React.ReactElement; spaced?: boolean } | "space";
+    const parts: Part[] = [];
+    if (marker) parts.push({ el: (sp) => h(T, { style: [textStyle, { fontWeight: 700, marginRight: sp ? space : 0 }] }, marker.trim()) }, "space");
+    for (const run of line.runs) {
+      if (run.kind === "image") {
+        const size = richImageSize(run, maxWidth);
+        parts.push({ el: (sp) => h(Image, { src: run.src, style: { width: size.width, height: size.height, marginVertical: RICH_IMAGE_GAP / 2, marginRight: sp ? space : 1, marginLeft: 1 } }) });
+      } else {
+        const text = run.kind === "text" ? run.text : UNSUPPORTED_IMAGE_TEXT;
+        const style = run.kind === "text" ? richRunStyle(run) : s.richMissing;
+        for (const token of text.split(/(\s+)/)) {
+          if (!token) continue;
+          if (/^\s+$/.test(token)) parts.push("space");
+          else parts.push({ el: (sp) => h(T, { style: [textStyle, style, { marginRight: sp ? space : 0 }] }, token) });
+        }
+      }
+    }
+    const items = parts.flatMap((part, i) => (part === "space" ? [] : [h(React.Fragment, { key: i }, part.el(parts[i + 1] === "space"))]));
+    const unbreakable = estimateRichLineHeight(line, maxWidth, textStyle.fontSize, textStyle.lineHeight) <= ALTERNATIVE_UNBREAKABLE_LIMIT;
+    return h(View, { key, style: [s.richRow, indent], wrap: !unbreakable }, ...items);
+  });
+}
+
+// Divide um texto de linha (sem imagens) no ponto dado, preservando o estilo de cada trecho.
+function splitRichLineAt(line: RichLine, offset: number): [RichLine, RichLine] {
+  const first: RichRun[] = [];
+  const second: RichRun[] = [];
+  let consumed = 0;
+  for (const run of line.runs) {
+    const text = run.kind === "text" ? run.text : run.kind === "unsupported-image" ? UNSUPPORTED_IMAGE_TEXT : "";
+    const start = consumed;
+    consumed += text.length;
+    if (consumed <= offset) first.push(run);
+    else if (start >= offset) second.push(run);
+    else if (run.kind === "text") {
+      first.push({ ...run, text: run.text.slice(0, offset - start).trimEnd() });
+      second.push({ ...run, text: run.text.slice(offset - start).trimStart() });
+    } else second.push(run);
+  }
+  return [{ ...line, runs: first }, { runs: second, ...(line.indent ? { indent: line.indent } : {}) }];
+}
+
+// Equivalente de splitLead para o enunciado estruturado: as primeiras linhas que cabem no
+// orçamento vão para o topo indivisível (com o cabeçalho); o resto quebra livremente. Se a
+// primeira linha sozinha passar do orçamento e for só texto, é dividida em fim de frase.
+// Nada é descartado: as duas partes somam as linhas originais.
+export function splitRichLead(lines: RichLine[], budget: number, width = Q_INNER_W, fontSize = 9.6, lineHeight = 1.45): [RichLine[], RichLine[]] {
+  const lead: RichLine[] = [];
+  let used = fontSize * lineHeight;
+  for (const line of lines) {
+    const height = estimateRichLineHeight(line, width, fontSize, lineHeight);
+    if (lead.length && used + height > budget) break;
+    lead.push(line);
+    used += height;
+  }
+  const rest = lines.slice(lead.length);
+  if (lead.length === 1 && used > budget && !lead[0].runs.some((run) => run.kind === "image")) {
+    const text = richLineText(lead[0]);
+    const [leadText, restText] = splitLead(text);
+    if (restText) {
+      const [first, second] = splitRichLineAt(lead[0], leadText.length);
+      return [[first], [second, ...rest]];
+    }
+  }
+  return [lead, rest];
 }
 
 function RunningHeader({ identification }: { identification: string }) {
@@ -651,12 +798,14 @@ function questionBlocks(question: RaioXPdfModel["questions"][number], safeMode: 
       {
         key: `${question.id}-${alt.label}-${index}`,
         style: alt.correct ? [s.alt, s.altCorrect] : s.alt,
-        wrap: safeMode || estimateAlternativeHeight(alt.text) > ALTERNATIVE_UNBREAKABLE_LIMIT,
+        wrap: safeMode || estimateAlternativeHeight(alt.content) > ALTERNATIVE_UNBREAKABLE_LIMIT,
       },
       h(T, { style: alt.correct ? [s.altLetter, s.altLetterCorrect] : s.altLetter }, alt.label),
-      h(T, { style: s.altText }, alt.text),
+      h(View, { style: s.altText }, ...richLineElements(alt.content, s.altTextLine, ALT_TEXT_W, `${question.id}-alt-${index}`)),
     ),
   );
+  const statement = (lines: RichLine[], key: string, continues = false) =>
+    h(View, { key, style: [s.qStatement, continues ? { marginBottom: 0 } : {}] }, ...richLineElements(lines, s.qStatementText, Q_INNER_W, key));
   const foot = h(
     View,
     { key: "foot", style: s.qFoot, wrap: false },
@@ -672,7 +821,7 @@ function questionBlocks(question: RaioXPdfModel["questions"][number], safeMode: 
         // Marca d'água só em card indivisível: num card que atravessa páginas a posição absoluta não é confiável.
         question.annulled ? h(View, { style: s.watermark }, h(T, { style: s.watermarkText }, "ANULADA")) : null,
         head,
-        h(T, { style: s.qStatement }, question.statement),
+        statement(question.statement, `${question.id}-statement`),
         ...alternatives,
         foot,
       ),
@@ -683,10 +832,10 @@ function questionBlocks(question: RaioXPdfModel["questions"][number], safeMode: 
   // Card quebrável: topo indivisível com cabeçalho + enunciado (ou a abertura do enunciado,
   // se ele sozinho passar de meia página); o restante quebra entre alternativas.
   const statementFits = estimateQuestionHeadHeight(question) <= HEAD_GROUP_LIMIT;
-  const [leadText, restText] = statementFits ? [question.statement, ""] : splitLead(question.statement);
+  const [leadLines, restLines] = statementFits ? [question.statement, []] : splitRichLead(question.statement, HEAD_GROUP_LIMIT - estimateQuestionHeaderHeight(question));
   return {
-    lead: h(View, { style: [...cardStyle, SPLIT_TOP], wrap: false }, head, h(T, { style: [s.qStatement, restText ? { marginBottom: 0 } : {}] }, leadText)),
-    rest: [h(View, { key: `${question.id}-rest`, style: [...cardStyle, SPLIT_REST] }, restText ? h(T, { style: s.qStatement }, restText) : null, ...alternatives, foot)],
+    lead: h(View, { style: [...cardStyle, SPLIT_TOP], wrap: false }, head, statement(leadLines, `${question.id}-statement`, restLines.length > 0)),
+    rest: [h(View, { key: `${question.id}-rest`, style: [...cardStyle, SPLIT_REST] }, restLines.length ? statement(restLines, `${question.id}-statement-rest`) : null, ...alternatives, foot)],
   };
 }
 
