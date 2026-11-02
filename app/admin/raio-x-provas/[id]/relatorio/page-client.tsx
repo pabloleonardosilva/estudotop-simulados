@@ -8,6 +8,7 @@ import {
   Award,
   BarChart3,
   BookOpen,
+  Check,
   CheckCircle2,
   ClipboardList,
   Copy,
@@ -15,11 +16,14 @@ import {
   Image as ImageIcon,
   Layers3,
   Loader2,
+  Moon,
   Save,
   ShieldCheck,
   Sparkles,
   Star,
+  Sun,
   Target,
+  TriangleAlert,
   Trophy,
 } from "lucide-react";
 import { adminFetch } from "@/lib/supabase/adminFetch";
@@ -42,9 +46,11 @@ import {
   profileIndicators,
   questionCorrectLabel,
   questionDisplayNumber,
+  REPORT_THEME_COOKIE,
   UNSUPPORTED_IMAGE_TEXT,
   unique,
   type ReportProps,
+  type ReportTheme,
   type RichLine,
   type RichRun,
 } from "./report-model";
@@ -52,6 +58,70 @@ import {
 const HERO_BG = "/images/raio-x/bg-simulados1.png";
 const SECTION_BLUE_BG = "/images/raio-x/bg-simulados2.png";
 const SECTION_ORANGE_BG = "/images/raio-x/bg-simulados3.png";
+const COPY_IMAGE_ERROR = "Não foi possível carregar todas as imagens da questão. Nada foi copiado.";
+const H2C_METRICS_PROBE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+// O fundo do cartão é translúcido: compõe com os ancestrais para o PNG ter a cor vista na tela, no tema que estiver aplicado.
+function effectiveBackground(element: HTMLElement) {
+  const layers: number[][] = [];
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const value = getComputedStyle(node).backgroundColor;
+    if (!value.startsWith("rgb")) continue;
+    const [r, g, b, a = 1] = (value.match(/[\d.]+/g) || []).map(Number);
+    if (!a) continue;
+    layers.push([r, g, b, a]);
+    if (a >= 1) break;
+  }
+  const rgb = layers.reduceRight(
+    (base, [r, g, b, a]) => [base[0] * (1 - a) + r * a, base[1] * (1 - a) + g * a, base[2] * (1 - a) + b * a],
+    [255, 255, 255],
+  );
+  return `rgb(${rgb.map(Math.round).join(", ")})`;
+}
+
+async function renderQuestionCardPng(card: HTMLElement): Promise<Blob> {
+  await Promise.all(
+    Array.from(card.querySelectorAll("img")).map(async (img) => {
+      try {
+        await img.decode();
+      } catch {
+        throw new Error(COPY_IMAGE_ERROR);
+      }
+      if (!img.naturalWidth) throw new Error(COPY_IMAGE_ERROR);
+    }),
+  );
+  const { default: html2canvas } = await import("html2canvas");
+  const background = effectiveBackground(card);
+  // O html2canvas mede a linha de base da fonte no documento ORIGINAL (não no clone) com uma <img> 1×1 inline.
+  // O preflight do Tailwind (img { display: block }) joga essa sonda para outra linha e todo texto do PNG desce.
+  // A regra atinge só a sonda invisível, durante a captura.
+  const probeFix = document.createElement("style");
+  probeFix.textContent = `img[src="${H2C_METRICS_PROBE}"] { display: inline; }`;
+  document.head.appendChild(probeFix);
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(card, {
+      backgroundColor: null,
+      scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
+      logging: false,
+      useCORS: true,
+      onclone: (doc, clone) => {
+        clone.style.background = background;
+        clone.querySelectorAll("[data-rx-copy-ignore]").forEach((node) => node.remove());
+        clone.querySelectorAll(".rx-alternative.correct").forEach((node) => node.classList.remove("correct"));
+        const foot = clone.querySelector(".rx-question-foot");
+        if (foot && !foot.children.length) foot.remove();
+        // SVG vira imagem isolada no html2canvas; sem cor explícita, currentColor sai preto.
+        clone.querySelectorAll("svg").forEach((svg) => svg.setAttribute("color", doc.defaultView!.getComputedStyle(svg).color));
+      },
+    });
+  } finally {
+    probeFix.remove();
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Não foi possível gerar a imagem da questão."))), "image/png");
+  });
+}
 
 function SectionTitle({ number, title, subtitle }: { number: string; title: string; subtitle?: string }) {
   return (
@@ -124,8 +194,9 @@ function MiniLogo() {
   );
 }
 
-export default function RelatorioClient({ analysis, effectiveModules = [], totalQuestions, withImage, avgDiff, questions = [] }: ReportProps) {
+export default function RelatorioClient({ analysis, effectiveModules = [], totalQuestions, withImage, avgDiff, questions = [], initialTheme = "dark" }: ReportProps & { initialTheme?: ReportTheme }) {
   const router = useRouter();
+  const [theme, setTheme] = useState<ReportTheme>(initialTheme);
   const rawContent = analysis.final_summary_text || analysis.summary_text || "";
   const [content, setContent] = useState(rawContent);
   const [editMode, setEditMode] = useState(false);
@@ -135,6 +206,8 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [questionCopy, setQuestionCopy] = useState<{ id: string; status: "copying" | "copied" | "error" } | null>(null);
+  const [copyToast, setCopyToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   const summary = useMemo(
     () => buildReportSummary({ analysis, effectiveModules, totalQuestions, avgDiff, questions }),
@@ -206,8 +279,43 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
     }, 2600);
   }
 
+  function changeTheme(next: ReportTheme) {
+    setTheme(next);
+    document.cookie = `${REPORT_THEME_COOKIE}=${next}; path=/admin/raio-x-provas; max-age=31536000; samesite=lax`;
+  }
+
+  async function copyQuestionImage(id: string, card: HTMLElement | null) {
+    if (!card || questionCopy?.status === "copying") return;
+    const finish = (status: "copied" | "error", text: string) => {
+      const toast = { tone: status === "copied" ? "success" as const : "error" as const, text };
+      setQuestionCopy({ id, status });
+      setCopyToast(toast);
+      setTimeout(() => {
+        setQuestionCopy((current) => (current?.id === id && current.status === status ? null : current));
+        setCopyToast((current) => (current === toast ? null : current));
+      }, 3200);
+    };
+    if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+      finish("error", "Este navegador não permite copiar imagens para a área de transferência.");
+      return;
+    }
+    setQuestionCopy({ id, status: "copying" });
+    // O Blob entra como Promise no ClipboardItem para preservar o gesto do usuário (exigência do Safari).
+    const png = renderQuestionCardPng(card);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      finish("copied", "Questão copiada como imagem!");
+    } catch (error) {
+      const renderError = await png.then(() => null, (err: unknown) => err);
+      const message = renderError instanceof Error ? renderError.message : error instanceof Error && error.name === "NotAllowedError"
+        ? "O navegador bloqueou o acesso à área de transferência. Nada foi copiado."
+        : "Não foi possível copiar a questão como imagem.";
+      finish("error", message);
+    }
+  }
+
   return (
-    <main className="rx-page">
+    <main className={`rx-page rx-theme-${theme}`}>
       <style>{STYLES}</style>
 
       <header className="rx-adminbar no-print">
@@ -216,6 +324,10 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
           <strong>{analysis.title}</strong>
         </div>
         <div className="rx-admin-actions">
+          <div className="rx-theme-switch" role="group" aria-label="Aparência do relatório">
+            <button type="button" aria-pressed={theme === "dark"} onClick={() => changeTheme("dark")}><Moon size={13} /> Dark</button>
+            <button type="button" aria-pressed={theme === "clean"} onClick={() => changeTheme("clean")}><Sun size={13} /> Clean</button>
+          </div>
           {hasContent && !editMode ? (
             <>
               <button type="button" onClick={copyContent} className="rx-admin-button rx-admin-secondary"><Copy size={14} /> {copied ? "Link copiado" : "Copiar link"}</button>
@@ -232,6 +344,9 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
       </header>
 
       {feedback ? <div className="rx-feedback no-print">{feedback}</div> : null}
+      <div className="rx-copy-toast-region no-print" role="status" aria-live="polite">
+        {copyToast ? <div className={`rx-copy-toast is-${copyToast.tone}`}>{copyToast.tone === "success" ? <Check size={15} /> : <TriangleAlert size={15} />} {copyToast.text}</div> : null}
+      </div>
 
       {editMode ? (
         <section className="rx-editor no-print">
@@ -370,6 +485,7 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
                 const diff = Number(q.difficulty_level || 0);
                 const correct = questionCorrectLabel(q);
                 const alternatives = Array.isArray(q.alternatives) ? q.alternatives : [];
+                const copyStatus = questionCopy?.id === q.id ? questionCopy.status : null;
                 return (
                   <article className={`rx-question-card ${q.is_annulled ? "rx-question-annulled" : ""}`} key={q.id}>
                     {q.is_annulled ? <div className="rx-annulled-watermark">ANULADA</div> : null}
@@ -380,7 +496,21 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
                         <TagList tags={tags} limit={8} />
                       </div>
                       <div className="rx-question-status">
-                        <span style={{ color: difficultyTone(diff) }}>{diff ? `${diff.toFixed(1)} / 5` : "—"}</span>
+                        <div className="rx-question-status-top">
+                          <button
+                            type="button"
+                            data-rx-copy-ignore
+                            className={`rx-copy-question no-print${copyStatus ? ` is-${copyStatus}` : ""}`}
+                            onClick={(event) => copyQuestionImage(q.id, event.currentTarget.closest<HTMLElement>(".rx-question-card"))}
+                            disabled={questionCopy?.status === "copying"}
+                            aria-busy={copyStatus === "copying"}
+                            aria-label={copyStatus === "copied" ? "Questão copiada como imagem" : "Copiar questão como imagem"}
+                            title={copyStatus === "copied" ? "Questão copiada como imagem!" : "Copiar questão como imagem"}
+                          >
+                            {copyStatus === "copying" ? <Loader2 size={15} className="animate-spin" /> : copyStatus === "copied" ? <Check size={15} /> : copyStatus === "error" ? <TriangleAlert size={15} /> : <Copy size={15} />}
+                          </button>
+                          <span style={{ color: difficultyTone(diff) }}>{diff ? `${diff.toFixed(1)} / 5` : "—"}</span>
+                        </div>
                         <small>{difficultyLabel(diff)}</small>
                       </div>
                     </div>
@@ -400,7 +530,7 @@ export default function RelatorioClient({ analysis, effectiveModules = [], total
                       </div>
                     ) : null}
                     <div className="rx-question-foot">
-                      <span><CheckCircle2 size={15} /> Gabarito: <strong>{correct}</strong></span>
+                      <span data-rx-copy-ignore><CheckCircle2 size={15} /> Gabarito: <strong>{correct}</strong></span>
                       {q.has_image ? <span><ImageIcon size={15} /> Com imagem</span> : null}
                     </div>
                   </article>
@@ -445,6 +575,11 @@ const STYLES = `
   .rx-admin-button { display: inline-flex; align-items: center; gap: 7px; border-radius: 12px; padding: 8px 13px; font-size: 12px; font-weight: 900; cursor: pointer; text-decoration: none; border: 1px solid rgba(255,255,255,.12); }
   .rx-admin-secondary { background: rgba(255,255,255,.04); color: #cbd5e1; }
   .rx-admin-primary { background: linear-gradient(135deg,#f97316,#f59e0b); color: #07111f; border-color: #f59e0b; }
+  .rx-theme-switch { display: inline-flex; padding: 3px; gap: 2px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); }
+  .rx-theme-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 11px; border: 0; border-radius: 9px; background: transparent; color: #94a3b8; font-size: 12px; font-weight: 900; cursor: pointer; transition: color .15s, background-color .15s; }
+  .rx-theme-switch button:hover { color: #e5eefb; }
+  .rx-theme-switch button[aria-pressed="true"] { background: linear-gradient(135deg,#f97316,#f59e0b); color: #07111f; }
+  .rx-theme-switch button:focus-visible { outline: 2px solid #f97316; outline-offset: 2px; }
   .rx-feedback { max-width: 1180px; margin: 12px auto 0; border: 1px solid rgba(249,115,22,.25); background: rgba(249,115,22,.08); color: #fed7aa; border-radius: 14px; padding: 12px 16px; font-size: 13px; font-weight: 800; }
   .rx-editor { max-width: 1120px; margin: 24px auto; padding: 0 24px; }
   .rx-editor textarea { width: 100%; min-height: 72vh; border: 1px solid rgba(255,255,255,.12); border-radius: 24px; background: #07111f; color: #dbeafe; padding: 24px; font: 14px/1.7 monospace; outline: none; }
@@ -554,6 +689,18 @@ const STYLES = `
   .rx-question-head h3 { margin: 0; color: #fff; font-size: 20px; text-transform: uppercase; }
   .rx-question-status { text-align: right; font-weight: 1000; }
   .rx-question-status small { display: block; color: #cbd5e1; margin-top: 4px; }
+  .rx-question-status-top { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+  .rx-copy-question { width: 30px; height: 30px; margin: -3px 0; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: #cbd5e1; cursor: pointer; transition: color .15s, border-color .15s, background-color .15s; }
+  .rx-copy-question:hover:not(:disabled) { color: #fed7aa; border-color: rgba(249,115,22,.45); background: rgba(249,115,22,.12); }
+  .rx-copy-question:focus-visible { outline: 2px solid #f97316; outline-offset: 2px; }
+  .rx-copy-question:disabled { cursor: default; opacity: .55; }
+  .rx-copy-question.is-copying { opacity: 1; cursor: progress; color: #fb923c; }
+  .rx-copy-question.is-copied { color: #4ade80; border-color: rgba(74,222,128,.4); }
+  .rx-copy-question.is-error { color: #fca5a5; border-color: rgba(248,113,113,.45); }
+  .rx-copy-toast-region { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+  .rx-copy-toast { display: flex; align-items: center; gap: 8px; border-radius: 14px; padding: 11px 16px; font-size: 13px; font-weight: 800; background: rgba(3,8,15,.94); box-shadow: 0 16px 48px rgba(0,0,0,.45); }
+  .rx-copy-toast.is-success { border: 1px solid rgba(249,115,22,.35); color: #fed7aa; }
+  .rx-copy-toast.is-error { border: 1px solid rgba(248,113,113,.4); color: #fecaca; }
   .rx-question-statement { color: #dbeafe; font-size: 15px; line-height: 1.65; margin: 0 0 16px; }
   .rx-question-annulled { position: relative; overflow: hidden; border-color: rgba(249,115,22,.32); }
   .rx-annulled-watermark { position: absolute; inset: 0; display: grid; place-items: center; transform: rotate(-12deg); color: rgba(249,115,22,.105); font-size: 88px; font-weight: 1000; letter-spacing: .08em; pointer-events: none; z-index: 0; }
@@ -588,7 +735,116 @@ const STYLES = `
   .rx-final-pillars span { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-height: 92px; padding: 14px 12px; color: #fff; text-align: center; font-size: 12px; line-height: 1.2; font-weight: 1000; text-transform: uppercase; border-right: 1px solid rgba(255,255,255,.1); }
   .rx-final-copy small { margin-top: 18px; color: #a9bed8; font-size: 12px; }
   .rx-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Clean: mesma estrutura, paleta clara do PDF do Raio-X. Só cores, superfícies e sombras; o Dark acima não muda. */
+  .rx-theme-clean { --rx-ink: #0b1220; --rx-body: #334155; --rx-muted: #64748b; --rx-line: #e2e8f0; --rx-soft: #f8fafc; --rx-orange-text: #c2410c; background: #f4f6f9; color: var(--rx-body); }
+  .rx-theme-clean .rx-adminbar { border-bottom-color: var(--rx-line); background: rgba(255,255,255,.92); }
+  .rx-theme-clean .rx-admin-title strong { color: var(--rx-ink); }
+  .rx-theme-clean .rx-admin-button { border-color: var(--rx-line); }
+  .rx-theme-clean .rx-admin-secondary { background: #fff; color: var(--rx-body); }
+  .rx-theme-clean .rx-admin-primary { border-color: #f59e0b; }
+  .rx-theme-clean .rx-theme-switch { border-color: var(--rx-line); background: var(--rx-soft); }
+  .rx-theme-clean .rx-theme-switch button { color: var(--rx-muted); }
+  .rx-theme-clean .rx-theme-switch button:hover { color: var(--rx-ink); }
+  .rx-theme-clean .rx-theme-switch button[aria-pressed="true"] { color: #07111f; }
+  .rx-theme-clean .rx-feedback { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+  .rx-theme-clean .rx-editor textarea { border-color: var(--rx-line); background: #fff; color: var(--rx-ink); }
+
+  .rx-theme-clean .rx-document { background: #fff; border-color: var(--rx-line); box-shadow: 0 24px 70px rgba(15,23,42,.08); }
+  .rx-theme-clean .rx-document::before { background: radial-gradient(circle at 85% 16%, rgba(249,115,22,.07), transparent 22%), radial-gradient(circle at 15% 45%, rgba(14,165,233,.04), transparent 24%); }
+  .rx-theme-clean .rx-hero { background: #fff; border-bottom-color: var(--rx-line); }
+  .rx-theme-clean .rx-hero-bg { background-image: linear-gradient(90deg, #fff 0%, rgba(255,255,255,.96) 34%, rgba(255,255,255,.6) 60%, rgba(255,255,255,.12) 100%), url('${HERO_BG}'); }
+  .rx-theme-clean .rx-hero::after { background: linear-gradient(180deg, transparent, #fff 92%); }
+  .rx-theme-clean .rx-logo-mark { color: #ea580c; background: #fff; box-shadow: inset 0 0 18px rgba(249,115,22,.1); }
+  .rx-theme-clean .rx-logo strong { color: var(--rx-ink); }
+  .rx-theme-clean .rx-logo strong span { color: #ea580c; }
+  .rx-theme-clean .rx-logo small { color: var(--rx-muted); }
+  .rx-theme-clean .rx-hero h1 span { color: var(--rx-ink); text-shadow: none; }
+  .rx-theme-clean .rx-hero h1 strong { color: #ea580c; text-shadow: none; }
+  .rx-theme-clean .rx-hero h3 { color: var(--rx-ink); }
+  .rx-theme-clean .rx-hero-sub { color: var(--rx-orange-text); }
+  .rx-theme-clean .rx-hero-text { color: #475569; }
+  .rx-theme-clean .rx-hero-badges { border-color: var(--rx-line); background: rgba(255,255,255,.88); box-shadow: 0 10px 30px rgba(15,23,42,.06); }
+  .rx-theme-clean .rx-hero-badges span { color: var(--rx-body); border-right-color: var(--rx-line); }
+
+  .rx-theme-clean .rx-kpis { background: #fff; }
+  .rx-theme-clean .rx-kpi-card { border-color: rgba(249,115,22,.32); background: #fff; box-shadow: 0 12px 32px rgba(15,23,42,.06); }
+  .rx-theme-clean .rx-kpi-card svg { color: #f97316; }
+  .rx-theme-clean .rx-kpi-card strong { color: var(--rx-ink); }
+  .rx-theme-clean .rx-kpi-card span { color: #475569; }
+
+  .rx-theme-clean .rx-panel { border-color: var(--rx-line); background-color: #fff; background-image: linear-gradient(180deg, #fff, #fbfcfe); box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  .rx-theme-clean .rx-panel-map, .rx-theme-clean .rx-panel-blue { background-image: linear-gradient(180deg, #f7faff, #fff 55%); }
+  .rx-theme-clean .rx-panel-orange, .rx-theme-clean .rx-panel-parecer { background-image: linear-gradient(180deg, #fffaf5, #fff 55%); }
+  .rx-theme-clean .rx-section-title > span { color: #ea580c; }
+  .rx-theme-clean .rx-section-title h2 { color: var(--rx-ink); text-shadow: none; }
+  .rx-theme-clean .rx-section-title p { color: var(--rx-muted); }
+
+  .rx-theme-clean .rx-subject-card, .rx-theme-clean .rx-topic-card { --accent-text: color-mix(in srgb, var(--accent) 72%, #0b1220); background: #fff; box-shadow: inset 0 0 30px color-mix(in srgb, var(--accent) 6%, transparent), 0 10px 28px rgba(15,23,42,.06); }
+  .rx-theme-clean .rx-rank, .rx-theme-clean .rx-subject-icon, .rx-theme-clean .rx-diff-pill, .rx-theme-clean .rx-diff-label, .rx-theme-clean .rx-topic-head > span, .rx-theme-clean .rx-topic-tags span { color: var(--accent-text); }
+  .rx-theme-clean .rx-subject-card h3, .rx-theme-clean .rx-subject-percent, .rx-theme-clean .rx-topic-head h3 { color: var(--rx-ink); }
+  .rx-theme-clean .rx-subject-meta { color: #475569; }
+  .rx-theme-clean .rx-subject-count { color: var(--rx-body); }
+  .rx-theme-clean .rx-tags span { border-color: var(--rx-line); background: var(--rx-soft); color: var(--rx-body); }
+  .rx-theme-clean .rx-topic-head p { color: var(--rx-muted); }
+  .rx-theme-clean .rx-topic-tags li { border-top-color: #eef2f6; color: var(--rx-body); }
+  .rx-theme-clean .rx-topic-tags li:first-child { border-top: 0; }
+  .rx-theme-clean .rx-topic-tags strong { color: var(--rx-ink); }
+
+  .rx-theme-clean .rx-profile-card { border-color: var(--rx-line); background: #fff; box-shadow: 0 10px 28px rgba(15,23,42,.05); }
+  .rx-theme-clean .rx-profile-card svg { color: #f97316; }
+  .rx-theme-clean .rx-profile-card small, .rx-theme-clean .rx-profile-card p { color: var(--rx-muted); }
+  .rx-theme-clean .rx-profile-card strong { color: var(--rx-ink); }
+  .rx-theme-clean .rx-reading-box { border-color: rgba(249,115,22,.3); background: linear-gradient(90deg, #fff7ed, #fff); }
+  .rx-theme-clean .rx-reading-box svg { color: #f97316; }
+  .rx-theme-clean .rx-reading-box h3 { color: var(--rx-orange-text); }
+  .rx-theme-clean .rx-reading-box p { color: var(--rx-body); }
+
+  .rx-theme-clean .rx-parecer-symbol { color: #f97316; border-color: rgba(249,115,22,.22); background: radial-gradient(circle, rgba(249,115,22,.1), transparent 60%); }
+  .rx-theme-clean .rx-parecer-text p { color: #1e293b; }
+  .rx-theme-clean .rx-parecer-text strong, .rx-theme-clean .rx-parecer-text b { color: var(--rx-orange-text); }
+  .rx-theme-clean .rx-inline-edit { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+  .rx-theme-clean .rx-parecer-editor p { color: #475569; }
+  .rx-theme-clean .rx-parecer-editor textarea { border-color: var(--rx-line); background: #fff; color: var(--rx-ink); }
+  .rx-theme-clean .rx-parecer-steps { border-color: var(--rx-line); background: #fff; }
+  .rx-theme-clean .rx-parecer-steps span { color: var(--rx-ink); border-right-color: var(--rx-line); }
+  .rx-theme-clean .rx-parecer-steps svg { color: #f97316; }
+
+  .rx-theme-clean .rx-question-card { border-color: var(--rx-line); background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.05); }
+  .rx-theme-clean .rx-question-annulled { border-color: rgba(249,115,22,.35); }
+  .rx-theme-clean .rx-annulled-watermark { color: rgba(249,115,22,.08); }
+  .rx-theme-clean .rx-question-head { border-bottom-color: #eef2f6; }
+  .rx-theme-clean .rx-question-head h3 { color: var(--rx-ink); }
+  .rx-theme-clean .rx-question-status small { color: var(--rx-muted); }
+  .rx-theme-clean .rx-question-statement { color: #1e293b; }
+  .rx-theme-clean .rx-alternative { border-color: var(--rx-line); background: var(--rx-soft); }
+  .rx-theme-clean .rx-alternative > span { background: #fff; color: var(--rx-body); border: 1px solid var(--rx-line); }
+  .rx-theme-clean .rx-alternative p { color: #1e293b; }
+  .rx-theme-clean .rx-alternative.correct { border-color: #86efac; background: #f0fdf4; }
+  .rx-theme-clean .rx-alternative.correct > span { color: #fff; background: #16a34a; border-color: #16a34a; }
+  .rx-theme-clean .rx-question-foot span { color: #475569; background: var(--rx-soft); border-color: var(--rx-line); }
+  .rx-theme-clean .rx-question-foot strong { color: var(--rx-orange-text); }
+  .rx-theme-clean .rx-empty { color: var(--rx-muted); }
+  .rx-theme-clean .rx-copy-question { border-color: var(--rx-line); background: #fff; color: var(--rx-muted); }
+  .rx-theme-clean .rx-copy-question:hover:not(:disabled) { color: var(--rx-orange-text); border-color: rgba(249,115,22,.45); background: #fff7ed; }
+  .rx-theme-clean .rx-copy-question.is-copying { color: #ea580c; }
+  .rx-theme-clean .rx-copy-question.is-copied { color: #16a34a; border-color: #86efac; }
+  .rx-theme-clean .rx-copy-question.is-error { color: #dc2626; border-color: #fca5a5; }
+  .rx-theme-clean .rx-copy-toast { background: #fff; box-shadow: 0 16px 40px rgba(15,23,42,.14); }
+  .rx-theme-clean .rx-copy-toast.is-success { border-color: #fed7aa; color: #9a3412; }
+  .rx-theme-clean .rx-copy-toast.is-error { border-color: #fecaca; color: #b91c1c; }
+
+  .rx-theme-clean .rx-final-premium { border-color: rgba(249,115,22,.3); background: radial-gradient(circle at 78% 20%, rgba(249,115,22,.12), transparent 30%), linear-gradient(135deg, #fff7ed, #fff 42%, #f8fafc); box-shadow: 0 20px 60px rgba(15,23,42,.08); }
+  .rx-theme-clean .rx-final-premium::before { display: none; }
+  .rx-theme-clean .rx-final-owl { filter: drop-shadow(0 12px 28px rgba(249,115,22,.22)); }
+  .rx-theme-clean .rx-final-glow { opacity: .3; }
+  .rx-theme-clean .rx-final-copy h2 { color: var(--rx-ink); text-shadow: none; }
+  .rx-theme-clean .rx-final-copy p { color: var(--rx-body); }
+  .rx-theme-clean .rx-final-pillars { border-color: var(--rx-line); background: rgba(255,255,255,.85); }
+  .rx-theme-clean .rx-final-pillars span { color: var(--rx-ink); border-right-color: var(--rx-line); }
+  .rx-theme-clean .rx-final-pillars svg { color: #f97316; }
+  .rx-theme-clean .rx-final-copy small { color: var(--rx-muted); }
   @media (max-width: 1100px) { .rx-subject-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 210px)); justify-content: center; } .rx-profile-grid, .rx-kpis { grid-template-columns: repeat(2,1fr); } .rx-hero-badges { grid-template-columns: repeat(2,1fr); width: 560px; } .rx-parecer { grid-template-columns: 1fr; } .rx-final-copy { margin-left: 260px; } .rx-final-owl { width: 250px; height: 350px; left: 14px; } .rx-final-pillars { grid-template-columns: repeat(2,1fr); } }
-  @media (max-width: 720px) { .rx-document { border-left: 0; border-right: 0; border-radius: 0; } .rx-hero-content { padding: 36px 24px; } .rx-hero h1 { font-size: 52px; } .rx-kpis, .rx-panel, .rx-final-premium { margin-left: 18px; margin-right: 18px; padding-left: 18px; padding-right: 18px; } .rx-kpis, .rx-subject-grid, .rx-profile-grid, .rx-conclusion-grid, .rx-topic-map { grid-template-columns: 1fr; } .rx-question-head { grid-template-columns: 1fr; } .rx-question-status { text-align: left; } .rx-final-premium { min-height: auto; padding: 0 !important; } .rx-final-owl { opacity: .18; width: 100%; height: 340px; left: 0; bottom: 0; } .rx-final-copy { margin-left: 0; padding: 36px 22px; } .rx-final-copy h2 { font-size: 30px; } .rx-final-pillars { grid-template-columns: 1fr; } }
-  @media print { .no-print { display: none !important; } body, .rx-page { background: #030b16 !important; } .rx-document { max-width: none; width: 100%; border: 0; border-radius: 0; box-shadow: none; } }
+  @media (max-width: 720px) { .rx-document { border-left: 0; border-right: 0; border-radius: 0; } .rx-hero-content { padding: 36px 24px; } .rx-hero h1 { font-size: 52px; } .rx-kpis, .rx-panel, .rx-final-premium { margin-left: 18px; margin-right: 18px; padding-left: 18px; padding-right: 18px; } .rx-kpis, .rx-subject-grid, .rx-profile-grid, .rx-conclusion-grid, .rx-topic-map { grid-template-columns: 1fr; } .rx-question-head { grid-template-columns: 1fr; } .rx-question-status { text-align: left; } .rx-question-status-top { flex-direction: row-reverse; justify-content: flex-end; } .rx-final-premium { min-height: auto; padding: 0 !important; } .rx-final-owl { opacity: .18; width: 100%; height: 340px; left: 0; bottom: 0; } .rx-final-copy { margin-left: 0; padding: 36px 22px; } .rx-final-copy h2 { font-size: 30px; } .rx-final-pillars { grid-template-columns: 1fr; } }
+  @media print { .no-print { display: none !important; } body, .rx-page { background: #030b16 !important; } .rx-document { max-width: none; width: 100%; border: 0; border-radius: 0; box-shadow: none; } body:has(.rx-theme-clean), .rx-page.rx-theme-clean { background: #fff !important; } }
 `;

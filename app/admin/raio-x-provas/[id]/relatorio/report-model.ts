@@ -5,6 +5,10 @@
 
 import { insertListItemBreaks } from "@/app/components/ui/HtmlWithImageMarkers";
 
+// Aparência da Versão Tela (não afeta o PDF). Cookie lido no servidor para renderizar o tema certo já no primeiro HTML.
+export type ReportTheme = "dark" | "clean";
+export const REPORT_THEME_COOKIE = "estudotop_raio_x_report_theme";
+
 export const COLORS = ["#f97316", "#38bdf8", "#8b5cf6", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#ef4444"];
 
 export const PARECER_FALLBACK = "Para esse perfil de prova, o aluno deve estudar com equilíbrio, reforçar os assuntos de maior dificuldade e treinar questões objetivas com regularidade.";

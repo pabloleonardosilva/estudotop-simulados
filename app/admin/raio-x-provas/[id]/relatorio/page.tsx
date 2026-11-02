@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import RelatorioClient from "./page-client";
 import RelatorioPdfClient from "./pdf-version-client";
+import { REPORT_THEME_COOKIE } from "./report-model";
 import { createSupabaseAdminClient } from "@/lib/server/supabaseAdmin";
 import { requireAdminPage } from "@/lib/server/authGuard";
 
@@ -136,8 +138,10 @@ export default async function RelatorioPage({ params, searchParams }: { params: 
       />
     );
   }
+  const theme = (await cookies()).get(REPORT_THEME_COOKIE)?.value === "clean" ? "clean" : "dark";
   return (
     <RelatorioClient
+      initialTheme={theme}
       analysis={analysis}
       effectiveModules={questionsData.effectiveModules}
       totalQuestions={questionsData.totalQuestions}

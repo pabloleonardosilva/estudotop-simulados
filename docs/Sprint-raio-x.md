@@ -738,6 +738,38 @@ Desde 2026-10-09 essas funções ficam em `report-model.ts` (movidas sem altera�
 - **Pendente:** teste autenticado no navegador.
 - **Observação pré-existente:** neste Raio-X a página 2 do PDF contém só os KPIs, também no HEAD; não alterado.
 
+### 13.8 Copiar questão como imagem PNG (2026-11-02)
+
+Somente na Versão Tela, seção "05 — Lista de questões da prova". Arquivo único alterado: `relatorio/page-client.tsx`. Sem dependência nova, banco, migration, PDF ou Revisão.
+
+- **Botão:** ícone em `.rx-question-status-top`, à esquerda da nota de dificuldade (coluna direita do cabeçalho, espaço antes vazio; `margin: -3px 0` mantém a altura da linha). No mobile (≤720px) fica à direita da nota. `title`/`aria-label` "Copiar questão como imagem"; estados copiando (spinner, todos os botões desabilitados), copiado e erro; toast fixo `role="status"` com "Questão copiada como imagem!" ou a mensagem de erro. `no-print`.
+- **Captura:** `renderQuestionCardPng` usa o `html2canvas` já instalado (import dinâmico), `backgroundColor: null`, escala 2–3 conforme `devicePixelRatio`. A neutralização acontece no `onclone` (documento clonado em iframe): o cartão original nunca é alterado.
+- **Gabarito:** no clone, remove a classe `correct` das alternativas e todo elemento `data-rx-copy-ignore` (botão de cópia e selo "Gabarito: X"); o rodapé vazio é removido. "Com imagem" e a marca d'água ANULADA permanecem. O cartão não contém outros textos de resposta/explicação.
+- **Tema:** não existe tema próprio da captura. `effectiveBackground` compõe o fundo translúcido do cartão com as cores computadas dos ancestrais, então o PNG acompanha o tema aplicado no clique (Dark ou Clean, §13.9). O gradiente/imagem de fundo do painel não entra na composição, só a cor base — diferença mínima.
+- **Recorte:** exatamente o cartão; cantos fora do `border-radius` transparentes. O cartão não tem sombra externa.
+- **Imagens:** todas as `<img>` passam por `decode()` antes; falha ou largura zero interrompe a cópia com erro (nada é copiado). SVGs recebem `color` explícito no clone (no `html2canvas` `currentColor` sairia preto).
+- **Área de transferência:** `ClipboardItem` com Promise do Blob (gesto do usuário preservado no Safari). Navegador sem suporte, bloqueio de permissão ou falha de renderização exibem erro.
+
+**Validação (2026-11-02):** `tsc` e `build` aprovados; ESLint do arquivo com os mesmos 3 diagnósticos do HEAD; `git diff --check` aprovado. Teste isolado no Chromium (Playwright) com o `STYLES` real e as funções de captura extraídas do arquivo: PNG 2×, cantos transparentes, alternativa correta neutra, sem selo nem botão, imagem base64 renderizada, cartão original idêntico após a captura, imagem inválida aborta. **Pendente:** teste autenticado no navegador com Raio-X real (PCMG) e colagem em PowerPoint/Word.
+
+**Correção de alinhamento no PNG (2026-11-02, §13.9):** textos das tags e letras A–E saíam ~8 px abaixo no PNG. Causa comprovada: o `html2canvas` 1.4.1 mede a linha de base de cada fonte no **documento original** (`new FontMetrics(document)`, não no clone) com uma `<img>` 1×1 (`data:image/gif;base64,R0lGODlhAQAB…`) inline ao lado de um texto; o preflight do Tailwind (`img { display: block }`) joga essa sonda para a linha de baixo, a linha de base medida cresce e todo texto do PNG desce. Por isso o ajuste não pode ficar só no clone: `renderQuestionCardPng` injeta, durante a captura, `img[src="<sonda>"] { display: inline }` (constante `H2C_METRICS_PROBE`) e remove a regra no `finally`. Atinge apenas a sonda invisível; nenhum estilo dos cartões e nenhum deslocamento fixo.
+
+### 13.9 Seletor Dark / Clean da Versão Tela (2026-11-02)
+
+- **Seletor:** grupo de dois botões (`aria-pressed`) "Dark" / "Clean" em `.rx-admin-actions`, antes de "Copiar link". Troca no cliente, sem recarregar.
+- **Persistência:** cookie `estudotop_raio_x_report_theme` (`REPORT_THEME_COOKIE` em `report-model.ts`), `path=/admin/raio-x-provas`, 1 ano, `SameSite=Lax`. O `page.tsx` lê o cookie com `cookies()` e passa `initialTheme` ao `RelatorioClient`: o primeiro HTML já sai no tema salvo, sem flash nem divergência servidor/cliente. Padrão e valor inválido: Dark. Não altera tema global, dados do Raio-X nem a Versão PDF (o cookie só é lido no ramo da Tela).
+- **Temas:** `main.rx-page` recebe `rx-theme-dark` ou `rx-theme-clean`. O CSS Dark não foi alterado. O Clean é um bloco de overrides com escopo `.rx-theme-clean` no fim de `STYLES` (paleta do PDF: grafite `#0b1220`, texto `#334155`, secundário `#64748b`, linhas `#e2e8f0`, superfícies brancas/`#f8fafc`, laranja `#f97316`/`#c2410c`, gabarito verde `#16a34a` sobre `#f0fdf4`). Só cores, superfícies e sombras; layout, tipografia e espaçamentos são os do Dark. Acentos dos assuntos (`COLORS`) mantêm a cor, com texto escurecido via `color-mix` para contraste. Hero mantém a arte da coruja à direita com degradê branco; painéis trocam os fundos fotográficos por degradês claros; rodapé mantém a coruja. Impressão em Clean usa fundo branco.
+- **Captura:** sem lógica de tema própria; o PNG segue o tema aplicado. No Clean, os círculos das letras usam `border` (não `box-shadow inset`, mal renderizado pelo `html2canvas`).
+
+**Validação (2026-11-02):** Tela real (`page.tsx` + `page-client.tsx` transpilados) com dados reais do Raio-X "PC-MG — Analista da Polícia Civil — 2022 — FUMARC" (somente SELECT), CSS compilado do build (com preflight) e Inter, no Chromium (Playwright):
+
+- Cookie ausente/`dark`/inválido → Dark; `clean` → Clean, botão correspondente com `aria-pressed="true"`.
+- Documento Dark idêntico ao do HEAD: **0 pixels diferentes** a 1366 px (botão de cópia, que não existe no HEAD, e barra ocultos). Única mudança visível no Dark: o seletor na barra.
+- Troca Dark→Clean na mesma página = Clean renderizado direto (0 pixels diferentes). Nenhum texto claro sobre fundo claro no Clean. Sem rolagem horizontal em 1366 px e 390 px nos dois temas.
+- PNG Dark e Clean (Q01 sem imagem; Q02 com 4 imagens base64): cantos transparentes, gabarito neutro, sem selo/botão, cartão original intacto, nenhuma regra residual. Centralização medida (tinta acima/abaixo vs. tela, 18 tags/letras por tema): desvio médio 7,8–7,9 px (máx. 9) sem a correção → 0,25–0,34 px (máx. 1,25) com a correção; horizontal ≤ 0,25 px.
+- `tests/raio-x-report-pdf` 39/39; `tsc` e `build` aprovados; ESLint dos arquivos do relatório com os mesmos 11 diagnósticos do HEAD; geradores PDF sem diff.
+- **Pendente:** interação real do seletor hidratada pelo React e persistência ao reabrir em sessão autenticada (sem impersonação; validado o ramo servidor por cookie e o resultado visual da troca), colagem no PowerPoint/Word, Safari/Firefox.
+
 ---
 
 ## 14. VARIAÇÕES DE QUESTÕES
@@ -1152,6 +1184,11 @@ O clone possui lógica delicada de duas fases. Nunca salvar antes da aprovação
 ### 2026-11-01
 
 - Relatório final (Tela e PDF) passou a preservar parágrafos, quebras, negrito/itálico e imagens embutidas das questões via `parseRichContent` compartilhado (seção 13.7). Antes, `cleanText` achatava o HTML e apagava as imagens; banco e Revisão não foram alterados.
+
+### 2026-11-02
+
+- Versão Tela: botão "Copiar questão como imagem" em cada cartão da Lista de questões (seção 13.8). PNG do cartão via `html2canvas`, sem gabarito, cantos transparentes, cor do tema aplicado.
+- Versão Tela: seletor Dark/Clean persistido em cookie lido no servidor (seção 13.9); Dark inalterado. Correção do texto deslocado para baixo no PNG (sonda de métricas do `html2canvas` × preflight do Tailwind).
 
 ### 2026-06-07 e 2026-06-08
 
