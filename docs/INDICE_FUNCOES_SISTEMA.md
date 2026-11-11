@@ -692,6 +692,7 @@ URL persistida via `params.append()` para arrays: `banca`, `assunto`, `topico`, 
 - classificação de dificuldade;
 - modo uma por vez / múltiplas;
 - **editor inline dark** (`InlineQuestionEditor`) — redesenhado em 2026-05-28.
+- **Visualizar** abre o Modo Apresentação (seção 35), onde fica a ação **Copiar questão como imagem** (PNG no padrão Raio-X Clean, sem gabarito) — seção 35.5.
 
 **Editor inline (`InlineQuestionEditor`) — detalhes:**
 
@@ -4521,7 +4522,7 @@ O fechamento técnico do delta não libera merge: permanecem as 20 falhas 401 pe
 
 **Testes:** `tests/question-presentation-mode.spec.ts` (19 casos). O Client Component real é montado no Chromium com o CSS do `npm run build`, servido por `context.route`, sem servidor nem banco. Requer build atualizado.
 
-**Não implementado nesta Sprint:** exportação de imagem/vídeo; alteração do "Visualizar questão" de `/questoes/nova`.
+**Não implementado nesta Sprint:** exportação de imagem/vídeo; alteração do "Visualizar questão" de `/questoes/nova`. (A cópia da questão como imagem PNG foi adicionada depois, na seção 35.5; exportação de vídeo continua inexistente.)
 
 ### 35.1 Adendo — Mostrar fonte (2026-10-20)
 
@@ -4549,5 +4550,20 @@ O fechamento técnico do delta não libera merge: permanecem as 20 falhas 401 pe
 
 ### 35.4 Encerramento (2026-10-20)
 
-- Total vigente de `tests/question-presentation-mode.spec.ts`: 35 casos (19 iniciais + 3 da fonte + 9 do ajuste tipográfico + 4 da altura útil).
+- Total de `tests/question-presentation-mode.spec.ts` ao encerrar esta Sprint: 35 casos (19 iniciais + 3 da fonte + 9 do ajuste tipográfico + 4 da altura útil). Total vigente: ver 35.5.
 - Verificações finais: suíte local completa 949/949, spec 35/35, TypeScript, build, ESLint sem diagnóstico novo e `git diff --check`. Sem migration. Homologação visual autenticada pendente (ver `docs/status-atual.md`).
+
+### 35.5 Copiar questão como imagem — padrão Raio-X, tema Clean (2026-11-11)
+
+- **Acesso:** Banco de Questões → "Visualizar" (card da listagem ou editor `QuestionEditor`) → popup do Modo Apresentação (`/questoes/[id]/preview`).
+- **Botão:** "Copiar questão como imagem" na barra de ferramentas do Modo Apresentação (`data-presentation-copy-image="idle|copying|copied|error"`), depois de "Mostrar fonte"/"Área segura". Fica fora da composição e funciona nos modos Normal e Vertical. Estados: copiando (spinner, desabilitado, `copyingRef` impede capturas simultâneas), copiado e erro. Toast `role="status"` (`data-presentation-copy-toast`) por 3,2 s.
+- **Arquivos:** `app/questoes/[id]/preview/question-image-capture.tsx` (novo: `QuestionCaptureCard`, `renderQuestionCapture`, `copyQuestionCaptureToClipboard`, `CAPTURE_STYLES`) e `page-client.tsx` (`buildCaptureData`, `DIFFICULTY_LABELS`, estado/handler `copyAsImage`, botão e toast).
+- **Reutilização do Raio-X:** `relatorio/page-client.tsx` **não foi alterado**. Sua captura está acoplada às classes `.rx-*` e não tem teste automatizado; extrair um utilitário compartilhado exigiria mexer na captura aprovada. As técnicas validadas foram reproduzidas no módulo novo: correção da sonda de métricas do `html2canvas` (`H2C_METRICS_PROBE`), `decode()` de todas as imagens, `backgroundColor: null`, `useCORS`, cor explícita de SVG no `onclone`, `ClipboardItem` com Promise e as mesmas mensagens de erro.
+- **Cartão de captura:** representação própria montada com `createRoot` num host `position:fixed; left:-100000px`, só durante a captura. É removida no `finally`, inclusive em erro. A tela original não muda (DOM, rolagem, modo, gabarito e composição Vertical). Valores do `.rx-question-card` com os overrides do tema **Clean** do Raio-X: fundo branco, linhas `#e2e8f0`, alternativas `#f8fafc`, letras em círculo branco com `border`, chip do código em gradiente laranja. Largura fixa de 960 px e escala 3 (PNG de 2880 px de largura). A escala é reduzida apenas se um lado passar de 16384 px; abaixo de 1×, a cópia é recusada com erro. A altura acompanha o conteúdo, sem redução de fonte.
+- **Recorte e transparência:** o PNG contém exatamente o cartão (`border-radius: 18px`, sem sombra externa); `backgroundColor: null` deixa transparentes os cantos fora do arredondamento. Barra de ferramentas, botão, toast e fundo da página nunca entram na imagem.
+- **Metadados:** cabeçalho com o código; título = Assunto (ou Disciplina); tags = Disciplina (quando o título é o Assunto) e Banca; com "Mostrar fonte" ativo, Banca, Concurso (`orgao`) e Ano. Dificuldade `n / 5` com os rótulos do Banco (1 Muito fácil … 5 Muito difícil) e a paleta do Raio-X. Campos ausentes são omitidos, sem textos substitutos.
+- **Gabarito:** neutro por construção: `QuestionCaptureData` não recebe `is_correct`, gabarito nem comentário. As alternativas saem idênticas mesmo com "Mostrar gabarito" ativo na tela. Certo/Errado: duas opções `C`/`E` com os textos Certo/Errado.
+- **HTML rico:** mesmo `toPresentationHtml` da apresentação; `.qcap-rich` neutraliza cor, fonte, tamanho e altura de linha inline e mantém `white-space: pre-wrap` (como `.richtext-editor`), para que quebras gravadas como `\n` dentro de `<p>` sejam preservadas. Listas, tabelas, `mark` e imagens também são preservados.
+- **Imagens:** `crossorigin="anonymous"` em todas as imagens (inclusive no HTML rico, via `withCors`) já na primeira requisição. Origem sem CORS, 404 ou largura zero interrompem a cópia com "Não foi possível carregar todas as imagens da questão (a origem de alguma imagem não permite a cópia). Nada foi copiado.", em vez de copiar sem a imagem.
+- **Testes:** `tests/question-presentation-mode.spec.ts`, blocos "Copiar questão como imagem" (C1–C14, C9b) e "área de transferência real" (C15), mais 1 contrato de código (Raio-X intacto; cartão sem dados de gabarito). Total do spec: 54 casos. O PNG gerado pelo `html2canvas` no Chromium é analisado por pixel (dimensões, cantos, fundo Clean, alternativas idênticas, letras/tags/código centralizados ≤ 2 px). C9b reproduz a questão ET3661 (quebras com `\n`). `CAPTURE_PNG_OUT=<arquivo.png>` grava o PNG do C9b para inspeção visual. A recusa de CORS é simulada com `Access-Control-Allow-Origin` de outra origem, porque o `route.fulfill` do Playwright preenche o cabeçalho quando ausente.
+- **Limitações de validação (não homologado):** área de transferência validada somente no Chromium (Playwright); colagem no PowerPoint não validada; imagens reais do Storage com sessão autenticada não verificadas integralmente; Safari e Firefox não homologados.

@@ -37,6 +37,8 @@ const APP_SHELL = "app/components/AppShell.tsx";
 const BANK_PAGE = "app/questoes/page-client.tsx";
 const QUESTION_EDITOR = "app/components/questions/QuestionEditor.tsx";
 const WINDOW_HELPER = "lib/questions/question-presentation-window.ts";
+const CAPTURE_MODULE = "app/questoes/[id]/preview/question-image-capture.tsx";
+const RAIO_X_REPORT_CLIENT = "app/admin/raio-x-provas/[id]/relatorio/page-client.tsx";
 
 // ---------------------------------------------------------------------------
 // Fixtures sintéticas
@@ -283,7 +285,7 @@ function htmlFor(questionId: string | null) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">${links}</head><body>${adminButton}<div id="root"></div><script>window.__QUESTION__=${question};</script><script src="/__bundle.js"></script></body></html>`;
 }
 
-async function installRoutes(context: BrowserContext, stats: { unexpected: string[]; dataRequests: string[] }) {
+async function installRoutes(context: BrowserContext, stats: { unexpected: string[]; dataRequests: string[] }, origin = ORIGIN) {
   bundleCache ??= buildBrowserBundle();
   cssCache ??= builtCssFiles();
 
@@ -296,7 +298,7 @@ async function installRoutes(context: BrowserContext, stats: { unexpected: strin
   await context.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.protocol === "data:") return route.continue();
-    if (url.origin !== ORIGIN) {
+    if (url.origin !== origin) {
       stats.unexpected.push(url.href);
       return route.abort();
     }
@@ -1159,6 +1161,435 @@ test.describe("Modo Vertical — ajuste tipográfico inteligente", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Copiar questão como imagem (padrão do cartão do Raio-X)
+// ---------------------------------------------------------------------------
+//
+// O PNG é o gerado de fato pelo html2canvas no Chromium. A área de
+// transferência é substituída por um registro (a origem de teste não é segura
+// e o navegador não expõe navigator.clipboard), exceto no teste C10, que usa
+// a área de transferência real em localhost. Um MutationObserver registra o
+// cartão de captura no instante em que a captura começa (inserção da regra da
+// sonda de métricas), quando imagens e fontes já estão prontas.
+
+const CDN = "http://cdn.test";
+const CORS_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="300"><rect width="100%" height="100%" fill="#7c3aed"/></svg>';
+
+Object.assign(FIXTURES, {
+  "cap-cors-ok": {
+    ...FIXTURES["q-short"],
+    id: "cap-cors-ok",
+    code: "ET2001",
+    image_url: `${CDN}/ok.svg`,
+    statement: `<p>Observe a figura.</p><p><img src="${CDN}/inline-ok.svg" width="200"></p>`,
+  },
+  "cap-cors-blocked": { ...FIXTURES["q-short"], id: "cap-cors-blocked", code: "ET2002", image_url: `${CDN}/blocked.svg` },
+  "cap-inline-blocked": {
+    ...FIXTURES["q-short"],
+    id: "cap-inline-blocked",
+    code: "ET2003",
+    statement: `<p>Figura no texto: <img src="${CDN}/blocked-inline.svg"></p>`,
+  },
+  "cap-missing": { ...FIXTURES["q-short"], id: "cap-missing", code: "ET2004", image_url: `${CDN}/missing.svg` },
+  "cap-no-meta": { ...FIXTURES["q-white"], id: "cap-no-meta", code: "ET2005", difficulty_level: null },
+  // Caso real relatado (ET3661): quebras gravadas como \n dentro de um único <p>.
+  "cap-newlines": {
+    ...FIXTURES["q-short"],
+    id: "cap-newlines",
+    code: "ET2006",
+    statement:
+      "<p>Relacione corretamente os tipos de malware às respectivas características.\n\nI. Worm\nII. Spyware\nIII. Trojan Horse\nIV. Scareware\n\n(   ) Programa que se disfarça de software legítimo.\n\n(   ) Software que assusta o usuário com alertas falsos.\n\nAssinale a alternativa que apresenta a sequência correta:</p>",
+  },
+});
+
+type CaptureRecord = {
+  html: string;
+  hostCount: number;
+  card: { width: number; height: number };
+  alternatives: { x: number; y: number; width: number; height: number }[];
+  letters: { x: number; y: number; width: number; height: number }[];
+  tags: { x: number; y: number; width: number; height: number }[];
+  number: { x: number; y: number; width: number; height: number };
+  statement: { x: number; y: number; width: number; height: number };
+};
+
+const CAPTURE_INIT_SCRIPT = `(() => {
+  window.__clipboardWrites = [];
+  window.__captureRecords = [];
+  if (!window.isSecureContext) {
+    window.ClipboardItem = class { constructor(items) { this.items = items; this.types = Object.keys(items); } async getType(type) { return this.items[type]; } };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { write: async (items) => { const blob = await items[0].items["image/png"]; window.__clipboardWrites.push(blob); } },
+    });
+  }
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) for (const node of mutation.addedNodes) {
+      if (node.nodeName !== "STYLE" || !String(node.textContent).includes("R0lGODlhAQAB")) continue;
+      const card = document.querySelector("[data-question-capture-card]");
+      if (!card) continue;
+      const base = card.getBoundingClientRect();
+      const rel = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - base.left, y: r.top - base.top, width: r.width, height: r.height }; };
+      window.__captureRecords.push({
+        html: card.outerHTML,
+        hostCount: document.querySelectorAll("[data-question-capture-host]").length,
+        card: { width: base.width, height: base.height },
+        alternatives: [...card.querySelectorAll(".qcap-alternative")].map(rel),
+        letters: [...card.querySelectorAll(".qcap-alternative > span")].map(rel),
+        tags: [...card.querySelectorAll(".qcap-tags span")].map(rel),
+        number: rel(card.querySelector(".qcap-number")),
+        statement: rel(card.querySelector(".qcap-statement")),
+      });
+    }
+  }).observe(document, { childList: true, subtree: true });
+})();`;
+
+// Decodifica o último PNG copiado e mede o que importa: dimensões, cantos,
+// cores das alternativas e centralização da "tinta" (texto) nas caixas.
+async function analyzeLastPng(page: Page, record: CaptureRecord) {
+  return page.evaluate(async ({ record, colors }) => {
+    const w = window as unknown as { __clipboardWrites: Blob[] };
+    const blob = w.__clipboardWrites[w.__clipboardWrites.length - 1];
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const scale = bitmap.width / record.card.width;
+    const px = (x: number, y: number) => {
+      const i = (Math.round(y * scale) * bitmap.width + Math.round(x * scale)) * 4;
+      return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+    };
+    const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    // Centro vertical/horizontal da tinta clara dentro de uma caixa, comparado ao centro da caixa (em px CSS).
+    const inkOffset = (box: { x: number; y: number; width: number; height: number }) => {
+      const x0 = Math.ceil((box.x + 2) * scale), x1 = Math.floor((box.x + box.width - 2) * scale);
+      const y0 = Math.ceil((box.y + 2) * scale), y1 = Math.floor((box.y + box.height - 2) * scale);
+      const bg = lum(...(px(box.x + 3, box.y + box.height / 2).slice(0, 3) as [number, number, number]));
+      let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+      for (let y = y0; y <= y1; y += 1) for (let x = x0; x <= x1; x += 1) {
+        const i = (y * bitmap.width + x) * 4;
+        if (Math.abs(lum(data[i], data[i + 1], data[i + 2]) - bg) < 60) continue;
+        top = Math.min(top, y); bottom = Math.max(bottom, y); left = Math.min(left, x); right = Math.max(right, x);
+      }
+      if (top === Infinity) return null;
+      return {
+        dy: ((top + bottom) / 2) / scale - (box.y + box.height / 2),
+        dx: ((left + right) / 2) / scale - (box.x + box.width / 2),
+      };
+    };
+    const countColor = ([r, g, b]: number[]) => {
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) if (Math.abs(data[i] - r) + Math.abs(data[i + 1] - g) + Math.abs(data[i + 2] - b) < 24 && data[i + 3] > 250) count += 1;
+      return count;
+    };
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      scale,
+      corners: [px(0, 0), px(record.card.width - 0.4, 0), px(0, record.card.height - 0.4), px(record.card.width - 0.4, record.card.height - 0.4)].map((c) => c[3]),
+      center: px(record.card.width / 2, record.card.height / 2),
+      altBackgrounds: record.alternatives.map((alt) => px(alt.x + 6, alt.y + alt.height / 2).join(",")),
+      cardBackground: px(8, record.card.height / 2),
+      letterOffsets: record.letters.map(inkOffset),
+      tagOffsets: record.tags.map(inkOffset),
+      numberOffset: inkOffset(record.number),
+      colorCounts: Object.fromEntries(Object.entries(colors).map(([name, rgb]) => [name, countColor(rgb)])),
+    };
+  }, { record, colors: { violet: [124, 58, 237], blue: [37, 99, 235], green: [22, 163, 74] } });
+}
+
+test.describe("Copiar questão como imagem — padrão Raio-X", () => {
+  let context: BrowserContext;
+  let page: Page;
+  const stats = { unexpected: [] as string[], dataRequests: [] as string[] };
+
+  test.beforeEach(async ({ browser }) => {
+    stats.unexpected = [];
+    stats.dataRequests = [];
+    context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await installRoutes(context, stats);
+    await context.route(`${CDN}/**`, (route) => {
+      const name = new URL(route.request().url()).pathname;
+      if (name.includes("missing")) return route.fulfill({ status: 404, body: "" });
+      const headers: Record<string, string> = name.includes("blocked")
+        ? { "Access-Control-Allow-Origin": "http://outra-origem.test" } // o route.fulfill preencheria um ACAO ausente
+        : { "Access-Control-Allow-Origin": "*" };
+      return route.fulfill({ contentType: "image/svg+xml", headers, body: CORS_SVG });
+    });
+    await context.addInitScript(CAPTURE_INIT_SCRIPT);
+    page = await context.newPage();
+  });
+
+  test.afterEach(async () => {
+    expect(stats.dataRequests, "nenhuma chamada de API/mutação durante a cópia").toEqual([]);
+    expect(stats.unexpected).toEqual([]);
+    await context.close();
+  });
+
+  const copyButton = () => page.getByRole("button", { name: /Copiar questão como imagem|Copiando imagem|Questão copiada/ });
+
+  async function copyAndWait(expected: "copied" | "error") {
+    await copyButton().click();
+    await expect(page.locator("[data-presentation-copy-image='copied'], [data-presentation-copy-image='error']")).toBeVisible({ timeout: 20_000 });
+    const state = await page.locator("[data-presentation-copy-image]").getAttribute("data-presentation-copy-image");
+    expect(state, await page.locator("[data-presentation-copy-toast]").innerText()).toBe(expected);
+  }
+
+  const lastRecord = () => page.evaluate(() => {
+    const w = window as unknown as { __captureRecords: CaptureRecord[] };
+    return w.__captureRecords[w.__captureRecords.length - 1];
+  });
+  const writes = () => page.evaluate(() => (window as unknown as { __clipboardWrites: Blob[] }).__clipboardWrites.length);
+
+  test("C1. botão na barra do Modo Apresentação, fora da composição, nos dois modos", async () => {
+    await openPresentation(page, "q-short");
+    const toolbar = page.locator("[data-presentation-toolbar]");
+    await expect(toolbar.getByRole("button", { name: "Copiar questão como imagem" })).toBeVisible();
+    expect(await page.locator("[data-presentation-composition] [data-presentation-copy-image]").count()).toBe(0);
+    await modeRadio(page, "Vertical").click();
+    await expect(toolbar.getByRole("button", { name: "Copiar questão como imagem" })).toBeVisible();
+  });
+
+  test("C2. copia PNG 3× com largura fixa, cantos transparentes, recorte exato e sem resíduos no DOM", async () => {
+    await openPresentation(page, "q-short");
+    const composition = page.locator("[data-presentation-composition='normal']");
+    const before = await composition.evaluate((el) => el.outerHTML);
+    const headBefore = await page.evaluate(() => document.head.innerHTML);
+
+    await copyAndWait("copied");
+    await expect(page.getByRole("status")).toContainText("Questão copiada como imagem!");
+    expect(await writes()).toBe(1);
+
+    const record = await lastRecord();
+    expect(record.hostCount).toBe(1);
+    expect(record.card.width).toBe(960);
+    const png = await analyzeLastPng(page, record);
+    expect(png.width).toBe(2880);
+    expect(Math.abs(png.height - record.card.height * 3)).toBeLessThanOrEqual(1.5);
+    expect(png.corners).toEqual([0, 0, 0, 0]);
+    expect(png.center[3]).toBe(255);
+    expect(png.cardBackground, "tema Clean: superfície branca").toEqual([255, 255, 255, 255]);
+    expect(png.altBackgrounds[0], "tema Clean: alternativa #f8fafc").toBe("248,250,252,255");
+
+    expect(await composition.evaluate((el) => el.outerHTML)).toBe(before);
+    expect(await page.evaluate(() => document.head.innerHTML)).toBe(headBefore);
+    expect(await page.locator("[data-question-capture-host], [data-question-capture-card]").count()).toBe(0);
+  });
+
+  test("C3. gabarito e comentário visíveis na tela nunca entram no PNG; alternativas neutras e idênticas", async () => {
+    await openPresentation(page, "q-short");
+    await page.getByRole("button", { name: "Mostrar gabarito" }).click();
+    await page.getByRole("button", { name: "Mostrar comentário" }).click();
+    await expect(page.locator("[data-revealed-correct='true']")).toHaveCount(1);
+
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.html).not.toMatch(/Gabarito|correct|emerald|🦉|Análise do Professor|art\. 5º/i);
+    expect(record.html).not.toContain("Copiar");
+    for (const text of ["Legalidade.", "Moralidade.", "Contraditório e ampla defesa.", "Eficiência.", "Publicidade."]) expect(record.html).toContain(text);
+    expect(record.alternatives).toHaveLength(5);
+
+    const png = await analyzeLastPng(page, record);
+    expect(new Set(png.altBackgrounds).size, "mesma cor de fundo em todas as alternativas").toBe(1);
+    // A tela continua revelando o gabarito: a neutralização é só da representação temporária.
+    await expect(page.locator("[data-revealed-correct='true']")).toHaveCount(1);
+    await expect(page.locator("[data-presentation-answer]")).toBeVisible();
+  });
+
+  test("C4. cabeçalho do Raio-X: código, assunto, tags e dificuldade do Banco; fonte só quando exibida", async () => {
+    await openPresentation(page, "q-short");
+    await copyAndWait("copied");
+    let html = (await lastRecord()).html;
+    expect(html).toContain(">ET1001<");
+    expect(html).toContain("<h3>Direitos Fundamentais</h3>");
+    expect(html).toContain(">Direito Constitucional<");
+    expect(html).toContain(">CEBRASPE<");
+    expect(html).toContain("3 / 5");
+    expect(html).toContain(">Média<");
+    expect(html).not.toContain("PCMG");
+
+    await page.getByRole("button", { name: "Mostrar fonte" }).click();
+    await copyButton().click();
+    await expect.poll(writes, { timeout: 20_000 }).toBe(2);
+    html = (await lastRecord()).html;
+    expect(html).toContain(">PCMG — Investigador<");
+    expect(html).toContain(">2025<");
+  });
+
+  test("C5. metadados ausentes são omitidos sem inventar dados", async () => {
+    await openPresentation(page, "cap-no-meta");
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.html).not.toContain("<h3");
+    expect(record.html).not.toContain('class="qcap-tags"');
+    expect(record.html).not.toContain('class="qcap-status"');
+    expect(record.html).not.toMatch(/não classificado|não informad/i);
+    expect(record.html).toContain(">ET2005<");
+  });
+
+  test("C6. letras A–E, tags e código centralizados no PNG (correção da sonda de métricas)", async () => {
+    await openPresentation(page, "q-short");
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    const png = await analyzeLastPng(page, record);
+    const offsets = [...png.letterOffsets, ...png.tagOffsets, png.numberOffset];
+    expect(offsets.every(Boolean)).toBe(true);
+    for (const offset of offsets) {
+      expect(Math.abs(offset!.dy), JSON.stringify(offset)).toBeLessThanOrEqual(2);
+      expect(Math.abs(offset!.dx), JSON.stringify(offset)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test("C7. questão longa com imagens e tabela: conteúdo integral, imagens presentes, sem corte", async () => {
+    await openPresentation(page, "q-long");
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.alternatives).toHaveLength(5);
+    expect(record.html).toContain("<table");
+    expect(record.html).toContain("convalida-se automaticamente");
+    const lastAlt = record.alternatives[4];
+    expect(lastAlt.y + lastAlt.height).toBeLessThanOrEqual(record.card.height);
+    expect(record.card.height).toBeGreaterThan(1500);
+    const png = await analyzeLastPng(page, record);
+    expect(Math.abs(png.height - record.card.height * 3)).toBeLessThanOrEqual(1.5);
+    expect(png.colorCounts.blue, "imagem do enunciado").toBeGreaterThan(10_000);
+    expect(png.colorCounts.green, "imagem da alternativa").toBeGreaterThan(5_000);
+  });
+
+  test("C8. Certo/Errado: duas opções C/E neutras, mesmo com gabarito visível", async () => {
+    await openPresentation(page, "q-tf");
+    await page.getByRole("button", { name: "Mostrar gabarito" }).click();
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.alternatives).toHaveLength(2);
+    expect(record.html).toMatch(/<span>C<\/span>[\s\S]*Certo[\s\S]*<span>E<\/span>[\s\S]*Errado/);
+    expect(record.html).not.toMatch(/Gabarito|🦉|red-|emerald/);
+    const png = await analyzeLastPng(page, record);
+    expect(new Set(png.altBackgrounds).size).toBe(1);
+  });
+
+  test("C9b. quebras de linha do enunciado preservadas como na tela (pre-wrap)", async () => {
+    await openPresentation(page, "cap-newlines");
+    const screenLines = await page.locator("[data-presentation-statement]").evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    const captureLines = record.statement.height / (15 * 1.65);
+    // 12 linhas lógicas (4 em branco); sem pre-wrap o texto vira 2 linhas corridas.
+    expect(Math.round(captureLines)).toBe(12);
+    expect(Math.round(screenLines)).toBe(12);
+    // Inspeção visual opcional: CAPTURE_PNG_OUT=caminho.png grava o PNG copiado.
+    if (process.env.CAPTURE_PNG_OUT) {
+      const base64 = await page.evaluate(async () => {
+        const w = window as unknown as { __clipboardWrites: Blob[] };
+        const bytes = new Uint8Array(await w.__clipboardWrites[w.__clipboardWrites.length - 1].arrayBuffer());
+        let binary = "";
+        bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+        return btoa(binary);
+      });
+      fs.writeFileSync(process.env.CAPTURE_PNG_OUT, Buffer.from(base64, "base64"));
+    }
+  });
+
+  test("C9. HTML rico preservado e legível no cartão (estilos inline neutralizados, destaque mantido)", async () => {
+    await openPresentation(page, "q-white");
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.html).toContain("<mark");
+    expect(record.html).toContain("Texto colado do editor escuro");
+    expect(record.html).toContain("qcap-rich");
+  });
+
+  test("C10. imagem externa com CORS (inclusive dentro do HTML) é capturada", async () => {
+    await openPresentation(page, "cap-cors-ok");
+    await copyAndWait("copied");
+    const record = await lastRecord();
+    expect(record.html.match(/crossorigin="anonymous"/g)?.length).toBe(2);
+    const png = await analyzeLastPng(page, record);
+    expect(png.colorCounts.violet).toBeGreaterThan(50_000);
+  });
+
+  for (const [id, label] of [
+    ["cap-cors-blocked", "imagem do enunciado sem CORS"],
+    ["cap-inline-blocked", "imagem do HTML rico sem CORS"],
+    ["cap-missing", "imagem inexistente"],
+  ] as const) {
+    test(`C11. ${label}: erro compreensível, nada copiado, nenhum resíduo`, async () => {
+      await openPresentation(page, id);
+      await copyAndWait("error");
+      await expect(page.getByRole("status")).toContainText("Não foi possível carregar todas as imagens da questão");
+      expect(await writes()).toBe(0);
+      expect(await page.locator("[data-question-capture-host]").count()).toBe(0);
+      expect(await page.evaluate(() => [...document.querySelectorAll("style")].some((s) => s.textContent?.includes("R0lGODlhAQAB")))).toBe(false);
+    });
+  }
+
+  test("C12. cliques repetidos durante a cópia geram uma única captura; botão desabilitado e com estado", async () => {
+    await openPresentation(page, "q-long");
+    await page.evaluate(() => {
+      const button = document.querySelector<HTMLButtonElement>("[data-presentation-copy-image]")!;
+      button.click();
+      button.click();
+      button.click();
+    });
+    await expect(page.locator("[data-presentation-copy-image='copying']")).toBeDisabled();
+    await expect(page.locator("[data-presentation-copy-image='copied']")).toBeVisible({ timeout: 20_000 });
+    expect(await writes()).toBe(1);
+    await expect(page.locator("[data-presentation-copy-image='idle']")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("C13. a cópia não altera rolagem, modo, gabarito nem a composição Vertical", async () => {
+    await openPresentation(page, "q-long");
+    const scroller = page.locator("[data-presentation-scroll='normal']");
+    await scroller.evaluate((el) => { el.scrollTop = 600; });
+    await copyAndWait("copied");
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(600);
+
+    await modeRadio(page, "Vertical").click();
+    const frame = await frameMetrics(page);
+    const canvasBefore = await page.locator("[data-presentation-canvas]").evaluate((el) => el.outerHTML);
+    await copyButton().click();
+    await expect.poll(writes, { timeout: 20_000 }).toBe(2);
+    expect(await frameMetrics(page)).toEqual(frame);
+    expect(await page.locator("[data-presentation-canvas]").evaluate((el) => el.outerHTML)).toBe(canvasBefore);
+    await expect(modeRadio(page, "Vertical")).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("C14. navegador sem suporte a imagens na área de transferência: erro claro", async () => {
+    await page.addInitScript(() => { delete (window as { ClipboardItem?: unknown }).ClipboardItem; });
+    await openPresentation(page, "q-short");
+    await copyAndWait("error");
+    await expect(page.getByRole("status")).toContainText("Este navegador não permite copiar imagens");
+  });
+});
+
+test.describe("Copiar questão como imagem — área de transferência real", () => {
+  test("C15. o PNG chega à área de transferência do Chromium como image/png", async ({ browser }) => {
+    const origin = "http://localhost:47391";
+    const stats = { unexpected: [] as string[], dataRequests: [] as string[] };
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+    await installRoutes(context, stats, origin);
+    const page = await context.newPage();
+    await page.goto(`${origin}/questoes/q-short/preview`);
+    await page.getByRole("button", { name: "Copiar questão como imagem" }).click();
+    await expect(page.locator("[data-presentation-copy-image='copied']")).toBeVisible({ timeout: 20_000 });
+    const clip = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      const blob = await items[0].getType("image/png");
+      const bitmap = await createImageBitmap(blob);
+      return { types: items[0].types, width: bitmap.width, height: bitmap.height };
+    });
+    expect(clip.types).toContain("image/png");
+    expect(clip.width).toBe(2880);
+    expect(clip.height).toBeGreaterThan(900);
+    expect(stats.unexpected).toEqual([]);
+    await context.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Auditorias de código: proteção, ausência de mutações, pontos de entrada
 // ---------------------------------------------------------------------------
 
@@ -1186,6 +1617,16 @@ test.describe("Modo Apresentação de Questões — contratos de código", () =>
   test("client somente leitura: sem fetch, Supabase ou APIs", () => {
     const source = read(PREVIEW_CLIENT);
     expect(source).not.toMatch(/\bfetch\(|adminFetch|supabase|\/api\//i);
+    expect(read(CAPTURE_MODULE)).not.toMatch(/\bfetch\(|adminFetch|supabase|\/api\//i);
+  });
+
+  test("cópia como imagem: Raio-X intacto e cartão de captura sem dados de gabarito", () => {
+    expect(execSync(`git diff --stat HEAD -- "${RAIO_X_REPORT_CLIENT}"`, { cwd: root, encoding: "utf8" }).trim()).toBe("");
+    const capture = read(CAPTURE_MODULE);
+    expect(capture).not.toMatch(/is_correct|correctAlternative|explanation_text|showAnswer/);
+    expect(capture).toContain("backgroundColor: null");
+    expect(capture).toContain("H2C_METRICS_PROBE");
+    expect(capture).toMatch(/finally \{\s*root\.unmount\(\);\s*host\.remove\(\);/);
   });
 
   test("AppShell trata a apresentação como rota de foco (sem sidebar/header administrativos)", () => {
@@ -1227,10 +1668,12 @@ test.describe("Modo Apresentação de Questões — contratos de código", () =>
       BANK_PAGE,
       PREVIEW_PAGE,
       PREVIEW_CLIENT,
+      CAPTURE_MODULE,
       WINDOW_HELPER,
       "tests/question-presentation-mode.spec.ts",
       "tests/question-presentation-normal-golden.json",
       "docs/INDICE_FUNCOES_SISTEMA.md",
+      "docs/Sprint-raio-x.md",
       "docs/Sprint-simulados.md",
       "docs/status-atual.md",
     ]);

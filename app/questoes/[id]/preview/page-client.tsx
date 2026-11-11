@@ -3,18 +3,23 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import {
+  Check,
   CheckCircle2,
+  Copy,
   Eye,
   EyeOff,
   ImageIcon,
   Library,
+  Loader2,
   MessageSquareText,
   MonitorPlay,
   ScanLine,
   Smartphone,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import StudentExplanationAuthorCard from "../../../components/questions/StudentExplanationAuthorCard";
+import { CAPTURE_GENERIC_ERROR, copyQuestionCaptureToClipboard, type QuestionCaptureData } from "./question-image-capture";
 import { extractQuestionSubjects, formatQuestionSubjects } from "@/lib/questions/question-subjects";
 import { isQuestionImagePending } from "@/lib/questions/image-pending";
 import {
@@ -253,16 +258,67 @@ function buildPresentationData(question: Question): PresentationData {
   };
 }
 
+const DIFFICULTY_LABELS: Record<number, string> = { 1: "Muito fácil", 2: "Fácil", 3: "Média", 4: "Difícil", 5: "Muito difícil" };
+
+// Representação neutra para o PNG: nunca recebe gabarito, comentário ou marca de acerto.
+// Os metadados acompanham o que a apresentação exibe (fonte só quando "Mostrar fonte" está ativo).
+function buildCaptureData(question: Question, data: PresentationData, showSource: boolean): QuestionCaptureData {
+  const difficulty = Number(question.difficulty_level);
+  const tags = [data.subjectName ? data.disciplineName : "", ...(showSource ? data.sourceParts : [data.boardName])];
+  return {
+    code: data.code,
+    title: data.subjectName || data.disciplineName,
+    tags: Array.from(new Set(tags.filter(Boolean))),
+    difficulty: DIFFICULTY_LABELS[difficulty]
+      ? { value: difficulty, label: DIFFICULTY_LABELS[difficulty], tone: difficulty <= 2 ? "#38bdf8" : difficulty === 3 ? "#22c55e" : "#fb923c" }
+      : null,
+    statementHtml: toPresentationHtml(question.statement).__html,
+    imageUrl: question.image_url,
+    alternatives: data.alternatives.map((alternative) => ({
+      key: alternative.id || alternative.label,
+      label: data.isTrueFalse ? alternative.label.charAt(0) : alternative.label,
+      html: toPresentationHtml(alternative.text).__html,
+      imageUrl: alternative.image_url,
+    })),
+  };
+}
+
+type CopyImageStatus = "idle" | "copying" | "copied" | "error";
+
 export default function PreviewQuestaoClient({ question }: { question: Question }) {
   const [mode, setMode] = useState<PresentationMode>("normal");
   const [showAnswer, setShowAnswer] = useState(false);
   const [showComment, setShowComment] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [showSafeArea, setShowSafeArea] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<CopyImageStatus>("idle");
+  const [copyToast, setCopyToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const copyingRef = useRef(false);
 
   const data = buildPresentationData(question);
   const hasComment = Boolean(question.explanation_text?.trim());
   const imagePending = isQuestionImagePending(question);
+
+  async function copyAsImage() {
+    if (copyingRef.current) return;
+    copyingRef.current = true;
+    setCopyStatus("copying");
+    let result: { status: "copied" | "error"; text: string };
+    try {
+      await copyQuestionCaptureToClipboard(buildCaptureData(question, data, showSource));
+      result = { status: "copied", text: "Questão copiada como imagem!" };
+    } catch (error) {
+      result = { status: "error", text: error instanceof Error ? error.message : CAPTURE_GENERIC_ERROR };
+    }
+    copyingRef.current = false;
+    const toast = { tone: result.status === "copied" ? ("success" as const) : ("error" as const), text: result.text };
+    setCopyStatus(result.status);
+    setCopyToast(toast);
+    window.setTimeout(() => {
+      setCopyStatus((current) => (current === result.status && !copyingRef.current ? "idle" : current));
+      setCopyToast((current) => (current === toast ? null : current));
+    }, 3200);
+  }
 
   const body = (variant: PresentationMode) => (
     <QuestionBody
@@ -291,7 +347,27 @@ export default function PreviewQuestaoClient({ question }: { question: Question 
         showSafeArea={showSafeArea}
         onToggleSafeArea={() => setShowSafeArea((current) => !current)}
         imagePending={imagePending}
+        copyStatus={copyStatus}
+        onCopyImage={copyAsImage}
       />
+
+      <div
+        role="status"
+        aria-live="polite"
+        data-presentation-copy-toast
+        className="pointer-events-none fixed bottom-6 left-1/2 z-50 w-max max-w-[calc(100vw-32px)] -translate-x-1/2"
+      >
+        {copyToast && (
+          <div
+            className={`flex items-center gap-2 rounded-xl border bg-slate-950/95 px-4 py-2.5 text-sm font-bold shadow-2xl ${
+              copyToast.tone === "success" ? "border-orange-400/40 text-orange-100" : "border-red-400/50 text-red-200"
+            }`}
+          >
+            {copyToast.tone === "success" ? <Check size={15} /> : <TriangleAlert size={15} />}
+            {copyToast.text}
+          </div>
+        )}
+      </div>
 
       <div className="min-h-0 flex-1">
         {mode === "normal" ? (
@@ -358,6 +434,8 @@ function PresentationToolbar({
   showSafeArea,
   onToggleSafeArea,
   imagePending,
+  copyStatus,
+  onCopyImage,
 }: {
   code: string;
   mode: PresentationMode;
@@ -372,6 +450,8 @@ function PresentationToolbar({
   showSafeArea: boolean;
   onToggleSafeArea: () => void;
   imagePending: boolean;
+  copyStatus: CopyImageStatus;
+  onCopyImage: () => void;
 }) {
   const normalRef = useRef<HTMLButtonElement>(null);
   const verticalRef = useRef<HTMLButtonElement>(null);
@@ -470,6 +550,29 @@ function PresentationToolbar({
           Área segura
         </button>
       )}
+
+      <button
+        type="button"
+        onClick={onCopyImage}
+        disabled={copyStatus === "copying"}
+        aria-busy={copyStatus === "copying"}
+        data-presentation-copy-image={copyStatus}
+        title="Copia a questão como imagem PNG, sem o gabarito, para colar em slides"
+        className={`${toggleClass(false)} disabled:cursor-progress ${
+          copyStatus === "copied" ? "border-emerald-400/50! text-emerald-200!" : copyStatus === "error" ? "border-red-400/50! text-red-200!" : ""
+        }`}
+      >
+        {copyStatus === "copying" ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : copyStatus === "copied" ? (
+          <Check size={14} />
+        ) : copyStatus === "error" ? (
+          <TriangleAlert size={14} />
+        ) : (
+          <Copy size={14} />
+        )}
+        {copyStatus === "copying" ? "Copiando imagem…" : copyStatus === "copied" ? "Questão copiada!" : "Copiar questão como imagem"}
+      </button>
 
       {imagePending && (
         <span className="inline-flex items-center gap-2 rounded-xl border border-sky-400/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200">

@@ -1,5 +1,16 @@
 # STATUS DO PROJETO — EstudoTOP Simulados
 
+## 11/11/2026 - Banco de Questões: copiar questão como imagem, padrão Raio-X Clean (commit e push em main; homologação PowerPoint/Storage/navegadores pendente)
+
+No Modo Apresentação (`/questoes/[id]/preview`, aberto por "Visualizar" no Banco de Questões e no editor), o botão **Copiar questão como imagem** copia para a área de transferência um PNG do cartão da questão no padrão do Relatório Final do Raio-X, **tema Clean**. O cartão tem 960 px de largura em escala 3× (2880 px) e cantos transparentes. Nunca inclui gabarito nem comentário, mesmo quando visíveis na tela. Detalhes em `INDICE_FUNCOES_SISTEMA.md` §35.5.
+
+- **Ajustes após o primeiro teste do proprietário:** (1) paleta trocada de Dark para Clean, a pedido; (2) quebras de linha gravadas como `\n` dentro de `<p>` (caso ET3661, "Relacione… I. Worm / II. Spyware…") saíam como texto corrido. Causa: a tela usa `.richtext-editor` (`white-space: pre-wrap`) e o cartão de captura não. Corrigido com `pre-wrap` em `.qcap-rich` e coberto pelo teste C9b.
+- **Raio-X intacto:** `relatorio/page-client.tsx` sem nenhuma alteração; técnicas reproduzidas num módulo novo (decisão em §35.5).
+- **Validação:** `tests/question-presentation-mode.spec.ts` 54 casos aprovados (35 anteriores, incluindo o golden do Modo Normal, + 18 da cópia + 1 contrato); `tests/raio-x-report-pdf` 39/39; TypeScript, build, ESLint dos arquivos alterados sem diagnóstico e `git diff --check` aprovados. O PNG é gerado de fato pelo `html2canvas` no Chromium e analisado por pixel: dimensões, cantos, fundo Clean, alternativas idênticas e letras, tags e código centralizados (≤ 2 px). C15 confirmou a chegada de `image/png` na área de transferência real do Chromium.
+- **Limitação de teste:** o `route.fulfill` do Playwright preenche `Access-Control-Allow-Origin` quando ausente; a recusa de CORS foi simulada com um ACAO de outra origem.
+- **Encerramento da Sprint (11/11/2026):** implementação aprovada pelo proprietário para encerramento. Validações finais repetidas antes do commit. Commit único `feat(questoes): adiciona captura de questoes em PNG no modo apresentacao` e push para `origin/main`, sem deploy manual. O deploy automático da Vercel (Production Branch `main`) é disparado pelo push. Sem migration, escrita no banco ou dependência nova.
+- **Pendente (não homologado):** colagem real no PowerPoint; questões reais do Storage com sessão autenticada; Safari e Firefox. A área de transferência foi validada somente no Chromium.
+
 ## 20/10/2026 - Modo Apresentação de Questões: popup Normal / Vertical 9:16 (commit e push em main; homologação visual autenticada pendente)
 
 O botão **Visualizar** do Banco de Questões (card da listagem e editor inline `QuestionEditor`) abre `/questoes/[id]/preview` em uma **janela popup independente**, sem sidebar nem cabeçalho administrativo, com barra de ferramentas própria: **Normal | Vertical**, **Mostrar/Ocultar fonte** (adendo abaixo), **Mostrar/Ocultar gabarito**, **Mostrar/Ocultar comentário** (quando houver), **Área segura** (somente no Vertical) e **Fechar**.
